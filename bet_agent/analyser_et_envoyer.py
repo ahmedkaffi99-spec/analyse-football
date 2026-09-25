@@ -99,6 +99,27 @@ def calculer_xg_depuis_stats(stats_home, stats_away):
     return round(max(0.15, mu_home), 2), round(max(0.15, mu_away), 2)
 
 
+NB_MATCHS_MIN_UNDERSTAT = 3  # en début de saison, sous ce seuil la moyenne xG est trop bruitée
+
+
+def calculer_xg_depuis_understat(us_home, us_away):
+    """Buts attendus depuis les xG/xGA Understat de la SAISON EN COURS (5 grands championnats
+    uniquement). Prioritaire sur les stats API-Football, qui sur le plan gratuit ne donnent
+    que la saison 2024 (deux saisons de retard, et rien pour les promus). Même méthode que
+    calculer_xg_depuis_stats : mu_home = moyenne(xG de l'équipe domicile, xGA de l'équipe
+    extérieure), et symétriquement. Understat ne sépare pas domicile/extérieur."""
+    if not us_home or not us_away:
+        return None
+    if min(us_home.get("matchs_joues") or 0, us_away.get("matchs_joues") or 0) < NB_MATCHS_MIN_UNDERSTAT:
+        return None
+    try:
+        mu_home = (float(us_home["xg_moyen_par_match"]) + float(us_away["xga_moyen_par_match"])) / 2
+        mu_away = (float(us_away["xg_moyen_par_match"]) + float(us_home["xga_moyen_par_match"])) / 2
+    except (KeyError, TypeError, ValueError):
+        return None
+    return round(max(0.15, mu_home), 2), round(max(0.15, mu_away), 2)
+
+
 def _est_ligne_quart(x):
     r = x * 4
     return abs(r - round(r)) < 1e-6 and (round(r) % 2 != 0)
@@ -735,6 +756,16 @@ def notifier_telegram(message):
         if r.status_code == 200:
             print("✅ Message Telegram envoyé !")
             return True
+        if r.status_code == 400 and "can't parse entities" in r.text:
+            # Le texte rédigé par le LLM contient un '_' ou '*' non fermé qui casse le
+            # Markdown (constaté : profil 2/3 perdu pour "Can't find end of the entity") —
+            # on renvoie le même message en texte brut plutôt que de le perdre.
+            print(f"   ⚠️ Markdown rejeté par Telegram ({r.text[:120]}) — renvoi en texte brut...")
+            payload.pop("parse_mode")
+            r = requests.post(url, json=payload, timeout=15)
+            if r.status_code == 200:
+                print("✅ Message Telegram envoyé (texte brut) !")
+                return True
         print(f"❌ Erreur Telegram : {r.text}")
         return False
     except Exception as e:
@@ -959,10 +990,20 @@ def agent3_calcul_pool_candidats(donnees):
         print(f"   → Calcul : {home_nom} vs {away_nom}")
 
         stats_hist = m.get("stats_historiques") or {}
+        understat = m.get("understat_xg") or {}
+        xg_understat = calculer_xg_depuis_understat(understat.get("home"), understat.get("away"))
         xg_stats = calculer_xg_depuis_stats(stats_hist.get("home"), stats_hist.get("away"))
-        if xg_stats:
+        if xg_understat:
+            home_xg, away_xg = xg_understat
+            print(f"      ✓ Buts attendus depuis les xG Understat de la saison en cours : {home_xg} / {away_xg}")
+        elif xg_stats:
             home_xg, away_xg = xg_stats
+            saisons = sorted({str(st.get("season")) for st in (stats_hist.get("home"), stats_hist.get("away"))
+                              if st.get("season")})
             print(f"      ✓ Buts attendus depuis les VRAIES stats historiques : {home_xg} / {away_xg}")
+            if saisons:
+                print(f"      ⚠️ Stats de la saison {', '.join(saisons)} (plan gratuit API-Football) — "
+                      f"pas la saison en cours, à prendre avec prudence")
         else:
             home_xg, away_xg, _, _, _ = estimer_expected_goals_depuis_marches(marches)
             print(f"      → Stats indisponibles, repli sur estimation depuis les cotes : {home_xg} / {away_xg}")

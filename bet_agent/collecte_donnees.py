@@ -79,8 +79,14 @@ FOOTBALL_DATA_API_KEY = os.getenv("FOOTBALL_DATA_API_KEY")  # clé gratuite (10 
 # la sélection automatique (selectionner_matchs_du_jour) est COMPLÈTEMENT
 # ignorée — seule la liste MATCHS_MANUELS ci-dessous est utilisée, telle quelle.
 # Remets False pour revenir à la sélection automatique par ligue.
+#
+# MATCHS_MANUELS_DATE = le jour (AAAA-MM-JJ) pour lequel la liste a été vérifiée. Un autre
+# jour, la liste est périmée (constaté : le mode manuel resté actif aurait recherché les
+# matchs du 22/08 un mois plus tard) — elle est alors ignorée au profit de la sélection
+# automatique. Mets à jour la date EN MÊME TEMPS que la liste.
 # ------------------------------------------------------------
 SELECTION_MANUELLE_ACTIVE = True
+MATCHS_MANUELS_DATE = "2026-08-22"
 
 # Si SELECTION_MANUELLE_ACTIVE=True : la liste EXACTE de matchs à collecter, dans
 # l'ordre. Si False : sert uniquement de filet de sécurité si la sélection
@@ -175,6 +181,20 @@ INDICATEURS_EQUIPE_RESERVE = (" ii", " iii", " u18", " u19", " u20", " u21", " u
 def contient_indicateur_reserve(nom):
     nom_normalise = f" {unidecode(nom).lower()} "
     return any(indicateur in nom_normalise for indicateur in INDICATEURS_EQUIPE_RESERVE)
+
+
+def score_paire_equipes(home_cherche, away_cherche, home_candidat, away_candidat):
+    """Score de correspondance d'un match = le PLUS FAIBLE des deux scores équipe par équipe.
+    Comparer "home away" en une seule chaîne laissait une seule équipe commune suffire à
+    dépasser le seuil (constaté : "SL Benfica vs CF Os Belenenses" apparié à 80% avec
+    "Estrela vs CF Os Belenenses", "Malmo FF vs Hammarby IF" à 82% avec "IF Brommapojkarna
+    vs Hammarby FF") — les stats de la mauvaise équipe étaient alors utilisées."""
+    from rapidfuzz import fuzz
+
+    def score(a, b):
+        return fuzz.token_set_ratio(unidecode(a or "").lower(), unidecode(b or "").lower())
+
+    return min(score(home_cherche, home_candidat), score(away_cherche, away_candidat))
 SORTIE_JSON = "donnees_collectees.json"
 
 MARKET_NAMES_CACHE = {}
@@ -405,9 +425,15 @@ UNDERSTAT_LIGUE_PAR_NOM = {
 }
 
 # Understat identifie une saison par son année de DÉBUT (ex: saison 2025/2026 → 2025).
-# À ajuster manuellement en juillet/août lors du changement de saison si les stats
-# reviennent vides alors que la ligue a repris.
-UNDERSTAT_SAISON = 2025
+# Calculée automatiquement : la saison européenne démarre en juillet/août, donc de juillet
+# à décembre c'est l'année en cours, de janvier à juin l'année précédente. (Auparavant
+# fixée à la main à 2025 et oubliée au changement de saison 2026/2027.)
+def saison_en_cours(date=None):
+    date = date or datetime.now()
+    return date.year if date.month >= 7 else date.year - 1
+
+
+UNDERSTAT_SAISON = saison_en_cours()
 
 _cache_understat_par_ligue = {}
 
@@ -779,14 +805,12 @@ def selectionner_matchs_du_jour(fixtures_oddspapi):
         if len(matchs) < NB_MATCHS_MIN:
             print(f"   ⚠️ Seulement {len(matchs)} match(s) trouvé(s) avec cotes réelles (objectif minimum : {NB_MATCHS_MIN}).")
     else:
-        print("   ⚠️ Aucun match avec cotes réelles trouvé sur OddsPapi — repli sur MATCHS_MANUELS")
+        print("   ⚠️ Aucun match avec cotes réelles trouvé sur OddsPapi — repli sur MATCHS_MANUELS s'il date d'aujourd'hui")
     return matchs
 
 
 def trouver_fixture_api_football(home_cherche, away_cherche, tous_fixtures):
-    from rapidfuzz import fuzz
     cible_contient_reserve = contient_indicateur_reserve(home_cherche) or contient_indicateur_reserve(away_cherche)
-    cible = f"{unidecode(home_cherche).lower()} {unidecode(away_cherche).lower()}"
     meilleur_score, meilleur_fx = 0, None
     for fx in tous_fixtures:
         home_api = fx.get("teams", {}).get("home", {}).get("name", "")
@@ -794,8 +818,7 @@ def trouver_fixture_api_football(home_cherche, away_cherche, tous_fixtures):
         # Rejet immédiat : candidat "réserve/jeunes" alors que la demande ne l'est pas
         if not cible_contient_reserve and (contient_indicateur_reserve(home_api) or contient_indicateur_reserve(away_api)):
             continue
-        candidat = f"{unidecode(home_api).lower()} {unidecode(away_api).lower()}"
-        score = fuzz.token_set_ratio(cible, candidat)
+        score = score_paire_equipes(home_cherche, away_cherche, home_api, away_api)
         if score > meilleur_score:
             meilleur_score, meilleur_fx = score, fx
     if meilleur_score >= SEUIL_MATCH_ACCEPTABLE:
@@ -846,17 +869,14 @@ def _telecharger_fixtures_oddspapi():
 
 
 def trouver_fixture_oddspapi(home_cherche, away_cherche, fixtures_oddspapi):
-    from rapidfuzz import fuzz
     cible_contient_reserve = contient_indicateur_reserve(home_cherche) or contient_indicateur_reserve(away_cherche)
-    cible = f"{unidecode(home_cherche).lower()} {unidecode(away_cherche).lower()}"
     meilleur_score, meilleur_fx = 0, None
     for fx in fixtures_oddspapi:
         p1 = fx.get("participant1Name", "")
         p2 = fx.get("participant2Name", "")
         if not cible_contient_reserve and (contient_indicateur_reserve(p1) or contient_indicateur_reserve(p2)):
             continue
-        candidat = f"{unidecode(p1).lower()} {unidecode(p2).lower()}"
-        score = fuzz.token_set_ratio(cible, candidat)
+        score = score_paire_equipes(home_cherche, away_cherche, p1, p2)
         if score > meilleur_score:
             meilleur_score, meilleur_fx = score, fx
     if meilleur_score >= SEUIL_MATCH_ACCEPTABLE:
@@ -1001,14 +1021,18 @@ def collecter_donnees():
     except Exception as e:
         print(f"   ⚠️ OddsPapi fixtures indisponible après retries : {e}")
         fixtures_oddspapi = []
-    if SELECTION_MANUELLE_ACTIVE:
+    liste_manuelle_du_jour = MATCHS_MANUELS_DATE == datetime.now().strftime("%Y-%m-%d")
+    if SELECTION_MANUELLE_ACTIVE and not liste_manuelle_du_jour:
+        print(f"   ⚠️ Sélection manuelle active mais MATCHS_MANUELS date du {MATCHS_MANUELS_DATE} "
+              f"(périmée) — ignorée, bascule sur la sélection automatique.")
+    if SELECTION_MANUELLE_ACTIVE and liste_manuelle_du_jour:
         print(f"   🎯 Sélection manuelle active — {len(MATCHS_MANUELS)} match(s) fournis directement, "
               f"sélection automatique par ligue ignorée.")
         matchs_a_traiter = MATCHS_MANUELS
     else:
         print("   → Sélection des matchs du jour (source OddsPapi, indépendante du quota API-Football)...")
         matchs_a_traiter = selectionner_matchs_du_jour(fixtures_oddspapi)
-        if not matchs_a_traiter:
+        if not matchs_a_traiter and liste_manuelle_du_jour:
             matchs_a_traiter = MATCHS_MANUELS
 
     tous_fixtures_af = recuperer_fixtures_api_football()
