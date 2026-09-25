@@ -31,7 +31,7 @@ runs ──< matchs ──< cotes
 | `coupons` | les 3 profils du jour : cote totale, probabilité combinée, texte rédigé, statut (`en_attente`, `gagne`, `perdu`, `incertain`, `vide`) |
 | `jambes` | chaque pari : marché, ligne, sélection, cote, proba modèle, edge, guide, résultat (`gagne`, `perdu`, `push`, `non_verifiable`) |
 
-En PostgreSQL, les tables vivent dans le schéma **`analyse_football`** (variable `DB_SCHEMA`), déjà créé dans le projet Supabase `nombre-mystere` sans toucher à ses autres données. Le schéma PostgreSQL est dans [`schema.sql`](schema.sql), régénéré depuis les modèles par `python -m app.generer_schema_sql`. Il active le **RLS** sur chaque table : sans ça, Supabase rendrait les tables lisibles et modifiables avec la clé publique `anon`.
+En production, les tables sont déjà créées dans le schéma `public` du projet Supabase dédié `analyse-football` (`fpwsitpdkruoknwmgjzr`). `DB_SCHEMA` permet d'utiliser un autre schéma pour partager un projet existant. Au démarrage, le backend réapplique le RLS et retire tout droit aux rôles publics `anon` / `authenticated`. Le schéma PostgreSQL est dans [`schema.sql`](schema.sql), régénéré depuis les modèles par `python -m app.generer_schema_sql`. Il active le **RLS** et retire les droits de `anon` / `authenticated` sur chaque table : sans ça, Supabase rendrait les tables lisibles et modifiables avec la clé publique du projet.
 
 ## Routes
 

@@ -14,21 +14,25 @@ GitHub Actions ─┬─ 10h00 UTC  Pipeline quotidien  → collecte, 3 coupons,
 | Vérification des résultats | `.github/workflows/verification-resultats.yml` | `verifier_resultats.py` |
 | Tests | `.github/workflows/tests.yml` | — (lancé à chaque push) |
 
-## Étape 1 — Récupérer la connexion Supabase
+## Étape 1 — Le projet Supabase
 
-La base utilisée est ton projet existant **`nombre-mystere`** (`fpwsitpdkruoknwmgjzr`, Francfort), sans coût supplémentaire. Les tables sont dans un **schéma séparé `analyse_football`**, qui ne touche jamais aux autres données du projet. Ce schéma est **déjà créé** :
+La base est ton projet Supabase **`fpwsitpdkruoknwmgjzr`** (Francfort), **entièrement dédié à l'analyse** (anciennement « nombre-mystere », qui était vide) — aucun coût supplémentaire.
+
+**Renommer le projet** (à faire une fois, dans le tableau de bord — impossible depuis les outils) : ouvre le projet → **Project Settings** → **General** → **Project name** → `analyse-football` → **Save**. L'identifiant `fpwsitpdkruoknwmgjzr` et la connexion ne changent pas.
+
+Les tables sont **déjà créées** dans le schéma `public` (visibles directement dans **Table Editor**) :
 
 | Table | Rôle |
 |---|---|
-| `analyse_football.runs` | exécutions du pipeline |
-| `analyse_football.matchs` | matchs, scores, données d'équipe |
-| `analyse_football.cotes` | cotes 1xBet |
-| `analyse_football.coupons` | les 3 coupons du jour |
-| `analyse_football.jambes` | chaque pari et son résultat |
+| `runs` | exécutions du pipeline |
+| `matchs` | matchs, scores, données d'équipe |
+| `cotes` | cotes 1xBet |
+| `coupons` | les 3 coupons du jour |
+| `jambes` | chaque pari et son résultat |
 
-RLS actif sur les 5 tables, aucun accès pour les rôles publics `anon` / `authenticated` : seul le pipeline (rôle `postgres`) y lit et écrit.
+**Sécurité** : RLS actif sur les 5 tables et **aucun droit** pour les rôles publics `anon` / `authenticated` — la clé publique du projet ne permet ni de lire ni d'écrire. Seul le pipeline (rôle `postgres`, via `DATABASE_URL`) y accède. Le backend réapplique ces protections à chaque démarrage.
 
-Pour la chaîne de connexion, ouvre `nombre-mystere` → **Connect** (en haut) → **Connection string** → **Session pooler**. Elle ressemble à :
+Pour la chaîne de connexion : **Connect** (en haut) → **Connection string** → **Session pooler**. Elle ressemble à :
 
 ```
 postgresql://postgres.fpwsitpdkruoknwmgjzr:[YOUR-PASSWORD]@aws-0-eu-central-1.pooler.supabase.com:5432/postgres
@@ -39,7 +43,6 @@ postgresql://postgres.fpwsitpdkruoknwmgjzr:[YOUR-PASSWORD]@aws-0-eu-central-1.po
 
 - Utilise bien le **Session pooler** : la connexion directe (`db.xxxx.supabase.co`) passe par IPv6, que GitHub Actions ne gère pas.
 - Ce n'est **pas** `SUPABASE_URL` (l'URL de l'API REST) ni la clé `service_role`.
-- Le schéma `analyse_football` est la valeur par défaut (`DB_SCHEMA`) : rien d'autre à configurer.
 
 ## Étape 2 — Ajouter les secrets dans GitHub
 
@@ -77,9 +80,9 @@ Les heures sont en **UTC** (Paris = UTC+2 l'été, UTC+1 l'hiver). Pour les chan
 
 ## Coût
 
-Dépôt privé : **2 000 minutes gratuites par mois** sur GitHub Actions. Estimation : pipeline ≈ 20-30 min/jour, vérifications ≈ 1 min × 9/jour → environ **1 000 min/mois**. Suivi : **Settings → Billing and plans**. Supabase : aucun coût supplémentaire (projet `nombre-mystere` déjà existant, quelques Mo par mois).
+Dépôt privé : **2 000 minutes gratuites par mois** sur GitHub Actions. Estimation : pipeline ≈ 20-30 min/jour, vérifications ≈ 1 min × 9/jour → environ **1 000 min/mois**. Suivi : **Settings → Billing and plans**. Supabase : aucun coût supplémentaire (projet déjà existant, quelques Mo par mois).
 
 ## Consulter les données
 
-- **Supabase** (`nombre-mystere`) → **Table Editor** → schéma **`analyse_football`** : tables `runs`, `matchs`, `cotes`, `coupons`, `jambes`.
+- **Supabase** (projet `analyse-football`) → **Table Editor** : tables `runs`, `matchs`, `cotes`, `coupons`, `jambes`.
 - **API privée** (optionnelle, sur ton PC) : `cd backend && uvicorn app.main:app` avec le même `DATABASE_URL` et un `API_TOKEN` dans `backend/.env` — voir [`backend/README.md`](backend/README.md).

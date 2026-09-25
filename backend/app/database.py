@@ -15,8 +15,10 @@ engine = create_engine(
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
 
-# SQLite n'a pas de schémas : les tables y restent sans préfixe.
-SCHEMA = None if EST_SQLITE else DB_SCHEMA
+# SQLite n'a pas de schémas, et "public" est le schéma par défaut de PostgreSQL : dans ces deux
+# cas, les tables restent sans préfixe.
+SCHEMA = None if EST_SQLITE or DB_SCHEMA == "public" else DB_SCHEMA
+ROLES_PUBLICS_SUPABASE = ("anon", "authenticated")
 
 
 class Base(DeclarativeBase):
@@ -40,10 +42,17 @@ def init_db():
             connexion.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{SCHEMA}"'))
     Base.metadata.create_all(engine)
     if engine.dialect.name == "postgresql":
-        # Supabase expose le schéma public via son API REST : sans RLS, la clé publique "anon"
-        # pourrait lire/modifier ces tables. Activé à chaque démarrage (sans effet si déjà
-        # actif) ; le backend se connecte avec le rôle postgres, qui contourne le RLS.
+        # Supabase expose le schéma public via son API REST et donne par défaut des droits aux
+        # rôles "anon" (clé publique) et "authenticated" sur les nouvelles tables. Double
+        # protection, réappliquée à chaque démarrage (sans effet si déjà en place) :
+        # RLS sans policy (aucune ligne visible) + retrait de tous les droits de ces rôles.
+        # Le backend se connecte avec le rôle postgres, qui n'est pas concerné.
         with engine.begin() as connexion:
+            roles = [r for (r,) in connexion.execute(
+                text("SELECT rolname FROM pg_roles WHERE rolname = ANY(:roles)"),
+                {"roles": list(ROLES_PUBLICS_SUPABASE)})]
             for table in Base.metadata.sorted_tables:
                 nom = f'"{table.schema}"."{table.name}"' if table.schema else f'"{table.name}"'
                 connexion.execute(text(f"ALTER TABLE {nom} ENABLE ROW LEVEL SECURITY"))
+                for role in roles:
+                    connexion.execute(text(f'REVOKE ALL ON TABLE {nom} FROM "{role}"'))
