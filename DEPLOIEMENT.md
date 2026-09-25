@@ -32,25 +32,18 @@ Les tables sont **déjà créées** dans le schéma `public` (visibles directeme
 
 **Sécurité** : RLS actif sur les 5 tables et **aucun droit** pour les rôles publics `anon` / `authenticated` — la clé publique du projet ne permet ni de lire ni d'écrire. Seul le pipeline (rôle `postgres`, via `DATABASE_URL`) y accède. Le backend réapplique ces protections à chaque démarrage.
 
-Pour la chaîne de connexion : **Connect** (en haut) → **Connection string** → **Session pooler**. Elle ressemble à :
+**Mot de passe de la base** — c'est la seule information à fournir, rien à modifier à la main :
+dans le projet → **Connect** → **Direct** → **Session pooler** → **Reset database password** → **Generate a password** → copie-le.
 
-```
-postgresql://postgres.fpwsitpdkruoknwmgjzr:[YOUR-PASSWORD]@aws-0-eu-central-1.pooler.supabase.com:5432/postgres
-```
-
-1. Remplace `[YOUR-PASSWORD]` par le mot de passe de la base (oublié ? **Project Settings → Database → Reset database password**).
-2. Remplace `postgresql://` par `postgresql+psycopg://`.
-
-- Utilise bien le **Session pooler** : la connexion directe (`db.xxxx.supabase.co`) passe par IPv6, que GitHub Actions ne gère pas.
-- Ce n'est **pas** `SUPABASE_URL` (l'URL de l'API REST) ni la clé `service_role`.
+L'adresse de connexion (Session pooler `aws-0-eu-central-1.pooler.supabase.com:5432`, utilisateur `postgres.fpwsitpdkruoknwmgjzr`) est construite automatiquement par le programme à partir de ce mot de passe.
 
 ## Étape 2 — Ajouter les secrets dans GitHub
 
-Dépôt → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**, un par ligne :
+Dépôt → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**. Pour chaque ligne : **Name** = le nom de la 1re colonne, **Secret** = la valeur, puis **Add secret**.
 
 | Secret | Obligatoire | Valeur |
 |---|---|---|
-| `DATABASE_URL` | ✅ | la chaîne de l'étape 1 |
+| `SUPABASE_DB_PASSWORD` | ✅ | **uniquement le mot de passe** de la base (étape 1), collé tel quel |
 | `ODDSPAPI_KEY` | ✅ | comme dans `envi.local` |
 | `API_FOOTBALL_KEY` | ✅ | |
 | `TELEGRAM_TOKEN` | ✅ | |
@@ -86,3 +79,7 @@ Dépôt privé : **2 000 minutes gratuites par mois** sur GitHub Actions. Estima
 
 - **Supabase** (projet `analyse-football`) → **Table Editor** : tables `runs`, `matchs`, `cotes`, `coupons`, `jambes`.
 - **API privée** (optionnelle, sur ton PC) : `cd backend && uvicorn app.main:app` avec le même `DATABASE_URL` et un `API_TOKEN` dans `backend/.env` — voir [`backend/README.md`](backend/README.md).
+
+## Option avancée
+
+Au lieu de `SUPABASE_DB_PASSWORD`, un secret `DATABASE_URL` peut contenir une chaîne de connexion PostgreSQL complète (copiée depuis Supabase telle quelle, `postgresql://…` accepté). Elle est prioritaire.

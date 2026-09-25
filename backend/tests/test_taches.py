@@ -58,3 +58,18 @@ def test_pas_de_bilan_tant_que_des_matchs_ne_sont_pas_finis():
         messages = []
         assert envoyer_bilans(db, lambda m: messages.append(m) or True) == 0
         assert messages == []
+
+
+def test_configuration_de_la_base_sans_rien_editer():
+    from app.config import construire_database_url
+
+    # Mot de passe seul (secret SUPABASE_DB_PASSWORD) : adresse construite et encodée
+    url = construire_database_url({"SUPABASE_DB_PASSWORD": " ab@c:d/e#1 "})
+    assert url == ("postgresql+psycopg://postgres.fpwsitpdkruoknwmgjzr:ab%40c%3Ad%2Fe%231"
+                   "@aws-0-eu-central-1.pooler.supabase.com:5432/postgres")
+    # Chaîne copiée telle quelle depuis Supabase : le pilote est ajouté
+    assert construire_database_url({"DATABASE_URL": "postgresql://u:p@h:5432/postgres"}) == \
+        "postgresql+psycopg://u:p@h:5432/postgres"
+    assert construire_database_url({"DATABASE_URL": "postgresql+psycopg://u:p@h/x"}) == "postgresql+psycopg://u:p@h/x"
+    # Rien : SQLite local
+    assert construire_database_url({}).startswith("sqlite:///")

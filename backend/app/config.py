@@ -6,6 +6,7 @@ envi.local — les deux sont chargés, sans écraser une variable déjà défini
 
 import os
 from pathlib import Path
+from urllib.parse import quote
 
 from dotenv import load_dotenv
 
@@ -16,10 +17,33 @@ DOSSIER_DONNEES = RACINE / "backend" / "data"
 load_dotenv(RACINE / "backend" / ".env")
 load_dotenv(DOSSIER_PIPELINE / "envi.local")
 
-# SQLite par défaut (aucune installation) ; en production, la chaîne PostgreSQL de Supabase
-# (Project Settings → Database → Connection string), ex. :
-# postgresql+psycopg://postgres.xxxx:MOT_DE_PASSE@aws-0-eu-central-1.pooler.supabase.com:6543/postgres
-DATABASE_URL = os.getenv("DATABASE_URL") or f"sqlite:///{DOSSIER_DONNEES / 'bet_agent.db'}"
+# Projet Supabase "analyse-football" (Session pooler, IPv4 — compatible GitHub Actions). Ce ne
+# sont pas des secrets : seul le mot de passe l'est.
+SUPABASE_DB_HOTE = os.getenv("SUPABASE_DB_HOTE") or "aws-0-eu-central-1.pooler.supabase.com"
+SUPABASE_DB_UTILISATEUR = os.getenv("SUPABASE_DB_UTILISATEUR") or "postgres.fpwsitpdkruoknwmgjzr"
+
+
+def construire_database_url(environ=os.environ):
+    """Trois façons de configurer la base, de la plus simple à la plus complète :
+    1. SUPABASE_DB_PASSWORD seul : l'adresse Supabase est construite automatiquement
+       (le mot de passe est encodé, donc tous les caractères spéciaux sont acceptés) ;
+    2. DATABASE_URL copiée telle quelle depuis Supabase ("postgresql://..." est accepté,
+       le pilote psycopg est ajouté automatiquement) ;
+    3. rien : SQLite local, pour développer."""
+    url = (environ.get("DATABASE_URL") or "").strip()
+    if url:
+        for prefixe in ("postgresql://", "postgres://"):
+            if url.startswith(prefixe):
+                return "postgresql+psycopg://" + url[len(prefixe):]
+        return url
+    mot_de_passe = (environ.get("SUPABASE_DB_PASSWORD") or "").strip()
+    if mot_de_passe:
+        return (f"postgresql+psycopg://{SUPABASE_DB_UTILISATEUR}:{quote(mot_de_passe, safe='')}"
+                f"@{SUPABASE_DB_HOTE}:5432/postgres")
+    return f"sqlite:///{DOSSIER_DONNEES / 'bet_agent.db'}"
+
+
+DATABASE_URL = construire_database_url()
 
 # Schéma PostgreSQL où vivent les tables (ignoré en SQLite). Par défaut "public" : le projet
 # Supabase est entièrement dédié à l'analyse. Un autre nom (ex. DB_SCHEMA=analyse_football)

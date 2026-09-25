@@ -20,6 +20,7 @@ jobs:
     timeout-minutes: 15
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       ODDSPAPI_KEY: ${{ secrets.ODDSPAPI_KEY }}
       TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -36,8 +37,8 @@ jobs:
 
       - name: Vérifier la configuration
         run: |
-          if [ -z "$DATABASE_URL" ]; then
-            echo "::error::Secret DATABASE_URL manquant."
+          if [ -z "$DATABASE_URL" ] && [ -z "$SUPABASE_DB_PASSWORD" ]; then
+            echo "::error::Secret SUPABASE_DB_PASSWORD manquant (mot de passe de la base Supabase) — voir DEPLOIEMENT.md."
             exit 1
           fi
 

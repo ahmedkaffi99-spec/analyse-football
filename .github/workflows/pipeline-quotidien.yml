@@ -26,6 +26,7 @@ jobs:
     timeout-minutes: 60
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       ODDSPAPI_KEY: ${{ secrets.ODDSPAPI_KEY }}
       API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
       SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
@@ -52,8 +53,8 @@ jobs:
 
       - name: Vérifier la configuration
         run: |
-          if [ -z "$DATABASE_URL" ]; then
-            echo "::error::Secret DATABASE_URL manquant — sans lui, les coupons seraient perdus à la fin du job."
+          if [ -z "$DATABASE_URL" ] && [ -z "$SUPABASE_DB_PASSWORD" ]; then
+            echo "::error::Secret SUPABASE_DB_PASSWORD manquant (mot de passe de la base Supabase) — voir DEPLOIEMENT.md."
             exit 1
           fi
 
