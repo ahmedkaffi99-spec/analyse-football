@@ -16,15 +16,30 @@ GitHub Actions ─┬─ 10h00 UTC  Pipeline quotidien  → collecte, 3 coupons,
 
 ## Étape 1 — Récupérer la connexion Supabase
 
-Dans ton projet Supabase : **Connect** (en haut) → **Connection string** → **Session pooler**. Copie la chaîne, remplace `[YOUR-PASSWORD]` par le mot de passe de la base, et `postgresql://` par `postgresql+psycopg://` :
+La base utilisée est ton projet existant **`nombre-mystere`** (`fpwsitpdkruoknwmgjzr`, Francfort), sans coût supplémentaire. Les tables sont dans un **schéma séparé `analyse_football`**, qui ne touche jamais aux autres données du projet. Ce schéma est **déjà créé** :
+
+| Table | Rôle |
+|---|---|
+| `analyse_football.runs` | exécutions du pipeline |
+| `analyse_football.matchs` | matchs, scores, données d'équipe |
+| `analyse_football.cotes` | cotes 1xBet |
+| `analyse_football.coupons` | les 3 coupons du jour |
+| `analyse_football.jambes` | chaque pari et son résultat |
+
+RLS actif sur les 5 tables, aucun accès pour les rôles publics `anon` / `authenticated` : seul le pipeline (rôle `postgres`) y lit et écrit.
+
+Pour la chaîne de connexion, ouvre `nombre-mystere` → **Connect** (en haut) → **Connection string** → **Session pooler**. Elle ressemble à :
 
 ```
-postgresql+psycopg://postgres.xxxxxxxx:MOT_DE_PASSE@aws-0-eu-central-1.pooler.supabase.com:5432/postgres
+postgresql://postgres.fpwsitpdkruoknwmgjzr:[YOUR-PASSWORD]@aws-0-eu-central-1.pooler.supabase.com:5432/postgres
 ```
 
-- Utilise le **Session pooler** : la connexion directe (`db.xxxx.supabase.co`) passe par IPv6, que GitHub Actions ne gère pas.
+1. Remplace `[YOUR-PASSWORD]` par le mot de passe de la base (oublié ? **Project Settings → Database → Reset database password**).
+2. Remplace `postgresql://` par `postgresql+psycopg://`.
+
+- Utilise bien le **Session pooler** : la connexion directe (`db.xxxx.supabase.co`) passe par IPv6, que GitHub Actions ne gère pas.
 - Ce n'est **pas** `SUPABASE_URL` (l'URL de l'API REST) ni la clé `service_role`.
-- Les tables sont créées automatiquement au premier lancement, avec le **RLS activé** (la clé publique `anon` ne peut rien lire). Tu peux aussi exécuter `backend/schema.sql` dans le **SQL Editor**.
+- Le schéma `analyse_football` est la valeur par défaut (`DB_SCHEMA`) : rien d'autre à configurer.
 
 ## Étape 2 — Ajouter les secrets dans GitHub
 
@@ -62,9 +77,9 @@ Les heures sont en **UTC** (Paris = UTC+2 l'été, UTC+1 l'hiver). Pour les chan
 
 ## Coût
 
-Dépôt privé : **2 000 minutes gratuites par mois** sur GitHub Actions. Estimation : pipeline ≈ 20-30 min/jour, vérifications ≈ 1 min × 9/jour → environ **1 000 min/mois**. Suivi : **Settings → Billing and plans**. Supabase : offre gratuite suffisante (quelques Mo par mois).
+Dépôt privé : **2 000 minutes gratuites par mois** sur GitHub Actions. Estimation : pipeline ≈ 20-30 min/jour, vérifications ≈ 1 min × 9/jour → environ **1 000 min/mois**. Suivi : **Settings → Billing and plans**. Supabase : aucun coût supplémentaire (projet `nombre-mystere` déjà existant, quelques Mo par mois).
 
 ## Consulter les données
 
-- **Supabase** → **Table Editor** : tables `runs`, `matchs`, `cotes`, `coupons`, `jambes`.
+- **Supabase** (`nombre-mystere`) → **Table Editor** → schéma **`analyse_football`** : tables `runs`, `matchs`, `cotes`, `coupons`, `jambes`.
 - **API privée** (optionnelle, sur ton PC) : `cd backend && uvicorn app.main:app` avec le même `DATABASE_URL` et un `API_TOKEN` dans `backend/.env` — voir [`backend/README.md`](backend/README.md).

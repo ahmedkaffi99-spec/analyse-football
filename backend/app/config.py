@@ -21,6 +21,11 @@ load_dotenv(DOSSIER_PIPELINE / "envi.local")
 # postgresql+psycopg://postgres.xxxx:MOT_DE_PASSE@aws-0-eu-central-1.pooler.supabase.com:6543/postgres
 DATABASE_URL = os.getenv("DATABASE_URL") or f"sqlite:///{DOSSIER_DONNEES / 'bet_agent.db'}"
 
+# Schéma PostgreSQL où vivent les tables (ignoré en SQLite). Un schéma dédié permet de
+# partager un projet Supabase existant (ici « nombre-mystere ») sans jamais toucher à ses
+# autres données. Mettre DB_SCHEMA=public pour utiliser le schéma par défaut.
+DB_SCHEMA = os.getenv("DB_SCHEMA") or "analyse_football"
+
 # Jeton exigé (en-tête X-API-Key) sur toutes les routes qui écrivent ou lancent le pipeline.
 API_TOKEN = os.getenv("API_TOKEN")
 
