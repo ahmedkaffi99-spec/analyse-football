@@ -5,7 +5,7 @@ Analyse automatique des matchs de football et génération de coupons combinés 
 | Dossier | Contenu |
 |---|---|
 | [`bet_agent/`](bet_agent/README.md) | le **pipeline** : collecte des matchs et cotes, modèle de Poisson, 3 coupons, rédaction IA, Telegram, vérification des résultats |
-| [`backend/`](backend/README.md) | l'**API REST + base de données** (FastAPI, SQLAlchemy, SQLite ou Supabase/PostgreSQL) : historique, résultats, statistiques |
+| [`backend/`](backend/README.md) | l'**API REST privée + base de données** (FastAPI, SQLAlchemy, SQLite ou Supabase/PostgreSQL) : historique, résultats, statistiques |
 | `analyses/` | analyses manuelles de journées (ex. 22/09/2026) |
 
 Démarrage rapide :

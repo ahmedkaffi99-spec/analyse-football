@@ -5,7 +5,6 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Run
 from app.schemas import RunCreate, RunDetail, RunOut, VerificationOut
-from app.securite import exiger_jeton
 from app.services import runs as service_runs
 from app.services import verification
 
@@ -25,7 +24,7 @@ def lire_run(run_id: int, db: Session = Depends(get_db)):
     return run
 
 
-@router.post("", response_model=RunOut, status_code=202, dependencies=[Depends(exiger_jeton)])
+@router.post("", response_model=RunOut, status_code=202)
 def lancer_run(options: RunCreate, taches: BackgroundTasks, db: Session = Depends(get_db)):
     """Lance le pipeline en arrière-plan (plusieurs minutes : quotas API et LLM). Suivre
     l'avancement avec GET /api/runs/{id}."""
@@ -38,7 +37,7 @@ def lancer_run(options: RunCreate, taches: BackgroundTasks, db: Session = Depend
     return run
 
 
-@router.post("/{run_id}/verification", response_model=VerificationOut, dependencies=[Depends(exiger_jeton)])
+@router.post("/{run_id}/verification", response_model=VerificationOut)
 def verifier_run(run_id: int, db: Session = Depends(get_db)):
     if not db.get(Run, run_id):
         raise HTTPException(404, "Run introuvable")

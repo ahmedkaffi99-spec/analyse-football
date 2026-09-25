@@ -4,7 +4,6 @@ from sqlalchemy.orm import Session
 
 from app.database import engine, get_db
 from app.schemas import ImportIn, RunOut
-from app.securite import exiger_jeton
 from app.services import statistiques
 from app.services.persistance import importer_fichiers
 
@@ -22,7 +21,7 @@ def lire_statistiques(db: Session = Depends(get_db)):
     return statistiques.calculer(db)
 
 
-@router.post("/imports", response_model=RunOut, status_code=201, dependencies=[Depends(exiger_jeton)])
+@router.post("/imports", response_model=RunOut, status_code=201)
 def importer(fichiers: ImportIn, db: Session = Depends(get_db)):
     """Importe donnees_collectees.json et/ou ticket_du_jour.json produits par le cron Termux."""
     try:

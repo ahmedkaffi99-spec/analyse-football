@@ -7,7 +7,6 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Coupon
 from app.schemas import CouponOut, VerificationOut
-from app.securite import exiger_jeton
 from app.services import verification
 
 router = APIRouter(prefix="/api/coupons", tags=["coupons"])
@@ -26,7 +25,7 @@ def lister_coupons(jour: date | None = None, profil: str | None = None, statut: 
     return db.scalars(requete.limit(limite)).all()
 
 
-@router.post("/verification", response_model=VerificationOut, dependencies=[Depends(exiger_jeton)])
+@router.post("/verification", response_model=VerificationOut)
 def verifier_tous(db: Session = Depends(get_db)):
     """Juge toutes les jambes encore en attente dont le match est terminé (à appeler par cron le soir)."""
     return VerificationOut(**verification.verifier_coupons_en_attente(db))

@@ -26,6 +26,14 @@ def base_vide():
 
 @pytest.fixture
 def client():
+    """Client authentifié (l'API est entièrement privée)."""
+    with TestClient(app, headers=JETON) as c:
+        yield c
+
+
+@pytest.fixture
+def anonyme():
+    """Client sans jeton, pour vérifier que tout est refusé."""
     with TestClient(app) as c:
         yield c
 

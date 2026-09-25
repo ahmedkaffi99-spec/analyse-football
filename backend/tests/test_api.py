@@ -3,21 +3,40 @@ from types import SimpleNamespace
 
 from app.services import pipeline
 from app.services.verification import statut_coupon
-from tests.conftest import JETON, collecte_exemple, profils_exemple, ticket_exemple
+from tests.conftest import collecte_exemple, profils_exemple, ticket_exemple
 
 
 def test_sante(client):
     assert client.get("/api/sante").json() == {"statut": "ok", "base": "sqlite"}
 
 
-def test_routes_d_ecriture_protegees(client):
-    assert client.post("/api/runs", json={}).status_code == 401
-    assert client.post("/api/runs", json={}, headers={"X-API-Key": "faux"}).status_code == 401
-    assert client.post("/api/imports", json={"ticket": ticket_exemple()}).status_code == 401
+ROUTES_LECTURE = ["/api/sante", "/api/runs", "/api/runs/1", "/api/coupons", "/api/coupons/1",
+                  "/api/matchs", "/api/matchs/1", "/api/statistiques"]
+ROUTES_ECRITURE = ["/api/runs", "/api/runs/1/verification", "/api/coupons/verification", "/api/imports"]
+
+
+def test_toute_l_api_est_privee(anonyme):
+    for route in ROUTES_LECTURE:
+        assert anonyme.get(route).status_code == 401, route
+        assert anonyme.get(route, headers={"X-API-Key": "faux"}).status_code == 401, route
+    for route in ROUTES_ECRITURE:
+        assert anonyme.post(route, json={}).status_code == 401, route
+
+
+def test_documentation_desactivee_par_defaut(anonyme):
+    for route in ("/docs", "/redoc", "/openapi.json"):
+        assert anonyme.get(route).status_code == 404, route
+
+
+def test_api_fermee_sans_api_token_configure(client, monkeypatch):
+    from app import config
+
+    monkeypatch.setattr(config, "API_TOKEN", None)
+    assert client.get("/api/coupons").status_code == 503
 
 
 def test_import_collecte_et_ticket(client):
-    r = client.post("/api/imports", json={"collecte": collecte_exemple(), "ticket": ticket_exemple()}, headers=JETON)
+    r = client.post("/api/imports", json={"collecte": collecte_exemple(), "ticket": ticket_exemple()})
     assert r.status_code == 201
     run = client.get(f"/api/runs/{r.json()['id']}").json()
     assert run["source"] == "import" and run["nb_marches"] == 2
@@ -34,7 +53,7 @@ def test_import_collecte_et_ticket(client):
 
 
 def test_import_vide_refuse(client):
-    assert client.post("/api/imports", json={}, headers=JETON).status_code == 422
+    assert client.post("/api/imports", json={}).status_code == 422
 
 
 def _faux_pipeline(monkeypatch, collecte, profils, erreur=None):
@@ -60,7 +79,7 @@ def _faux_pipeline(monkeypatch, collecte, profils, erreur=None):
 
 def test_run_complet_sans_telegram(client, monkeypatch):
     envois = _faux_pipeline(monkeypatch, collecte_exemple(), profils_exemple())
-    r = client.post("/api/runs", json={}, headers=JETON)
+    r = client.post("/api/runs", json={})
     assert r.status_code == 202
     run = client.get(f"/api/runs/{r.json()['id']}").json()  # la tâche de fond est terminée
     assert run["statut"] == "termine" and not run["envoye_telegram"]
@@ -70,7 +89,7 @@ def test_run_complet_sans_telegram(client, monkeypatch):
 
 def test_run_avec_telegram(client, monkeypatch):
     envois = _faux_pipeline(monkeypatch, collecte_exemple(), profils_exemple())
-    r = client.post("/api/runs", json={"envoyer_telegram": True}, headers=JETON)
+    r = client.post("/api/runs", json={"envoyer_telegram": True})
     assert client.get(f"/api/runs/{r.json()['id']}").json()["envoye_telegram"] is True
     assert len(envois) == 1
 
@@ -79,14 +98,14 @@ def test_run_abandonne_sans_marche(client, monkeypatch):
     collecte = collecte_exemple()
     collecte["nb_matchs_avec_marches"] = 0
     _faux_pipeline(monkeypatch, collecte, profils_exemple())
-    r = client.post("/api/runs", json={}, headers=JETON)
+    r = client.post("/api/runs", json={})
     assert client.get(f"/api/runs/{r.json()['id']}").json()["statut"] == "abandonne"
 
 
 def test_run_en_erreur_masque_les_cles(client, monkeypatch):
     _faux_pipeline(monkeypatch, collecte_exemple(), profils_exemple(),
                    erreur=ConnectionError("Max retries /v4/fixtures?apiKey=c1ccd0b3-secret&sportId=10"))
-    r = client.post("/api/runs", json={}, headers=JETON)
+    r = client.post("/api/runs", json={})
     run = client.get(f"/api/runs/{r.json()['id']}").json()
     assert run["statut"] == "erreur"
     assert "c1ccd0b3" not in run["detail"] and "apiKey=***" in run["detail"]
@@ -99,17 +118,17 @@ def test_un_seul_run_a_la_fois(client):
     with SessionLocal() as db:
         db.add(Run(source="api", statut="en_cours"))
         db.commit()
-    assert client.post("/api/runs", json={}, headers=JETON).status_code == 409
+    assert client.post("/api/runs", json={}).status_code == 409
 
 
 def test_verification_et_statistiques(client, monkeypatch):
-    client.post("/api/imports", json={"collecte": collecte_exemple(), "ticket": ticket_exemple()}, headers=JETON)
+    client.post("/api/imports", json={"collecte": collecte_exemple(), "ticket": ticket_exemple()})
     _, _, vr = pipeline.modules()  # vrai module : vraie logique de jugement (grader_pick)
     monkeypatch.setattr(vr, "recuperer_fixtures_du_jour", lambda: {"idLENSAUX": {
         "statusName": "Finished", "participant1Name": "RC Lens", "participant2Name": "AJ Auxerre"}})
     monkeypatch.setattr(vr, "recuperer_score", lambda fid: (2, 1))  # Lens 2-1 Auxerre
 
-    resultat = client.post("/api/coupons/verification", headers=JETON).json()
+    resultat = client.post("/api/coupons/verification").json()
     assert resultat["gagne"] == 2 and resultat["perdu"] == 1  # Over 2.5 ✓, BTTS oui ✓, BTTS non ✗
 
     coupons = {c["profil"]: c for c in client.get("/api/coupons").json()}

@@ -23,3 +23,8 @@ DATABASE_URL = os.getenv("DATABASE_URL") or f"sqlite:///{DOSSIER_DONNEES / 'bet_
 
 # Jeton exigé (en-tête X-API-Key) sur toutes les routes qui écrivent ou lancent le pipeline.
 API_TOKEN = os.getenv("API_TOKEN")
+
+# /docs, /redoc et /openapi.json décrivent toute l'API (routes, paramètres, formats) : désactivés
+# par défaut pour que rien ne soit visible sans jeton. ACTIVER_DOCS=true les réactive (ils ne
+# contiennent aucune donnée ; chaque appel depuis /docs exige quand même le jeton).
+ACTIVER_DOCS = os.getenv("ACTIVER_DOCS", "").lower() in ("1", "true", "oui", "yes")
