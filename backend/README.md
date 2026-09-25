@@ -1,6 +1,6 @@
 # bet_agent — Backend (API + base de données)
 
-API REST **FastAPI** au-dessus du pipeline `../bet_agent/` : elle lance le pipeline, **enregistre tout en base** (matchs, cotes 1xBet, données d'équipe, coupons, jambes), juge les résultats et calcule les performances dans la durée.
+API REST **FastAPI**, **entièrement privée**, au-dessus du pipeline `../bet_agent/` : elle lance le pipeline, **enregistre tout en base** (matchs, cotes 1xBet, données d'équipe, coupons, jambes), juge les résultats et calcule les performances dans la durée.
 
 Le pipeline n'est pas dupliqué : le backend importe ses modules (`collecte_donnees`, `analyser_et_envoyer`, `verifier_resultats`) tels quels.
 
@@ -9,7 +9,7 @@ Le pipeline n'est pas dupliqué : le backend importe ses modules (`collecte_donn
 | Couche | Choix |
 |---|---|
 | Langage | Python 3.10+ |
-| API | FastAPI + Uvicorn · documentation interactive sur `/docs` |
+| API | FastAPI + Uvicorn · documentation `/docs` désactivée par défaut (`ACTIVER_DOCS=true`) |
 | ORM | SQLAlchemy 2 |
 | Base | **SQLite** par défaut (zéro installation) · **PostgreSQL / Supabase** en production via `DATABASE_URL` |
 | Validation | Pydantic 2 |
@@ -35,20 +35,27 @@ Le schéma PostgreSQL est dans [`schema.sql`](schema.sql), régénéré depuis l
 
 ## Routes
 
-| Méthode | Route | Jeton | Rôle |
-|---|---|---|---|
-| GET | `/api/sante` | | état du serveur et de la base |
-| GET | `/api/runs` · `/api/runs/{id}` | | historique des runs (détail avec coupons et jambes) |
-| POST | `/api/runs` | ✅ | lance le pipeline en arrière-plan · corps : `{"envoyer_telegram": false, "rediger": true}` |
-| POST | `/api/runs/{id}/verification` | ✅ | juge les jambes d'un run dont les matchs sont terminés |
-| GET | `/api/coupons` | | filtres `jour`, `profil`, `statut` |
-| GET | `/api/coupons/{id}` | | un coupon et ses jambes |
-| POST | `/api/coupons/verification` | ✅ | juge toutes les jambes en attente (cron du soir) |
-| GET | `/api/matchs` · `/api/matchs/{id}` | | matchs (filtres `jour`, `run_id`) · détail avec toutes les cotes |
-| GET | `/api/statistiques` | | taux de réussite et rendement (1 unité par coupon) par profil, réussite par type de pari |
-| POST | `/api/imports` | ✅ | importe `{"collecte": <donnees_collectees.json>, "ticket": <ticket_du_jour.json>}` |
+**Toutes les routes exigent le jeton** (en-tête `X-API-Key: <API_TOKEN>`), lecture comprise, y compris `/api/sante`. Sans jeton valide : `401`. Sans `API_TOKEN` configuré côté serveur, toute l'API est fermée (`503`), jamais ouverte à tous.
 
-Jeton = en-tête `X-API-Key: <API_TOKEN>`. Sans `API_TOKEN` configuré, les routes d'écriture sont **refusées** (jamais ouvertes à tous).
+| Méthode | Route | Rôle |
+|---|---|---|
+| GET | `/api/sante` | état du serveur et de la base |
+| GET | `/api/runs` · `/api/runs/{id}` | historique des runs (détail avec coupons et jambes) |
+| POST | `/api/runs` | lance le pipeline en arrière-plan · corps : `{"envoyer_telegram": false, "rediger": true}` |
+| POST | `/api/runs/{id}/verification` | juge les jambes d'un run dont les matchs sont terminés |
+| GET | `/api/coupons` | filtres `jour`, `profil`, `statut` |
+| GET | `/api/coupons/{id}` | un coupon et ses jambes |
+| POST | `/api/coupons/verification` | juge toutes les jambes en attente (cron du soir) |
+| GET | `/api/matchs` · `/api/matchs/{id}` | matchs (filtres `jour`, `run_id`) · détail avec toutes les cotes |
+| GET | `/api/statistiques` | taux de réussite et rendement (1 unité par coupon) par profil, réussite par type de pari |
+| POST | `/api/imports` | importe `{"collecte": <donnees_collectees.json>, "ticket": <ticket_du_jour.json>}` |
+
+`/docs`, `/redoc` et `/openapi.json` sont **désactivés par défaut** (ils décrivent toute l'API). `ACTIVER_DOCS=true` les réactive pour développer : ils ne contiennent aucune donnée, et chaque appel depuis `/docs` exige le jeton (bouton **Authorize**).
+
+Exemple :
+```bash
+curl -H "X-API-Key: $API_TOKEN" "http://localhost:8000/api/coupons?jour=2026-09-25"
+```
 
 **Sécurité :** l'envoi Telegram est désactivé par défaut. Un seul run peut tourner à la fois (sinon 409). Les clés API sont masquées dans les erreurs enregistrées en base.
 
@@ -63,7 +70,7 @@ python -m pytest -q             # tests
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-Ouvre ensuite http://localhost:8000/docs.
+Pour explorer l'API dans le navigateur : `ACTIVER_DOCS=true` dans `.env`, puis http://localhost:8000/docs → **Authorize** → ton jeton.
 
 ### Supabase
 1. Dans Supabase, ouvre **SQL Editor** et exécute `schema.sql` (optionnel : le backend crée aussi les tables au démarrage).
@@ -95,7 +102,7 @@ backend/
 │   ├── database.py             moteur SQLAlchemy, sessions
 │   ├── models.py               tables
 │   ├── schemas.py              formats d'entrée/sortie de l'API
-│   ├── securite.py             contrôle du jeton X-API-Key
+│   ├── securite.py             jeton X-API-Key exigé sur toutes les routes
 │   ├── importer.py             import JSON en ligne de commande
 │   ├── generer_schema_sql.py   régénère schema.sql
 │   ├── routers/                runs, coupons, matchs, santé/statistiques/imports
