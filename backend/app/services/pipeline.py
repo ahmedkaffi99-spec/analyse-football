@@ -1,0 +1,37 @@
+"""Pont vers le pipeline existant (bet_agent/) : ses modules sont importés tels quels, sans
+dupliquer leur logique. Import paresseux pour que le backend démarre même si une
+dépendance du pipeline manque."""
+
+import re
+import sys
+
+from app.config import DOSSIER_PIPELINE
+
+
+def modules():
+    if str(DOSSIER_PIPELINE) not in sys.path:
+        sys.path.insert(0, str(DOSSIER_PIPELINE))
+    import analyser_et_envoyer
+    import collecte_donnees
+    import verifier_resultats
+
+    return collecte_donnees, analyser_et_envoyer, verifier_resultats
+
+
+def reinitialiser_caches(cd):
+    """Les modules du pipeline gardent des caches au niveau module, prévus pour un script
+    lancé une fois par jour. Dans un serveur qui tourne plusieurs jours, ils serviraient les
+    données de la veille (Elo du jour, xG, classements) — on les vide avant chaque run."""
+    cd._cache_clubelo = None
+    cd._cache_understat_par_ligue.clear()
+    cd._cache_classement_football_data.clear()
+    cd.UNDERSTAT_SAISON = cd.saison_en_cours()
+
+
+_MOTIF_SECRET = re.compile(r"((?:apiKey|api_key|key|token)=)[^&\s'\")]+", re.IGNORECASE)
+
+
+def masquer_secrets(texte):
+    """Les erreurs réseau de requests contiennent l'URL complète, clé API comprise
+    (constaté dans cron.log) — jamais stockée telle quelle en base."""
+    return _MOTIF_SECRET.sub(r"\1***", texte or "")

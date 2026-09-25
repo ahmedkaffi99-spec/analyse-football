@@ -183,6 +183,8 @@ Exemple de crontab (à adapter à tes horaires) :
 - [x] Repli Telegram en texte brut si le Markdown est rejeté.
 - [x] `.gitignore`, `envi.local.example`, `requirements.txt`, tests hors-ligne.
 
+- [x] Backend API + base de données : voir [`../backend/`](../backend/README.md).
+
 ### ⏳ Prochaines étapes
 1. **Accès réseau** de l'environnement cloud (si le pipeline doit tourner ici) : autoriser les domaines des sources, des LLM et de Telegram.
 2. **Handicaps asiatiques au-delà de ±2** : vérifier la convention de signe d'OddsPapi (incohérence constatée sur Troyes–Paris FC) ; en attendant, exclure ces lignes.
