@@ -8,7 +8,9 @@ Analyse automatique des matchs de football et génération de coupons combinés 
 | [`backend/`](backend/README.md) | l'**API REST privée + base de données** (FastAPI, SQLAlchemy, SQLite ou Supabase/PostgreSQL) : historique, résultats, statistiques |
 | `analyses/` | analyses manuelles de journées (ex. 22/09/2026) |
 
-Démarrage rapide :
+**Mise en production : [DEPLOIEMENT.md](DEPLOIEMENT.md)** — GitHub Actions lance tout chaque jour, Supabase garde l'historique. Aucun téléphone ni serveur.
+
+Développement en local :
 
 ```bash
 pip install -r backend/requirements-dev.txt

@@ -13,7 +13,7 @@ Chaque jour, le pipeline collecte les matchs et les cotes 1xBet, calcule des pro
 | **Python 3** | tous les `.py` | tout le pipeline (collecte, calcul, orchestration, envoi) |
 | **JSON** | `donnees_collectees.json`, `ticket_du_jour.json`, `memoire_agents.json` | échange de données entre les étapes |
 | **Markdown (Telegram)** | messages envoyés | mise en forme des coupons (repli en texte brut si le Markdown casse) |
-| **Cron (shell)** | crontab Termux | planification quotidienne |
+| **YAML** | `.github/workflows/` | planification quotidienne (GitHub Actions) |
 | **Français** | code, commentaires, logs, messages | langue du projet et des coupons |
 
 ---
@@ -21,8 +21,9 @@ Chaque jour, le pipeline collecte les matchs et les cotes 1xBet, calcule des pro
 ## 2. Stack technique
 
 ### Exécution
-- **Appareil** : Samsung Galaxy A56 (12 Go RAM) sous **Termux** (Linux sur Android).
-- **Planification** : `cron` → logs dans `cron.log`.
+- **Exécution** : **GitHub Actions** (serveurs de GitHub, gratuit) — voir [`../DEPLOIEMENT.md`](../DEPLOIEMENT.md). Plus de Termux.
+- **Base de données** : **Supabase** (PostgreSQL) via le backend [`../backend/`](../backend/README.md).
+- **Planification** : workflows GitHub (midi UTC+secours, vérification le soir) → journaux dans l'onglet **Actions**.
 - **Configuration** : `envi.local` (clés API, **jamais committé**, voir `envi.local.example`).
 
 ### Bibliothèques Python (`requirements.txt`)
@@ -65,7 +66,7 @@ Le LLM **n'invente jamais un chiffre** : cotes, probabilités et edges sont calc
 ## 3. Architecture — les agents
 
 ```
-                    cron (midi)
+          GitHub Actions (midi)
                         │
                  orchestrateur.py  ◄── LLM Groq (tool-calling)
                         │
@@ -78,7 +79,7 @@ Le LLM **n'invente jamais un chiffre** : cotes, probabilités et edges sont calc
  donnees_collectees ────┘──► ticket_du_jour.json
         .json                        │
                                      ▼
-                cron (soir, toutes les 30 min)
+            GitHub Actions (soir, toutes les heures)
                         │
                 verifier_resultats.py (Agent 6) ──► bilan Telegram
 ```
@@ -149,7 +150,7 @@ Recherche Monte Carlo pondérée (4000 essais) : cote dans la cible → maximum 
 | `test_correctifs.py` | tests hors-ligne | ✅ |
 | `MEMOIRE.md` | notes de développement | ✅ |
 | `envi.local` | **clés API** | ❌ (`.gitignore`) |
-| `cron.log`, `*.json` générés | sorties de run | ❌ (`.gitignore`) |
+| `*.log`, `*.json` générés | sorties de run (usage local) | ❌ (`.gitignore`) |
 
 ---
 
@@ -164,12 +165,7 @@ python orchestrateur.py              # run complet (ENVOIE sur Telegram)
 python verifier_resultats.py         # bilan du soir
 ```
 
-Exemple de crontab (à adapter à tes horaires) :
-```cron
-0 12 * * *    cd ~/bet_agent && python orchestrateur.py      >> cron.log 2>&1
-30 13 * * *   cd ~/bet_agent && python relancer_si_echec.py  >> cron.log 2>&1
-*/30 14-23 * * * cd ~/bet_agent && python verifier_resultats.py >> cron.log 2>&1
-```
+En production, ces scripts ne sont plus lancés par cron : GitHub Actions exécute le pipeline via le backend (`python -m app.taches`), voir [`../DEPLOIEMENT.md`](../DEPLOIEMENT.md).
 
 ---
 
@@ -184,13 +180,15 @@ Exemple de crontab (à adapter à tes horaires) :
 - [x] `.gitignore`, `envi.local.example`, `requirements.txt`, tests hors-ligne.
 
 - [x] Backend API + base de données : voir [`../backend/`](../backend/README.md).
+- [x] Plus de Termux : GitHub Actions + Supabase ([`../DEPLOIEMENT.md`](../DEPLOIEMENT.md)).
+- [x] Certificat OddsPapi vérifié par défaut (`ODDSPAPI_SSL_NON_VERIFIE=true` seulement sur un réseau qui l'intercepte).
+- [x] `diagnostic.py` teste Understat sur la saison en cours.
 
 ### ⏳ Prochaines étapes
-1. **Accès réseau** de l'environnement cloud (si le pipeline doit tourner ici) : autoriser les domaines des sources, des LLM et de Telegram.
+1. **Mise en production** : suivre [`../DEPLOIEMENT.md`](../DEPLOIEMENT.md) (secrets GitHub, `DATABASE_URL` Supabase, fusion dans `main`).
 2. **Handicaps asiatiques au-delà de ±2** : vérifier la convention de signe d'OddsPapi (incohérence constatée sur Troyes–Paris FC) ; en attendant, exclure ces lignes.
-3. **Clé OddsPapi en clair dans `cron.log`** (dans les URL des erreurs) : masquer `apiKey=` dans les messages d'erreur.
-4. **Diagnostic** : `diagnostic.py` teste encore Understat en saison 2025 → passer à la saison automatique.
-5. **Nettoyage** : retirer les clés inutilisées (`ODDS_API_KEY`, Supabase) ou les brancher (ex. historique des tickets dans Supabase).
+3. **Clés dans les messages d'erreur** : les URL d'erreur contiennent `apiKey=`. Masquées par GitHub dans les journaux Actions et par le backend en base, mais pas encore à la source (`print` du pipeline).
+4. **Nettoyage** : `ODDS_API_KEY` et la clé `service_role` Supabase ne sont pas utilisées (le backend se connecte via `DATABASE_URL`).
 
 ### 💡 Améliorations possibles
 - Normaliser les buts attendus par la moyenne de la ligue (modèle Dixon-Coles).

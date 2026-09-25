@@ -10,10 +10,16 @@ Lance-le depuis le dossier bet_agent (là où se trouve envi.local) :
 import os
 import requests
 import urllib3
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from dotenv import load_dotenv
 
 load_dotenv("envi.local")
+
+# Vérification du certificat OddsPapi : ACTIVE par défaut (GitHub Actions, serveur, PC).
+# ODDSPAPI_SSL_NON_VERIFIE=true seulement sur un réseau qui intercepte le certificat (boîtier
+# Fortinet constaté sur l'ancien environnement Termux) — jamais pour les autres APIs.
+VERIFIER_SSL_ODDSPAPI = os.getenv("ODDSPAPI_SSL_NON_VERIFIE", "").lower() not in ("1", "true", "oui")
+if not VERIFIER_SSL_ODDSPAPI:
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 API_FOOTBALL_KEY = os.getenv("API_FOOTBALL_KEY")
 ODDSPAPI_KEY = os.getenv("ODDSPAPI_KEY")
@@ -65,10 +71,10 @@ try:
 except Exception as e:
     print(f"   ❌ ÉCHEC RÉSEAU : {type(e).__name__} : {e}")
 
-ligne("5) OddsPapi (référence — celui qui marchait, avec verify=False)")
+ligne("5) OddsPapi (certificat vérifié sauf si ODDSPAPI_SSL_NON_VERIFIE=true)")
 try:
     r = requests.get("https://api.oddspapi.io/v4/sports",
-                      params={"apiKey": ODDSPAPI_KEY or ""}, timeout=15, verify=False)
+                      params={"apiKey": ODDSPAPI_KEY or ""}, timeout=15, verify=VERIFIER_SSL_ODDSPAPI)
     print(f"   status_code = {r.status_code}")
     print(f"   corps = {r.text[:300]}")
 except Exception as e:
@@ -76,7 +82,10 @@ except Exception as e:
 
 ligne("6) Understat (HTML, aucune clé)")
 try:
-    r = requests.get("https://understat.com/league/Ligue_1/2025", timeout=15,
+    from datetime import datetime
+    maintenant = datetime.now()
+    saison = maintenant.year if maintenant.month >= 7 else maintenant.year - 1
+    r = requests.get(f"https://understat.com/league/Ligue_1/{saison}", timeout=15,
                       headers={"User-Agent": "Mozilla/5.0"})
     print(f"   status_code = {r.status_code}, taille corps = {len(r.text)} caractères")
 except Exception as e:

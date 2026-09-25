@@ -16,13 +16,19 @@ from urllib3.util.retry import Retry
 # interception ; on désactive donc la vérification UNIQUEMENT pour ce domaine précis (déjà
 # intercepté de toute façon, donc aucune exposition supplémentaire), jamais pour les autres
 # APIs (Telegram, Groq, API-Football, Serper — toutes vérifiées normalement, non affectées).
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from unidecode import unidecode
 from tenacity import retry, stop_after_attempt, wait_fixed, wait_exponential
 
 load_dotenv("envi.local")
+
+# Vérification du certificat OddsPapi : ACTIVE par défaut (GitHub Actions, serveur, PC).
+# ODDSPAPI_SSL_NON_VERIFIE=true seulement sur un réseau qui intercepte le certificat (boîtier
+# Fortinet constaté sur l'ancien environnement Termux) — jamais pour les autres APIs.
+VERIFIER_SSL_ODDSPAPI = os.getenv("ODDSPAPI_SSL_NON_VERIFIE", "").lower() not in ("1", "true", "oui")
+if not VERIFIER_SSL_ODDSPAPI:
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # ------------------------------------------------------------
 # SESSION PARTAGÉE avec retry automatique au niveau connexion (pas au niveau
@@ -832,7 +838,7 @@ def trouver_fixture_api_football(home_cherche, away_cherche, tous_fixtures):
 
 def verifier_quota_oddspapi():
     try:
-        r = SESSION.get("https://api.oddspapi.io/v4/sports", params={"apiKey": ODDSPAPI_KEY}, timeout=(5, 10), verify=False)
+        r = SESSION.get("https://api.oddspapi.io/v4/sports", params={"apiKey": ODDSPAPI_KEY}, timeout=(5, 10), verify=VERIFIER_SSL_ODDSPAPI)
         if r.status_code == 401:
             print("   ❌ Clé OddsPapi invalide (401) — vérifie ODDSPAPI_KEY dans envi.local")
             return False
@@ -854,7 +860,7 @@ def _telecharger_fixtures_oddspapi():
     date_to = (datetime.now() + timedelta(days=2)).strftime("%Y-%m-%dT00:00:00Z")
     url = "https://api.oddspapi.io/v4/fixtures"
     params = {"apiKey": ODDSPAPI_KEY, "sportId": 10, "from": date_from, "to": date_to}
-    r = SESSION.get(url, params=params, timeout=(5, 20), verify=False)
+    r = SESSION.get(url, params=params, timeout=(5, 20), verify=VERIFIER_SSL_ODDSPAPI)
     if r.status_code == 429:
         print(f"   ⚠️ OddsPapi fixtures 429 — corps: {r.text[:200]}")
         raise ValueError("429 rate limited / quota exceeded")
@@ -889,7 +895,7 @@ def get_market_names():
     if MARKET_NAMES_CACHE:
         return MARKET_NAMES_CACHE
     try:
-        r = SESSION.get("https://api.oddspapi.io/v4/markets", params={"apiKey": ODDSPAPI_KEY}, timeout=(5, 15), verify=False)
+        r = SESSION.get("https://api.oddspapi.io/v4/markets", params={"apiKey": ODDSPAPI_KEY}, timeout=(5, 15), verify=VERIFIER_SSL_ODDSPAPI)
         data = r.json()
         for m in data:
             if m.get("sportId") == 10:
@@ -907,7 +913,7 @@ def get_market_names():
 def _telecharger_odds_oddspapi(fixture_id):
     url_odds = "https://api.oddspapi.io/v4/odds"
     params_odds = {"apiKey": ODDSPAPI_KEY, "fixtureId": fixture_id, "bookmakers": "1xbet", "oddsFormat": "decimal"}
-    r2 = SESSION.get(url_odds, params=params_odds, timeout=(5, 20), verify=False)
+    r2 = SESSION.get(url_odds, params=params_odds, timeout=(5, 20), verify=VERIFIER_SSL_ODDSPAPI)
     if r2.status_code == 429:
         raise ValueError("429 rate limited")
     if r2.status_code != 200:

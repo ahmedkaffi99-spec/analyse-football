@@ -27,11 +27,17 @@ from rapidfuzz import fuzz
 # Voir collecte_donnees.py pour le détail : OddsPapi est intercepté par un boîtier réseau
 # (Fortinet) qui re-signe son certificat avec une CA non reconnue — désactivé uniquement
 # pour ce domaine précis (déjà intercepté de toute façon), jamais pour Telegram.
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 from analyser_et_envoyer import notifier_telegram
 
 load_dotenv("envi.local")
+
+# Vérification du certificat OddsPapi : ACTIVE par défaut (GitHub Actions, serveur, PC).
+# ODDSPAPI_SSL_NON_VERIFIE=true seulement sur un réseau qui intercepte le certificat (boîtier
+# Fortinet constaté sur l'ancien environnement Termux) — jamais pour les autres APIs.
+VERIFIER_SSL_ODDSPAPI = os.getenv("ODDSPAPI_SSL_NON_VERIFIE", "").lower() not in ("1", "true", "oui")
+if not VERIFIER_SSL_ODDSPAPI:
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 ODDSPAPI_KEY = os.getenv("ODDSPAPI_KEY")
 TICKET_JSON = "ticket_du_jour.json"
@@ -49,7 +55,7 @@ def recuperer_fixtures_du_jour():
     try:
         r = requests.get("https://api.oddspapi.io/v4/fixtures",
                           params={"apiKey": ODDSPAPI_KEY, "sportId": 10, "from": date_from, "to": date_to},
-                          timeout=20, verify=False)
+                          timeout=20, verify=VERIFIER_SSL_ODDSPAPI)
         if r.status_code != 200:
             return {}
         return {fx["fixtureId"]: fx for fx in r.json()}
@@ -61,7 +67,7 @@ def recuperer_fixtures_du_jour():
 def recuperer_score(fixture_id):
     try:
         r = requests.get("https://api.oddspapi.io/v4/scores",
-                          params={"apiKey": ODDSPAPI_KEY, "fixtureId": fixture_id}, timeout=15, verify=False)
+                          params={"apiKey": ODDSPAPI_KEY, "fixtureId": fixture_id}, timeout=15, verify=VERIFIER_SSL_ODDSPAPI)
         if r.status_code != 200:
             return None
         periodes = r.json().get("scores", {}).get("periods", {})

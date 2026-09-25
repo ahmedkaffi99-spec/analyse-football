@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS coupons (
 	proba_combinee_pct FLOAT, 
 	texte TEXT, 
 	statut VARCHAR(20) NOT NULL, 
+	bilan_envoye BOOLEAN NOT NULL, 
 	PRIMARY KEY (id), 
 	FOREIGN KEY(run_id) REFERENCES runs (id) ON DELETE CASCADE
 );

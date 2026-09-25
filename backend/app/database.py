@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from app.config import DATABASE_URL, DOSSIER_DONNEES
@@ -31,3 +31,10 @@ def init_db():
     from app import models  # noqa: F401 — enregistre les tables sur Base.metadata
 
     Base.metadata.create_all(engine)
+    if engine.dialect.name == "postgresql":
+        # Supabase expose le schéma public via son API REST : sans RLS, la clé publique "anon"
+        # pourrait lire/modifier ces tables. Activé à chaque démarrage (sans effet si déjà
+        # actif) ; le backend se connecte avec le rôle postgres, qui contourne le RLS.
+        with engine.begin() as connexion:
+            for table in Base.metadata.sorted_tables:
+                connexion.execute(text(f'ALTER TABLE "{table.name}" ENABLE ROW LEVEL SECURITY'))

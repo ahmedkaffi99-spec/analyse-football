@@ -45,7 +45,7 @@ Le schéma PostgreSQL est dans [`schema.sql`](schema.sql), régénéré depuis l
 | POST | `/api/runs/{id}/verification` | juge les jambes d'un run dont les matchs sont terminés |
 | GET | `/api/coupons` | filtres `jour`, `profil`, `statut` |
 | GET | `/api/coupons/{id}` | un coupon et ses jambes |
-| POST | `/api/coupons/verification` | juge toutes les jambes en attente (cron du soir) |
+| POST | `/api/coupons/verification` | juge toutes les jambes en attente |
 | GET | `/api/matchs` · `/api/matchs/{id}` | matchs (filtres `jour`, `run_id`) · détail avec toutes les cotes |
 | GET | `/api/statistiques` | taux de réussite et rendement (1 unité par coupon) par profil, réussite par type de pari |
 | POST | `/api/imports` | importe `{"collecte": <donnees_collectees.json>, "ticket": <ticket_du_jour.json>}` |
@@ -76,18 +76,17 @@ Pour explorer l'API dans le navigateur : `ACTIVER_DOCS=true` dans `.env`, puis h
 1. Dans Supabase, ouvre **SQL Editor** et exécute `schema.sql` (optionnel : le backend crée aussi les tables au démarrage).
 2. Mets la chaîne de connexion PostgreSQL dans `DATABASE_URL` : **Project Settings → Database**, préfixe `postgresql+psycopg://`. Ce n'est pas `SUPABASE_URL`, qui est l'URL de l'API REST.
 
-### Termux (Android)
-FastAPI dépend de `pydantic-core`, compilé en Rust : `pkg install rust` avant le `pip install`. Sinon, héberge le backend ailleurs et garde le cron Termux pour le pipeline, en important ses fichiers (voir ci-dessous).
+## Tâches planifiées (GitHub Actions)
 
-## Utilisation avec cron
+En production, pas de serveur : GitHub Actions appelle directement ces commandes (voir [`../DEPLOIEMENT.md`](../DEPLOIEMENT.md)) :
 
-**Option A — le backend pilote tout :**
-```cron
-0 12 * * *       curl -s -X POST localhost:8000/api/runs -H "X-API-Key: $API_TOKEN" -H "Content-Type: application/json" -d '{"envoyer_telegram": true}'
-*/30 14-23 * * * curl -s -X POST localhost:8000/api/coupons/verification -H "X-API-Key: $API_TOKEN"
+```bash
+python -m app.taches run --telegram                  # pipeline du jour, enregistré en base + Telegram
+python -m app.taches run --si-aucun-ticket-aujourdhui  # passage de secours
+python -m app.taches verifier --telegram             # juge les paris terminés + bilan Telegram (une fois par jour)
 ```
 
-**Option B — le pipeline Termux actuel continue, le backend archive :**
+Import manuel d'anciens fichiers JSON du pipeline :
 ```bash
 python -m app.importer --collecte ../bet_agent/donnees_collectees.json --ticket ../bet_agent/ticket_du_jour.json
 ```
@@ -103,6 +102,7 @@ backend/
 │   ├── models.py               tables
 │   ├── schemas.py              formats d'entrée/sortie de l'API
 │   ├── securite.py             jeton X-API-Key exigé sur toutes les routes
+│   ├── taches.py               tâches planifiées (GitHub Actions) : run, verifier
 │   ├── importer.py             import JSON en ligne de commande
 │   ├── generer_schema_sql.py   régénère schema.sql
 │   ├── routers/                runs, coupons, matchs, santé/statistiques/imports
@@ -111,6 +111,7 @@ backend/
 │       ├── persistance.py      écriture des collectes et coupons en base
 │       ├── runs.py             exécution d'un run
 │       ├── verification.py     jugement des jambes (logique de verifier_resultats.py)
+│       ├── bilan.py            bilan Telegram du soir
 │       └── statistiques.py     performances
 ├── tests/
 ├── schema.sql

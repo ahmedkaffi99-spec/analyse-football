@@ -23,13 +23,19 @@ import urllib3
 # Voir collecte_donnees.py pour le détail : OddsPapi est intercepté par un boîtier réseau
 # (Fortinet) qui re-signe son certificat avec une CA non reconnue — désactivé uniquement
 # pour ce domaine précis (déjà intercepté de toute façon), jamais pour Telegram/Groq/Gemini.
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from unidecode import unidecode
 from tenacity import retry, stop_after_attempt, wait_fixed
 
 load_dotenv("envi.local")
+
+# Vérification du certificat OddsPapi : ACTIVE par défaut (GitHub Actions, serveur, PC).
+# ODDSPAPI_SSL_NON_VERIFIE=true seulement sur un réseau qui intercepte le certificat (boîtier
+# Fortinet constaté sur l'ancien environnement Termux) — jamais pour les autres APIs.
+VERIFIER_SSL_ODDSPAPI = os.getenv("ODDSPAPI_SSL_NON_VERIFIE", "").lower() not in ("1", "true", "oui")
+if not VERIFIER_SSL_ODDSPAPI:
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -942,7 +948,7 @@ def verifier_fraicheur_matchs(matchs_exploitables):
     try:
         r = requests.get("https://api.oddspapi.io/v4/fixtures",
                           params={"apiKey": ODDSPAPI_KEY, "sportId": 10, "from": date_from, "to": date_to},
-                          timeout=20, verify=False)
+                          timeout=20, verify=VERIFIER_SSL_ODDSPAPI)
         fixtures_actuelles = {fx["fixtureId"]: fx for fx in r.json()} if r.status_code == 200 else {}
     except Exception as e:
         print(f"   ⚠️ Impossible de revérifier la fraîcheur des matchs ({e}) — poursuite sans ce filtre.")
@@ -1281,7 +1287,7 @@ def estimer_heure_fin_ticket(selections_finales):
     try:
         r = requests.get("https://api.oddspapi.io/v4/fixtures",
                           params={"apiKey": ODDSPAPI_KEY, "sportId": 10, "from": date_from, "to": date_to},
-                          timeout=20, verify=False)
+                          timeout=20, verify=VERIFIER_SSL_ODDSPAPI)
         fixtures = {fx["fixtureId"]: fx for fx in r.json()} if r.status_code == 200 else {}
     except Exception as e:
         print(f"⚠️ Impossible d'estimer l'heure de fin du ticket : {e}")

@@ -90,6 +90,7 @@ class Coupon(Base):
     proba_combinee_pct: Mapped[float | None] = mapped_column(Float)
     texte: Mapped[str | None] = mapped_column(Text)  # ticket rédigé par le LLM
     statut: Mapped[str] = mapped_column(String(20), default="en_attente", index=True)
+    bilan_envoye: Mapped[bool] = mapped_column(Boolean, default=False)  # bilan Telegram du soir
 
     run: Mapped[Run] = relationship(back_populates="coupons")
     jambes: Mapped[list["Jambe"]] = relationship(back_populates="coupon", cascade="all, delete-orphan",
