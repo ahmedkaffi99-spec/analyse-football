@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as DelaiDepasse,
 # Voir collecte_donnees.py pour le détail : OddsPapi est intercepté par un boîtier réseau
 # (Fortinet) qui re-signe son certificat avec une CA non reconnue — désactivé uniquement
 # pour ce domaine précis (déjà intercepté de toute façon), jamais pour Telegram/OpenRouter.
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 from unidecode import unidecode
 
@@ -1307,6 +1307,24 @@ def calculer_stats_combine(selections_finales):
     return round(cote_totale, 2), round(proba_combinee * 100, 1)
 
 
+MINUTES_MIN_AVANT_COUP_ENVOI = 45  # même règle qu'à la collecte : pas de match qui commence bientôt
+
+
+def coup_envoi_assez_loin(depart_iso, maintenant=None):
+    """Faux si le match commence dans moins de MINUTES_MIN_AVANT_COUP_ENVOI minutes. Indispensable
+    quand l'analyse reprend une collecte faite plus tôt (--depuis-run). Heure illisible : gardé."""
+    if not depart_iso:
+        return True
+    try:
+        depart = datetime.fromisoformat(str(depart_iso).replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    if depart.tzinfo is None:
+        depart = depart.replace(tzinfo=timezone.utc)
+    maintenant = maintenant or datetime.now(timezone.utc)
+    return depart - maintenant >= timedelta(minutes=MINUTES_MIN_AVANT_COUP_ENVOI)
+
+
 def verifier_fraicheur_matchs(matchs_exploitables):
     """Filet de sécurité fraîcheur : la sélection initiale (collecte_donnees.py) ne garde
     que les matchs 'Pre-Game' avec cotes actives, mais un match peut démarrer ou se
@@ -1332,11 +1350,13 @@ def verifier_fraicheur_matchs(matchs_exploitables):
     for m in matchs_exploitables:
         fid = m["oddspapi"]["fixture_id"]
         fx = fixtures_actuelles.get(fid)
-        if fx and fx.get("statusName") == "Pre-Game" and fx.get("hasOdds"):
+        if fx and fx.get("statusName") == "Pre-Game" and fx.get("hasOdds") and coup_envoi_assez_loin(fx.get("startTime")):
             encore_valables.append(m)
         else:
             demande = m["match_demande"]
             statut = fx.get("statusName") if fx else "introuvable"
+            if fx and statut == "Pre-Game" and fx.get("hasOdds"):
+                statut = f"coup d'envoi à {fx.get('startTime')}, moins de {MINUTES_MIN_AVANT_COUP_ENVOI} min"
             print(f"   ⚠️ {demande['home']} vs {demande['away']} n'est plus pariable "
                   f"(statut actuel : {statut}) — retiré avant construction des coupons.")
 
