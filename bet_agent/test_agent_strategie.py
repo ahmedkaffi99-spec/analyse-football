@@ -109,3 +109,42 @@ class TestStratege(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestCoherenceDesRaisons(unittest.TestCase):
+    def test_raison_d_un_autre_pari_renvoyee_a_l_ia(self):
+        # Run 11 : raison « Under 2 à 1.65 » écrite pour un Over @ 3.16
+        self.assertIn("cite la cote 1.65", st.incoherence_raison("Under 2 à 1.65, forte probabilité",
+                                                                 {"cote": 3.16, "selection": "Over"}))
+        self.assertIn("« no »", st.incoherence_raison("Aucune équipe ne marque : No au BTTS",
+                                                      {"cote": 1.8, "selection": "Yes"}))
+        for raison, pick in [("Over 1.5 à 1.9, attractif", {"cote": 1.9, "selection": "Over"}),
+                             ("probabilité estimée à 31.5 % et cote @ 3.65", {"cote": 3.65, "selection": "Yes"}),
+                             ("Double Chance 2X à 1.491", {"cote": 1.491, "selection": "2X"})]:
+            self.assertIsNone(st.incoherence_raison(raison, pick), raison)
+
+    def test_la_raison_incoherente_est_corrigee_au_tour_suivant(self):
+        mauvaise = _reponse([
+            {"profil": "profil1", "strategie": "s", "jambes": [{"id": "P1", "raison": "Under à 1.5"},
+                                                             {"id": "P3", "raison": "r3"}]},
+            {"profil": "profil2", "strategie": "s", "jambes": [
+                {"id": "P2", "raison": "r2"}, {"id": "P4", "raison": "r4"}, {"id": "P5", "raison": "r5"}]}])
+        bonne = _reponse([
+            {"profil": "profil1", "strategie": "s", "jambes": [{"id": "P1", "raison": "Over à 1.6, buts attendus"},
+                                                             {"id": "P3", "raison": "r3"}]}])
+        appel = mock.Mock(side_effect=[mauvaise, bonne])
+        resultat = st.composer_coupons(POOL, PROFILS, appel=appel)
+        self.assertEqual(appel.call_count, 2)
+        self.assertIn("P1 : ta raison", appel.call_args_list[1].args[0])  # le problème est renvoyé à l'IA
+        p1 = resultat["coupons"]["profil1"]["selections"]
+        self.assertEqual(p1[0]["raison_ia"], "Over à 1.6, buts attendus")
+
+
+class TestCoupEnvoi(unittest.TestCase):
+    def test_match_qui_commence_bientot_ecarte_a_la_reprise(self):
+        from datetime import datetime, timezone
+        maintenant = datetime(2026, 9, 26, 13, 0, tzinfo=timezone.utc)
+        self.assertFalse(ae.coup_envoi_assez_loin("2026-09-26T13:30:00Z", maintenant))
+        self.assertFalse(ae.coup_envoi_assez_loin("2026-09-26T12:00:00Z", maintenant))
+        self.assertTrue(ae.coup_envoi_assez_loin("2026-09-26T18:45:00Z", maintenant))
+        self.assertTrue(ae.coup_envoi_assez_loin(None, maintenant))
