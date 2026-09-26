@@ -25,6 +25,7 @@ def reinitialiser_caches(cd):
     cd._cache_clubelo = None
     cd._cache_understat_par_ligue.clear()
     cd._cache_classement_football_data.clear()
+    cd._cache_stats_equipes.clear()
     cd.UNDERSTAT_SAISON = cd.saison_en_cours()
 
 
