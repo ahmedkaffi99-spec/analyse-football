@@ -109,12 +109,19 @@ def _contenu_reponse(fournisseur, r):
 # aucun appel API supplémentaire (Understat/API-Football ne sont plus utilisés ici)
 # ============================================================
 
+NB_MATCHS_MIN_STATS = 5  # TheSportsDB fournit les 5 derniers matchs
+
+
 def calculer_xg_depuis_stats(stats_home, stats_away):
     """Calcule mu_home/mu_away à partir des vraies stats historiques (buts marqués/encaissés,
     domicile/extérieur), quand les deux équipes en disposent. Méthode standard :
     mu_home = moyenne(buts marqués à domicile par l'équipe domicile, buts encaissés à
     l'extérieur par l'équipe extérieure) — et symétriquement pour mu_away."""
     if not stats_home or not stats_away:
+        return None
+    # Échantillon trop petit (ex. 3 matchs amicaux) : moyenne non fiable (constaté : Honduras
+    # à 0.15 but attendu) — repli sur l'estimation depuis les cotes du marché.
+    if min(stats_home.get("matchs_joues") or 0, stats_away.get("matchs_joues") or 0) < NB_MATCHS_MIN_STATS:
         return None
     bm_dom = stats_home.get("buts_marques_domicile")
     be_dom = stats_home.get("buts_encaisses_domicile")
@@ -387,6 +394,12 @@ def candidat_valide(edge, proba):
     return bool(edge) and SEUIL_EDGE < edge <= EDGE_MAX_PLAUSIBLE and proba * 100 >= PROBA_MIN_FORTE
 
 
+def est_marche_match_entier(marche):
+    periode = (marche.get("periode") or "fulltime").lower()
+    nom = (marche.get("marche") or "").lower()
+    return periode == "fulltime" and not any(m in nom for m in ("half", "1st", "2nd", "mi-temps"))
+
+
 def evaluer_marches(marches, mu_home, mu_away, mu_corners=None, mu_cartons=None):
     """Parcourt tous les marchés bruts collectés et calcule un edge réel pour ceux
     qu'on sait modéliser (Total buts/corners/cartons, BTTS, Handicap Asiatique,
@@ -405,6 +418,12 @@ def evaluer_marches(marches, mu_home, mu_away, mu_corners=None, mu_cartons=None)
         nom = (marche.get("marche") or "").lower()
         handicap = marche.get("handicap")
         selections = marche.get("selections", [])
+
+        # Le modèle ne connaît que le MATCH ENTIER : un marché de mi-temps évalué avec les buts
+        # (ou corners) attendus sur 90 minutes donne des probabilités absurdes (constaté le
+        # 2026-09-26 : "Corners 2e mi-temps plus de 3.5" à 98,5 %). On les ignore.
+        if not est_marche_match_entier(marche):
+            continue
 
         # --- Total (Over/Under) — buts (match/équipe1/équipe2), corners, ou cartons ---
         _a_over = any("over" in s["selection"].lower() for s in selections)
@@ -527,7 +546,10 @@ def evaluer_marches(marches, mu_home, mu_away, mu_corners=None, mu_cartons=None)
                     candidats.append(_candidat(marche["marche"], handicap, s, proba, edge, "Handicap Asiatique"))
 
         # --- Odd/Even (Pair/Impair) — nombre total de buts du match ---
-        elif "odd even" in nom and "team" not in nom:
+        elif ("odd even" in nom and "team" not in nom
+              and "corner" not in nom and "card" not in nom and "booking" not in nom):
+            # Pair/impair des BUTS du match uniquement — "Corners - Odd Even" était évalué
+            # à tort avec les buts attendus (constaté le 2026-09-26).
             p_impair = proba_total_impair(mu_total_buts)
             p_pair = 1 - p_impair
             for s in selections:
