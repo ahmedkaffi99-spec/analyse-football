@@ -3,10 +3,12 @@
 Aucun téléphone ni serveur à gérer : **GitHub Actions** lance le pipeline chaque jour et vérifie les résultats le soir, **Supabase** (PostgreSQL) conserve tout l'historique.
 
 ```
-GitHub Actions ─┬─ 10h00 UTC  Pipeline quotidien  → collecte, 3 coupons, rédaction IA → Supabase + Telegram
-                ├─ 11h30 UTC  passage de secours   → relance seulement si aucun ticket aujourd'hui
-                └─ 15h→23h UTC, toutes les heures  → juge les paris terminés → Supabase + bilan Telegram
+GitHub Actions ─┬─ 10h07 UTC  Pipeline quotidien  → collecte, 3 coupons, IA → Supabase + Telegram
+                ├─ 10h37, 11h07, 11h37 UTC         → secours : seulement si rien n'est parti sur Telegram
+                └─ 15h13→23h13 UTC, chaque heure   → juge les paris terminés → Supabase + bilan Telegram
 ```
+
+Minutes décalées exprès : GitHub saute souvent les tâches planifiées pile sur l'heure.
 
 | Workflow | Fichier | Remplace (Termux) |
 |---|---|---|

@@ -4,8 +4,13 @@ name: Pipeline quotidien
 
 on:
   schedule:
-    - cron: "0 10 * * *"   # 10h00 UTC = 12h00 heure de Paris l'été (11h00 l'hiver)
-    - cron: "30 11 * * *"  # passage de secours : relance seulement si aucun ticket aujourd'hui
+    # GitHub saute souvent les crons placés pile sur l'heure (aucun passage le 2026-09-26) :
+    # minutes décalées + passages de secours. Chaque passage ne fait rien si les coupons du
+    # jour sont déjà partis sur Telegram ou si un run est en cours.
+    - cron: "7 10 * * *"   # ~10h07 UTC = 12h07 heure de Paris l'été (11h07 l'hiver)
+    - cron: "37 10 * * *"
+    - cron: "7 11 * * *"
+    - cron: "37 11 * * *"
   workflow_dispatch:
     inputs:
       telegram:
@@ -42,7 +47,6 @@ jobs:
       TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       EVENEMENT: ${{ github.event_name }}
-      PLANIFICATION: ${{ github.event.schedule }}
       TELEGRAM_MANUEL: ${{ inputs.telegram }}
       DEPUIS_RUN: ${{ inputs.depuis_run }}
     steps:
@@ -70,10 +74,7 @@ jobs:
         run: |
           ARGS="run"
           if [ "$EVENEMENT" = "schedule" ]; then
-            ARGS="$ARGS --telegram"
-            if [ "$PLANIFICATION" = "30 11 * * *" ]; then
-              ARGS="$ARGS --si-aucun-ticket-aujourdhui"
-            fi
+            ARGS="$ARGS --telegram --si-aucun-ticket-aujourdhui"
           elif [ "$TELEGRAM_MANUEL" = "true" ]; then
             ARGS="$ARGS --telegram"
           fi

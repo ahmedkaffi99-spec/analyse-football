@@ -4,7 +4,7 @@ name: Vérification des résultats
 
 on:
   schedule:
-    - cron: "0 15-23 * * *"  # toutes les heures de 15h à 23h UTC
+    - cron: "13 15-23 * * *"  # toutes les heures de 15h à 23h UTC (minute décalée : GitHub saute souvent :00)
   workflow_dispatch:
 
 concurrency:

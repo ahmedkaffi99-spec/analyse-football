@@ -298,6 +298,30 @@ class TestOpenRouterSeulement(unittest.TestCase):
         self.assertEqual(appels, [("https://openrouter.ai/api/v1/chat/completions", ae.OPENROUTER_MODELS[0], "analyse-football")])
         self.assertFalse(hasattr(ae, "appel_groq") or hasattr(ae, "appel_gemini"))
 
+    def test_reponse_trop_lente_abandonnee_pour_le_modele_suivant(self):
+        import threading
+        liberer = threading.Event()
+        ok = mock.Mock(status_code=200, headers={}, json=lambda: {"choices": [{"message": {"content": "{}"}}]})
+        modeles, charges = [], []
+
+        def post(url, timeout, headers, json):
+            modeles.append(json["model"])
+            charges.append(json)
+            if len(modeles) == 1:
+                liberer.wait(5)  # le 1er modèle « répond au compte-gouttes »
+            return ok
+
+        with mock.patch.object(ae, "OPENROUTER_API_KEY", "cle"), \
+                mock.patch.object(ae, "DELAI_REQUETE_IA_MAX", 0.2), \
+                mock.patch.object(ae.requests, "post", post), \
+                mock.patch.object(ae.time, "sleep"):
+            ae.reinitialiser_budget_ia()
+            self.assertEqual(ae.appel_llm("test", json_attendu=True), "{}")
+            liberer.set()
+            ae.reinitialiser_budget_ia()
+        self.assertEqual(modeles, ae.OPENROUTER_MODELS[:2])
+        self.assertEqual(charges[1]["response_format"], {"type": "json_object"})
+
     def test_budget_ia_epuise_plus_aucun_appel(self):
         horloge = [1000.0]
         lent = mock.Mock(status_code=504, headers={}, json=lambda: {"error": {"message": "timeout"}})
