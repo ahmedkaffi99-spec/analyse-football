@@ -1679,13 +1679,43 @@ def agent4_rediger_coupons(resultats_profils):
 TELEGRAM_LIMITE_CARACTERES = 4096  # limite dure de l'API Telegram par message
 
 
+def decouper_message_telegram(entete, section, pied, limite=TELEGRAM_LIMITE_CARACTERES):
+    """Découpe une section (un profil de coupon) en un ou plusieurs messages Telegram sans
+    jamais couper un bloc de match en plein milieu (chaque bloc commence par "⚽ "). Avec
+    10 à 15 matchs détaillés dans un seul coupon, le texte dépasse régulièrement la limite
+    dure de 4096 caractères de Telegram ('Bad Request: message is too long') — on répartit
+    les blocs sur plusieurs messages successifs plutôt que de tronquer et perdre des matchs."""
+    marge_continuation = len("\n\n_(suite 9/9 dans le message suivant...)_") + 10
+    blocs = re.split(r"(?=\n⚽ )", section)  # garde le "⚽ " en tête de chaque bloc conservé
+    morceaux = [blocs[0]]
+    for bloc in blocs[1:]:
+        disponible = limite - len(pied) - marge_continuation
+        if len(morceaux[-1]) + len(bloc) > disponible and morceaux[-1].strip():
+            morceaux.append(bloc)
+        else:
+            morceaux[-1] += bloc
+
+    total = len(morceaux)
+    messages = []
+    for i, morceau in enumerate(morceaux, start=1):
+        prefixe = entete if i == 1 else entete.split("\n", 1)[0] + f" — partie {i}/{total}\n\n"
+        suffixe = pied if i == total else f"\n\n_(suite {i}/{total} dans le message suivant...)_"
+        message = prefixe + morceau + suffixe
+        if len(message) > limite:
+            # Cas extrême : un seul bloc de match dépasse à lui seul la limite (ne devrait
+            # jamais arriver en pratique) — filet de sécurité, coupe proprement ce morceau-là.
+            coupe = limite - len("\n\n_[message tronqué — trop long pour Telegram]_")
+            message = message[:coupe] + "\n\n_[message tronqué — trop long pour Telegram]_"
+        messages.append(message)
+    return messages
+
+
 def agent5_envoyer_coupons(sections):
-    """AGENT 5 — LIVRAISON. Envoie CHAQUE profil dans son PROPRE message Telegram — jamais un
-    seul message pour plusieurs profils (avec plusieurs jambes détaillées, le texte dépasse
-    vite la limite dure de 4096 caractères de Telegram, constaté en pratique : 'Bad Request:
-    message is too long'). Vérifie le succès RÉEL de chaque envoi (notifier_telegram renvoie
-    False en cas d'échec) plutôt que de supposer que ça a marché. Renvoie True seulement si
-    TOUS les messages sont partis."""
+    """AGENT 5 — LIVRAISON. Envoie CHAQUE profil dans son PROPRE message (ou plusieurs
+    messages successifs si trop long — voir decouper_message_telegram) — jamais un seul
+    message pour plusieurs profils. Vérifie le succès RÉEL de chaque envoi (notifier_telegram
+    renvoie False en cas d'échec) plutôt que de supposer que ça a marché. Renvoie True
+    seulement si TOUS les messages sont partis."""
     date_str = datetime.now().strftime("%d/%m/%Y à %H:%M")
     entete = f"🎯 *TICKETS DU JOUR — {date_str}*\nedge réel calculé par Poisson · 1xBet\n━━━━━━━━━━━━━━━━━━━━\n\n"
     pied = (
@@ -1695,19 +1725,15 @@ def agent5_envoyer_coupons(sections):
 
     tout_envoye = True
     for i, section in enumerate(sections, start=1):
-        message = entete + section + pied
-        if len(message) > TELEGRAM_LIMITE_CARACTERES:
-            # Filet de sécurité : coupe proprement plutôt que de laisser Telegram rejeter
-            # tout le message — perd le pied de page mais garde le contenu utile (le pari).
-            coupe = TELEGRAM_LIMITE_CARACTERES - len("\n\n_[message tronqué — trop long pour Telegram]_")
-            message = message[:coupe] + "\n\n_[message tronqué — trop long pour Telegram]_"
-            print(f"   ⚠️ Profil {i}/{len(sections)} tronqué ({len(entete) + len(section) + len(pied)} caractères, limite {TELEGRAM_LIMITE_CARACTERES})")
-        print(f"   📤 Envoi Telegram {i}/{len(sections)}...")
-        ok = notifier_telegram(message)
-        tout_envoye = tout_envoye and ok
-        if not ok:
-            print(f"   ❌ Échec d'envoi pour le message {i}/{len(sections)} — voir erreur ci-dessus.")
-        time.sleep(1)  # évite de rafaler l'API Telegram entre plusieurs messages
+        messages = decouper_message_telegram(entete, section, pied)
+        for j, message in enumerate(messages, start=1):
+            suffixe_log = f" (partie {j}/{len(messages)})" if len(messages) > 1 else ""
+            print(f"   📤 Envoi Telegram {i}/{len(sections)}{suffixe_log}...")
+            ok = notifier_telegram(message)
+            tout_envoye = tout_envoye and ok
+            if not ok:
+                print(f"   ❌ Échec d'envoi pour le message {i}/{len(sections)}{suffixe_log} — voir erreur ci-dessus.")
+            time.sleep(1)  # évite de rafaler l'API Telegram entre plusieurs messages
 
     return tout_envoye
 

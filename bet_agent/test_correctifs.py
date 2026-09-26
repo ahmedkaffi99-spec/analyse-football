@@ -66,6 +66,27 @@ class TestTelegram(unittest.TestCase):
         self.assertIn("parse_mode", envoyes[0])
         self.assertNotIn("parse_mode", envoyes[1])
 
+    def test_coupon_trop_long_est_decoupe_pas_tronque(self):
+        # Run 20 (2026-09-26) : un coupon de 12 jambes a dépassé 4096 caractères et Telegram
+        # a coupé le message en plein milieu, perdant le dernier match et le pied de page.
+        entete = "🎯 *TICKETS DU JOUR — 26/09/2026 à 14:50*\nedge réel calculé par Poisson · 1xBet\n━━━━━━━━━━━━━━━━━━━━\n\n"
+        pied = "\n\n━━━━━━━━━━━━━━━━━━━━\n⚠️ _Analyse automatisée à titre indicatif._"
+        bloc_match = "⚽ Équipe A{n} vs Équipe B{n}\n   🎯 Marché : Under @ 1.30 (edge 4.0%)\n" + "   🧠 Pourquoi : texte explicatif assez long pour peser sur la limite. " * 5
+        section = "🎯 COUPON DU JOUR — 12 jambes sur 12 matchs\n\n🧭 Stratégie : texte de stratégie.\n\n"
+        section += "\n".join(bloc_match.format(n=n) for n in range(1, 13))
+
+        messages = ae.decouper_message_telegram(entete, section, pied)
+
+        self.assertGreater(len(messages), 1)  # bien découpé, pas un seul message tronqué
+        for message in messages:
+            self.assertLessEqual(len(message), ae.TELEGRAM_LIMITE_CARACTERES)
+        # aucun match perdu : les 12 "⚽ Équipe A{n}" se retrouvent tous, répartis sur les messages
+        texte_complet = "".join(messages)
+        for n in range(1, 13):
+            self.assertIn(f"⚽ Équipe A{n} vs", texte_complet)
+        self.assertNotIn("tronqué", texte_complet)
+        self.assertIn(pied.strip(), messages[-1])  # le pied de page est bien présent (dernier message)
+
 
 class TestListeManuellePerimee(unittest.TestCase):
     def _collecter(self, date_liste):
