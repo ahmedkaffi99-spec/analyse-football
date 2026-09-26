@@ -177,22 +177,23 @@ def test_tester_les_ia_groq_et_gemini(capsys, monkeypatch):
     def get(url, headers, timeout, params=None):
         appels.append(url)
         if "groq" in url:
-            return SimpleNamespace(status_code=200, json=lambda: {"data": [{"id": "llama-3.3-70b-versatile"}]})
+            return SimpleNamespace(status_code=200, json=lambda: {"data": [{"id": "openai/gpt-oss-120b"}]})
         return SimpleNamespace(status_code=200, json=lambda: {"models": [
-            {"name": "models/gemini-2.5-flash", "supportedGenerationMethods": ["generateContent"]}]})
+            {"name": "models/gemini-2.5-flash", "supportedGenerationMethods": ["generateContent"]},
+            {"name": "models/gemini-3.8-flash", "supportedGenerationMethods": ["generateContent"]}]})
 
     def post(url, headers, timeout, json):
         appels.append(url)
         if "groq" in url:
-            assert json["model"] == "llama-3.3-70b-versatile"
+            assert json["model"] == "openai/gpt-oss-120b"
             return SimpleNamespace(status_code=200, json=lambda: {"choices": [{"message": {"content": '{"ok": true}'}}]})
-        assert url.endswith("/models/gemini-2.5-flash:generateContent")
+        assert url.endswith("/models/gemini-3.8-flash:generateContent")
         return SimpleNamespace(status_code=200, json=lambda: {
             "candidates": [{"content": {"parts": [{"text": '{"ok": true}'}]}}]})
 
     assert tache_tester_ia(None, SimpleNamespace(get=get, post=post)) == 0
     sortie = capsys.readouterr().out
-    assert "GROQ | test llama-3.3-70b-versatile : OK" in sortie
-    assert "GEMINI | test gemini-2.5-flash : OK" in sortie
+    assert "GROQ | test openai/gpt-oss-120b : OK" in sortie
+    assert "GEMINI | test gemini-3.8-flash : OK" in sortie
     assert "BILAN | groq OK | gemini OK | openrouter KO" in sortie
     assert "secrete" not in sortie and all("secrete" not in u for u in appels)
