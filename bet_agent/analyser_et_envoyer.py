@@ -91,6 +91,33 @@ OPENROUTER_ATTENTE_429_MAX = 60  # secondes max d'attente quand OpenRouter limit
 # Clé refusée (HTTP 401) : inutile d'essayer d'autres modèles ni de réessayer pendant ce run
 # (run 5 : des dizaines d'appels « User not found » avaient coûté ~7 minutes).
 _cle_openrouter_refusee = None
+# Budget TOTAL de l'IA pour un run (stratège + rédaction). Au-delà, plus aucun appel : le
+# ticket est rédigé en Python. Le run 7 (2026-09-26) avait passé plus de 10 minutes en IA.
+BUDGET_IA_SECONDES = float(os.getenv("BUDGET_IA_SECONDES", "240"))
+DELAI_REQUETE_IA_MAX = 60  # secondes max pour UNE réponse (au-delà : modèle suivant)
+_echeance_ia = None  # démarre au premier appel IA du run
+
+
+def reinitialiser_budget_ia():
+    global _echeance_ia, _cle_openrouter_refusee
+    _echeance_ia, _cle_openrouter_refusee = None, None
+
+
+def secondes_ia_restantes():
+    global _echeance_ia
+    if _echeance_ia is None:
+        _echeance_ia = time.monotonic() + BUDGET_IA_SECONDES
+    return _echeance_ia - time.monotonic()
+
+
+def budget_ia_epuise():
+    return _echeance_ia is not None and time.monotonic() >= _echeance_ia
+
+
+def pause_ia(secondes):
+    """Pause entre deux appels IA, jamais au-delà du budget restant."""
+    if not budget_ia_epuise():
+        time.sleep(max(0.0, min(secondes, secondes_ia_restantes())))
 
 
 def _contenu_reponse(fournisseur, r):
@@ -854,25 +881,32 @@ def appel_openrouter(prompt, max_tokens=2000):
         "X-Title": "analyse-football",
     }
     derniere_erreur = None
+    # Un seul essai par modèle (un modèle lent ou saturé laisse la place au suivant), et
+    # jamais au-delà du budget IA du run.
     for modele in OPENROUTER_MODELS:
-        for tentative in range(2):
-            r = None
-            try:
-                payload = {"model": modele, "messages": [{"role": "user", "content": prompt}], "max_tokens": max_tokens}
-                r = requests.post(url, headers=headers, json=payload, timeout=120)
-                content = _contenu_reponse(f"OpenRouter {modele}", r)
-                print(f"   ✓ Réponse via OpenRouter ({modele})")
-                return content
-            except Exception as e:
-                derniere_erreur = e
-                print(f"   ⚠️ OpenRouter {modele} (essai {tentative + 1}/2) : {_cause(e)[:160]}")
-                if r is not None and r.status_code == 401:
-                    _cle_openrouter_refusee = (f"Clé OpenRouter refusée ({_cause(e)[:120]}) — vérifier le secret "
-                                               "OPENROUTER_API_KEY ; IA désactivée pour ce run")
-                    print(f"   ⛔ {_cle_openrouter_refusee}")
-                    raise ValueError(_cle_openrouter_refusee)
-            # Limite de débit : attendre ce que demande OpenRouter ; sinon courte pause.
-            time.sleep(_attente_limite_debit(r) if r is not None and r.status_code == 429 else 3)
+        restant = secondes_ia_restantes()
+        if restant < 5:
+            raise ValueError(f"Budget IA de {BUDGET_IA_SECONDES:.0f} s épuisé — suite sans IA "
+                             f"(dernière erreur : {derniere_erreur})")
+        r = None
+        try:
+            payload = {"model": modele, "messages": [{"role": "user", "content": prompt}], "max_tokens": max_tokens,
+                       # Réflexion courte pour les modèles de raisonnement (ignoré par les autres).
+                       "reasoning": {"effort": "low"}}
+            r = requests.post(url, headers=headers, json=payload, timeout=min(DELAI_REQUETE_IA_MAX, restant))
+            content = _contenu_reponse(f"OpenRouter {modele}", r)
+            print(f"   ✓ Réponse via OpenRouter ({modele})")
+            return content
+        except Exception as e:
+            derniere_erreur = e
+            print(f"   ⚠️ OpenRouter {modele} : {_cause(e)[:160]}")
+            if r is not None and r.status_code == 401:
+                _cle_openrouter_refusee = (f"Clé OpenRouter refusée ({_cause(e)[:120]}) — vérifier le secret "
+                                           "OPENROUTER_API_KEY ; IA désactivée pour ce run")
+                print(f"   ⛔ {_cle_openrouter_refusee}")
+                raise ValueError(_cle_openrouter_refusee)
+        # Limite de débit : courte attente (bornée) avant le modèle suivant.
+        pause_ia(min(10, _attente_limite_debit(r)) if r is not None and r.status_code == 429 else 1)
     raise ValueError(f"Tous les modèles OpenRouter ont échoué (dernière erreur : {derniere_erreur})")
 
 
@@ -1075,22 +1109,24 @@ def _tache_redaction(donnees_prompt, pronostic_texte, nb_jambes_attendues):
     )
     print("   ✍️ [Tâche 3/3] Rédaction pédagogique du ticket...")
     for tentative in range(3):
+        if budget_ia_epuise():
+            break
         try:
             candidat = appel_llm(prompt, max_tokens=3000)
         except Exception as e:
             print(f"      ⚠️ Tentative {tentative + 1}/3 échouée : {e}")
-            time.sleep(5)
+            pause_ia(5)
             continue
         if not _reponse_ticket_valide(candidat, nb_jambes_attendues):
             print(f"      ⚠️ Tentative {tentative + 1}/3 : réponse invalide/hors-sujet du LLM "
                   f"(attendu {nb_jambes_attendues} jambes '⚽', reçu {candidat.count('⚽') if candidat else 0}) : "
                   f"{candidat[:80] if candidat else '(vide)'!r} — nouvel essai...")
-            time.sleep(5)
+            pause_ia(5)
             continue
         if verifier_pas_de_12(candidat):
             return candidat
         print(f"      ⚠️ Tentative {tentative + 1}/3 : sélection '12' détectée, nouvel essai...")
-        time.sleep(5)
+        pause_ia(5)
     return None
 
 
@@ -1128,16 +1164,15 @@ def agent4_ia_analyse_pronostic_redaction(selections_finales):
     donnees_prompt = _construire_donnees_prompt(selections_finales)
 
     if all(s.get("raison_ia") for s in selections_finales):
-        # Coupon composé par le stratège : son raisonnement tient lieu d'analyse, et la
-        # confiance est déduite de l'edge en Python — 2 appels IA économisés par coupon.
-        pronostic_texte = "\n".join(
-            f"{s['match']} : {s['pick']['marche']} - {s['pick']['selection']} @ {s['pick']['cote']} — "
-            f"Confiance : {niveau_confiance(s['pick']['edge_pct'])}" for s in selections_finales)
+        # Coupon composé ET justifié par le stratège IA : le ticket est assemblé directement
+        # (même format, raisons de l'IA dans « 🧠 Pourquoi ») — aucun appel IA de plus.
+        print("   ✍️ Ticket assemblé à partir des choix et raisons du stratège IA.")
+        return rediger_ticket_sans_ia(selections_finales)
     else:
         analyse_texte = _tache_analyse(donnees_prompt, len(selections_finales))
-        time.sleep(6)
+        pause_ia(6)
         pronostic_texte = _tache_pronostic(donnees_prompt, analyse_texte)
-        time.sleep(6)
+        pause_ia(6)
     ticket_texte = _tache_redaction(donnees_prompt, pronostic_texte, len(selections_finales))
     if not ticket_texte:
         print("   ⚠️ Rédaction IA indisponible — ticket rédigé automatiquement à partir des chiffres calculés.")
@@ -1487,7 +1522,7 @@ def agent4_rediger_trois_coupons(resultats_profils):
             f"💰 Cote totale : *{cote_totale}* · 🎲 Probabilité combinée réelle : *{proba_combinee}%*"
             f"{avertissement_correlation}"
         )
-        time.sleep(6)
+        pause_ia(2)
     return sections
 
 
