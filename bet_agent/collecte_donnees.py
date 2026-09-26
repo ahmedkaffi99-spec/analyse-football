@@ -102,13 +102,18 @@ MATCHS_MANUELS_DATE = "2026-09-26"
 #
 # Demande explicite du 26/09/2026 : TOUS les matchs vus sur 1xbet (marché 1X2 ouvert,
 # captures d'écran fournies) — 3 amicaux internationaux + 10 Ligue des nations UEFA.
+# Noms ajustés au run 14 : "United States" et "Czech Republic" ne correspondaient à AUCUN
+# nom OddsPapi (score fuzzy 25 et 57, seuil 80) — fixture_id_oddspapi resté null pour les
+# deux, malgré des marchés visibles sur l'appli 1xbet. Repris avec l'orthographe OddsPapi
+# ("USA" déjà correcte pour les autres sélections nationales US ; "Czechia" confirmée par
+# les runs précédents, où ce nom a bien trouvé une fixture — sans marché à ce moment-là).
 MATCHS_MANUELS = [
-    ("United States", "Peru"),
+    ("USA", "Peru"),
     ("Canada", "Chile"),
     ("Mexico", "Colombia"),
     ("North Macedonia", "Switzerland"),
     ("Slovakia", "Moldova"),
-    ("Czech Republic", "Croatia"),
+    ("Czechia", "Croatia"),
     ("Faroe Islands", "Kazakhstan"),
     ("Albania", "Belarus"),
     ("England", "Spain"),
