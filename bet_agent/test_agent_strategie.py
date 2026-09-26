@@ -92,7 +92,9 @@ class TestStratege(unittest.TestCase):
     def test_ia_inexploitable_repli_automatique(self):
         self.assertIsNone(st.composer_coupons(POOL, PROFILS, appel=mock.Mock(return_value="Je ne sais pas")))
 
-    def test_integration_generer_trois_coupons(self):
+    def test_integration_generer_coupons_plusieurs_profils(self):
+        # Vérifie que le pipeline reste générique à N profils (PROFILS_COUPON n'en définit
+        # qu'un seul par défaut depuis le 26/09/2026, mais le code doit supporter plusieurs).
         reponse = _reponse([
             {"profil": "profil1", "strategie": "Stratégie sûre", "jambes": [{"id": "P1", "raison": "r"}, {"id": "P3", "raison": "r"}]},
             {"profil": "profil2", "strategie": "s", "jambes": [{"id": "P2"}, {"id": "P4"}, {"id": "P5"}]},
@@ -101,14 +103,23 @@ class TestStratege(unittest.TestCase):
                 mock.patch.object(ae, "PROFILS_COUPON", PROFILS + [
                     {"cle": "profil3", "nom": "🔥 COUPON 3", "cote_min": 50.0, "cote_max": 100.0, "nb_jambes": 8}]), \
                 mock.patch.object(ae, "appel_llm", return_value=reponse), mock.patch.object(ae.time, "sleep"):
-            resultats = ae.generer_trois_coupons({"matchs": []})
+            resultats = ae.generer_coupons({"matchs": []})
         self.assertEqual(resultats[0]["strategie"], "Stratégie sûre")
         self.assertEqual(len(resultats[0]["selections"]), 2)
         self.assertEqual(len(resultats), 3)  # profil3 absent de la réponse IA → composition automatique
 
-
-if __name__ == "__main__":
-    unittest.main()
+    def test_integration_generer_coupons_un_seul_profil(self):
+        # PROFILS_COUPON par défaut depuis le 26/09/2026 : un seul coupon "smart".
+        reponse = _reponse([
+            {"profil": "coupon", "strategie": "Combiné du jour", "jambes": [{"id": "P2", "raison": "r"}, {"id": "P4", "raison": "r"}]},
+        ])
+        profil_unique = [{"cle": "coupon", "nom": "🎯 COUPON DU JOUR", "cote_min": 3.0, "cote_max": 50.0, "nb_jambes": 6}]
+        with mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=POOL), \
+                mock.patch.object(ae, "PROFILS_COUPON", profil_unique), \
+                mock.patch.object(ae, "appel_llm", return_value=reponse), mock.patch.object(ae.time, "sleep"):
+            resultats = ae.generer_coupons({"matchs": []})
+        self.assertEqual(len(resultats), 1)
+        self.assertEqual(resultats[0]["strategie"], "Combiné du jour")
 
 
 class TestCoherenceDesRaisons(unittest.TestCase):
@@ -148,3 +159,7 @@ class TestCoupEnvoi(unittest.TestCase):
         self.assertFalse(ae.coup_envoi_assez_loin("2026-09-26T12:00:00Z", maintenant))
         self.assertTrue(ae.coup_envoi_assez_loin("2026-09-26T18:45:00Z", maintenant))
         self.assertTrue(ae.coup_envoi_assez_loin(None, maintenant))
+
+
+if __name__ == "__main__":
+    unittest.main()

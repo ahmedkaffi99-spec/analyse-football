@@ -3,7 +3,7 @@
 Aucun téléphone ni serveur à gérer : **GitHub Actions** lance le pipeline chaque jour et vérifie les résultats le soir, **Supabase** (PostgreSQL) conserve tout l'historique.
 
 ```
-GitHub Actions ─┬─ 10h07 UTC  Pipeline quotidien  → collecte, 3 coupons, IA → Supabase + Telegram
+GitHub Actions ─┬─ 10h07 UTC  Pipeline quotidien  → collecte, coupon combiné IA → Supabase + Telegram
                 ├─ 10h37, 11h07, 11h37 UTC         → secours : seulement si rien n'est parti sur Telegram
                 └─ 15h13→23h13 UTC, chaque heure   → juge les paris terminés → Supabase + bilan Telegram
 ```
@@ -31,7 +31,7 @@ Les tables sont **déjà créées** dans le schéma `public` (visibles directeme
 | `runs` | exécutions du pipeline |
 | `matchs` | matchs, scores, données d'équipe |
 | `cotes` | cotes 1xBet |
-| `coupons` | les 3 coupons du jour |
+| `coupons` | le(s) coupon(s) du jour (un seul par défaut) |
 | `jambes` | chaque pari et son résultat |
 
 **Sécurité** : RLS actif sur les 5 tables et **aucun droit** pour les rôles publics `anon` / `authenticated` — la clé publique du projet ne permet ni de lire ni d'écrire. Seul le pipeline (rôle `postgres`, via `DATABASE_URL`) y accède. Le backend réapplique ces protections à chaque démarrage.

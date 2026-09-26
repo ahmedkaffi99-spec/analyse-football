@@ -1,5 +1,5 @@
 """Exécution du pipeline depuis l'API. Même enchaînement que orchestrateur.py (collecte →
-3 coupons → rédaction IA → Telegram), mais déterministe (pas de LLM pilote) et avec chaque
+coupon(s) → rédaction IA → Telegram), mais déterministe (pas de LLM pilote) et avec chaque
 étape enregistrée en base. L'envoi Telegram est optionnel et désactivé par défaut."""
 
 import json
@@ -70,15 +70,15 @@ def executer_run(run_id, envoyer_telegram=False, rediger=True, depuis_run=None):
             run.statut, run.detail = "abandonne", "Aucun match avec marchés 1xBet exploitables."
             return
 
-        resultats = ae.generer_trois_coupons(donnees)
+        resultats = ae.generer_coupons(donnees)
         if not any(item["selections"] for item in resultats):
             run.statut, run.detail = "abandonne", "Aucun profil n'a trouvé de sélection valable."
             return
 
-        textes = ae.agent4_rediger_trois_coupons(resultats) if rediger else None
+        textes = ae.agent4_rediger_coupons(resultats) if rediger else None
         enregistrer_coupons(db, run, resultats, index, textes=textes)
         if envoyer_telegram and textes:
-            run.envoye_telegram = bool(ae.agent5_envoyer_trois_coupons(textes))
+            run.envoye_telegram = bool(ae.agent5_envoyer_coupons(textes))
         run.statut = "termine"
     except Exception as e:
         db.rollback()

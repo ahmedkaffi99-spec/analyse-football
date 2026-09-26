@@ -59,15 +59,15 @@ def tool_generer_et_envoyer_trois_coupons():
     if etat["donnees"] is None:
         return {"erreur": "Aucune donnée collectée — appelle collecter_donnees d'abord."}
 
-    resultats_profils = ae.generer_trois_coupons(etat["donnees"])
+    resultats_profils = ae.generer_coupons(etat["donnees"])
     if not any(item["selections"] for item in resultats_profils):
         return {
             "statut": "aucune_selection",
             "detail": "Aucun profil (sûr/équilibré/audacieux) n'a trouvé de sélection valable — envoie un abandon.",
         }
 
-    sections = ae.agent4_rediger_trois_coupons(resultats_profils)
-    tout_envoye = ae.agent5_envoyer_trois_coupons(sections)
+    sections = ae.agent4_rediger_coupons(resultats_profils)
+    tout_envoye = ae.agent5_envoyer_coupons(sections)
     ae.sauvegarder_ticket_du_jour(resultats_profils)
     etat["termine"] = True
     return {

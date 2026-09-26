@@ -84,7 +84,7 @@ def tache_envoyer(args):
             print(f"❌ Run {run.id} ({run.statut}) : aucun coupon rédigé à envoyer.")
             return 1
         _, ae, _ = pipeline.modules()
-        run.envoye_telegram = bool(ae.agent5_envoyer_trois_coupons(textes))
+        run.envoye_telegram = bool(ae.agent5_envoyer_coupons(textes))
         db.commit()
         print(f"{'✅' if run.envoye_telegram else '❌'} Run {run.id} : {len(textes)} coupon(s) "
               f"{'envoyé(s)' if run.envoye_telegram else 'non envoyé(s) — voir erreur Telegram ci-dessus'}")
@@ -271,7 +271,7 @@ def tache_modeles_gratuits(args, requetes=None):
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Tâches planifiées bet_agent")
     sous = parser.add_subparsers(dest="tache", required=True)
-    p_run = sous.add_parser("run", help="collecte + 3 coupons + rédaction IA, enregistrés en base")
+    p_run = sous.add_parser("run", help="collecte + coupon(s) + rédaction IA, enregistrés en base")
     p_run.add_argument("--telegram", action="store_true", help="envoie les coupons sur Telegram")
     p_run.add_argument("--sans-redaction", action="store_true", help="n'appelle pas le LLM")
     p_run.add_argument("--si-aucun-ticket-aujourdhui", action="store_true",

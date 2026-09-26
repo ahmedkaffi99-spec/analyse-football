@@ -135,9 +135,18 @@ class TestCouponsJoursCreux(unittest.TestCase):
     def test_pas_plus_de_deux_paris_par_match_ni_coupons_identiques(self):
         pool = {m: [_selection(m, c, "Over", 1.3 + 0.1 * i) for i, c in enumerate(("Total", "BTTS", "Total Équipe 1"))]
                 for m in ("A vs B", "C vs D", "E vs F")}
+        # 3 profils patchés explicitement : PROFILS_COUPON n'en définit qu'un seul par défaut
+        # depuis le 26/09/2026, mais la composition automatique doit rester générique à N
+        # profils et ne jamais proposer deux coupons identiques.
+        profils = [
+            {"cle": "profil1", "nom": "🛡️ COUPON 1", "cote_min": 5.0, "cote_max": 10.0, "nb_jambes": 8},
+            {"cle": "profil2", "nom": "⚖️ COUPON 2", "cote_min": 10.0, "cote_max": 50.0, "nb_jambes": 8},
+            {"cle": "profil3", "nom": "🔥 COUPON 3", "cote_min": 50.0, "cote_max": 100.0, "nb_jambes": 8},
+        ]
         with mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=pool), \
+                mock.patch.object(ae, "PROFILS_COUPON", profils), \
                 mock.patch.object(ae, "UTILISER_STRATEGE_IA", False):
-            resultats = ae.generer_trois_coupons({"matchs": []})
+            resultats = ae.generer_coupons({"matchs": []})
         signatures = []
         for item in resultats:
             sel = item["selections"]
