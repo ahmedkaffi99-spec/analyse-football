@@ -216,7 +216,7 @@ class TestEloEtContexteWeb(unittest.TestCase):
             "match_demande": {"home": "Fort", "away": "Faible"},
             "oddspapi": {"fixture_id": "f1", "tous_marches": [
                 {"marche": "Over Under Full Time", "handicap": 2.5, "periode": "fulltime",
-                 "selections": [{"selection": "Over", "cote": 2.3}, {"selection": "Under", "cote": 1.6}]}]},
+                 "selections": [{"selection": "Over", "cote": 2.6}, {"selection": "Under", "cote": 1.5}]}]},
             "stats_historiques": {"home": stats, "away": stats},
             "clubelo": {"home": {"elo": 1900}, "away": {"elo": 1600}},
             "serper": {"resultats": [{"titre": "Fort sans son buteur", "extrait": "blessé   au genou"}]},
@@ -297,3 +297,43 @@ class TestOpenRouterSeulement(unittest.TestCase):
                 mock.patch.object(ae.time, "sleep") as pause:
             self.assertEqual(ae.appel_openrouter("test"), "OK")
         self.assertEqual([c.args[0] for c in pause.call_args_list], [7.0, 7.0])
+
+
+class TestMelangeModeleMarche(unittest.TestCase):
+    def test_probabilites_sans_marge(self):
+        marches = [
+            {"marche": "Over Under Full Time", "handicap": 2.5, "periode": "fulltime",
+             "selections": [{"selection": "Over", "cote": 2.0}, {"selection": "Under", "cote": 1.8}]},
+            {"marche": "Double Chance Full Time", "handicap": 0.0, "periode": "fulltime",
+             "selections": [{"selection": "1X", "cote": 1.3}, {"selection": "12", "cote": 1.25},
+                            {"selection": "2X", "cote": 1.9}]},
+        ]
+        p = ae.probabilites_sans_marge(marches)
+        self.assertAlmostEqual(p[("Over Under Full Time (2.5)", "Over")] + p[("Over Under Full Time (2.5)", "Under")], 1.0)
+        somme_dc = sum(v for (m, _), v in p.items() if m.startswith("Double Chance"))
+        self.assertAlmostEqual(somme_dc, 2.0)
+
+    def test_modele_trop_confiant_ramene_vers_le_marche(self):
+        # Le modèle voit un favori écrasant (buts attendus 0.2 contre 2.5) ; le marché non.
+        marches = [{"marche": "Double Chance Full Time", "handicap": 0.0, "periode": "fulltime",
+                    "selections": [{"selection": "1X", "cote": 1.5}, {"selection": "12", "cote": 1.3},
+                                   {"selection": "2X", "cote": 1.28}]}]
+        brut = [c for c in ae._evaluer_marches_brut(marches, 0.2, 2.5) if c["selection"] == "2X"]
+        self.assertGreater(brut[0]["proba_modele_pct"], 95)  # Poisson seul : ~97 %
+        with mock.patch.object(ae, "SEUIL_EDGE", 2.0), mock.patch.object(ae, "PROBA_MIN_FORTE", 30.0):
+            retenus = ae.evaluer_marches(marches, 0.2, 2.5)
+        for c in retenus:
+            self.assertLess(c["proba_modele_pct"], 90)
+            self.assertLessEqual(c["edge_pct"], ae.EDGE_MAX_PLAUSIBLE)
+
+    def test_petites_cotes_et_cartons_exclus(self):
+        marches = [
+            {"marche": "Over Under Full Time", "handicap": 4.5, "periode": "fulltime",
+             "selections": [{"selection": "Over", "cote": 9.0}, {"selection": "Under", "cote": 1.08}]},
+            {"marche": "Bookings - Over Under Full Time", "handicap": 5.0, "periode": "fulltime",
+             "selections": [{"selection": "Over", "cote": 3.0}, {"selection": "Under", "cote": 1.35}]},
+        ]
+        with mock.patch.object(ae, "SEUIL_EDGE", 0.0), mock.patch.object(ae, "PROBA_MIN_FORTE", 0.0):
+            retenus = ae.evaluer_marches(marches, 1.2, 1.0, mu_cartons=3.0)
+        self.assertFalse(any(c["cote"] < ae.COTE_MIN_JAMBE for c in retenus))
+        self.assertFalse(any(c["categorie"] == "Total Cartons" for c in retenus))

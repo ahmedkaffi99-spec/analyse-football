@@ -191,7 +191,9 @@ FILTRE_LIGUES_SECOURS = [
     ("ligue 2", "france"),
     ("serie b", "italy"),
     ("2. bundesliga", "germany"),
-    ("segunda", "spain"),
+    ("segunda division", "spain"),   # 2e division seulement ("segunda" seul attrapait la 4e
+    ("laliga 2", "spain"),           #  division, Segunda Federación — constaté le 2026-09-26)
+    ("la liga 2", "spain"),
     ("super lig", "turkey"),
     ("pro league", "belgium"),
     ("premiership", "scotland"),

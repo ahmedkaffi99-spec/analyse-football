@@ -431,6 +431,66 @@ def calc_edge(proba_modele, cote):
 # ÉVALUATION DE CHAQUE MARCHÉ BRUT (vocabulaire 1xbet, pas simplifié)
 # ============================================================
 
+# ------------------------------------------------------------
+# MÉLANGE MODÈLE / MARCHÉ — la probabilité finale d'un pari mêle celle du modèle (Poisson sur
+# des stats souvent anciennes) et celle du marché (cote 1xbet sans sa marge). Constaté le
+# 2026-09-26 : seul, le modèle affichait 97,6 % sur un "nul ou victoire extérieure" et des
+# edges de 20-25 % en série — irréaliste face à un bookmaker. Le marché pèse POIDS_MARCHE.
+# ------------------------------------------------------------
+POIDS_MARCHE = 0.65
+COTE_MIN_JAMBE = 1.20   # en dessous, un pari n'apporte presque rien au combiné mais ajoute un risque
+CATEGORIES_EXCLUES = ("Total Cartons",)  # modèle des cartons non fiable (points de carton, lignes mixtes)
+
+
+def _edge_calculable(edge, proba):
+    return edge is not None
+
+
+def probabilites_sans_marge(marches):
+    """{(nom du marché avec sa ligne, sélection): probabilité implicite sans la marge}, pour les
+    marchés du match entier ayant au moins 2 sélections cotées. Double Chance : les 3 issues
+    se recouvrent (somme des probabilités = 2), d'où la normalisation à 2."""
+    probas = {}
+    for m in marches:
+        if not est_marche_match_entier(m):
+            continue
+        cotes = [(s["selection"], s["cote"]) for s in m.get("selections", []) if s.get("cote") and s["cote"] > 1]
+        if len(cotes) < 2:
+            continue
+        nom = m.get("marche") or ""
+        handicap = m.get("handicap")
+        cle_marche = f"{nom} ({handicap})" if handicap is not None else nom
+        somme_cible = 2.0 if "double chance" in nom.lower() else 1.0
+        total = sum(1 / c for _, c in cotes)
+        for selection, cote in cotes:
+            probas.setdefault((cle_marche, selection), somme_cible * (1 / cote) / total)
+    return probas
+
+
+def evaluer_marches(marches, mu_home, mu_away, mu_corners=None, mu_cartons=None):
+    """Évalue tous les marchés (modèle Poisson), mélange chaque probabilité avec celle du
+    marché sans marge, puis ne garde que les paris valables (edge plausible, probabilité
+    suffisante, cote >= COTE_MIN_JAMBE). Un pari sans probabilité de marché calculable
+    (une seule sélection cotée) est écarté : pas de contrôle possible."""
+    marche_sans_marge = probabilites_sans_marge(marches)
+    retenus = []
+    for c in _evaluer_marches_brut(marches, mu_home, mu_away, mu_corners, mu_cartons):
+        if c["categorie"] in CATEGORIES_EXCLUES or c["cote"] < COTE_MIN_JAMBE:
+            continue
+        p_marche = marche_sans_marge.get((c["marche"], c["selection"]))
+        if p_marche is None:
+            continue
+        p_modele = c["proba_modele_pct"] / 100
+        p = (1 - POIDS_MARCHE) * p_modele + POIDS_MARCHE * p_marche
+        edge = calc_edge(p, c["cote"])
+        if not candidat_valide(edge, p):
+            continue
+        c.update(proba_modele_pct=round(p * 100, 1), edge_pct=round(edge, 1),
+                 proba_poisson_pct=round(p_modele * 100, 1), proba_marche_pct=round(p_marche * 100, 1))
+        retenus.append(c)
+    return sorted(retenus, key=lambda c: (c["proba_modele_pct"], c["edge_pct"]), reverse=True)
+
+
 def candidat_valide(edge, proba):
     """Un marché n'est retenu que s'il a À LA FOIS un edge plausible ET une probabilité
     de gain forte (PROBA_MIN_FORTE) — un edge élevé sur un pari à 30% de chances de gagner
@@ -444,7 +504,7 @@ def est_marche_match_entier(marche):
     return periode == "fulltime" and not any(m in nom for m in ("half", "1st", "2nd", "mi-temps"))
 
 
-def evaluer_marches(marches, mu_home, mu_away, mu_corners=None, mu_cartons=None):
+def _evaluer_marches_brut(marches, mu_home, mu_away, mu_corners=None, mu_cartons=None):
     """Parcourt tous les marchés bruts collectés et calcule un edge réel pour ceux
     qu'on sait modéliser (Total buts/corners/cartons, BTTS, Handicap Asiatique,
     Double Chance, Draw No Bet). mu_corners/mu_cartons sont optionnels — si absents,
@@ -515,11 +575,11 @@ def evaluer_marches(marches, mu_home, mu_away, mu_corners=None, mu_cartons=None)
                 sel = s["selection"].lower()
                 if "over" in sel:
                     edge = calc_edge(proba_over_calc, s["cote"])
-                    if candidat_valide(edge, proba_over_calc):
+                    if _edge_calculable(edge, proba_over_calc):
                         candidats.append(_candidat(marche["marche"], handicap, s, proba_over_calc, edge, categorie))
                 elif "under" in sel:
                     edge = calc_edge(1 - proba_over_calc, s["cote"])
-                    if candidat_valide(edge, 1 - proba_over_calc):
+                    if _edge_calculable(edge, 1 - proba_over_calc):
                         candidats.append(_candidat(marche["marche"], handicap, s, 1 - proba_over_calc, edge, categorie))
 
         # --- Both Teams To Score ---
@@ -529,11 +589,11 @@ def evaluer_marches(marches, mu_home, mu_away, mu_corners=None, mu_cartons=None)
                 sel = s["selection"].lower()
                 if "yes" in sel or sel == "oui":
                     edge = calc_edge(p_yes, s["cote"])
-                    if candidat_valide(edge, p_yes):
+                    if _edge_calculable(edge, p_yes):
                         candidats.append(_candidat(marche["marche"], handicap, s, p_yes, edge, "BTTS"))
                 elif "no" in sel or sel == "non":
                     edge = calc_edge(1 - p_yes, s["cote"])
-                    if candidat_valide(edge, 1 - p_yes):
+                    if _edge_calculable(edge, 1 - p_yes):
                         candidats.append(_candidat(marche["marche"], handicap, s, 1 - p_yes, edge, "BTTS"))
 
         # --- Double Chance (12 banni) ---
@@ -550,7 +610,7 @@ def evaluer_marches(marches, mu_home, mu_away, mu_corners=None, mu_cartons=None)
                 else:
                     continue
                 edge = calc_edge(proba, s["cote"])
-                if candidat_valide(edge, proba):
+                if _edge_calculable(edge, proba):
                     candidats.append(_candidat(marche["marche"], handicap, s, proba, edge, "Double Chance"))
 
         # --- Draw No Bet ---
@@ -564,11 +624,11 @@ def evaluer_marches(marches, mu_home, mu_away, mu_corners=None, mu_cartons=None)
                 sel = s["selection"].lower()
                 if "home" in sel or sel == "1":
                     edge = calc_edge(p_home_dnb, s["cote"])
-                    if candidat_valide(edge, p_home_dnb):
+                    if _edge_calculable(edge, p_home_dnb):
                         candidats.append(_candidat(marche["marche"], handicap, s, p_home_dnb, edge, "Draw No Bet"))
                 elif "away" in sel or sel == "2":
                     edge = calc_edge(p_away_dnb, s["cote"])
-                    if candidat_valide(edge, p_away_dnb):
+                    if _edge_calculable(edge, p_away_dnb):
                         candidats.append(_candidat(marche["marche"], handicap, s, p_away_dnb, edge, "Draw No Bet"))
 
         # --- Asian Handicap ---
@@ -586,7 +646,7 @@ def evaluer_marches(marches, mu_home, mu_away, mu_corners=None, mu_cartons=None)
                 else:
                     continue
                 edge = calc_edge(proba, s["cote"])
-                if candidat_valide(edge, proba):
+                if _edge_calculable(edge, proba):
                     candidats.append(_candidat(marche["marche"], handicap, s, proba, edge, "Handicap Asiatique"))
 
         # --- Odd/Even (Pair/Impair) — nombre total de buts du match ---
@@ -600,11 +660,11 @@ def evaluer_marches(marches, mu_home, mu_away, mu_corners=None, mu_cartons=None)
                 sel = s["selection"].lower()
                 if sel == "odd":
                     edge = calc_edge(p_impair, s["cote"])
-                    if candidat_valide(edge, p_impair):
+                    if _edge_calculable(edge, p_impair):
                         candidats.append(_candidat(marche["marche"], handicap, s, p_impair, edge, "Pair/Impair"))
                 elif sel == "even":
                     edge = calc_edge(p_pair, s["cote"])
-                    if candidat_valide(edge, p_pair):
+                    if _edge_calculable(edge, p_pair):
                         candidats.append(_candidat(marche["marche"], handicap, s, p_pair, edge, "Pair/Impair"))
 
         # --- Clean Sheet — l'équipe ne prend aucun but ---
@@ -617,11 +677,11 @@ def evaluer_marches(marches, mu_home, mu_away, mu_corners=None, mu_cartons=None)
                 sel = s["selection"].lower()
                 if sel in ("yes", "oui"):
                     edge = calc_edge(p_clean, s["cote"])
-                    if candidat_valide(edge, p_clean):
+                    if _edge_calculable(edge, p_clean):
                         candidats.append(_candidat(marche["marche"], handicap, s, p_clean, edge, categorie))
                 elif sel in ("no", "non"):
                     edge = calc_edge(1 - p_clean, s["cote"])
-                    if candidat_valide(edge, 1 - p_clean):
+                    if _edge_calculable(edge, 1 - p_clean):
                         candidats.append(_candidat(marche["marche"], handicap, s, 1 - p_clean, edge, categorie))
 
         # --- Win To Nil — l'équipe gagne SANS encaisser ---
@@ -636,11 +696,11 @@ def evaluer_marches(marches, mu_home, mu_away, mu_corners=None, mu_cartons=None)
                 sel = s["selection"].lower()
                 if sel in ("yes", "oui"):
                     edge = calc_edge(p_wtn, s["cote"])
-                    if candidat_valide(edge, p_wtn):
+                    if _edge_calculable(edge, p_wtn):
                         candidats.append(_candidat(marche["marche"], handicap, s, p_wtn, edge, categorie))
                 elif sel in ("no", "non"):
                     edge = calc_edge(1 - p_wtn, s["cote"])
-                    if candidat_valide(edge, 1 - p_wtn):
+                    if _edge_calculable(edge, 1 - p_wtn):
                         candidats.append(_candidat(marche["marche"], handicap, s, 1 - p_wtn, edge, categorie))
 
     # Tri par PROBABILITÉ d'abord (pas par edge) : objectif coupon combiné à forte
