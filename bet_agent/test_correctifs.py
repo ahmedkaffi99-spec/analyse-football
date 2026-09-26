@@ -4,6 +4,7 @@ import os
 import tempfile
 import unittest
 from datetime import datetime
+from types import SimpleNamespace
 from unittest import mock
 
 import analyser_et_envoyer as ae
@@ -86,6 +87,49 @@ class TestTelegram(unittest.TestCase):
             self.assertIn(f"⚽ Équipe A{n} vs", texte_complet)
         self.assertNotIn("tronqué", texte_complet)
         self.assertIn(pied.strip(), messages[-1])  # le pied de page est bien présent (dernier message)
+
+
+class TestDeepSeekPrioritaire(unittest.TestCase):
+    """Demande explicite du 26/09/2026 : DeepSeek (payant, solde réel confirmé) doit être
+    essayé SEUL en premier, avant toute course parallèle avec les modèles gratuits."""
+
+    def setUp(self):
+        ae.reinitialiser_budget_ia()
+
+    def test_deepseek_repond_seul_pas_de_course_declenchee(self):
+        appels = []
+
+        def faux_post(url, headers, json, timeout):
+            appels.append((url, headers.get("Authorization"), json))
+            return SimpleNamespace(status_code=200, json=lambda: {"choices": [{"message": {"content": '{"ok": true}'}}]})
+
+        with mock.patch.object(ae, "OPENROUTER_API_KEY", "sk-or-secrete"), \
+                mock.patch.object(ae, "GROQ_API_KEY", "gsk-secrete"), \
+                mock.patch.object(ae, "GEMINI_API_KEY", "AIza-secrete"), \
+                mock.patch.object(ae.requests, "post", side_effect=faux_post):
+            resultat = ae.appel_ia("prompt", json_attendu=True)
+
+        self.assertEqual(resultat, '{"ok": true}')
+        self.assertEqual(len(appels), 1)  # une seule requête : DeepSeek, pas de vague parallèle
+        url, auth, corps = appels[0]
+        self.assertIn("openrouter.ai", url)
+        self.assertEqual(corps["model"], ae.DEEPSEEK_MODELE_PAYANT)
+        self.assertNotIn("reasoning", corps)  # pas de "low effort" imposé à DeepSeek
+        self.assertEqual(auth, "Bearer sk-or-secrete")
+
+    def test_repli_sur_groq_si_deepseek_echoue(self):
+        def faux_post(url, headers, json, timeout):
+            if json["model"] == ae.DEEPSEEK_MODELE_PAYANT:
+                return SimpleNamespace(status_code=402, json=lambda: {"error": {"message": "Insufficient credits"}})
+            return SimpleNamespace(status_code=200, json=lambda: {"choices": [{"message": {"content": '{"ok": true}'}}]})
+
+        with mock.patch.object(ae, "OPENROUTER_API_KEY", "sk-or-secrete"), \
+                mock.patch.object(ae, "GROQ_API_KEY", "gsk-secrete"), \
+                mock.patch.object(ae, "GEMINI_API_KEY", None), \
+                mock.patch.object(ae.requests, "post", side_effect=faux_post):
+            resultat = ae.appel_ia("prompt", json_attendu=True)
+
+        self.assertEqual(resultat, '{"ok": true}')  # récupéré via Groq après l'échec de DeepSeek
 
 
 class TestListeManuellePerimee(unittest.TestCase):
@@ -209,10 +253,11 @@ class TestRedactionSansIA(unittest.TestCase):
         with mock.patch.object(ae, "appel_llm", side_effect=ValueError("Tous les modèles ont échoué")), \
                 mock.patch.object(ae.time, "sleep"):
             texte = ae.agent4_ia_analyse_pronostic_redaction(selections)
+        # Format compact (2026-09-26) : une ligne par match, sans Guide/Où parier/Pourquoi —
+        # garantit un ticket qui tient toujours en UN seul message Telegram (voir TestTelegram).
         self.assertEqual(texte.count("⚽"), 2)
-        self.assertIn("Confiance : Moyen", texte)
-        self.assertIn("Confiance : Élevé", texte)
-        self.assertIn("📍 Où parier : onglet", texte)
+        self.assertIn("Total (2.5) : Over @ 1.5 (edge 12.0%)", texte)
+        self.assertIn("BTTS (2.5) : Yes @ 1.8 (edge 25.0%)", texte)
 
     def test_erreur_gemini_en_liste_lisible(self):
         reponse = mock.Mock(status_code=429, json=lambda: [{"error": {"message": "Quota exceeded"}}])
@@ -345,6 +390,9 @@ class TestOpenRouterSeulement(unittest.TestCase):
                         mock.patch.object(ae, "GEMINI_API_KEY", None),
                         mock.patch.object(ae, "OPENROUTER_MODELS", ["m1", "m2", "m3", "m4", "m5"]),
                         mock.patch.object(ae, "IA_EN_PARALLELE", 2),
+                        # DeepSeek prioritaire testé séparément (TestDeepSeekPrioritaire) : désactivé
+                        # ici pour isoler la logique de vagues OpenRouter que cette classe teste.
+                        mock.patch.object(ae, "_deepseek_indisponible", True),
                         mock.patch.object(ae.time, "sleep")]
         for p in self.patches:
             p.start()
@@ -427,6 +475,7 @@ class TestOpenRouterSeulement(unittest.TestCase):
                 mock.patch.object(ae.time, "monotonic", lambda: horloge[0]), \
                 mock.patch.object(ae.requests, "post", side_effect=faux_post) as post:
             ae.reinitialiser_budget_ia()
+            ae._deepseek_indisponible = True  # reinitialiser_budget_ia() la remet à False : redésactivée ici
             with self.assertRaisesRegex(ValueError, "Budget IA de 100 s épuisé"):
                 ae.appel_llm("test")
             self.assertEqual(post.call_count, 4)  # 2 vagues x 30 s x 2 modèles > 100 s : pas de 3e vague

@@ -112,6 +112,12 @@ GROQ_MODELES = [m.strip() for m in (os.getenv("GROQ_MODELES") or "openai/gpt-oss
 GEMINI_MODELES = [m.strip() for m in (os.getenv("GEMINI_MODELES") or "gemini-3.8-flash,gemini-3.7-flash").split(",")
                   if m.strip()]
 NOMS_FOURNISSEURS = {"openrouter": "OpenRouter", "groq": "Groq", "gemini": "Gemini"}
+# DeepSeek (OpenRouter payant, solde réel testé et confirmé le 2026-09-26) : demandé en
+# PRIORITAIRE par l'utilisateur — raisonnement plus poussé qu'un modèle gratuit en "low
+# effort", donc interrogé SEUL en premier (pas dans la course parallèle) avant tout repli sur
+# Groq/Gemini/OpenRouter gratuits. Coût négligeable (~0.03 $ le 1M tokens en entrée).
+DEEPSEEK_MODELE_PAYANT = os.getenv("OPENROUTER_MODELE_PAYANT", "deepseek/deepseek-v4.1-flash")
+_deepseek_indisponible = False
 # Fournisseur dont la clé est refusée : écarté pour le reste du run (run 5 : des dizaines
 # d'appels « User not found » avaient coûté ~7 minutes). Plus aucun fournisseur → plus d'IA.
 _fournisseurs_refuses = {}
@@ -143,9 +149,10 @@ _echeance_ia = None  # démarre au premier appel IA du run
 
 
 def reinitialiser_budget_ia():
-    global _echeance_ia
+    global _echeance_ia, _deepseek_indisponible
     _echeance_ia = None
     _fournisseurs_refuses.clear()
+    _deepseek_indisponible = False
 
 
 def secondes_ia_restantes():
@@ -964,7 +971,11 @@ def _requete_ia(poster, fournisseur, modele, prompt, max_tokens, json_attendu, d
             "HTTP-Referer": "https://github.com/ahmedkaffi99-spec/analyse-football",
             "X-Title": "analyse-football",
         }
-        payload["reasoning"] = {"effort": "low"}  # réflexion courte (ignoré par les autres modèles)
+        if modele != DEEPSEEK_MODELE_PAYANT:
+            payload["reasoning"] = {"effort": "low"}  # réflexion courte (modèles gratuits, souvent lents/saturés)
+        # DeepSeek (payant, prioritaire) garde son effort de raisonnement par défaut : demandé
+        # explicitement par l'utilisateur (2026-09-26) pour un choix de paris plus réfléchi que
+        # les modèles gratuits en "low effort".
     if json_attendu:
         payload["response_format"] = {"type": "json_object"}
     r = poster(url, headers=headers, json=payload, timeout=delai)
@@ -977,12 +988,36 @@ def _requete_ia(poster, fournisseur, modele, prompt, max_tokens, json_attendu, d
 
 
 def appel_ia(prompt, max_tokens=2000, json_attendu=False):
-    """Vagues de IA_EN_PARALLELE modèles (Groq, Gemini, OpenRouter mêlés) interrogés EN MÊME
-    TEMPS : la première réponse valide (JSON lisible si json_attendu) l'emporte. Un modèle
-    saturé (429) ou lent ne retarde plus les autres. Jamais au-delà du budget IA du run."""
+    """DeepSeek (payant, solde réel) d'abord, SEUL, avec son raisonnement complet : demandé en
+    priorité par l'utilisateur pour un choix de paris plus réfléchi. En cas d'échec (ou de
+    clé/solde indisponible) seulement, repli sur les vagues de IA_EN_PARALLELE modèles gratuits
+    (Groq, Gemini, OpenRouter mêlés) interrogés EN MÊME TEMPS : la première réponse valide
+    (JSON lisible si json_attendu) l'emporte. Un modèle saturé (429) ou lent ne retarde plus les
+    autres. Jamais au-delà du budget IA du run."""
+    global _deepseek_indisponible
     if not any(_cles_fournisseurs().values()):
         raise ValueError("Aucune clé IA (OPENROUTER_API_KEY, GROQ_API_KEY, GEMINI_API_KEY)")
     derniere_erreur = None
+
+    if OPENROUTER_API_KEY and not _deepseek_indisponible and "openrouter" not in _fournisseurs_refuses:
+        restant = secondes_ia_restantes()
+        if restant >= 10:
+            try:
+                content = _requete_ia(requests.post, "openrouter", DEEPSEEK_MODELE_PAYANT, prompt, max_tokens,
+                                       json_attendu, min(90, restant))
+                if not json_attendu or _json_present(content):
+                    print(f"   ✓ Réponse via DeepSeek (prioritaire) {DEEPSEEK_MODELE_PAYANT}")
+                    return content
+                derniere_erreur = ValueError("DeepSeek : réponse sans JSON lisible")
+                print("   ⚠️ DeepSeek (prioritaire) : réponse sans JSON lisible — repli sur la course habituelle.")
+            except CleIARefusee as e:
+                derniere_erreur = e
+                print(f"   ⚠️ DeepSeek indisponible pour le reste du run ({_cause(e)[:150]}) — repli sur la course habituelle.")
+                _deepseek_indisponible = True
+            except Exception as e:
+                derniere_erreur = e
+                print(f"   ⚠️ DeepSeek (prioritaire) indisponible cette fois ({_cause(e)[:150]}) — repli sur la course habituelle.")
+
     candidats = candidats_ia()
     taille = max(1, IA_EN_PARALLELE)
     for i in range(0, len(candidats), taille):
@@ -1261,21 +1296,20 @@ def niveau_confiance(edge_pct):
 
 def rediger_ticket_sans_ia(selections_finales):
     """Ticket au MÊME format que celui demandé au LLM, construit en pur Python à partir des
-    chiffres, guides et onglets déjà calculés. Utilisé quand aucun LLM ne répond : une panne
-    de l'IA ne doit plus jamais faire perdre les coupons du jour
-    (constaté le 2026-09-26 : run entier en erreur pour une limite de débit)."""
+    chiffres déjà calculés. Utilisé quand aucun LLM ne répond : une panne de l'IA ne doit
+    plus jamais faire perdre les coupons du jour (constaté le 2026-09-26 : run entier en
+    erreur pour une limite de débit).
+
+    Format compact — une seule ligne par match (pas de Guide/Où parier/Pourquoi détaillés) :
+    avec un coupon combiné de 10 à 15 matchs, la version détaillée dépassait régulièrement la
+    limite dure de 4096 caractères de Telegram et le message finissait tronqué au milieu,
+    perdant des matchs entiers (constaté sur le run du 26/09/2026). Un résumé tient en UN
+    seul message Telegram, sans jamais avoir besoin de le découper."""
     blocs = []
     for s in selections_finales:
         p = s["pick"]
-        blocs.append(
-            f"⚽ {s['match']}\n"
-            f"   🎯 {p['marche']} : {p['selection']} @ {p['cote']} "
-            f"(edge {p['edge_pct']}% · Confiance : {niveau_confiance(p['edge_pct'])})\n"
-            f"   📖 Guide : {p['guide']}\n"
-            f"   📍 Où parier : {p['onglet']}"
-            + (f"\n   🧠 Pourquoi : {s['raison_ia']}" if s.get("raison_ia") else "")
-        )
-    return "\n\n".join(blocs)
+        blocs.append(f"⚽ *{s['match']}* — {p['marche']} : {p['selection']} @ {p['cote']} (edge {p['edge_pct']}%)")
+    return "\n".join(blocs)
 
 
 def agent4_ia_analyse_pronostic_redaction(selections_finales):
