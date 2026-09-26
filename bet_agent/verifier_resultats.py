@@ -94,6 +94,46 @@ def home_est_participant1(home_nom, p1_nom, p2_nom):
 
 
 # ============================================================
+# REPLI API-FOOTBALL — quand OddsPapi est indisponible (quota journalier épuisé, 429, panne),
+# retrouve le match PAR NOM D'ÉQUIPE (comme la collecte) au lieu du fixture_id OddsPapi, sur
+# un quota totalement séparé. Constaté le 2026-09-26 : le quota OddsPapi (250 requêtes/jour)
+# épuisé bloquait toute vérification de résultat, alors que les matchs étaient bel et bien
+# terminés (confirmé via l'historique 1xBet de l'utilisateur).
+# ============================================================
+
+def recuperer_fixtures_api_football_du_jour():
+    import collecte_donnees as cd
+    try:
+        return cd.recuperer_fixtures_api_football()
+    except Exception as e:
+        print(f"⚠️ Repli API-Football impossible : {e}")
+        return []
+
+
+def trouver_score_api_football(home_nom, away_nom, fixtures_af, cd):
+    """Fuzzy-match par nom d'équipe (cd.score_paire_equipes, même seuil que la collecte).
+    Renvoie (but_domicile, but_exterieur) — déjà dans le bon ordre — seulement si un match est
+    trouvé ET terminé (statut 'FT' : temps réglementaire, pas de prolongation/tirs au but pour
+    ces compétitions). None si aucun match fiable ou pas encore terminé."""
+    meilleur, meilleur_score = None, 0
+    for fx in fixtures_af:
+        equipes = fx.get("teams") or {}
+        score = cd.score_paire_equipes(home_nom, away_nom,
+                                        (equipes.get("home") or {}).get("name"),
+                                        (equipes.get("away") or {}).get("name"))
+        if score > meilleur_score:
+            meilleur, meilleur_score = fx, score
+    if not meilleur or meilleur_score < cd.SEUIL_MATCH_ACCEPTABLE:
+        return None
+    if (meilleur.get("fixture") or {}).get("status", {}).get("short") != "FT":
+        return None
+    buts = meilleur.get("goals") or {}
+    if buts.get("home") is None or buts.get("away") is None:
+        return None
+    return buts["home"], buts["away"]
+
+
+# ============================================================
 # JUGEMENT DE CHAQUE JAMBE — même logique que evaluer_marches, mais appliquée
 # au score réel final plutôt qu'à une probabilité Poisson.
 # ============================================================

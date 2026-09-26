@@ -143,6 +143,23 @@ def test_verification_et_statistiques(client, monkeypatch):
     assert stats["profil2"]["gain_net_unites"] == -1.0
 
 
+def test_repli_api_football_quand_oddspapi_indisponible(client, monkeypatch):
+    # Constaté le 2026-09-26 : le quota OddsPapi (250 requêtes/jour) épuisé faisait échouer
+    # recuperer_fixtures_du_jour() (429), et TOUTES les jambes en attente tombaient dans
+    # "pas_termine" même pour des matchs réellement terminés. Le repli API-Football (quota
+    # séparé) doit retrouver le match PAR NOM et juger quand même.
+    client.post("/api/imports", json={"collecte": collecte_exemple(), "ticket": ticket_exemple()})
+    _, _, vr = pipeline.modules()
+    monkeypatch.setattr(vr, "recuperer_fixtures_du_jour", lambda: {})  # OddsPapi indisponible
+    monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda: [
+        {"teams": {"home": {"name": "RC Lens"}, "away": {"name": "AJ Auxerre"}},
+         "fixture": {"status": {"short": "FT"}}, "goals": {"home": 2, "away": 1}}])
+
+    resultat = client.post("/api/coupons/verification").json()
+
+    assert resultat["gagne"] == 2 and resultat["perdu"] == 1  # même verdict que via OddsPapi
+
+
 def test_statut_coupon():
     assert statut_coupon(["gagne", "push"]) == "gagne"
     assert statut_coupon(["gagne", "en_attente"]) == "en_attente"
