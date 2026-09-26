@@ -94,3 +94,75 @@ class TestListeManuellePerimee(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def _fixture(p1, p2, tournoi, pays, depart="2026-09-26T15:00:00Z"):
+    return {"participant1Name": p1, "participant2Name": p2, "tournamentName": tournoi, "categoryName": pays,
+            "hasOdds": True, "statusName": "Pre-Game", "startTime": depart}
+
+
+class TestSelectionTreveInternationale(unittest.TestCase):
+    def test_feminin_exclu_et_secours_pendant_la_treve(self):
+        fixtures = [
+            _fixture("Juventus Turin", "SSD Napoli", "Serie A Women", "Italy"),
+            _fixture("France", "Italie", "UEFA Nations League", "International"),
+            _fixture("Espagne", "Portugal", "UEFA Nations League", "International"),
+            _fixture("Obscur FC", "Autre FC", "Division 5", "Nowhere"),
+        ]
+        matchs = cd.selectionner_matchs_du_jour(fixtures)
+        self.assertEqual(sorted(matchs), [("Espagne", "Portugal"), ("France", "Italie")])
+
+    def test_grands_championnats_suffisants_pas_de_secours(self):
+        fixtures = [_fixture(f"Club {i}", f"Adv {i}", "Premier League", "England") for i in range(8)]
+        fixtures.append(_fixture("France", "Italie", "UEFA Nations League", "International"))
+        matchs = cd.selectionner_matchs_du_jour(fixtures)
+        self.assertEqual(len(matchs), 8)
+        self.assertNotIn(("France", "Italie"), matchs)
+
+    def test_equipe_feminine_api_football(self):
+        self.assertTrue(cd.est_equipe_feminine_api_football("Juventus W"))
+        self.assertFalse(cd.est_equipe_feminine_api_football("Wolves"))
+
+
+def _selection(match, categorie, selection, cote, edge=8.0):
+    return {"match": match, "home_nom": match.split(" vs ")[0], "away_nom": match.split(" vs ")[1],
+            "fixture_id_oddspapi": match,
+            "pick": {"categorie": categorie, "marche": f"{categorie} (2.5)", "handicap": 2.5, "selection": selection,
+                     "cote": cote, "proba_modele_pct": 70.0, "edge_pct": edge, "guide": "guide", "onglet": "onglet"}}
+
+
+class TestCouponsJoursCreux(unittest.TestCase):
+    def test_pas_plus_de_deux_paris_par_match_ni_coupons_identiques(self):
+        pool = {m: [_selection(m, c, "Over", 1.3 + 0.1 * i) for i, c in enumerate(("Total", "BTTS", "Total Équipe 1"))]
+                for m in ("A vs B", "C vs D", "E vs F")}
+        with mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=pool):
+            resultats = ae.generer_trois_coupons({"matchs": []})
+        signatures = []
+        for item in resultats:
+            sel = item["selections"]
+            if not sel:
+                continue
+            self.assertEqual(len(sel), 6)  # 3 matchs × 2 paris max, au lieu de 8
+            par_match = {}
+            for s in sel:
+                par_match[s["match"]] = par_match.get(s["match"], 0) + 1
+            self.assertLessEqual(max(par_match.values()), 2)
+            signatures.append(frozenset((s["match"], s["pick"]["marche"]) for s in sel))
+        self.assertEqual(len(signatures), len(set(signatures)))
+
+
+class TestRedactionSansIA(unittest.TestCase):
+    def test_panne_de_tous_les_llm_ne_fait_plus_perdre_le_ticket(self):
+        selections = [_selection("A vs B", "Total", "Over", 1.5, edge=12.0), _selection("C vs D", "BTTS", "Yes", 1.8, edge=25.0)]
+        with mock.patch.object(ae, "appel_llm", side_effect=ValueError("Tous les modèles ont échoué")), \
+                mock.patch.object(ae.time, "sleep"):
+            texte = ae.agent4_ia_analyse_pronostic_redaction(selections)
+        self.assertEqual(texte.count("⚽"), 2)
+        self.assertIn("Confiance : Moyen", texte)
+        self.assertIn("Confiance : Élevé", texte)
+        self.assertIn("📍 Où parier : onglet", texte)
+
+    def test_erreur_gemini_en_liste_lisible(self):
+        reponse = mock.Mock(status_code=429, json=lambda: [{"error": {"message": "Quota exceeded"}}])
+        with self.assertRaisesRegex(ValueError, "Gemini HTTP 429 : Quota exceeded"):
+            ae._contenu_reponse("Gemini", reponse)

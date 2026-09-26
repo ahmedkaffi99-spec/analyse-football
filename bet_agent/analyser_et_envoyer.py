@@ -26,7 +26,7 @@ import urllib3
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from unidecode import unidecode
-from tenacity import retry, stop_after_attempt, wait_fixed
+from tenacity import retry, stop_after_attempt, wait_exponential, wait_fixed
 
 load_dotenv("envi.local")
 
@@ -67,6 +67,8 @@ EDGE_MIN_POOL = 2.0    # % — plancher d'edge pour qu'un marché entre dans le 
 # PARMI les combos qui atteignent la cible — les Coupons 1/2 (cibles basses) n'utiliseront
 # ces jambes plus risquées que si nécessaire pour respecter leur propre cible.
 PROBA_MIN_POOL = 30.0  # % — plancher de probabilité pour qu'un marché entre dans le pool de candidats
+MAX_JAMBES_PAR_MATCH = 2  # au-delà, les paris d'un même match sont trop corrélés (constaté le
+                          # 2026-09-26 : 8 jambes sur 3 matchs, coupon quasi impossible à gagner)
 NB_CANDIDATS_PAR_MATCH = 10  # plafond de sécurité — en pratique = le meilleur candidat de chaque catégorie de marché trouvée pour le match (~13 catégories possibles au total)
 
 PROFILS_COUPON = [
@@ -77,6 +79,29 @@ PROFILS_COUPON = [
 SELECTION_INTERDITE = "12"  # double chance domicile-ou-extérieur, bannie par consigne
 
 OPENROUTER_MODELS = ["openrouter/free", "cohere/north-mini-code:free", "poolside/laguna-xs-2.1:free"]
+GEMINI_MODELE = os.getenv("GEMINI_MODELE") or "gemini-2.5-flash-lite"
+
+
+def _contenu_reponse(fournisseur, r):
+    """Extrait le texte d'une réponse de type OpenAI. Sinon lève une erreur LISIBLE avec le
+    vrai motif (quota 429, modèle inconnu, clé refusée...) — auparavant les journaux ne
+    montraient que 'RetryError[... ValueError/AttributeError]' (constaté le 2026-09-26),
+    et Gemini renvoie ses erreurs sous forme de liste, ce qui plantait sur .get()."""
+    try:
+        data = r.json()
+    except ValueError:
+        raise ValueError(f"{fournisseur} HTTP {r.status_code} : réponse non JSON")
+    if isinstance(data, list):
+        data = data[0] if data else {}
+    erreur = data.get("error") if isinstance(data, dict) else None
+    if erreur:
+        message = erreur.get("message") if isinstance(erreur, dict) else erreur
+        raise ValueError(f"{fournisseur} HTTP {r.status_code} : {str(message)[:200]}")
+    choix = (data.get("choices") or [{}])[0] if isinstance(data, dict) else {}
+    content = (choix.get("message") or {}).get("content")
+    if not content:
+        raise ValueError(f"{fournisseur} HTTP {r.status_code} : contenu vide")
+    return content.strip()
 
 
 # ============================================================
@@ -661,17 +686,15 @@ def _candidat(nom_marche, handicap, selection, proba, edge, categorie):
 # LLM — cascade Groq -> Gemini -> OpenRouter (rédaction uniquement)
 # ============================================================
 
-@retry(stop=stop_after_attempt(2), wait=wait_fixed(3))
+# Groq gratuit limite les jetons PAR MINUTE : 3 prompts longs d'affilée dépassent le quota
+# (constaté : échec au 5e appel). Attendre 20 puis 40 s laisse la fenêtre d'une minute se vider.
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=20, min=20, max=60))
 def _appel_groq_brut(prompt, max_tokens):
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
     payload = {"model": "openai/gpt-oss-120b", "messages": [{"role": "user", "content": prompt}], "max_tokens": min(max_tokens, 2000)}
     r = requests.post(url, headers=headers, json=payload, timeout=60)
-    data = r.json()
-    content = data.get("choices", [{}])[0].get("message", {}).get("content")
-    if not content:
-        raise ValueError(f"Groq contenu vide — {data}")
-    return content.strip()
+    return _contenu_reponse("Groq", r)
 
 
 def appel_groq(prompt, max_tokens):
@@ -682,7 +705,7 @@ def appel_groq(prompt, max_tokens):
         print("   ✓ Réponse via Groq")
         return c
     except Exception as e:
-        print(f"   ⚠️ Groq échoué : {e}")
+        print(f"   ⚠️ Groq échoué : {_cause(e)}")
         return None
 
 
@@ -690,13 +713,9 @@ def appel_groq(prompt, max_tokens):
 def _appel_gemini_brut(prompt, max_tokens):
     url = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
     headers = {"Authorization": f"Bearer {GEMINI_API_KEY}", "Content-Type": "application/json"}
-    payload = {"model": "gemini-2.5-flash-lite", "messages": [{"role": "user", "content": prompt}], "max_tokens": min(max_tokens, 4000)}
+    payload = {"model": GEMINI_MODELE, "messages": [{"role": "user", "content": prompt}], "max_tokens": min(max_tokens, 4000)}
     r = requests.post(url, headers=headers, json=payload, timeout=60)
-    data = r.json()
-    content = data.get("choices", [{}])[0].get("message", {}).get("content")
-    if not content:
-        raise ValueError(f"Gemini contenu vide — {data}")
-    return content.strip()
+    return _contenu_reponse("Gemini", r)
 
 
 def appel_gemini(prompt, max_tokens):
@@ -707,27 +726,34 @@ def appel_gemini(prompt, max_tokens):
         print("   ✓ Réponse via Gemini")
         return c
     except Exception as e:
-        print(f"   ⚠️ Gemini échoué : {e}")
+        print(f"   ⚠️ Gemini échoué : {_cause(e)}")
         return None
+
+
+def _cause(e):
+    """Message utile d'une erreur, y compris derrière un RetryError de tenacity."""
+    derniere = getattr(e, "last_attempt", None)
+    if derniere is not None and derniere.exception() is not None:
+        return str(derniere.exception())
+    return str(e)
 
 
 def appel_openrouter(prompt, max_tokens=2000):
     url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json"}
+    derniere_erreur = None
     for modele in OPENROUTER_MODELS:
         for tentative in range(2):
             try:
                 payload = {"model": modele, "messages": [{"role": "user", "content": prompt}], "max_tokens": max_tokens}
                 r = requests.post(url, headers=headers, json=payload, timeout=120)
-                data = r.json()
-                content = data.get("choices", [{}])[0].get("message", {}).get("content")
-                if content:
-                    print(f"   ✓ Réponse via {modele}")
-                    return content.strip()
-            except Exception:
-                pass
+                content = _contenu_reponse(f"OpenRouter {modele}", r)
+                print(f"   ✓ Réponse via {modele}")
+                return content
+            except Exception as e:
+                derniere_erreur = e
             time.sleep(3)
-    raise ValueError("Tous les modèles OpenRouter ont échoué")
+    raise ValueError(f"Tous les modèles OpenRouter ont échoué (dernière erreur : {derniere_erreur})")
 
 
 def appel_llm(prompt, max_tokens=3000):
@@ -830,7 +856,11 @@ def _tache_analyse(donnees_prompt, nb_matchs):
         f"commençant par le nom du match."
     )
     print("   🧠 [Tâche 1/3] Analyse des sélections...")
-    return appel_llm(prompt, max_tokens=2000) or ""
+    try:
+        return appel_llm(prompt, max_tokens=2000) or ""
+    except Exception as e:
+        print(f"   ⚠️ Analyse IA indisponible ({_cause(e)}) — on continue sans.")
+        return ""
 
 
 def _tache_pronostic(donnees_prompt, analyse_texte):
@@ -846,7 +876,11 @@ def _tache_pronostic(donnees_prompt, analyse_texte):
         f"'Match : Marché - Sélection @ Cote — Confiance : niveau'."
     )
     print("   🎯 [Tâche 2/3] Pronostic final...")
-    return appel_llm(prompt, max_tokens=2000) or ""
+    try:
+        return appel_llm(prompt, max_tokens=2000) or ""
+    except Exception as e:
+        print(f"   ⚠️ Pronostic IA indisponible ({_cause(e)}) — on continue sans.")
+        return ""
 
 
 def _reponse_ticket_valide(texte, nb_jambes_attendues):
@@ -904,6 +938,31 @@ def _tache_redaction(donnees_prompt, pronostic_texte, nb_jambes_attendues):
     return None
 
 
+def niveau_confiance(edge_pct):
+    """Même règle que celle donnée au LLM (tâche 2) : <10% Faible, 10-20% Moyen, >20% Élevé."""
+    if edge_pct is None or edge_pct < 10:
+        return "Faible"
+    return "Moyen" if edge_pct <= 20 else "Élevé"
+
+
+def rediger_ticket_sans_ia(selections_finales):
+    """Ticket au MÊME format que celui demandé au LLM, construit en pur Python à partir des
+    chiffres, guides et onglets déjà calculés. Utilisé quand aucun LLM ne répond : une panne
+    de Groq/Gemini/OpenRouter ne doit plus jamais faire perdre les coupons du jour
+    (constaté le 2026-09-26 : run entier en erreur pour une limite de débit Groq)."""
+    blocs = []
+    for s in selections_finales:
+        p = s["pick"]
+        blocs.append(
+            f"⚽ {s['match']}\n"
+            f"   🎯 {p['marche']} : {p['selection']} @ {p['cote']} "
+            f"(edge {p['edge_pct']}% · Confiance : {niveau_confiance(p['edge_pct'])})\n"
+            f"   📖 Guide : {p['guide']}\n"
+            f"   📍 Où parier : {p['onglet']}"
+        )
+    return "\n\n".join(blocs)
+
+
 def agent4_ia_analyse_pronostic_redaction(selections_finales):
     """AGENT 4 — IA. Responsabilité unique : transformer les chiffres déjà calculés (Agent 3)
     en un texte pédagogique. Ne recalcule JAMAIS un edge, une cote ou une probabilité —
@@ -916,7 +975,9 @@ def agent4_ia_analyse_pronostic_redaction(selections_finales):
     pronostic_texte = _tache_pronostic(donnees_prompt, analyse_texte)
     time.sleep(6)
     ticket_texte = _tache_redaction(donnees_prompt, pronostic_texte, len(selections_finales))
-
+    if not ticket_texte:
+        print("   ⚠️ Rédaction IA indisponible — ticket rédigé automatiquement à partir des chiffres calculés.")
+        ticket_texte = rediger_ticket_sans_ia(selections_finales)
     return ticket_texte
 
 
@@ -1096,18 +1157,19 @@ def selectionner_combo_cote_cible(pool_par_match, nb_jambes, cote_min, cote_max,
     poids_tous = [poids_candidat(c) for c in tous_candidats]
 
     def tirage_avec_repetition_possible():
-        """Autorise plusieurs jambes du même match — nécessaire quand aucune combinaison
-        sur des matchs 100% distincts ne peut atteindre la cible (constaté en pratique :
-        avec seulement des matchs à cote élevée disponibles, le minimum atteignable sur
-        nb_jambes matchs distincts peut dépasser la cible basse d'un profil 'sûr')."""
-        combo = []
+        """Autorise plusieurs jambes du même match (au plus MAX_JAMBES_PAR_MATCH) — nécessaire
+        quand aucune combinaison sur des matchs 100% distincts ne peut atteindre la cible."""
+        combo, par_match = [], {}
         restants, poids_restants = list(tous_candidats), list(poids_tous)
-        for _ in range(nb_jambes):
-            if not restants:
-                restants, poids_restants = list(tous_candidats), list(poids_tous)
-            choix = random.choices(range(len(restants)), weights=poids_restants, k=1)[0]
-            combo.append(restants.pop(choix))
+        while len(combo) < nb_jambes:
+            permis = [i for i, c in enumerate(restants) if par_match.get(c["match"], 0) < MAX_JAMBES_PAR_MATCH]
+            if not permis:
+                return None
+            choix = random.choices(permis, weights=[poids_restants[i] for i in permis], k=1)[0]
+            candidat = restants.pop(choix)
             poids_restants.pop(choix)
+            combo.append(candidat)
+            par_match[candidat["match"]] = par_match.get(candidat["match"], 0) + 1
         return combo
 
     meilleure_combo, meilleur_score = None, None
@@ -1124,6 +1186,8 @@ def selectionner_combo_cote_cible(pool_par_match, nb_jambes, cote_min, cote_max,
             ]
         else:
             combo = tirage_avec_repetition_possible()
+            if combo is None:
+                continue
 
         cote = _produit_cotes(combo)
         dans_cible = cote_min <= cote <= cote_max
@@ -1151,9 +1215,22 @@ def generer_trois_coupons(donnees):
     nb_candidats_total = sum(len(v) for v in pool.values())
     print(f"\n   📦 Pool commun : {nb_candidats_total} candidat(s) sur {len(pool)} match(s) distinct(s)")
 
+    # Au plus MAX_JAMBES_PAR_MATCH paris par match : les jours creux (trêve internationale),
+    # les coupons ont moins de jambes plutôt que des paris corrélés sur les mêmes matchs.
+    jambes_possibles = sum(min(len(v), MAX_JAMBES_PAR_MATCH) for v in pool.values())
+    combos_deja_proposes = []
     resultats = []
     for profil in PROFILS_COUPON:
-        combo = selectionner_combo_cote_cible(pool, profil["nb_jambes"], profil["cote_min"], profil["cote_max"])
+        nb_jambes = min(profil["nb_jambes"], jambes_possibles)
+        if nb_jambes < profil["nb_jambes"]:
+            print(f"   ℹ️ [{profil['nom']}] {nb_jambes} jambes au lieu de {profil['nb_jambes']} "
+                  f"(seulement {len(pool)} match(s) exploitable(s), {MAX_JAMBES_PAR_MATCH} paris max par match)")
+        combo = selectionner_combo_cote_cible(pool, nb_jambes, profil["cote_min"], profil["cote_max"]) if nb_jambes else None
+        signature = frozenset((c["match"], c["pick"]["marche"], c["pick"]["selection"]) for c in combo) if combo else None
+        if signature and signature in combos_deja_proposes:
+            print(f"   ⚠️ [{profil['nom']}] identique à un coupon précédent (pas assez de matchs) — non proposé.")
+            resultats.append({"profil": profil, "selections": []})
+            continue
         if combo is None:
             print(f"   ⚠️ [{profil['nom']}] pas assez de candidats disponibles pour {profil['nb_jambes']} jambes "
                   f"({nb_candidats_total} au total) — profil vide aujourd'hui.")
@@ -1164,6 +1241,7 @@ def generer_trois_coupons(donnees):
         etat_txt = "" if dans_cible else "  ⚠️ HORS CIBLE (pas assez de matchs pour mieux ce jour-là), meilleur compromis gardé"
         print(f"   {'✓' if dans_cible else '⚠️'} [{profil['nom']}] {len(combo)} jambes, cote totale réelle "
               f"{cote_reelle:.2f} (cible {profil['cote_min']}-{profil['cote_max']}){etat_txt}")
+        combos_deja_proposes.append(signature)
         resultats.append({"profil": profil, "selections": combo})
     return resultats
 

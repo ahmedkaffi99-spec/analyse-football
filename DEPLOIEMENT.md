@@ -13,6 +13,7 @@ GitHub Actions ─┬─ 10h00 UTC  Pipeline quotidien  → collecte, 3 coupons,
 | Pipeline quotidien | `.github/workflows/pipeline-quotidien.yml` | `orchestrateur.py` + `relancer_si_echec.py` |
 | Vérification des résultats | `.github/workflows/verification-resultats.yml` | `verifier_resultats.py` |
 | Tests | `.github/workflows/tests.yml` | — (lancé à chaque push) |
+| Envoyer sur Telegram | `.github/workflows/envoyer-telegram.yml` | — (à la main : envoie les coupons déjà calculés d'un run, ex. après un essai sans Telegram) |
 
 ## Étape 1 — Le projet Supabase
 

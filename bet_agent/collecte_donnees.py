@@ -173,6 +173,47 @@ FILTRE_LIGUES_UNIQUES = [
     ("la liga", "spain"),
 ]
 
+# Compétitions de SECOURS, utilisées seulement quand FILTRE_LIGUES_UNIQUES donne moins de
+# NB_MATCHS_MIN matchs — typiquement pendant une trêve internationale, où les 5 grands
+# championnats s'arrêtent (constaté le 2026-09-26 : 6 matchs seulement, tous de Serie A
+# féminine). Même format (mot-clé du tournoi, pays ou None).
+FILTRE_LIGUES_SECOURS = [
+    ("nations league", None),
+    ("champions league", None),
+    ("europa league", None),
+    ("conference league", None),
+    ("world cup", None),
+    ("africa cup of nations", None),
+    ("eredivisie", "netherlands"),
+    ("primeira liga", "portugal"),
+    ("liga portugal", "portugal"),
+    ("championship", "england"),
+    ("ligue 2", "france"),
+    ("serie b", "italy"),
+    ("2. bundesliga", "germany"),
+    ("segunda", "spain"),
+    ("super lig", "turkey"),
+    ("pro league", "belgium"),
+    ("premiership", "scotland"),
+    ("botola", "morocco"),
+]
+
+# Football féminin : exclu de la sélection automatique (les filtres visent les championnats
+# masculins ; "Serie A" laissait passer la Serie A féminine, dont les stats gratuites datent
+# de 2022-2024). Détecté sur le nom du tournoi/pays, et sur les noms d'équipes API-Football
+# ("Juventus W") au moment de la collecte.
+MARQUEURS_FEMININ = ("women", "woman", "femin", "frauen", "femenin", "wsl", "liga f", "damallsvenskan")
+
+
+def est_competition_feminine(*textes):
+    texte = " ".join(unidecode(t or "").lower() for t in textes)
+    return any(marqueur in texte for marqueur in MARQUEURS_FEMININ)
+
+
+def est_equipe_feminine_api_football(nom):
+    return unidecode(nom or "").strip().lower().endswith(" w")
+
+
 NB_MATCHS_MIN = 8   # objectif minimum de jambes pour un coupon jugé complet
 NB_MATCHS_MAX = 15  # plafond — au-delà, la collecte (API-Football/Serper) devient trop lente/coûteuse en quota
 
@@ -740,6 +781,7 @@ def selectionner_matchs_du_jour(fixtures_oddspapi):
         and fx.get("statusName") == "Pre-Game"
         and not contient_indicateur_reserve(fx.get("participant1Name", ""))
         and not contient_indicateur_reserve(fx.get("participant2Name", ""))
+        and not est_competition_feminine(fx.get("tournamentName"), fx.get("categoryName"))
     ]
 
     # Dédoublonnage par paire d'équipes — OddsPapi renvoie parfois deux fois le même vrai
@@ -759,17 +801,27 @@ def selectionner_matchs_du_jour(fixtures_oddspapi):
     if FILTRE_LIGUES_UNIQUES:
         avant = len(candidats)
 
-        def correspond_au_filtre(fx):
+        def correspond_au_filtre(fx, filtre):
             nom_tournoi = (fx.get("tournamentName") or "").lower()
             pays = (fx.get("categoryName") or "").lower()
             return any(
                 mot_cle_ligue in nom_tournoi and (pays_attendu is None or pays_attendu in pays)
-                for mot_cle_ligue, pays_attendu in FILTRE_LIGUES_UNIQUES
+                for mot_cle_ligue, pays_attendu in filtre
             )
 
-        candidats = [fx for fx in candidats if correspond_au_filtre(fx)]
+        tous_candidats = candidats
+        candidats = [fx for fx in tous_candidats if correspond_au_filtre(fx, FILTRE_LIGUES_UNIQUES)]
         noms_filtre = ", ".join(f"{lg} ({p})" if p else lg for lg, p in FILTRE_LIGUES_UNIQUES)
         print(f"   🎯 Filtre multi-ligues actif : {noms_filtre} — {len(candidats)}/{avant} candidats retenus")
+
+        if len(candidats) < NB_MATCHS_MIN and FILTRE_LIGUES_SECOURS:
+            deja = {id(fx) for fx in candidats}
+            secours = [fx for fx in tous_candidats
+                       if id(fx) not in deja and correspond_au_filtre(fx, FILTRE_LIGUES_SECOURS)]
+            candidats = candidats + secours
+            print(f"   🛟 Moins de {NB_MATCHS_MIN} matchs dans les grands championnats (trêve internationale ?) — "
+                  f"{len(secours)} match(s) ajouté(s) depuis les compétitions de secours "
+                  f"(Ligue des nations, coupes d'Europe, 2es divisions...).")
 
         if not candidats and avant > 0:
             # Diagnostic : le filtre n'a RIEN retenu alors que des matchs existaient avant
@@ -1067,6 +1119,12 @@ def collecter_donnees():
             print(f"      ✓ API-Football trouvé (score {score_af:.0f}%) : {donnees_af['home_name']} vs {donnees_af['away_name']}")
         else:
             print(f"      ⚠️ Aucune correspondance API-Football (meilleur score : {score_af:.0f}%)")
+
+        if not SELECTION_MANUELLE_ACTIVE and donnees_af and (
+                est_equipe_feminine_api_football(donnees_af["home_name"])
+                or est_equipe_feminine_api_football(donnees_af["away_name"])):
+            print(f"      ⏭️ Match féminin ({donnees_af['home_name']} vs {donnees_af['away_name']}) — ignoré.")
+            continue
 
         # --- OddsPapi : cotes réelles 1xbet, tous marchés ---
         fx_op, score_op = trouver_fixture_oddspapi(home_demande, away_demande, fixtures_oddspapi)

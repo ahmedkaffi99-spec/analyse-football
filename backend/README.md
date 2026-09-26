@@ -84,6 +84,7 @@ En production, pas de serveur : GitHub Actions appelle directement ces commandes
 python -m app.taches run --telegram                  # pipeline du jour, enregistré en base + Telegram
 python -m app.taches run --si-aucun-ticket-aujourdhui  # passage de secours
 python -m app.taches verifier --telegram             # juge les paris terminés + bilan Telegram (une fois par jour)
+python -m app.taches envoyer [--run-id N]            # envoie sur Telegram les coupons déjà calculés d'un run
 ```
 
 Import manuel d'anciens fichiers JSON du pipeline :
