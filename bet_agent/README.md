@@ -1,6 +1,6 @@
 # bet_agent — Pipeline automatique de coupons de paris football
 
-Chaque jour, le pipeline collecte les matchs et les cotes 1xBet, calcule des probabilités (modèle de Poisson), compose **3 coupons combinés** de risque différent, les fait rédiger en français par un LLM, les envoie sur **Telegram**, puis vérifie les résultats le soir.
+Chaque jour, le pipeline collecte les matchs et les cotes 1xBet, calcule des probabilités (modèle de Poisson), compose **un coupon combiné « smart »** (l'IA décide elle-même du nombre de paris et de la cote totale selon la qualité des données du jour), le fait rédiger en français par un LLM, l'envoie sur **Telegram**, puis vérifie les résultats le soir.
 
 > ⚠️ Outil d'analyse à titre indicatif. Aucun modèle ne garantit un gain. Pariez de façon responsable.
 
@@ -117,18 +117,16 @@ Le LLM **n'invente jamais un chiffre** : cotes, probabilités et edges sont calc
 - **Edge** = (proba modèle − proba implicite de la cote) / proba implicite.
 - Sélection **« 12 » interdite** partout.
 
-### Les 3 coupons (8 jambes chacun)
-| Coupon | Cote totale visée |
-|---|---|
-| 🛡️ Coupon 1 — sûr | 5 à 10 |
-| ⚖️ Coupon 2 — équilibré | 10 à 50 |
-| 🔥 Coupon 3 — audacieux | 50 à 100 |
+### Le coupon du jour (10 à 15 matchs différents)
+Un seul profil (`PROFILS_COUPON` dans `analyser_et_envoyer.py`) : **un seul pari par match** (`MAX_JAMBES_PAR_MATCH = 1`), en combinant entre 10 et 15 matchs différents (`nb_jambes_min` / `nb_jambes`). La cote totale n'est plus une cible précise — mécaniquement élevée avec autant de jambes, elle n'est qu'un garde-fou (`cote_min`/`cote_max` très larges). Le stratège IA choisit lui-même, dans cette fourchette, quels matchs et quels paris combiner selon la qualité des données du jour.
 
-Recherche Monte Carlo pondérée (4000 essais) : cote dans la cible → maximum de matchs distincts → maximum de types de paris → meilleure probabilité moyenne. Avertissement automatique si plusieurs jambes viennent du même match (probabilité combinée optimiste).
+Si l'IA échoue ou s'abstient, la composition automatique (Monte Carlo pondéré, 4000 essais) prend le relais : cote dans la cible → maximum de matchs distincts → maximum de types de paris → meilleure probabilité moyenne. Avertissement automatique si plusieurs jambes viennent du même match (probabilité combinée optimiste).
+
+`PROFILS_COUPON` reste une liste : y ajouter des profils recompose plusieurs coupons (l'ancien fonctionnement à 3 profils sûr/équilibré/audacieux), le code du pipeline y est générique.
 
 ### Rédaction et envoi
 - Chaque jambe : match, marché avec sa ligne, cote, edge, confiance, **guide débutant** et **onglet 1xBet** (générés par Python, recopiés par le LLM).
-- Contrôles : 8 blocs ⚽ présents, pas de « 12 », 3 essais maximum.
+- Contrôles : autant de blocs ⚽ que de jambes attendues, pas de « 12 », 3 essais maximum.
 - Cote totale et probabilité combinée ajoutées **par Python**, pas par le LLM.
 
 ### Suivi

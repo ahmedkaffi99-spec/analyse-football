@@ -54,10 +54,10 @@ PROBA_MIN_FORTE = 60.0  # % — un marché n'est retenu que si le modèle lui do
                          # "coupon smart" avec des jambes individuellement fortes, pas juste
                          # statistiquement avantageuses sur le papier
 
-# 3 coupons à 8 jambes chacun, composés sur LA MÊME collecte de données et le MÊME pool de
-# candidats (un seul appel à collecter_donnees, un seul calcul Agent 3 par match) — ce qui
-# change entre les 3, c'est UNIQUEMENT la fourchette de cote totale visée, obtenue en
-# choisissant quelles jambes du pool combiner (pas 3 calculs différents du même chiffre).
+# Le(s) coupon(s) de PROFILS_COUPON (un seul par défaut) sont composés sur LA MÊME collecte
+# de données et le MÊME pool de candidats (un seul appel à collecter_donnees, un seul calcul
+# Agent 3 par match) — si plusieurs profils sont configurés, seule change entre eux la
+# fourchette de cote totale visée, obtenue en choisissant quelles jambes du pool combiner.
 EDGE_MIN_POOL = 2.0    # % — plancher d'edge pour qu'un marché entre dans le pool de candidats
 # Volontairement bas (pas 50%+) : constaté en pratique (2026-07-24 et 25) que le COUPON 3
 # (cible cote 50-100) ratait systématiquement sa cible faute de jambes à cote suffisamment
@@ -70,14 +70,22 @@ PROBA_MIN_POOL = 30.0  # % — plancher de probabilité pour qu'un marché entre
 # L'IA stratège (agent_strategie.py) analyse, planifie et choisit les paris ; Python valide.
 # UTILISER_STRATEGE_IA=false revient à la seule composition automatique (Monte Carlo).
 UTILISER_STRATEGE_IA = os.getenv("UTILISER_STRATEGE_IA", "true").lower() not in ("0", "false", "non", "no")
-MAX_JAMBES_PAR_MATCH = 2  # au-delà, les paris d'un même match sont trop corrélés (constaté le
-                          # 2026-09-26 : 8 jambes sur 3 matchs, coupon quasi impossible à gagner)
+# Un seul pari par match, jamais deux (demande explicite du 26/09/2026 : les paris d'un même
+# match sont trop corrélés — constaté le même jour : 8 jambes sur 3 matchs, coupon quasi
+# impossible à gagner). Le coupon combine donc des matchs DIFFÉRENTS, pas des paris multiples
+# sur les mêmes.
+MAX_JAMBES_PAR_MATCH = 1
 NB_CANDIDATS_PAR_MATCH = 10  # plafond de sécurité — en pratique = le meilleur candidat de chaque catégorie de marché trouvée pour le match (~13 catégories possibles au total)
 
+# Choix du 26/09/2026 (demande explicite) : UN SEUL coupon "smart" combinant 10 à 15 matchs
+# DIFFÉRENTS (un seul pari par match, voir MAX_JAMBES_PAR_MATCH), plus 3 profils de risque
+# fixes ni de cible de cote totale précise. La cote totale est mécaniquement élevée avec
+# autant de jambes (≥ 1.2^10 ≈ 6 avec le plancher COTE_MIN_JAMBE) : cote_max n'est qu'un
+# garde-fou, pas un objectif — la vraie cible est le NOMBRE DE MATCHS (nb_jambes_min = 10,
+# nb_jambes = 15 ci-dessous).
 PROFILS_COUPON = [
-    {"cle": "profil1", "nom": "🛡️ COUPON 1 (cote 5–10)", "cote_min": 5.0, "cote_max": 10.0, "nb_jambes": 8},
-    {"cle": "profil2", "nom": "⚖️ COUPON 2 (cote 10–50)", "cote_min": 10.0, "cote_max": 50.0, "nb_jambes": 8},
-    {"cle": "profil3", "nom": "🔥 COUPON 3 (cote 50–100)", "cote_min": 50.0, "cote_max": 100.0, "nb_jambes": 8},
+    {"cle": "coupon", "nom": "🎯 COUPON DU JOUR (10 à 15 matchs)", "cote_min": 5.0, "cote_max": 100000.0,
+     "nb_jambes_min": 10, "nb_jambes": 15},
 ]
 SELECTION_INTERDITE = "12"  # double chance domicile-ou-extérieur, bannie par consigne
 
@@ -1071,10 +1079,10 @@ def notifier_telegram(message):
 # ============================================================
 # ARCHITECTURE — les 3 piliers (Données / Calcul / IA) se répartissent ainsi :
 #   Agent 1 & 2 (pilier DONNÉES)   -> déjà faits par collecte_donnees.py, lus ici en entrée
-#   Agent 3      (pilier CALCUL)   -> agent3_calcul_pool_candidats() + generer_trois_coupons()
+#   Agent 3      (pilier CALCUL)   -> agent3_calcul_pool_candidats() + generer_coupons()
 #   Agent 4      (pilier IA)       -> agent4_ia_analyse_pronostic_redaction() — 3 tâches internes,
-#                                      appelée une fois par profil via agent4_rediger_trois_coupons()
-#   Agent 5      (livraison)       -> agent5_envoyer_trois_coupons()
+#                                      appelée une fois par profil via agent4_rediger_coupons()
+#   Agent 5      (livraison)       -> agent5_envoyer_coupons()
 # ============================================================
 
 def _construire_contexte_prompt(selections_finales):
@@ -1369,8 +1377,8 @@ def verifier_fraicheur_matchs(matchs_exploitables):
 def agent3_calcul_pool_candidats(donnees):
     """AGENT 3 — variante 'pool' : comme agent3_calcul_mathematique, mais garde jusqu'à
     NB_CANDIDATS_PAR_MATCH candidats distincts PAR MATCH (pas seulement le meilleur) —
-    nécessaire pour composer ensuite 3 coupons ciblant des fourchettes de cote totale
-    différentes à partir du même pool. Renvoie {nom_match: [candidat, ...]}."""
+    nécessaire pour composer ensuite le(s) coupon(s) de PROFILS_COUPON, chacun ciblant sa
+    propre fourchette de cote totale, à partir du même pool. Renvoie {nom_match: [candidat, ...]}."""
     global SEUIL_EDGE, PROBA_MIN_FORTE
     SEUIL_EDGE, PROBA_MIN_FORTE = EDGE_MIN_POOL, PROBA_MIN_POOL
 
@@ -1553,10 +1561,10 @@ def selectionner_combo_cote_cible(pool_par_match, nb_jambes, cote_min, cote_max,
     return meilleure_combo
 
 
-def generer_trois_coupons(donnees):
-    """Compose les 3 coupons (PROFILS_COUPON) à partir d'UN SEUL pool de candidats calculé
-    une fois par Agent 3 (agent3_calcul_pool_candidats) — un seul calcul Poisson/edge par
-    match, trois compositions différentes en aval selon la fourchette de cote visée."""
+def generer_coupons(donnees):
+    """Compose le(s) coupon(s) de PROFILS_COUPON (un seul par défaut) à partir d'UN SEUL pool
+    de candidats calculé une fois par Agent 3 (agent3_calcul_pool_candidats) — un seul calcul
+    Poisson/edge par match, une composition en aval par profil configuré."""
     pool = agent3_calcul_pool_candidats(donnees)
     nb_candidats_total = sum(len(v) for v in pool.values())
     print(f"\n   📦 Pool commun : {nb_candidats_total} candidat(s) sur {len(pool)} match(s) distinct(s)")
@@ -1617,10 +1625,10 @@ def generer_trois_coupons(donnees):
     return resultats
 
 
-def agent4_rediger_trois_coupons(resultats_profils):
-    """AGENT 4 — IA, une rédaction par profil (même Agent 3, trois lectures). Renvoie une
-    section de texte par profil, y compris ceux sans sélection valable (phrase honnête
-    plutôt qu'un profil silencieusement omis du message final)."""
+def agent4_rediger_coupons(resultats_profils):
+    """AGENT 4 — IA, une rédaction par profil (même Agent 3, une lecture par profil configuré).
+    Renvoie une section de texte par profil, y compris ceux sans sélection valable (phrase
+    honnête plutôt qu'un profil silencieusement omis du message final)."""
     sections = []
     for item in resultats_profils:
         profil, selections = item["profil"], item["selections"]
@@ -1663,13 +1671,13 @@ def agent4_rediger_trois_coupons(resultats_profils):
 TELEGRAM_LIMITE_CARACTERES = 4096  # limite dure de l'API Telegram par message
 
 
-def agent5_envoyer_trois_coupons(sections):
-    """AGENT 5 — LIVRAISON. Envoie CHAQUE profil dans son PROPRE message Telegram —
-    jamais un seul message avec les 3 (avec 8 jambes détaillées par profil, le texte
-    dépasse presque toujours la limite dure de 4096 caractères de Telegram, constaté en
-    pratique : 'Bad Request: message is too long'). Vérifie le succès RÉEL de chaque envoi
-    (notifier_telegram renvoie False en cas d'échec) plutôt que de supposer que ça a marché.
-    Renvoie True seulement si TOUS les messages sont partis."""
+def agent5_envoyer_coupons(sections):
+    """AGENT 5 — LIVRAISON. Envoie CHAQUE profil dans son PROPRE message Telegram — jamais un
+    seul message pour plusieurs profils (avec plusieurs jambes détaillées, le texte dépasse
+    vite la limite dure de 4096 caractères de Telegram, constaté en pratique : 'Bad Request:
+    message is too long'). Vérifie le succès RÉEL de chaque envoi (notifier_telegram renvoie
+    False en cas d'échec) plutôt que de supposer que ça a marché. Renvoie True seulement si
+    TOUS les messages sont partis."""
     date_str = datetime.now().strftime("%d/%m/%Y à %H:%M")
     entete = f"🎯 *TICKETS DU JOUR — {date_str}*\nedge réel calculé par Poisson · 1xBet\n━━━━━━━━━━━━━━━━━━━━\n\n"
     pied = (
@@ -1686,12 +1694,12 @@ def agent5_envoyer_trois_coupons(sections):
             coupe = TELEGRAM_LIMITE_CARACTERES - len("\n\n_[message tronqué — trop long pour Telegram]_")
             message = message[:coupe] + "\n\n_[message tronqué — trop long pour Telegram]_"
             print(f"   ⚠️ Profil {i}/{len(sections)} tronqué ({len(entete) + len(section) + len(pied)} caractères, limite {TELEGRAM_LIMITE_CARACTERES})")
-        print(f"   📤 Envoi Telegram profil {i}/{len(sections)}...")
+        print(f"   📤 Envoi Telegram {i}/{len(sections)}...")
         ok = notifier_telegram(message)
         tout_envoye = tout_envoye and ok
         if not ok:
-            print(f"   ❌ Échec d'envoi pour le profil {i}/{len(sections)} — voir erreur ci-dessus.")
-        time.sleep(1)  # évite de rafaler l'API Telegram entre les 3 messages
+            print(f"   ❌ Échec d'envoi pour le message {i}/{len(sections)} — voir erreur ci-dessus.")
+        time.sleep(1)  # évite de rafaler l'API Telegram entre plusieurs messages
 
     return tout_envoye
 
@@ -1701,26 +1709,26 @@ def agent5_envoyer_trois_coupons(sections):
 # ============================================================
 
 def main():
-    print("🚀 Pipeline : Données (1-2, déjà fait) → Calcul 3 profils (3) → IA×3 (4) → Livraison (5)")
+    print(f"🚀 Pipeline : Données (1-2, déjà fait) → Calcul {len(PROFILS_COUPON)} profil(s) (3) → IA (4) → Livraison (5)")
 
     with open(ENTREE_JSON, "r", encoding="utf-8") as f:
         donnees = json.load(f)
 
-    print("\n📊 [AGENT 3 — CALCUL MATHÉMATIQUE, 3 PROFILS DE RISQUE]")
-    resultats_profils = generer_trois_coupons(donnees)
+    print(f"\n📊 [AGENT 3 — CALCUL MATHÉMATIQUE, {len(PROFILS_COUPON)} PROFIL(S)]")
+    resultats_profils = generer_coupons(donnees)
 
     if not any(item["selections"] for item in resultats_profils):
-        print("⚠️ Aucune sélection avec edge positif sur aucun des 3 profils — pas de ticket envoyé.")
-        notifier_telegram("⚠️ Aucun pick avec edge positif aujourd'hui, sur aucun des 3 profils de risque.")
+        print("⚠️ Aucune sélection avec edge positif — pas de ticket envoyé.")
+        notifier_telegram("⚠️ Aucun pick avec edge positif aujourd'hui.")
         return
 
-    print("\n🤖 [AGENT 4 — RÉDACTION IA × 3 PROFILS]")
-    sections = agent4_rediger_trois_coupons(resultats_profils)
+    print("\n🤖 [AGENT 4 — RÉDACTION IA]")
+    sections = agent4_rediger_coupons(resultats_profils)
 
     print("\n📤 [AGENT 5 — LIVRAISON TELEGRAM]")
-    tout_envoye = agent5_envoyer_trois_coupons(sections)
+    tout_envoye = agent5_envoyer_coupons(sections)
     if not tout_envoye:
-        print("⚠️ Au moins un profil n'a pas pu être envoyé sur Telegram (voir erreurs ci-dessus).")
+        print("⚠️ Au moins un message n'a pas pu être envoyé sur Telegram (voir erreurs ci-dessus).")
     sauvegarder_ticket_du_jour(resultats_profils)
     print("\n✅ Pipeline terminé !")
 
@@ -1763,7 +1771,7 @@ def estimer_heure_fin_ticket(selections_finales):
 
 
 def sauvegarder_ticket_du_jour(resultats_profils):
-    """Sauvegarde les 3 coupons envoyés (avec fixture_id_oddspapi de chaque jambe, par
+    """Sauvegarde le(s) coupon(s) envoyé(s) (avec fixture_id_oddspapi de chaque jambe, par
     profil) pour que verifier_resultats.py puisse, plus tard dans la journée, aller
     chercher le score final de chaque match et juger si chaque pari est gagné/perdu —
     jamais recalculé ici, juste persisté tel quel pour un usage ultérieur."""

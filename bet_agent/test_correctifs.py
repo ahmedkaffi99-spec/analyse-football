@@ -131,23 +131,53 @@ def _selection(match, categorie, selection, cote, edge=8.0):
                      "cote": cote, "proba_modele_pct": 70.0, "edge_pct": edge, "guide": "guide", "onglet": "onglet"}}
 
 
+class TestUnSeulCouponDixAQuinzeMatchs(unittest.TestCase):
+    """Verrouille le réglage explicite du 26/09/2026 : un seul coupon combiné, un seul pari
+    par match, ciblant 10 à 15 matchs différents (pas de cible de cote totale précise)."""
+
+    def test_reglages_du_coupon_du_jour(self):
+        self.assertEqual(ae.MAX_JAMBES_PAR_MATCH, 1)
+        self.assertEqual(len(ae.PROFILS_COUPON), 1)
+        profil = ae.PROFILS_COUPON[0]
+        self.assertEqual(profil["nb_jambes_min"], 10)
+        self.assertEqual(profil["nb_jambes"], 15)
+
+    def test_deux_paris_sur_le_meme_match_refuses_par_l_ia(self):
+        pool = {"A vs B": [_selection("A vs B", "Total", "Over", 1.5), _selection("A vs B", "BTTS", "Yes", 1.6)]}
+        reponse = json.dumps({"coupons": [{"profil": "coupon", "strategie": "s",
+                            "jambes": [{"id": "P1", "raison": "r1"}, {"id": "P2", "raison": "r2"}]}]})
+        with mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=pool):
+            import agent_strategie as st
+            resultat = st.composer_coupons(pool, ae.PROFILS_COUPON, appel=mock.Mock(return_value=reponse))
+        self.assertIsNone(resultat)  # aucun match distinct supplémentaire à proposer à la place
+
+
 class TestCouponsJoursCreux(unittest.TestCase):
     def test_pas_plus_de_deux_paris_par_match_ni_coupons_identiques(self):
         pool = {m: [_selection(m, c, "Over", 1.3 + 0.1 * i) for i, c in enumerate(("Total", "BTTS", "Total Équipe 1"))]
                 for m in ("A vs B", "C vs D", "E vs F")}
+        # 3 profils patchés explicitement : PROFILS_COUPON n'en définit qu'un seul par défaut
+        # depuis le 26/09/2026, mais la composition automatique doit rester générique à N
+        # profils et ne jamais proposer deux coupons identiques.
+        profils = [
+            {"cle": "profil1", "nom": "🛡️ COUPON 1", "cote_min": 5.0, "cote_max": 10.0, "nb_jambes": 8},
+            {"cle": "profil2", "nom": "⚖️ COUPON 2", "cote_min": 10.0, "cote_max": 50.0, "nb_jambes": 8},
+            {"cle": "profil3", "nom": "🔥 COUPON 3", "cote_min": 50.0, "cote_max": 100.0, "nb_jambes": 8},
+        ]
         with mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=pool), \
+                mock.patch.object(ae, "PROFILS_COUPON", profils), \
                 mock.patch.object(ae, "UTILISER_STRATEGE_IA", False):
-            resultats = ae.generer_trois_coupons({"matchs": []})
+            resultats = ae.generer_coupons({"matchs": []})
         signatures = []
         for item in resultats:
             sel = item["selections"]
             if not sel:
                 continue
-            self.assertEqual(len(sel), 6)  # 3 matchs × 2 paris max, au lieu de 8
+            self.assertEqual(len(sel), 3)  # 3 matchs × 1 pari max, au lieu de 8
             par_match = {}
             for s in sel:
                 par_match[s["match"]] = par_match.get(s["match"], 0) + 1
-            self.assertLessEqual(max(par_match.values()), 2)
+            self.assertLessEqual(max(par_match.values()), 1)
             signatures.append(frozenset((s["match"], s["pick"]["marche"]) for s in sel))
         self.assertEqual(len(signatures), len(set(signatures)))
 

@@ -1,5 +1,5 @@
 """Écriture en base des sorties du pipeline : donnees_collectees.json (matchs + cotes +
-données d'équipe) et les 3 coupons (format de generer_trois_coupons ou de ticket_du_jour.json)."""
+données d'équipe) et le(s) coupon(s) (format de generer_coupons ou de ticket_du_jour.json)."""
 
 from datetime import date, datetime, timezone
 
@@ -64,8 +64,8 @@ def enregistrer_collecte(db, run, donnees):
 
 def enregistrer_coupons(db, run, resultats_profils, index_matchs=None, textes=None, jour=None):
     """resultats_profils : liste de {"profil": {cle, nom, cote_min, cote_max}, "selections": [...]},
-    le format renvoyé par analyser_et_envoyer.generer_trois_coupons. textes[i] = ticket rédigé
-    pour le profil i (même ordre, comme agent4_rediger_trois_coupons)."""
+    le format renvoyé par analyser_et_envoyer.generer_coupons. textes[i] = ticket rédigé
+    pour le profil i (même ordre, comme agent4_rediger_coupons)."""
     index_matchs = index_matchs or {}
     jour = jour or date.today()
     coupons = []

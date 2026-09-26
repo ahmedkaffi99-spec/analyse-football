@@ -70,9 +70,9 @@ def _faux_pipeline(monkeypatch, collecte, profils, erreur=None):
                          _cache_stats_equipes={},
                          saison_en_cours=lambda: 2026, UNDERSTAT_SAISON=2025)
     ae = SimpleNamespace(
-        generer_trois_coupons=lambda donnees: profils,
-        agent4_rediger_trois_coupons=lambda res: [f"ticket {p['profil']['cle']}" for p in res],
-        agent5_envoyer_trois_coupons=lambda textes: envois.append(textes) or True,
+        generer_coupons=lambda donnees: profils,
+        agent4_rediger_coupons=lambda res: [f"ticket {p['profil']['cle']}" for p in res],
+        agent5_envoyer_coupons=lambda textes: envois.append(textes) or True,
     )
     monkeypatch.setattr(pipeline, "modules", lambda: (cd, ae, None))
     return envois
