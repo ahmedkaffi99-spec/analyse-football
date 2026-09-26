@@ -1,0 +1,26 @@
+# Liste les modèles gratuits d'OpenRouter avec leurs identifiants exacts (à la main).
+name: Modèles gratuits OpenRouter
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lister:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            bet_agent/requirements.txt
+      - run: pip install -r backend/requirements.txt
+      - name: Lister
+        working-directory: backend
+        run: python -m app.taches modeles-gratuits

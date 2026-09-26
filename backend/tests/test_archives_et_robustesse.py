@@ -96,3 +96,19 @@ def test_tester_api_signale_une_route_en_panne(monkeypatch):
 
     assert tache_tester_api(None, reponses()) == 0
     assert tache_tester_api(None, reponses(panne="/statistiques")) == 1
+
+
+def test_liste_des_modeles_gratuits(capsys):
+    from app.taches import tache_modeles_gratuits
+
+    donnees = {"data": [
+        {"id": "nvidia/grand:free", "name": "Grand", "context_length": 1000000,
+         "supported_parameters": ["tools", "response_format"], "architecture": {"output_modalities": ["text"]}},
+        {"id": "payant/modele", "name": "Payant", "context_length": 5, "pricing": {"prompt": "0.001", "completion": "0.002"}},
+        {"id": "image/gen:free", "name": "Image", "architecture": {"output_modalities": ["image"]}},
+    ]}
+    reponse = SimpleNamespace(raise_for_status=lambda: None, json=lambda: donnees)
+    assert tache_modeles_gratuits(None, SimpleNamespace(get=lambda url, timeout: reponse)) == 0
+    sortie = capsys.readouterr().out
+    assert "MODELE | nvidia/grand:free | Grand | contexte 1000000 | outils oui | json oui" in sortie
+    assert "payant/modele" not in sortie and "image/gen" not in sortie
