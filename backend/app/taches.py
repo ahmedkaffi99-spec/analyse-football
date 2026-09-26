@@ -230,13 +230,42 @@ def tester_gemini(requetes):
         return False
 
 
+# Dernier recours payant (demande explicite du 26/09/2026, testé sur le solde OpenRouter
+# existant) : très bon marché, gère outils + JSON (confirmé par le workflow « Modèles
+# gratuits », identifiant vérifié sur la page du modèle).
+OPENROUTER_MODELE_PAYANT_SECOURS = "deepseek/deepseek-v4.1-flash"
+
+
+def tester_openrouter_payant(requetes, modele=OPENROUTER_MODELE_PAYANT_SECOURS):
+    """Vraie requête payante (dépense réelle, minime) pour confirmer qu'un modèle OpenRouter
+    précis répond bien, avant de l'ajouter comme dernier recours dans OPENROUTER_MODELES."""
+    cle = os.getenv("OPENROUTER_API_KEY", "").strip()
+    if not cle:
+        print("OPENROUTER PAYANT | clé absente (secret OPENROUTER_API_KEY non transmis)")
+        return False
+    reponse, duree = _chrono(lambda: requetes.post(
+        "https://openrouter.ai/api/v1/chat/completions",
+        headers={"Authorization": f"Bearer {cle}", "Content-Type": "application/json"}, timeout=60,
+        json={"model": modele, "messages": [{"role": "user", "content": PROMPT_TEST_IA}], "max_tokens": 50,
+              "response_format": {"type": "json_object"}}))
+    if reponse.status_code != 200:
+        print(f"OPENROUTER PAYANT | test {modele} : ÉCHEC HTTP {reponse.status_code} "
+              f"{str(reponse.json().get('error', {}).get('message', ''))[:150]}")
+        return False
+    texte = reponse.json()["choices"][0]["message"]["content"].strip()
+    print(f"OPENROUTER PAYANT | test {modele} : OK en {duree:.1f} s → {texte[:60]!r}")
+    return True
+
+
 def tache_tester_ia(args, requetes=None):
-    """Teste les clés IA disponibles (Groq, Gemini, OpenRouter) avec une vraie réponse."""
+    """Teste les clés IA disponibles (Groq, Gemini, OpenRouter) avec une vraie réponse, puis le
+    modèle payant de dernier recours (dépense réelle minime sur le solde OpenRouter)."""
     import requests
 
     requetes = requetes or requests
     resultats = {"groq": tester_groq(requetes), "gemini": tester_gemini(requetes),
-                 "openrouter": verifier_cle_openrouter(requetes)}
+                 "openrouter": verifier_cle_openrouter(requetes),
+                 "openrouter_payant": tester_openrouter_payant(requetes)}
     print("BILAN | " + " | ".join(f"{nom} {'OK' if ok else 'KO'}" for nom, ok in resultats.items()))
     return 0
 

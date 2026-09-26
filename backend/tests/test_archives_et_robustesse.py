@@ -206,3 +206,20 @@ def test_tester_les_ia_groq_et_gemini(capsys, monkeypatch):
     assert "GEMINI | test gemini-3.8-flash : OK" in sortie
     assert "BILAN | groq OK | gemini OK | openrouter KO" in sortie
     assert "secrete" not in sortie and all("secrete" not in u for u in appels)
+
+
+def test_test_reel_du_modele_payant_de_secours(capsys, monkeypatch):
+    from app.taches import tester_openrouter_payant
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-secrete")
+    appels = []
+
+    def post(url, headers, timeout, json):
+        appels.append((url, headers["Authorization"], json["model"], json["response_format"]))
+        return SimpleNamespace(status_code=200, json=lambda: {"choices": [{"message": {"content": '{"ok": true}'}}]})
+
+    assert tester_openrouter_payant(SimpleNamespace(post=post)) is True
+    sortie = capsys.readouterr().out
+    assert "OPENROUTER PAYANT | test deepseek/deepseek-v4.1-flash : OK" in sortie
+    assert "secrete" not in sortie
+    assert appels[0][1:] == ("Bearer sk-or-secrete", "deepseek/deepseek-v4.1-flash", {"type": "json_object"})
