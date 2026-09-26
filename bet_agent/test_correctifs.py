@@ -454,6 +454,19 @@ class TestGroqGeminiOpenRouter(unittest.TestCase):
         self.assertEqual(sum("groq" in u for u in appels), nb_groq)  # Groq n'est plus appelé
 
 
+class TestVariablesModelesVides(unittest.TestCase):
+    def test_variable_vide_du_workflow_garde_les_modeles_par_defaut(self):
+        import importlib
+        with mock.patch.dict(os.environ, {"GROQ_MODELES": "", "GEMINI_MODELES": "", "OPENROUTER_MODELES": ""}):
+            module = importlib.reload(ae)
+            try:
+                self.assertEqual(module.GROQ_MODELES[0], "openai/gpt-oss-120b")
+                self.assertEqual(module.GEMINI_MODELES[0], "gemini-3.8-flash")
+                self.assertTrue(module.OPENROUTER_MODELS)
+            finally:
+                importlib.reload(ae)
+
+
 class TestMelangeModeleMarche(unittest.TestCase):
     def test_probabilites_sans_marge(self):
         marches = [

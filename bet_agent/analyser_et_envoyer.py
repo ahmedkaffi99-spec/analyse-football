@@ -88,18 +88,20 @@ SELECTION_INTERDITE = "12"  # double chance domicile-ou-extérieur, bannie par c
 # Interrogés PAR VAGUES EN PARALLÈLE (IA_EN_PARALLELE à la fois) : la première réponse valide
 # gagne. Au run 9 (samedi midi), essayés un par un, tous étaient saturés (429) ou trop lents.
 # Les plus rapides d'abord ; Nemotron 3 Ultra retiré (4 min 30 sans JSON au run 8).
+# Retirés (run 10) : inkling-small (403, réservé aux « agentic harnesses ») et ling-3.0-flash-fin (400).
 OPENROUTER_MODELES_DEFAUT = ("nvidia/nemotron-3.5-lightning:free,qwen/qwen3.8-27b:free,"
-                             "google/gemma-4-31b-it:free,thinkingmachines/inkling-small:free,"
-                             "nvidia/nemotron-3-super-120b-a12b:free,google/gemma-4-26b-a4b-it:free,"
-                             "inclusionai/ling-3.0-flash-fin:free,poolside/laguna-s-2.1:free,openrouter/free")
+                             "google/gemma-4-31b-it:free,nvidia/nemotron-3-super-120b-a12b:free,"
+                             "google/gemma-4-26b-a4b-it:free,poolside/laguna-s-2.1:free,openrouter/free")
 IA_EN_PARALLELE = int(os.getenv("IA_EN_PARALLELE", "4"))
 OPENROUTER_MODELS = [m.strip() for m in (os.getenv("OPENROUTER_MODELES") or OPENROUTER_MODELES_DEFAUT).split(",")
                      if m.strip()]
 # Groq et Gemini (clés testées le 2026-09-26 : réponses en 0,4 s et 5,6 s) courent dans les
 # mêmes vagues qu'OpenRouter : la 1re vague mêle les trois fournisseurs.
-GROQ_MODELES = [m.strip() for m in os.getenv("GROQ_MODELES", "openai/gpt-oss-120b,qwen/qwen3.8-27b").split(",")
+# « or » et non valeur par défaut de getenv : le workflow transmet une variable VIDE quand
+# elle n'est pas définie, ce qui donnait une liste vide (Groq et Gemini jamais appelés, run 10).
+GROQ_MODELES = [m.strip() for m in (os.getenv("GROQ_MODELES") or "openai/gpt-oss-120b,qwen/qwen3.8-27b").split(",")
                 if m.strip()]
-GEMINI_MODELES = [m.strip() for m in os.getenv("GEMINI_MODELES", "gemini-3.8-flash,gemini-3.7-flash").split(",")
+GEMINI_MODELES = [m.strip() for m in (os.getenv("GEMINI_MODELES") or "gemini-3.8-flash,gemini-3.7-flash").split(",")
                   if m.strip()]
 NOMS_FOURNISSEURS = {"openrouter": "OpenRouter", "groq": "Groq", "gemini": "Gemini"}
 # Fournisseur dont la clé est refusée : écarté pour le reste du run (run 5 : des dizaines
