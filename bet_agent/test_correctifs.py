@@ -166,3 +166,34 @@ class TestRedactionSansIA(unittest.TestCase):
         reponse = mock.Mock(status_code=429, json=lambda: [{"error": {"message": "Quota exceeded"}}])
         with self.assertRaisesRegex(ValueError, "Gemini HTTP 429 : Quota exceeded"):
             ae._contenu_reponse("Gemini", reponse)
+
+
+class TestMatchsVirtuelsEtMarches(unittest.TestCase):
+    def test_matchs_virtuels_srl_exclus_et_jamais_confondus(self):
+        fixtures = [
+            _fixture("England SRL", "Spain SRL", "UEFA Nations League", "International"),
+            _fixture("England", "Spain", "UEFA Nations League", "International"),
+        ]
+        self.assertEqual(cd.selectionner_matchs_du_jour(fixtures), [("England", "Spain")])
+        # Le vrai match ne doit jamais être apparié à sa version virtuelle
+        fx, _ = cd.trouver_fixture_oddspapi("Slovenia", "Scotland",
+                                            [{"participant1Name": "Slovenia Srl", "participant2Name": "Scotland SRL"}])
+        self.assertIsNone(fx)
+
+    def test_marches_mi_temps_et_corners_pair_impair_ignores(self):
+        marches = [
+            {"marche": "Corners - Over Under Second Half", "handicap": 3.5, "periode": "secondhalf",
+             "selections": [{"selection": "Over", "cote": 1.26}, {"selection": "Under", "cote": 3.5}]},
+            {"marche": "Over Under 1st Half", "handicap": 0.5, "periode": None,
+             "selections": [{"selection": "Over", "cote": 1.5}, {"selection": "Under", "cote": 2.5}]},
+            {"marche": "Corners - Odd Even", "handicap": 0.0, "periode": "fulltime",
+             "selections": [{"selection": "Even", "cote": 1.9}, {"selection": "Odd", "cote": 1.9}]},
+        ]
+        self.assertEqual(ae.evaluer_marches(marches, 1.5, 1.2, mu_corners=9.5), [])
+
+    def test_echantillon_de_stats_trop_petit_ignore(self):
+        petit = {"matchs_joues": 3, "buts_marques_domicile": 0.1, "buts_encaisses_domicile": 1,
+                 "buts_marques_exterieur": 0.2, "buts_encaisses_exterieur": 1}
+        grand = dict(petit, matchs_joues=20)
+        self.assertIsNone(ae.calculer_xg_depuis_stats(petit, grand))
+        self.assertIsNotNone(ae.calculer_xg_depuis_stats(grand, grand))

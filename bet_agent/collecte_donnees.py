@@ -222,7 +222,11 @@ SEUIL_MATCH_ACCEPTABLE = 80  # relevé de 60 à 80 après un faux positif (équi
 # Un candidat contenant un de ces marqueurs, alors que la demande n'en contient aucun,
 # est rejeté même si son score dépasse le seuil — évite de confondre l'équipe pro
 # avec sa réserve/ses jeunes (ex: "New York City II" au lieu de "New York City FC").
-INDICATEURS_EQUIPE_RESERVE = (" ii", " iii", " u18", " u19", " u20", " u21", " u23", " reserve", " reserves", " b team", " youth")
+INDICATEURS_EQUIPE_RESERVE = (" ii", " iii", " u18", " u19", " u20", " u21", " u23", " reserve", " reserves", " b team", " youth",
+                              # Matchs VIRTUELS (Simulated Reality League, e-sport) : aucun marché 1xbet
+                              # réel, et "England SRL vs Spain SRL" était apparié au vrai match
+                              # (constaté le 2026-09-26 : 13 matchs sur 15 sans aucune cote)
+                              " srl", " esports", " e-sports", " cyber", " virtual")
 
 
 def contient_indicateur_reserve(nom):
