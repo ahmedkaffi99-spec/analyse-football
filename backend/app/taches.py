@@ -242,29 +242,48 @@ def tache_tester_ia(args, requetes=None):
 
 
 def tache_modeles_gratuits(args, requetes=None):
-    """Liste les modèles GRATUITS d'OpenRouter (identifiant exact, contexte, prise en charge des
-    outils et du JSON) — pour choisir OPENROUTER_MODELES sans deviner les identifiants."""
+    """Liste les modèles GRATUITS d'OpenRouter, puis les 10 moins chers PAYANTS avec tarif au
+    million de tokens (identifiant exact, contexte, outils, JSON) — pour choisir OPENROUTER_MODELES
+    ou un modèle payant de dernier recours sans deviner les identifiants ni les prix."""
     import requests
 
     requetes = requetes or requests
     verifier_cle_openrouter(requetes)
     r = requetes.get("https://openrouter.ai/api/v1/models", timeout=30)
     r.raise_for_status()
-    modeles = []
+    gratuits, payants = [], []
     for m in r.json().get("data", []):
         tarif = m.get("pricing") or {}
-        gratuit = str(m.get("id", "")).endswith(":free") or (
-            str(tarif.get("prompt")) in ("0", "0.0") and str(tarif.get("completion")) in ("0", "0.0"))
+        prompt_prix, completion_prix = tarif.get("prompt"), tarif.get("completion")
         sortie = (m.get("architecture") or {}).get("output_modalities") or ["text"]
-        if gratuit and "text" in sortie:
-            parametres = m.get("supported_parameters") or []
-            modeles.append((m["id"], m.get("name", ""), m.get("context_length") or 0,
-                            "tools" in parametres, "response_format" in parametres or "structured_outputs" in parametres))
-    modeles.sort(key=lambda x: -x[2])
-    print(f"{len(modeles)} modèle(s) texte gratuit(s) sur OpenRouter :")
-    for identifiant, nom, contexte, outils, json_ok in modeles:
+        if "text" not in sortie:
+            continue
+        parametres = m.get("supported_parameters") or []
+        outils = "tools" in parametres
+        json_ok = "response_format" in parametres or "structured_outputs" in parametres
+        # Gratuit par le suffixe ":free" MÊME sans champ pricing exploitable (constaté : certains
+        # modèles gratuits n'ont pas de "pricing" du tout, pas seulement "0").
+        gratuit = str(m.get("id", "")).endswith(":free") or (str(prompt_prix) in ("0", "0.0")
+                                                             and str(completion_prix) in ("0", "0.0"))
+        if gratuit:
+            gratuits.append((m["id"], m.get("name", ""), m.get("context_length") or 0, outils, json_ok))
+            continue
+        try:
+            prix_million = (float(prompt_prix) + float(completion_prix)) * 1_000_000 / 2
+        except (TypeError, ValueError):
+            continue  # pas de tarif chiffrable — ignoré (ni gratuit ni comparable en prix)
+        payants.append((prix_million, m["id"], m.get("name", ""), m.get("context_length") or 0, outils, json_ok))
+    gratuits.sort(key=lambda x: -x[2])
+    print(f"{len(gratuits)} modèle(s) texte gratuit(s) sur OpenRouter :")
+    for identifiant, nom, contexte, outils, json_ok in gratuits:
         print(f"MODELE | {identifiant} | {nom} | contexte {contexte} | outils {'oui' if outils else 'non'} "
               f"| json {'oui' if json_ok else 'non'}")
+    payants.sort()
+    print(f"\n{len(payants)} modèle(s) texte payant(s) — 10 moins chers (dollars / million de tokens, moyenne "
+          "prompt+réponse) :")
+    for prix_million, identifiant, nom, contexte, outils, json_ok in payants[:10]:
+        print(f"PAYANT | {identifiant} | {nom} | ${prix_million:.4f}/M tokens | contexte {contexte} | "
+              f"outils {'oui' if outils else 'non'} | json {'oui' if json_ok else 'non'}")
     return 0
 
 
