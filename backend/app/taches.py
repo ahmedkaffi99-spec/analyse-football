@@ -23,11 +23,13 @@ from app.services.verification import verifier_coupons_en_attente
 
 
 def ticket_deja_produit_aujourdhui(db):
-    """Même rôle que relancer_si_echec.py : le 2e passage ne relance le pipeline que si le
-    premier n'a produit aucun ticket aujourd'hui (erreur réseau, abandon...)."""
+    """Les passages planifiés (plusieurs, GitHub pouvant en sauter) ne lancent le pipeline que
+    si aucun coupon n'est encore parti sur Telegram aujourd'hui et qu'aucun run n'est en cours.
+    Un run manuel sans envoi Telegram ne bloque pas le passage du jour."""
     debut_du_jour = datetime.combine(datetime.now(timezone.utc).date(), time.min, tzinfo=timezone.utc)
-    return db.scalar(select(Run).where(Run.source == "api", Run.lance_le >= debut_du_jour,
-                                       Run.statut.in_(("termine", "en_cours")))) is not None
+    return db.scalar(select(Run).where(
+        Run.source == "api", Run.lance_le >= debut_du_jour,
+        (Run.statut == "en_cours") | ((Run.statut == "termine") & Run.envoye_telegram.is_(True)))) is not None
 
 
 def tache_run(args):

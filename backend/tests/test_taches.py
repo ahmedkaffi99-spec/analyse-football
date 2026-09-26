@@ -18,6 +18,16 @@ def test_tache_run_enregistre_et_relance_evitee(monkeypatch):
         assert db.query(Run).count() == 1
 
 
+def test_run_manuel_sans_telegram_ne_bloque_pas_le_passage_planifie(monkeypatch):
+    envois = _faux_pipeline(monkeypatch, collecte_exemple(), profils_exemple())
+    assert taches.main(["run"]) == 0  # essai manuel, rien envoyé
+    assert taches.main(["run", "--telegram", "--si-aucun-ticket-aujourdhui"]) == 0
+    assert len(envois) == 1
+    assert taches.main(["run", "--telegram", "--si-aucun-ticket-aujourdhui"]) == 0  # déjà envoyé
+    with SessionLocal() as db:
+        assert db.query(Run).count() == 2
+
+
 def test_tache_run_en_erreur_code_retour_1(monkeypatch):
     _faux_pipeline(monkeypatch, collecte_exemple(), profils_exemple(), erreur=RuntimeError("panne"))
     assert taches.main(["run"]) == 1

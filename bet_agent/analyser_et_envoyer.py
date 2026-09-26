@@ -19,6 +19,7 @@ import time
 import random
 import requests
 import urllib3
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as DelaiDepasse
 
 # Voir collecte_donnees.py pour le détail : OddsPapi est intercepté par un boîtier réseau
 # (Fortinet) qui re-signe son certificat avec une CA non reconnue — désactivé uniquement
@@ -83,8 +84,10 @@ SELECTION_INTERDITE = "12"  # double chance domicile-ou-extérieur, bannie par c
 # Modèles gratuits essayés dans l'ordre (liste réelle d'OpenRouter, workflow « Modèles gratuits ») :
 # des modèles de raisonnement généralistes, ceux qui gèrent le JSON d'abord ; le routeur
 # openrouter/free en dernier recours. Remplaçable sans toucher au code via OPENROUTER_MODELES.
-OPENROUTER_MODELES_DEFAUT = ("qwen/qwen3.8-27b:free,nvidia/nemotron-3-ultra-550b-a55b:free,"
-                             "nvidia/nemotron-3-super-120b-a12b:free,google/gemma-4-31b-it:free,openrouter/free")
+# Nemotron 3 Ultra retiré : 4 min 30 pour une réponse sans JSON (run 8). Tous ceux-ci gèrent
+# la sortie JSON imposée (response_format), indispensable au stratège.
+OPENROUTER_MODELES_DEFAUT = ("qwen/qwen3.8-27b:free,nvidia/nemotron-3-super-120b-a12b:free,"
+                             "google/gemma-4-31b-it:free,google/gemma-4-26b-a4b-it:free,openrouter/free")
 OPENROUTER_MODELS = [m.strip() for m in (os.getenv("OPENROUTER_MODELES") or OPENROUTER_MODELES_DEFAUT).split(",")
                      if m.strip()]
 OPENROUTER_ATTENTE_429_MAX = 60  # secondes max d'attente quand OpenRouter limite le débit
@@ -95,6 +98,17 @@ _cle_openrouter_refusee = None
 # ticket est rédigé en Python. Le run 7 (2026-09-26) avait passé plus de 10 minutes en IA.
 BUDGET_IA_SECONDES = float(os.getenv("BUDGET_IA_SECONDES", "240"))
 DELAI_REQUETE_IA_MAX = 60  # secondes max pour UNE réponse (au-delà : modèle suivant)
+# Délai « horloge murale » : le timeout de requests ne borne que chaque lecture réseau, et un
+# modèle qui envoie sa réponse au compte-gouttes le contournait (4 min 30 au run 8).
+_executeur_ia = ThreadPoolExecutor(max_workers=4, thread_name_prefix="ia")
+
+
+def _post_borne(url, delai, **kwargs):
+    futur = _executeur_ia.submit(requests.post, url, timeout=delai, **kwargs)
+    try:
+        return futur.result(timeout=delai + 2)
+    except DelaiDepasse:
+        raise TimeoutError(f"pas de réponse complète en {delai:.0f} s")
 _echeance_ia = None  # démarre au premier appel IA du run
 
 
@@ -866,7 +880,7 @@ def _attente_limite_debit(r):
         return 20.0
 
 
-def appel_openrouter(prompt, max_tokens=2000):
+def appel_openrouter(prompt, max_tokens=2000, json_attendu=False):
     global _cle_openrouter_refusee
     if not OPENROUTER_API_KEY:
         raise ValueError("OPENROUTER_API_KEY manquante")
@@ -893,7 +907,9 @@ def appel_openrouter(prompt, max_tokens=2000):
             payload = {"model": modele, "messages": [{"role": "user", "content": prompt}], "max_tokens": max_tokens,
                        # Réflexion courte pour les modèles de raisonnement (ignoré par les autres).
                        "reasoning": {"effort": "low"}}
-            r = requests.post(url, headers=headers, json=payload, timeout=min(DELAI_REQUETE_IA_MAX, restant))
+            if json_attendu:
+                payload["response_format"] = {"type": "json_object"}
+            r = _post_borne(url, min(DELAI_REQUETE_IA_MAX, restant), headers=headers, json=payload)
             content = _contenu_reponse(f"OpenRouter {modele}", r)
             print(f"   ✓ Réponse via OpenRouter ({modele})")
             return content
@@ -910,10 +926,10 @@ def appel_openrouter(prompt, max_tokens=2000):
     raise ValueError(f"Tous les modèles OpenRouter ont échoué (dernière erreur : {derniere_erreur})")
 
 
-def appel_llm(prompt, max_tokens=3000):
+def appel_llm(prompt, max_tokens=3000, json_attendu=False):
     """Toute l'IA passe par OpenRouter. Si aucun modèle ne répond, les tâches d'analyse sont
     sautées et le ticket est rédigé en Python (voir rediger_ticket_sans_ia)."""
-    return appel_openrouter(prompt, max_tokens)
+    return appel_openrouter(prompt, max_tokens, json_attendu=json_attendu)
 
 
 def verifier_pas_de_12(texte):

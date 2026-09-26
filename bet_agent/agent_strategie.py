@@ -168,7 +168,7 @@ def composer_coupons(pool, profils, appel=None, nb_tours=NB_TOURS_MAX):
         print(f"   🧭 [Stratège IA] tour {tour}/{nb_tours} : analyse, stratégie et choix des paris...")
         try:
             # Marge large : les modèles de raisonnement comptent leur réflexion dans max_tokens.
-            proposition = extraire_json(appel(prompt, max_tokens=8000))
+            proposition = extraire_json(appel(prompt, max_tokens=8000, json_attendu=True))
         except Exception as e:
             print(f"      ⚠️ Réponse du stratège inexploitable ({ae._cause(e)[:150]})")
             prompt = prompt_base + "\n\nTa réponse précédente n'était pas un JSON valide. Renvoie UNIQUEMENT le JSON demandé."
