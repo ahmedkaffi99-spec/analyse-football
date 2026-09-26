@@ -8,6 +8,7 @@
 Code de sortie 1 si le run finit en erreur : le workflow GitHub apparaît alors en rouge."""
 
 import argparse
+import os
 import sys
 from datetime import datetime, time, timezone
 
@@ -121,12 +122,36 @@ def tache_tester_api(args, requetes=None):
     return 1 if echecs else 0
 
 
+def verifier_cle_openrouter(requetes):
+    """Vérifie le secret OPENROUTER_API_KEY auprès d'OpenRouter (sans jamais l'afficher)."""
+    cle = os.getenv("OPENROUTER_API_KEY", "").strip()
+    if not cle:
+        print("CLE | absente (secret OPENROUTER_API_KEY non transmis)")
+        return False
+    try:
+        r = requetes.get("https://openrouter.ai/api/v1/key", headers={"Authorization": f"Bearer {cle}"}, timeout=30)
+        donnees = r.json()
+    except Exception as e:
+        print(f"CLE | vérification impossible ({type(e).__name__})")
+        return False
+    if r.status_code != 200:
+        message = (donnees.get("error") or {}).get("message", "") if isinstance(donnees, dict) else ""
+        print(f"CLE | REFUSÉE (HTTP {r.status_code} : {str(message)[:120]}) — clé supprimée, désactivée "
+              "ou mal copiée : recréer une clé sur openrouter.ai/keys et mettre à jour le secret")
+        return False
+    infos = donnees.get("data") or {}
+    print(f"CLE | valide | offre gratuite : {'oui' if infos.get('is_free_tier') else 'non'} "
+          f"| limite : {infos.get('limit')} | utilisé : {infos.get('usage')}")
+    return True
+
+
 def tache_modeles_gratuits(args, requetes=None):
     """Liste les modèles GRATUITS d'OpenRouter (identifiant exact, contexte, prise en charge des
     outils et du JSON) — pour choisir OPENROUTER_MODELES sans deviner les identifiants."""
     import requests
 
     requetes = requetes or requests
+    verifier_cle_openrouter(requetes)
     r = requetes.get("https://openrouter.ai/api/v1/models", timeout=30)
     r.raise_for_status()
     modeles = []
