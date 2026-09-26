@@ -1,0 +1,31 @@
+# Teste les clés IA (Groq, Gemini, OpenRouter) avec une vraie réponse — à la main.
+name: Tester les IA
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tester:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            bet_agent/requirements.txt
+      - run: pip install -r backend/requirements.txt
+      - name: Tester
+        working-directory: backend
+        env:
+          PYTHONUNBUFFERED: "1"
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: python -m app.taches tester-ia

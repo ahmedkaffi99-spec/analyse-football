@@ -148,6 +148,96 @@ def verifier_cle_openrouter(requetes):
     return True
 
 
+GROQ_MODELES_PREFERES = ("llama-3.3-70b-versatile", "openai/gpt-oss-120b", "qwen/qwen3-32b", "llama-3.1-8b-instant")
+PROMPT_TEST_IA = 'Réponds UNIQUEMENT avec ce JSON : {"ok": true}'
+
+
+def _chrono(fonction):
+    import time as horloge
+
+    debut = horloge.monotonic()
+    resultat = fonction()
+    return resultat, horloge.monotonic() - debut
+
+
+def tester_groq(requetes):
+    """Clé Groq : liste des modèles puis une vraie réponse (clé jamais affichée)."""
+    cle = os.getenv("GROQ_API_KEY", "").strip()
+    if not cle:
+        print("GROQ | clé absente (secret GROQ_API_KEY non transmis)")
+        return False
+    entetes = {"Authorization": f"Bearer {cle}"}
+    try:
+        r = requetes.get("https://api.groq.com/openai/v1/models", headers=entetes, timeout=30)
+        if r.status_code != 200:
+            print(f"GROQ | REFUSÉE (HTTP {r.status_code} : {str(r.json().get('error', {}).get('message', ''))[:120]})")
+            return False
+        disponibles = sorted(m["id"] for m in r.json().get("data", []))
+        print(f"GROQ | clé valide | {len(disponibles)} modèle(s) : {', '.join(disponibles)}")
+        modele = next((m for m in GROQ_MODELES_PREFERES if m in disponibles), disponibles[0] if disponibles else None)
+        if not modele:
+            return False
+        reponse, duree = _chrono(lambda: requetes.post(
+            "https://api.groq.com/openai/v1/chat/completions", headers=entetes, timeout=60,
+            json={"model": modele, "messages": [{"role": "user", "content": PROMPT_TEST_IA}], "max_tokens": 50}))
+        if reponse.status_code != 200:
+            print(f"GROQ | test {modele} : ÉCHEC HTTP {reponse.status_code} "
+                  f"{str(reponse.json().get('error', {}).get('message', ''))[:120]}")
+            return False
+        texte = reponse.json()["choices"][0]["message"]["content"].strip()
+        print(f"GROQ | test {modele} : OK en {duree:.1f} s → {texte[:60]!r}")
+        return True
+    except Exception as e:
+        print(f"GROQ | test impossible ({type(e).__name__})")
+        return False
+
+
+def tester_gemini(requetes):
+    """Clé Gemini (en-tête x-goog-api-key, jamais dans l'URL ni affichée)."""
+    cle = os.getenv("GEMINI_API_KEY", "").strip()
+    if not cle:
+        print("GEMINI | clé absente (secret GEMINI_API_KEY non transmis)")
+        return False
+    entetes = {"x-goog-api-key": cle}
+    base = "https://generativelanguage.googleapis.com/v1beta"
+    try:
+        r = requetes.get(f"{base}/models", headers=entetes, params={"pageSize": 200}, timeout=30)
+        if r.status_code != 200:
+            print(f"GEMINI | REFUSÉE (HTTP {r.status_code} : {str(r.json().get('error', {}).get('message', ''))[:120]})")
+            return False
+        texte_ok = [m["name"].removeprefix("models/") for m in r.json().get("models", [])
+                    if "generateContent" in (m.get("supportedGenerationMethods") or [])]
+        print(f"GEMINI | clé valide | {len(texte_ok)} modèle(s) : {', '.join(texte_ok)}")
+        flash = [m for m in texte_ok if "flash" in m and "image" not in m and "tts" not in m and "live" not in m]
+        modele = next((m for m in flash if "lite" not in m), flash[0] if flash else (texte_ok[0] if texte_ok else None))
+        if not modele:
+            return False
+        reponse, duree = _chrono(lambda: requetes.post(
+            f"{base}/models/{modele}:generateContent", headers=entetes, timeout=60,
+            json={"contents": [{"parts": [{"text": PROMPT_TEST_IA}]}]}))
+        if reponse.status_code != 200:
+            print(f"GEMINI | test {modele} : ÉCHEC HTTP {reponse.status_code} "
+                  f"{str(reponse.json().get('error', {}).get('message', ''))[:120]}")
+            return False
+        texte = reponse.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+        print(f"GEMINI | test {modele} : OK en {duree:.1f} s → {texte[:60]!r}")
+        return True
+    except Exception as e:
+        print(f"GEMINI | test impossible ({type(e).__name__})")
+        return False
+
+
+def tache_tester_ia(args, requetes=None):
+    """Teste les clés IA disponibles (Groq, Gemini, OpenRouter) avec une vraie réponse."""
+    import requests
+
+    requetes = requetes or requests
+    resultats = {"groq": tester_groq(requetes), "gemini": tester_gemini(requetes),
+                 "openrouter": verifier_cle_openrouter(requetes)}
+    print("BILAN | " + " | ".join(f"{nom} {'OK' if ok else 'KO'}" for nom, ok in resultats.items()))
+    return 0
+
+
 def tache_modeles_gratuits(args, requetes=None):
     """Liste les modèles GRATUITS d'OpenRouter (identifiant exact, contexte, prise en charge des
     outils et du JSON) — pour choisir OPENROUTER_MODELES sans deviner les identifiants."""
@@ -192,10 +282,13 @@ def main(argv=None):
     p_envoi.add_argument("--forcer", action="store_true", help="renvoie même si déjà envoyé")
     sous.add_parser("tester-api", help="vérifie l'Edge Function api en ligne (jeton du Vault)")
     sous.add_parser("modeles-gratuits", help="liste les modèles gratuits d'OpenRouter (identifiants exacts)")
+    sous.add_parser("tester-ia", help="teste les clés Groq, Gemini et OpenRouter avec une vraie réponse")
     args = parser.parse_args(argv)
 
     if args.tache == "modeles-gratuits":  # n'a pas besoin de la base
         return tache_modeles_gratuits(args)
+    if args.tache == "tester-ia":
+        return tache_tester_ia(args)
     init_db()
     with SessionLocal() as db:
         cloturer_runs_interrompus(db)
