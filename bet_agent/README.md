@@ -49,8 +49,8 @@ Chaque jour, le pipeline collecte les matchs et les cotes 1xBet, calcule des pro
 ### IA (LLM)
 | Rôle | Fournisseur / modèle | Repli |
 |---|---|---|
-| **Orchestrateur** (décide quoi faire, tool-calling) | Groq · `openai/gpt-oss-120b` | message d'abandon Telegram |
-| **Rédaction** des coupons (3 tâches) | Groq · `openai/gpt-oss-120b` | → Gemini `gemini-2.5-flash-lite` → OpenRouter (modèles gratuits) |
+| **Orchestrateur** (ancien `orchestrateur.py`, **non utilisé** sur GitHub Actions) | Groq · `openai/gpt-oss-120b` | message d'abandon Telegram |
+| **Rédaction** des coupons (3 tâches) | **OpenRouter** (modèles `openrouter/free`, puis 2 autres modèles gratuits ; liste modifiable via `OPENROUTER_MODELES`) | → ticket rédigé en Python si aucun modèle ne répond |
 
 Le LLM **n'invente jamais un chiffre** : cotes, probabilités et edges sont calculés en Python. Il ne fait que décider et rédiger.
 

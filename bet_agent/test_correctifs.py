@@ -272,3 +272,28 @@ class TestCollecteEfficace(unittest.TestCase):
         self.assertEqual([m["oddspapi"]["fixture_id"] for m in sortie["matchs"]], ["f1", "f3"])
         self.assertEqual(serper.call_count, 2)
         self.assertEqual(cotes.call_count, 4)  # f0, f1, f2, f3 sondés — pas f4 ni f5
+
+
+class TestOpenRouterSeulement(unittest.TestCase):
+    def test_toute_l_ia_passe_par_openrouter(self):
+        appels = []
+
+        def faux_post(url, headers, json, timeout):
+            appels.append((url, json["model"], headers.get("X-Title")))
+            return mock.Mock(status_code=200, headers={},
+                             json=lambda: {"choices": [{"message": {"content": "Bonjour"}}]})
+
+        with mock.patch.object(ae, "OPENROUTER_API_KEY", "cle"), mock.patch.object(ae.requests, "post", faux_post):
+            self.assertEqual(ae.appel_llm("test"), "Bonjour")
+        self.assertEqual(appels, [("https://openrouter.ai/api/v1/chat/completions", ae.OPENROUTER_MODELS[0], "analyse-football")])
+        self.assertFalse(hasattr(ae, "appel_groq") or hasattr(ae, "appel_gemini"))
+
+    def test_limite_de_debit_attend_puis_passe_au_modele_suivant(self):
+        reponses = [mock.Mock(status_code=429, headers={"Retry-After": "7"},
+                              json=lambda: {"error": {"message": "Rate limit"}})] * 2 + \
+                   [mock.Mock(status_code=200, headers={}, json=lambda: {"choices": [{"message": {"content": "OK"}}]})]
+        with mock.patch.object(ae, "OPENROUTER_API_KEY", "cle"), \
+                mock.patch.object(ae.requests, "post", side_effect=reponses), \
+                mock.patch.object(ae.time, "sleep") as pause:
+            self.assertEqual(ae.appel_openrouter("test"), "OK")
+        self.assertEqual([c.args[0] for c in pause.call_args_list], [7.0, 7.0])

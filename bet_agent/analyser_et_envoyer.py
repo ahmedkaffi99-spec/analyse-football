@@ -1,8 +1,8 @@
 """
 Reprend le pipeline là où collecte_donnees.py s'est arrêté : lit donnees_collectees.json,
 calcule xG + probabilités Poisson + edge réel sur TOUS les marchés bruts collectés
-(vocabulaire 1xbet, pas simplifié), fait rédiger le ticket par un LLM (cascade
-Groq -> Gemini -> OpenRouter), puis envoie sur Telegram.
+(vocabulaire 1xbet, pas simplifié), fait rédiger le ticket par un LLM (via
+OpenRouter), puis envoie sur Telegram.
 
 Ne retraite QUE les matchs pour lesquels collecte_donnees.py a trouvé des marchés
 (les matchs déjà live/sans marché sont ignorés).
@@ -22,11 +22,10 @@ import urllib3
 
 # Voir collecte_donnees.py pour le détail : OddsPapi est intercepté par un boîtier réseau
 # (Fortinet) qui re-signe son certificat avec une CA non reconnue — désactivé uniquement
-# pour ce domaine précis (déjà intercepté de toute façon), jamais pour Telegram/Groq/Gemini.
+# pour ce domaine précis (déjà intercepté de toute façon), jamais pour Telegram/OpenRouter.
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from unidecode import unidecode
-from tenacity import retry, stop_after_attempt, wait_exponential, wait_fixed
 
 load_dotenv("envi.local")
 
@@ -37,8 +36,6 @@ VERIFIER_SSL_ODDSPAPI = os.getenv("ODDSPAPI_SSL_NON_VERIFIE", "").lower() not in
 if not VERIFIER_SSL_ODDSPAPI:
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 ODDSPAPI_KEY = os.getenv("ODDSPAPI_KEY")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -78,8 +75,11 @@ PROFILS_COUPON = [
 ]
 SELECTION_INTERDITE = "12"  # double chance domicile-ou-extérieur, bannie par consigne
 
-OPENROUTER_MODELS = ["openrouter/free", "cohere/north-mini-code:free", "poolside/laguna-xs-2.1:free"]
-GEMINI_MODELE = os.getenv("GEMINI_MODELE") or "gemini-2.5-flash-lite"
+# IA : OpenRouter UNIQUEMENT (choix du 2026-09-26). Modèles essayés dans l'ordre ; liste
+# modifiable sans toucher au code via OPENROUTER_MODELES="modele1,modele2".
+OPENROUTER_MODELS = [m.strip() for m in (os.getenv("OPENROUTER_MODELES") or
+                     "openrouter/free,cohere/north-mini-code:free,poolside/laguna-xs-2.1:free").split(",") if m.strip()]
+OPENROUTER_ATTENTE_429_MAX = 60  # secondes max d'attente quand OpenRouter limite le débit
 
 
 def _contenu_reponse(fournisseur, r):
@@ -749,52 +749,8 @@ def _candidat(nom_marche, handicap, selection, proba, edge, categorie):
 
 
 # ============================================================
-# LLM — cascade Groq -> Gemini -> OpenRouter (rédaction uniquement)
+# LLM — OpenRouter uniquement (rédaction uniquement)
 # ============================================================
-
-# Groq gratuit limite les jetons PAR MINUTE : 3 prompts longs d'affilée dépassent le quota
-# (constaté : échec au 5e appel). Attendre 20 puis 40 s laisse la fenêtre d'une minute se vider.
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=20, min=20, max=60))
-def _appel_groq_brut(prompt, max_tokens):
-    url = "https://api.groq.com/openai/v1/chat/completions"
-    headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
-    payload = {"model": "openai/gpt-oss-120b", "messages": [{"role": "user", "content": prompt}], "max_tokens": min(max_tokens, 2000)}
-    r = requests.post(url, headers=headers, json=payload, timeout=60)
-    return _contenu_reponse("Groq", r)
-
-
-def appel_groq(prompt, max_tokens):
-    if not GROQ_API_KEY:
-        return None
-    try:
-        c = _appel_groq_brut(prompt, max_tokens)
-        print("   ✓ Réponse via Groq")
-        return c
-    except Exception as e:
-        print(f"   ⚠️ Groq échoué : {_cause(e)}")
-        return None
-
-
-@retry(stop=stop_after_attempt(2), wait=wait_fixed(3))
-def _appel_gemini_brut(prompt, max_tokens):
-    url = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
-    headers = {"Authorization": f"Bearer {GEMINI_API_KEY}", "Content-Type": "application/json"}
-    payload = {"model": GEMINI_MODELE, "messages": [{"role": "user", "content": prompt}], "max_tokens": min(max_tokens, 4000)}
-    r = requests.post(url, headers=headers, json=payload, timeout=60)
-    return _contenu_reponse("Gemini", r)
-
-
-def appel_gemini(prompt, max_tokens):
-    if not GEMINI_API_KEY:
-        return None
-    try:
-        c = _appel_gemini_brut(prompt, max_tokens)
-        print("   ✓ Réponse via Gemini")
-        return c
-    except Exception as e:
-        print(f"   ⚠️ Gemini échoué : {_cause(e)}")
-        return None
-
 
 def _cause(e):
     """Message utile d'une erreur, y compris derrière un RetryError de tenacity."""
@@ -804,32 +760,46 @@ def _cause(e):
     return str(e)
 
 
+def _attente_limite_debit(r):
+    """Durée d'attente conseillée après un 429 (en-tête Retry-After), bornée."""
+    try:
+        return min(OPENROUTER_ATTENTE_429_MAX, max(5.0, float(r.headers.get("Retry-After", 20))))
+    except (TypeError, ValueError):
+        return 20.0
+
+
 def appel_openrouter(prompt, max_tokens=2000):
+    if not OPENROUTER_API_KEY:
+        raise ValueError("OPENROUTER_API_KEY manquante")
     url = "https://openrouter.ai/api/v1/chat/completions"
-    headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json"}
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json",
+        # Identification recommandée par OpenRouter (classement des applications, support)
+        "HTTP-Referer": "https://github.com/ahmedkaffi99-spec/analyse-football",
+        "X-Title": "analyse-football",
+    }
     derniere_erreur = None
     for modele in OPENROUTER_MODELS:
         for tentative in range(2):
+            r = None
             try:
                 payload = {"model": modele, "messages": [{"role": "user", "content": prompt}], "max_tokens": max_tokens}
                 r = requests.post(url, headers=headers, json=payload, timeout=120)
                 content = _contenu_reponse(f"OpenRouter {modele}", r)
-                print(f"   ✓ Réponse via {modele}")
+                print(f"   ✓ Réponse via OpenRouter ({modele})")
                 return content
             except Exception as e:
                 derniere_erreur = e
-            time.sleep(3)
+                print(f"   ⚠️ OpenRouter {modele} (essai {tentative + 1}/2) : {_cause(e)[:160]}")
+            # Limite de débit : attendre ce que demande OpenRouter ; sinon courte pause.
+            time.sleep(_attente_limite_debit(r) if r is not None and r.status_code == 429 else 3)
     raise ValueError(f"Tous les modèles OpenRouter ont échoué (dernière erreur : {derniere_erreur})")
 
 
 def appel_llm(prompt, max_tokens=3000):
-    c = appel_groq(prompt, max_tokens)
-    if c:
-        return c
-    c = appel_gemini(prompt, max_tokens)
-    if c:
-        return c
-    print("   → Bascule sur OpenRouter...")
+    """Toute l'IA passe par OpenRouter. Si aucun modèle ne répond, les tâches d'analyse sont
+    sautées et le ticket est rédigé en Python (voir rediger_ticket_sans_ia)."""
     return appel_openrouter(prompt, max_tokens)
 
 
@@ -1052,8 +1022,8 @@ def niveau_confiance(edge_pct):
 def rediger_ticket_sans_ia(selections_finales):
     """Ticket au MÊME format que celui demandé au LLM, construit en pur Python à partir des
     chiffres, guides et onglets déjà calculés. Utilisé quand aucun LLM ne répond : une panne
-    de Groq/Gemini/OpenRouter ne doit plus jamais faire perdre les coupons du jour
-    (constaté le 2026-09-26 : run entier en erreur pour une limite de débit Groq)."""
+    de l'IA ne doit plus jamais faire perdre les coupons du jour
+    (constaté le 2026-09-26 : run entier en erreur pour une limite de débit)."""
     blocs = []
     for s in selections_finales:
         p = s["pick"]
