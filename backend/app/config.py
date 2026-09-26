@@ -57,3 +57,11 @@ API_TOKEN = os.getenv("API_TOKEN")
 # par défaut pour que rien ne soit visible sans jeton. ACTIVER_DOCS=true les réactive (ils ne
 # contiennent aucune donnée ; chaque appel depuis /docs exige quand même le jeton).
 ACTIVER_DOCS = os.getenv("ACTIVER_DOCS", "").lower() in ("1", "true", "oui", "yes")
+
+# Edge Functions Supabase (API privée en ligne + archivage dans le bucket Storage "archives").
+SUPABASE_FONCTIONS_URL = (os.getenv("SUPABASE_FONCTIONS_URL")
+                          or "https://fpwsitpdkruoknwmgjzr.supabase.co/functions/v1").rstrip("/")
+
+# Un run resté "en_cours" au-delà de ce délai a été interrompu (délai du job dépassé, coupure) :
+# il est clôturé en erreur pour ne pas bloquer les runs suivants.
+HEURES_MAX_RUN = float(os.getenv("HEURES_MAX_RUN") or 2)

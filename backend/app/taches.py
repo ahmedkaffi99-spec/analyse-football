@@ -3,6 +3,7 @@
     python -m app.taches run [--telegram] [--sans-redaction] [--si-aucun-ticket-aujourdhui]
     python -m app.taches verifier [--telegram]
     python -m app.taches envoyer [--run-id N] [--forcer]
+    python -m app.taches tester-api
 
 Code de sortie 1 si le run finit en erreur : le workflow GitHub apparaît alors en rouge."""
 
@@ -16,7 +17,7 @@ from app.database import SessionLocal, init_db
 from app.models import Run
 from app.services import pipeline
 from app.services.bilan import envoyer_bilans
-from app.services.runs import executer_run
+from app.services.runs import cloturer_runs_interrompus, executer_run
 from app.services.verification import verifier_coupons_en_attente
 
 
@@ -86,6 +87,40 @@ def tache_envoyer(args):
         return 0 if run.envoye_telegram else 1
 
 
+def tache_tester_api(args, requetes=None):
+    """Vérifie l'Edge Function "api" en ligne, route par route, avec le jeton du Vault, et
+    contrôle qu'un appel sans jeton est bien refusé (401). Code de sortie 1 si un contrôle échoue."""
+    import requests
+    from sqlalchemy import text
+
+    from app import config
+
+    requetes = requetes or requests
+    with SessionLocal() as db:
+        jeton = db.execute(text("SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'api_token'")).scalar()
+    base = f"{config.SUPABASE_FONCTIONS_URL}/api"
+    controles = [
+        ("sans jeton → refusé", "/sante", {}, 401),
+        ("mauvais jeton → refusé", "/sante", {"X-API-Key": "faux"}, 401),
+        ("santé", "/sante", {"X-API-Key": jeton}, 200),
+        ("runs", "/runs?limite=5", {"X-API-Key": jeton}, 200),
+        ("coupons", "/coupons?limite=5", {"X-API-Key": jeton}, 200),
+        ("matchs", "/matchs?limite=5", {"X-API-Key": jeton}, 200),
+        ("statistiques", "/statistiques", {"X-API-Key": jeton}, 200),
+        ("archives", "/archives", {"X-API-Key": jeton}, 200),
+        ("route inconnue", "/inconnue", {"X-API-Key": jeton}, 404),
+    ]
+    echecs = 0
+    for nom, route, entetes, attendu in controles:
+        r = requetes.get(base + route, headers=entetes, timeout=30)
+        ok = r.status_code == attendu
+        echecs += not ok
+        print(f"{'✅' if ok else '❌'} {nom:<24} GET {route:<22} → HTTP {r.status_code} (attendu {attendu})"
+              + ("" if ok else f" : {r.text[:150]}"))
+    print("🏁 API en ligne : tout est conforme." if not echecs else f"🏁 {echecs} contrôle(s) en échec.")
+    return 1 if echecs else 0
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Tâches planifiées bet_agent")
     sous = parser.add_subparsers(dest="tache", required=True)
@@ -99,10 +134,14 @@ def main(argv=None):
     p_envoi = sous.add_parser("envoyer", help="envoie sur Telegram les coupons déjà calculés d'un run")
     p_envoi.add_argument("--run-id", type=int, help="numéro du run (défaut : dernier run terminé)")
     p_envoi.add_argument("--forcer", action="store_true", help="renvoie même si déjà envoyé")
+    sous.add_parser("tester-api", help="vérifie l'Edge Function api en ligne (jeton du Vault)")
     args = parser.parse_args(argv)
 
     init_db()
-    taches = {"run": tache_run, "verifier": tache_verifier, "envoyer": tache_envoyer}
+    with SessionLocal() as db:
+        cloturer_runs_interrompus(db)
+    taches = {"run": tache_run, "verifier": tache_verifier, "envoyer": tache_envoyer,
+              "tester-api": tache_tester_api}
     return taches[args.tache](args)
 
 

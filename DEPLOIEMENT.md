@@ -14,6 +14,7 @@ GitHub Actions ─┬─ 10h00 UTC  Pipeline quotidien  → collecte, 3 coupons,
 | Vérification des résultats | `.github/workflows/verification-resultats.yml` | `verifier_resultats.py` |
 | Tests | `.github/workflows/tests.yml` | — (lancé à chaque push) |
 | Envoyer sur Telegram | `.github/workflows/envoyer-telegram.yml` | — (à la main : envoie les coupons déjà calculés d'un run, ex. après un essai sans Telegram) |
+| Tester l'API | `.github/workflows/tester-api.yml` | — (à la main et chaque lundi : vérifie l'API en ligne route par route) |
 
 ## Étape 1 — Le projet Supabase
 
@@ -84,3 +85,23 @@ Dépôt privé : **2 000 minutes gratuites par mois** sur GitHub Actions. Estima
 ## Option avancée
 
 Au lieu de `SUPABASE_DB_PASSWORD`, un secret `DATABASE_URL` peut contenir une chaîne de connexion PostgreSQL complète (copiée depuis Supabase telle quelle, `postgresql://…` accepté). Elle est prioritaire.
+
+## Supabase Storage et Edge Function (déjà en place)
+
+| Élément | Rôle |
+|---|---|
+| Bucket **`archives`** (privé) | chaque run y archive `AAAA-MM-JJ/run_<id>_collecte.json` (collecte brute) et `run_<id>_coupons.json` — conservés sans limite de durée (les artefacts GitHub disparaissent après 7 jours) |
+| Edge Function **`api`** | API privée **en ligne**, sans serveur : `https://fpwsitpdkruoknwmgjzr.supabase.co/functions/v1/api/<route>` |
+| Secret Vault **`api_token`** | jeton exigé par l'API (en-tête `X-API-Key`), généré aléatoirement ; le pipeline le lit directement dans le Vault pour archiver |
+
+Routes de l'Edge Function (toutes avec `X-API-Key`) : `/sante`, `/runs`, `/runs/{id}`, `/coupons` (filtres `jour`, `profil`, `statut`), `/coupons/{id}`, `/matchs` (filtres `jour`, `run_id`), `/matchs/{id}` (avec toutes les cotes), `/statistiques`, `/archives` (liste ; `?prefixe=AAAA-MM-JJ`), `/archives/lien?chemin=...` (lien de téléchargement valable 1 h).
+
+**Voir ton jeton** : Supabase → projet → **Project Settings** → **Vault** → secret `api_token` → afficher. Exemple :
+
+```bash
+curl -H "X-API-Key: TON_JETON" "https://fpwsitpdkruoknwmgjzr.supabase.co/functions/v1/api/coupons?jour=2026-09-26"
+```
+
+**Sécurité** : bucket privé sans policy (aucun accès avec la clé publique), fonctions SQL `api_jeton_valide` / `api_statistiques` exécutables uniquement par le rôle serveur `service_role`, qui n'a qu'un droit de **lecture** sur les tables. Le code de la fonction est versionné dans [`edge-functions/api/index.ts`](edge-functions/api/index.ts) (volontairement hors d'un dossier `supabase/`, pour ne pas déclencher les branches de prévisualisation payantes de l'intégration GitHub de Supabase).
+
+Redéployer après modification : `supabase functions deploy api --no-verify-jwt --project-ref fpwsitpdkruoknwmgjzr` (depuis `edge-functions/`), ou demander à Claude.

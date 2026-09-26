@@ -76,6 +76,16 @@ Pour explorer l'API dans le navigateur : `ACTIVER_DOCS=true` dans `.env`, puis h
 1. Dans Supabase, ouvre **SQL Editor** et exécute `schema.sql` (optionnel : le backend crée aussi les tables au démarrage).
 2. Mets la chaîne de connexion PostgreSQL dans `DATABASE_URL` : **Project Settings → Database**, préfixe `postgresql+psycopg://`. Ce n'est pas `SUPABASE_URL`, qui est l'URL de l'API REST.
 
+## API en ligne (Edge Function Supabase)
+
+En production, l'API privée tourne sans serveur dans l'Edge Function **`api`** de Supabase (mêmes routes en lecture, plus les archives Storage) — voir [`../DEPLOIEMENT.md`](../DEPLOIEMENT.md#supabase-storage-et-edge-function-déjà-en-place). Cette API FastAPI reste utile en local (lancement de runs, imports).
+
+## Robustesse
+
+- Un run resté `en_cours` plus de `HEURES_MAX_RUN` heures (défaut 2 : job arrêté, coupure) est clôturé en erreur au lancement suivant — il ne bloque plus les nouveaux runs ni le passage de secours.
+- Chaque run est archivé dans le bucket Storage privé `archives` (collecte brute + coupons) ; un échec d'archivage n'interrompt jamais le run.
+- Si aucun LLM ne répond, le ticket est rédigé automatiquement à partir des chiffres calculés (même format).
+
 ## Tâches planifiées (GitHub Actions)
 
 En production, pas de serveur : GitHub Actions appelle directement ces commandes (voir [`../DEPLOIEMENT.md`](../DEPLOIEMENT.md)) :
@@ -85,6 +95,7 @@ python -m app.taches run --telegram                  # pipeline du jour, enregis
 python -m app.taches run --si-aucun-ticket-aujourdhui  # passage de secours
 python -m app.taches verifier --telegram             # juge les paris terminés + bilan Telegram (une fois par jour)
 python -m app.taches envoyer [--run-id N]            # envoie sur Telegram les coupons déjà calculés d'un run
+python -m app.taches tester-api                      # vérifie l'Edge Function api en ligne, route par route
 ```
 
 Import manuel d'anciens fichiers JSON du pipeline :
@@ -113,6 +124,7 @@ backend/
 │       ├── runs.py             exécution d'un run
 │       ├── verification.py     jugement des jambes (logique de verifier_resultats.py)
 │       ├── bilan.py            bilan Telegram du soir
+│       ├── archives.py         archivage des runs dans Supabase Storage (via l'Edge Function)
 │       └── statistiques.py     performances
 ├── tests/
 ├── schema.sql

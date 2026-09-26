@@ -1,0 +1,98 @@
+from datetime import date, datetime, timedelta, timezone
+from types import SimpleNamespace
+from unittest import mock
+
+from app import taches
+from app.database import SessionLocal
+from app.models import Run
+from app.services.archives import archiver_run
+from app.services.runs import cloturer_runs_interrompus
+
+
+def _fausse_base(dialecte="postgresql", jeton="jeton-vault"):
+    db = mock.Mock()
+    db.get_bind.return_value.dialect.name = dialecte
+    db.execute.return_value.scalar.return_value = jeton
+    return db
+
+
+def _faux_run():
+    jambe = SimpleNamespace(libelle_match="A vs B", categorie="Total", marche="Total (2.5)", selection="Over",
+                            cote=1.8, proba_modele_pct=60.0, edge_pct=5.0, resultat="en_attente")
+    coupon = SimpleNamespace(profil="profil1", nom="🛡️ COUPON 1", jour=date(2026, 9, 26), statut="en_attente",
+                             cote_totale=1.8, proba_combinee_pct=60.0, texte="⚽ A vs B", jambes=[jambe])
+    return SimpleNamespace(id=7, lance_le=datetime(2026, 9, 26, 10, tzinfo=timezone.utc), coupons=[coupon])
+
+
+def test_archivage_via_edge_function_avec_jeton_du_vault():
+    appels = []
+
+    def poster(url, headers, json, timeout):
+        appels.append((url, headers, json))
+        return SimpleNamespace(status_code=201, text="")
+
+    chemins = archiver_run(_fausse_base(), _faux_run(), {"matchs": []}, poster=poster)
+    assert chemins == ["2026-09-26/run_7_coupons.json", "2026-09-26/run_7_collecte.json"]
+    url, headers, corps = appels[0]
+    assert url == "https://fpwsitpdkruoknwmgjzr.supabase.co/functions/v1/api/archives"
+    assert headers == {"X-API-Key": "jeton-vault"}
+    assert corps["contenu"][0]["jambes"][0]["marche"] == "Total (2.5)"
+
+
+def test_archivage_jamais_bloquant():
+    def poster_en_panne(*a, **k):
+        raise ConnectionError("réseau coupé ?apiKey=secret123")
+
+    assert archiver_run(_fausse_base(), _faux_run(), {}, poster=poster_en_panne) == []
+    assert archiver_run(_fausse_base(jeton=None), _faux_run(), {}, poster=poster_en_panne) == []
+    assert archiver_run(_fausse_base("sqlite"), _faux_run(), {}, poster=poster_en_panne) == []
+
+
+def test_runs_interrompus_clotures():
+    maintenant = datetime.now(timezone.utc)
+    with SessionLocal() as db:
+        db.add_all([Run(source="api", statut="en_cours", lance_le=maintenant - timedelta(hours=3)),
+                    Run(source="api", statut="en_cours", lance_le=maintenant - timedelta(minutes=10))])
+        db.commit()
+        assert cloturer_runs_interrompus(db, maintenant) == 1
+        statuts = [r.statut for r in db.query(Run).order_by(Run.id)]
+    assert statuts == ["erreur", "en_cours"]
+
+
+def test_run_bloque_ne_bloque_plus_le_suivant(monkeypatch):
+    from tests.conftest import collecte_exemple, profils_exemple
+    from tests.test_api import _faux_pipeline
+
+    with SessionLocal() as db:
+        db.add(Run(source="api", statut="en_cours", lance_le=datetime.now(timezone.utc) - timedelta(hours=5)))
+        db.commit()
+    _faux_pipeline(monkeypatch, collecte_exemple(), profils_exemple())
+    assert taches.main(["run", "--si-aucun-ticket-aujourdhui"]) == 0
+    with SessionLocal() as db:
+        assert [r.statut for r in db.query(Run).order_by(Run.id)] == ["erreur", "termine"]
+
+
+def test_tester_api_signale_une_route_en_panne(monkeypatch):
+    from app.taches import tache_tester_api
+
+    class FausseSession:
+        def __enter__(self):
+            return _fausse_base(jeton="jeton-vault")
+
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setattr("app.taches.SessionLocal", FausseSession)
+
+    def reponses(panne=None):
+        def get(url, headers, timeout):
+            route = url.split("/api", 1)[1]
+            if headers.get("X-API-Key") != "jeton-vault":
+                return SimpleNamespace(status_code=401, text="")
+            if route == "/inconnue":
+                return SimpleNamespace(status_code=404, text="")
+            return SimpleNamespace(status_code=500 if route.startswith(panne or "@") else 200, text="panne")
+        return SimpleNamespace(get=get)
+
+    assert tache_tester_api(None, reponses()) == 0
+    assert tache_tester_api(None, reponses(panne="/statistiques")) == 1

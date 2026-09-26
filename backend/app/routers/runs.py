@@ -28,6 +28,7 @@ def lire_run(run_id: int, db: Session = Depends(get_db)):
 def lancer_run(options: RunCreate, taches: BackgroundTasks, db: Session = Depends(get_db)):
     """Lance le pipeline en arrière-plan (plusieurs minutes : quotas API et LLM). Suivre
     l'avancement avec GET /api/runs/{id}."""
+    service_runs.cloturer_runs_interrompus(db)
     if db.scalar(select(Run).where(Run.statut == "en_cours", Run.source == "api")):
         raise HTTPException(409, "Un run est déjà en cours.")
     run = Run(source="api", statut="en_cours")
