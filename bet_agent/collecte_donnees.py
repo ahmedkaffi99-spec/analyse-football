@@ -100,10 +100,22 @@ MATCHS_MANUELS_DATE = "2026-09-26"
 # Noms d'équipes : peu importe l'orthographe exacte (fuzzy matching), mais reste
 # proche du nom usuel pour un bon score de correspondance.
 #
-# Demande explicite du 26/09/2026 : un seul match précis, vu sur 1xbet (marché 1X2 ouvert,
-# capture d'écran fournie) — match amical, coup d'envoi 23:30 UTC.
+# Demande explicite du 26/09/2026 : TOUS les matchs vus sur 1xbet (marché 1X2 ouvert,
+# captures d'écran fournies) — 3 amicaux internationaux + 10 Ligue des nations UEFA.
 MATCHS_MANUELS = [
     ("United States", "Peru"),
+    ("Canada", "Chile"),
+    ("Mexico", "Colombia"),
+    ("North Macedonia", "Switzerland"),
+    ("Slovakia", "Moldova"),
+    ("Czech Republic", "Croatia"),
+    ("Faroe Islands", "Kazakhstan"),
+    ("Albania", "Belarus"),
+    ("England", "Spain"),
+    ("Bulgaria", "Luxembourg"),
+    ("Iceland", "Estonia"),
+    ("San Marino", "Finland"),
+    ("Lithuania", "Azerbaijan"),
 ]
 
 # Grandes ligues européennes uniquement — MLS et Brasileirão volontairement exclus
