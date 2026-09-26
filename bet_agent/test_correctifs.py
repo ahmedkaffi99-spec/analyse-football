@@ -249,6 +249,14 @@ class TestCollecteEfficace(unittest.TestCase):
         self.assertTrue(cd.assez_tot_avant_coup_envoi(None, maintenant))
 
     def test_cotes_d_abord_et_arret_des_que_le_quota_est_atteint(self):
+        self._verifier_cotes_d_abord(selection_manuelle=False)
+
+    def test_liste_manuelle_perimee_n_annule_pas_les_regles(self):
+        # Réglage manuel actif mais liste d'un autre jour : la sélection automatique s'applique
+        # avec TOUTES ses règles (bug du run 5 : 30 matchs collectés au lieu de 15).
+        self._verifier_cotes_d_abord(selection_manuelle=True)
+
+    def _verifier_cotes_d_abord(self, selection_manuelle):
         fixtures = [dict(_fixture(f"Equipe {i}", f"Adverse {i}", "UEFA Nations League", "International",
                                   depart="2099-01-01T15:00:00Z"), fixtureId=f"f{i}") for i in range(6)]
         marches = [{"marche": "Over Under Full Time", "handicap": 2.5, "periode": "fulltime",
@@ -256,7 +264,8 @@ class TestCollecteEfficace(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d, \
                 mock.patch.object(cd, "SORTIE_JSON", os.path.join(d, "out.json")), \
                 mock.patch.object(cd, "NB_MATCHS_MAX", 2), \
-                mock.patch.object(cd, "SELECTION_MANUELLE_ACTIVE", False), \
+                mock.patch.object(cd, "SELECTION_MANUELLE_ACTIVE", selection_manuelle), \
+                mock.patch.object(cd, "MATCHS_MANUELS_DATE", "2000-01-01"), \
                 mock.patch.object(cd, "verifier_quota_oddspapi", return_value=True), \
                 mock.patch.object(cd, "_telecharger_fixtures_oddspapi", return_value=fixtures), \
                 mock.patch.object(cd, "recuperer_fixtures_api_football", return_value=[]), \
