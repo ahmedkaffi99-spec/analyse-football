@@ -290,6 +290,8 @@ class TestOpenRouterSeulement(unittest.TestCase):
     def setUp(self):
         ae.reinitialiser_budget_ia()
         self.patches = [mock.patch.object(ae, "OPENROUTER_API_KEY", "cle"),
+                        mock.patch.object(ae, "GROQ_API_KEY", None),
+                        mock.patch.object(ae, "GEMINI_API_KEY", None),
                         mock.patch.object(ae, "OPENROUTER_MODELS", ["m1", "m2", "m3", "m4", "m5"]),
                         mock.patch.object(ae, "IA_EN_PARALLELE", 2),
                         mock.patch.object(ae.time, "sleep")]
@@ -387,6 +389,69 @@ class TestOpenRouterSeulement(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "Clé OpenRouter refusée"):
                     ae.appel_llm("test")
         self.assertLessEqual(post.call_count, 2)  # la 1re vague seulement, puis plus rien
+
+
+class TestGroqGeminiOpenRouter(unittest.TestCase):
+    """Groq, Gemini et OpenRouter courent dans les mêmes vagues."""
+
+    def setUp(self):
+        ae.reinitialiser_budget_ia()
+        self.patches = [mock.patch.object(ae, "OPENROUTER_API_KEY", "cle-or"),
+                        mock.patch.object(ae, "GROQ_API_KEY", "cle-groq"),
+                        mock.patch.object(ae, "GEMINI_API_KEY", "cle-gemini"),
+                        mock.patch.object(ae, "OPENROUTER_MODELS", ["or1", "or2", "or3"]),
+                        mock.patch.object(ae, "GROQ_MODELES", ["g1", "g2"]),
+                        mock.patch.object(ae, "GEMINI_MODELES", ["ge1"]),
+                        mock.patch.object(ae, "IA_EN_PARALLELE", 4),
+                        mock.patch.object(ae.time, "sleep")]
+        for p in self.patches:
+            p.start()
+
+    def tearDown(self):
+        for p in self.patches:
+            p.stop()
+        ae.reinitialiser_budget_ia()
+
+    def test_premiere_vague_mele_les_trois_fournisseurs(self):
+        self.assertEqual(ae.candidats_ia(), [("groq", "g1"), ("gemini", "ge1"), ("openrouter", "or1"),
+                                             ("openrouter", "or2"), ("groq", "g2"), ("openrouter", "or3")])
+
+    def test_format_de_la_requete_gemini(self):
+        vus = {}
+
+        def faux_post(url, headers, json, timeout):
+            vus.update(url=url, cle=headers["x-goog-api-key"], config=json["generationConfig"])
+            return mock.Mock(status_code=200, headers={}, json=lambda: {
+                "candidates": [{"content": {"parts": [{"text": "réflexion", "thought": True},
+                                                      {"text": '{"ok": true}'}]}}]})
+
+        with mock.patch.object(ae, "GROQ_API_KEY", None), mock.patch.object(ae, "OPENROUTER_API_KEY", None), \
+                mock.patch.object(ae.requests, "post", faux_post):
+            self.assertEqual(ae.appel_llm("test", json_attendu=True), '{"ok": true}')
+        self.assertTrue(vus["url"].endswith("/models/ge1:generateContent"))
+        self.assertEqual((vus["cle"], vus["config"]["responseMimeType"]), ("cle-gemini", "application/json"))
+
+    def test_cle_groq_refusee_les_autres_fournisseurs_continuent(self):
+        import threading
+        appels = []
+
+        def faux_post(url, headers, json, timeout):
+            appels.append(url)
+            if "groq" in url:
+                self.assertEqual(json["response_format"], {"type": "json_object"})
+                return mock.Mock(status_code=401, headers={}, json=lambda: {"error": {"message": "Invalid API Key"}})
+            threading.Event().wait(0.3)  # les autres répondent après le refus de Groq
+            if "googleapis" in url:
+                return mock.Mock(status_code=200, headers={}, json=lambda: {
+                    "candidates": [{"content": {"parts": [{"text": '{"ok": true}'}]}}]})
+            return mock.Mock(status_code=429, headers={}, json=lambda: {"error": {"message": "saturé"}})
+
+        with mock.patch.object(ae.requests, "post", faux_post):
+            self.assertEqual(ae.appel_llm("test", json_attendu=True), '{"ok": true}')
+            self.assertIn("groq", ae._fournisseurs_refuses)
+            nb_groq = sum("groq" in u for u in appels)
+            ae.appel_llm("encore", json_attendu=True)
+        self.assertEqual(sum("groq" in u for u in appels), nb_groq)  # Groq n'est plus appelé
 
 
 class TestMelangeModeleMarche(unittest.TestCase):
