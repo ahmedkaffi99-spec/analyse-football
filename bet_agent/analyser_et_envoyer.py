@@ -19,7 +19,7 @@ import time
 import random
 import requests
 import urllib3
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as DelaiDepasse
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as DelaiDepasse, as_completed
 
 # Voir collecte_donnees.py pour le détail : OddsPapi est intercepté par un boîtier réseau
 # (Fortinet) qui re-signe son certificat avec une CA non reconnue — désactivé uniquement
@@ -84,13 +84,16 @@ SELECTION_INTERDITE = "12"  # double chance domicile-ou-extérieur, bannie par c
 # Modèles gratuits essayés dans l'ordre (liste réelle d'OpenRouter, workflow « Modèles gratuits ») :
 # des modèles de raisonnement généralistes, ceux qui gèrent le JSON d'abord ; le routeur
 # openrouter/free en dernier recours. Remplaçable sans toucher au code via OPENROUTER_MODELES.
-# Nemotron 3 Ultra retiré : 4 min 30 pour une réponse sans JSON (run 8). Tous ceux-ci gèrent
-# la sortie JSON imposée (response_format), indispensable au stratège.
-OPENROUTER_MODELES_DEFAUT = ("qwen/qwen3.8-27b:free,nvidia/nemotron-3-super-120b-a12b:free,"
-                             "google/gemma-4-31b-it:free,google/gemma-4-26b-a4b-it:free,openrouter/free")
+# Interrogés PAR VAGUES EN PARALLÈLE (IA_EN_PARALLELE à la fois) : la première réponse valide
+# gagne. Au run 9 (samedi midi), essayés un par un, tous étaient saturés (429) ou trop lents.
+# Les plus rapides d'abord ; Nemotron 3 Ultra retiré (4 min 30 sans JSON au run 8).
+OPENROUTER_MODELES_DEFAUT = ("nvidia/nemotron-3.5-lightning:free,qwen/qwen3.8-27b:free,"
+                             "google/gemma-4-31b-it:free,thinkingmachines/inkling-small:free,"
+                             "nvidia/nemotron-3-super-120b-a12b:free,google/gemma-4-26b-a4b-it:free,"
+                             "inclusionai/ling-3.0-flash-fin:free,poolside/laguna-s-2.1:free,openrouter/free")
+IA_EN_PARALLELE = int(os.getenv("IA_EN_PARALLELE", "4"))
 OPENROUTER_MODELS = [m.strip() for m in (os.getenv("OPENROUTER_MODELES") or OPENROUTER_MODELES_DEFAUT).split(",")
                      if m.strip()]
-OPENROUTER_ATTENTE_429_MAX = 60  # secondes max d'attente quand OpenRouter limite le débit
 # Clé refusée (HTTP 401) : inutile d'essayer d'autres modèles ni de réessayer pendant ce run
 # (run 5 : des dizaines d'appels « User not found » avaient coûté ~7 minutes).
 _cle_openrouter_refusee = None
@@ -100,15 +103,24 @@ BUDGET_IA_SECONDES = float(os.getenv("BUDGET_IA_SECONDES", "240"))
 DELAI_REQUETE_IA_MAX = 60  # secondes max pour UNE réponse (au-delà : modèle suivant)
 # Délai « horloge murale » : le timeout de requests ne borne que chaque lecture réseau, et un
 # modèle qui envoie sa réponse au compte-gouttes le contournait (4 min 30 au run 8).
-_executeur_ia = ThreadPoolExecutor(max_workers=4, thread_name_prefix="ia")
+_executeur_ia = ThreadPoolExecutor(max_workers=16, thread_name_prefix="ia")
 
 
-def _post_borne(url, delai, **kwargs):
-    futur = _executeur_ia.submit(requests.post, url, timeout=delai, **kwargs)
+class CleOpenRouterRefusee(ValueError):
+    pass
+
+
+def _json_present(texte):
+    """Vrai si la réponse contient un objet JSON lisible (tolère ```json``` et texte autour)."""
+    texte = re.sub(r"```(?:json)?", "", texte or "")
+    debut, fin = texte.find("{"), texte.rfind("}")
+    if debut < 0 or fin <= debut:
+        return False
     try:
-        return futur.result(timeout=delai + 2)
-    except DelaiDepasse:
-        raise TimeoutError(f"pas de réponse complète en {delai:.0f} s")
+        json.loads(texte[debut:fin + 1])
+        return True
+    except ValueError:
+        return False
 _echeance_ia = None  # démarre au premier appel IA du run
 
 
@@ -872,12 +884,19 @@ def _cause(e):
     return str(e)
 
 
-def _attente_limite_debit(r):
-    """Durée d'attente conseillée après un 429 (en-tête Retry-After), bornée."""
+def _appel_un_modele(poster, url, headers, modele, prompt, max_tokens, json_attendu, delai):
+    payload = {"model": modele, "messages": [{"role": "user", "content": prompt}], "max_tokens": max_tokens,
+               # Réflexion courte pour les modèles de raisonnement (ignoré par les autres).
+               "reasoning": {"effort": "low"}}
+    if json_attendu:
+        payload["response_format"] = {"type": "json_object"}
+    r = poster(url, headers=headers, json=payload, timeout=delai)
     try:
-        return min(OPENROUTER_ATTENTE_429_MAX, max(5.0, float(r.headers.get("Retry-After", 20))))
-    except (TypeError, ValueError):
-        return 20.0
+        return _contenu_reponse(f"OpenRouter {modele}", r)
+    except ValueError as e:
+        if r.status_code == 401:
+            raise CleOpenRouterRefusee(str(e))
+        raise
 
 
 def appel_openrouter(prompt, max_tokens=2000, json_attendu=False):
@@ -895,34 +914,44 @@ def appel_openrouter(prompt, max_tokens=2000, json_attendu=False):
         "X-Title": "analyse-football",
     }
     derniere_erreur = None
-    # Un seul essai par modèle (un modèle lent ou saturé laisse la place au suivant), et
-    # jamais au-delà du budget IA du run.
-    for modele in OPENROUTER_MODELS:
+    # Vagues de IA_EN_PARALLELE modèles interrogés EN MÊME TEMPS : la première réponse valide
+    # (JSON lisible si json_attendu) l'emporte, les autres sont ignorées. Un modèle saturé (429)
+    # ou lent ne retarde plus les autres. Jamais au-delà du budget IA du run.
+    taille = max(1, IA_EN_PARALLELE)
+    for i in range(0, len(OPENROUTER_MODELS), taille):
+        vague = OPENROUTER_MODELS[i:i + taille]
         restant = secondes_ia_restantes()
         if restant < 5:
             raise ValueError(f"Budget IA de {BUDGET_IA_SECONDES:.0f} s épuisé — suite sans IA "
                              f"(dernière erreur : {derniere_erreur})")
-        r = None
+        delai = min(DELAI_REQUETE_IA_MAX, restant)
+        futurs = {_executeur_ia.submit(_appel_un_modele, requests.post, url, headers, m, prompt, max_tokens,
+                                     json_attendu, delai): m
+                  for m in vague}
         try:
-            payload = {"model": modele, "messages": [{"role": "user", "content": prompt}], "max_tokens": max_tokens,
-                       # Réflexion courte pour les modèles de raisonnement (ignoré par les autres).
-                       "reasoning": {"effort": "low"}}
-            if json_attendu:
-                payload["response_format"] = {"type": "json_object"}
-            r = _post_borne(url, min(DELAI_REQUETE_IA_MAX, restant), headers=headers, json=payload)
-            content = _contenu_reponse(f"OpenRouter {modele}", r)
-            print(f"   ✓ Réponse via OpenRouter ({modele})")
-            return content
-        except Exception as e:
-            derniere_erreur = e
-            print(f"   ⚠️ OpenRouter {modele} : {_cause(e)[:160]}")
-            if r is not None and r.status_code == 401:
-                _cle_openrouter_refusee = (f"Clé OpenRouter refusée ({_cause(e)[:120]}) — vérifier le secret "
-                                           "OPENROUTER_API_KEY ; IA désactivée pour ce run")
-                print(f"   ⛔ {_cle_openrouter_refusee}")
-                raise ValueError(_cle_openrouter_refusee)
-        # Limite de débit : courte attente (bornée) avant le modèle suivant.
-        pause_ia(min(10, _attente_limite_debit(r)) if r is not None and r.status_code == 429 else 1)
+            for futur in as_completed(futurs, timeout=delai + 2):
+                modele = futurs[futur]
+                try:
+                    content = futur.result()
+                except CleOpenRouterRefusee as e:
+                    _cle_openrouter_refusee = (f"Clé OpenRouter refusée ({_cause(e)[:120]}) — vérifier le secret "
+                                               "OPENROUTER_API_KEY ; IA désactivée pour ce run")
+                    print(f"   ⛔ {_cle_openrouter_refusee}")
+                    raise ValueError(_cle_openrouter_refusee)
+                except Exception as e:
+                    derniere_erreur = e
+                    print(f"   ⚠️ OpenRouter {modele} : {_cause(e)[:160]}")
+                    continue
+                if json_attendu and not _json_present(content):
+                    derniere_erreur = ValueError(f"{modele} : réponse sans JSON lisible")
+                    print(f"   ⚠️ OpenRouter {modele} : réponse sans JSON lisible, ignorée")
+                    continue
+                print(f"   ✓ Réponse via OpenRouter ({modele})")
+                return content
+        except DelaiDepasse:
+            lents = [futurs[f] for f in futurs if not f.done()]
+            derniere_erreur = TimeoutError(f"pas de réponse complète en {delai:.0f} s")
+            print(f"   ⚠️ Sans réponse en {delai:.0f} s : {', '.join(lents)}")
     raise ValueError(f"Tous les modèles OpenRouter ont échoué (dernière erreur : {derniere_erreur})")
 
 

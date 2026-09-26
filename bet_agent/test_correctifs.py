@@ -285,84 +285,108 @@ class TestCollecteEfficace(unittest.TestCase):
 
 
 class TestOpenRouterSeulement(unittest.TestCase):
+    """Toute l'IA passe par OpenRouter, en vagues de modèles interrogés en parallèle."""
+
+    def setUp(self):
+        ae.reinitialiser_budget_ia()
+        self.patches = [mock.patch.object(ae, "OPENROUTER_API_KEY", "cle"),
+                        mock.patch.object(ae, "OPENROUTER_MODELS", ["m1", "m2", "m3", "m4", "m5"]),
+                        mock.patch.object(ae, "IA_EN_PARALLELE", 2),
+                        mock.patch.object(ae.time, "sleep")]
+        for p in self.patches:
+            p.start()
+
+    def tearDown(self):
+        for p in self.patches:
+            p.stop()
+        ae.reinitialiser_budget_ia()
+
+    @staticmethod
+    def _reponse(status, contenu=None, message=None):
+        corps = {"choices": [{"message": {"content": contenu}}]} if status == 200 else {"error": {"message": message}}
+        return mock.Mock(status_code=status, headers={}, json=lambda: corps)
+
     def test_toute_l_ia_passe_par_openrouter(self):
         appels = []
 
         def faux_post(url, headers, json, timeout):
             appels.append((url, json["model"], headers.get("X-Title")))
-            return mock.Mock(status_code=200, headers={},
-                             json=lambda: {"choices": [{"message": {"content": "Bonjour"}}]})
+            return self._reponse(200, "Bonjour")
 
-        with mock.patch.object(ae, "OPENROUTER_API_KEY", "cle"), mock.patch.object(ae.requests, "post", faux_post):
+        with mock.patch.object(ae.requests, "post", faux_post):
             self.assertEqual(ae.appel_llm("test"), "Bonjour")
-        self.assertEqual(appels, [("https://openrouter.ai/api/v1/chat/completions", ae.OPENROUTER_MODELS[0], "analyse-football")])
+        self.assertEqual({a[0] for a in appels}, {"https://openrouter.ai/api/v1/chat/completions"})
+        self.assertLessEqual({a[1] for a in appels}, {"m1", "m2"})  # la 1re vague suffit
+        self.assertEqual({a[2] for a in appels}, {"analyse-football"})
         self.assertFalse(hasattr(ae, "appel_groq") or hasattr(ae, "appel_gemini"))
 
-    def test_reponse_trop_lente_abandonnee_pour_le_modele_suivant(self):
+    def test_modeles_satures_la_vague_suivante_repond(self):
+        modeles = []
+
+        def faux_post(url, headers, json, timeout):
+            modeles.append(json["model"])
+            if json["model"] in ("m1", "m2"):
+                return self._reponse(429, message="Provider returned error")
+            return self._reponse(200, "OK")
+
+        with mock.patch.object(ae.requests, "post", faux_post):
+            self.assertEqual(ae.appel_llm("test"), "OK")
+        self.assertEqual(sorted(modeles), ["m1", "m2", "m3", "m4"])
+
+    def test_json_attendu_ignore_une_reponse_sans_json(self):
+        import threading
+        m2_peut_repondre = threading.Event()
+
+        def faux_post(url, headers, json, timeout):
+            self.assertEqual(json["response_format"], {"type": "json_object"})
+            if json["model"] == "m1":
+                reponse = self._reponse(200, "Voici mon analyse, sans JSON.")
+                m2_peut_repondre.set()
+                return reponse
+            m2_peut_repondre.wait(5)
+            return self._reponse(200, '{"coupons": []}')
+
+        with mock.patch.object(ae.requests, "post", faux_post):
+            self.assertEqual(ae.appel_llm("test", json_attendu=True), '{"coupons": []}')
+
+    def test_reponse_trop_lente_la_vague_suivante_prend_le_relais(self):
         import threading
         liberer = threading.Event()
-        ok = mock.Mock(status_code=200, headers={}, json=lambda: {"choices": [{"message": {"content": "{}"}}]})
-        modeles, charges = [], []
 
-        def post(url, timeout, headers, json):
-            modeles.append(json["model"])
-            charges.append(json)
-            if len(modeles) == 1:
-                liberer.wait(5)  # le 1er modèle « répond au compte-gouttes »
-            return ok
+        def faux_post(url, headers, json, timeout):
+            if json["model"] in ("m1", "m2"):
+                liberer.wait(5)  # modèles qui « répondent au compte-gouttes »
+            return self._reponse(200, json["model"])
 
-        with mock.patch.object(ae, "OPENROUTER_API_KEY", "cle"), \
-                mock.patch.object(ae, "DELAI_REQUETE_IA_MAX", 0.2), \
-                mock.patch.object(ae.requests, "post", post), \
-                mock.patch.object(ae.time, "sleep"):
-            ae.reinitialiser_budget_ia()
-            self.assertEqual(ae.appel_llm("test", json_attendu=True), "{}")
-            liberer.set()
-            ae.reinitialiser_budget_ia()
-        self.assertEqual(modeles, ae.OPENROUTER_MODELS[:2])
-        self.assertEqual(charges[1]["response_format"], {"type": "json_object"})
+        with mock.patch.object(ae, "DELAI_REQUETE_IA_MAX", 0.2), \
+                mock.patch.object(ae.requests, "post", faux_post):
+            self.assertIn(ae.appel_llm("test"), ("m3", "m4"))
+        liberer.set()
 
     def test_budget_ia_epuise_plus_aucun_appel(self):
         horloge = [1000.0]
-        lent = mock.Mock(status_code=504, headers={}, json=lambda: {"error": {"message": "timeout"}})
 
-        def post_lent(*a, **k):
-            horloge[0] += 60  # chaque modèle met 60 s à échouer
-            return lent
+        def faux_post(url, headers, json, timeout):
+            horloge[0] += 30  # chaque modèle met 30 s à échouer
+            return self._reponse(504, message="timeout")
 
-        with mock.patch.object(ae, "OPENROUTER_API_KEY", "cle"), \
-                mock.patch.object(ae, "BUDGET_IA_SECONDES", 150), \
+        with mock.patch.object(ae, "BUDGET_IA_SECONDES", 100), \
                 mock.patch.object(ae.time, "monotonic", lambda: horloge[0]), \
-                mock.patch.object(ae.time, "sleep"), \
-                mock.patch.object(ae.requests, "post", side_effect=post_lent) as post:
+                mock.patch.object(ae.requests, "post", side_effect=faux_post) as post:
             ae.reinitialiser_budget_ia()
-            with self.assertRaisesRegex(ValueError, "Budget IA de 150 s épuisé"):
+            with self.assertRaisesRegex(ValueError, "Budget IA de 100 s épuisé"):
                 ae.appel_llm("test")
-            self.assertEqual(post.call_count, 3)  # 3 x 60 s > 150 s : pas de 4e modèle
+            self.assertEqual(post.call_count, 4)  # 2 vagues x 30 s x 2 modèles > 100 s : pas de 3e vague
             self.assertIsNone(ae._tache_redaction("donnees", "pronostic", 2))
-            self.assertEqual(post.call_count, 3)  # budget épuisé : la rédaction n'appelle plus rien
-            ae.reinitialiser_budget_ia()
+            self.assertEqual(post.call_count, 4)  # budget épuisé : la rédaction n'appelle plus rien
 
     def test_cle_refusee_arrete_tous_les_appels_du_run(self):
-        refus = mock.Mock(status_code=401, headers={}, json=lambda: {"error": {"message": "User not found."}})
-        with mock.patch.object(ae, "OPENROUTER_API_KEY", "cle"), \
-                mock.patch.object(ae, "_cle_openrouter_refusee", None), \
-                mock.patch.object(ae.requests, "post", return_value=refus) as post, \
-                mock.patch.object(ae.time, "sleep"):
+        with mock.patch.object(ae.requests, "post",
+                               return_value=self._reponse(401, message="User not found.")) as post:
             for _ in range(3):
                 with self.assertRaisesRegex(ValueError, "Clé OpenRouter refusée"):
                     ae.appel_llm("test")
-        self.assertEqual(post.call_count, 1)  # un seul appel, ni autre modèle ni nouvel essai
-
-    def test_limite_de_debit_attend_puis_passe_au_modele_suivant(self):
-        reponses = [mock.Mock(status_code=429, headers={"Retry-After": "7"},
-                              json=lambda: {"error": {"message": "Rate limit"}})] * 2 + \
-                   [mock.Mock(status_code=200, headers={}, json=lambda: {"choices": [{"message": {"content": "OK"}}]})]
-        with mock.patch.object(ae, "OPENROUTER_API_KEY", "cle"), \
-                mock.patch.object(ae.requests, "post", side_effect=reponses), \
-                mock.patch.object(ae.time, "sleep") as pause:
-            self.assertEqual(ae.appel_openrouter("test"), "OK")
-        self.assertEqual([c.args[0] for c in pause.call_args_list], [7.0, 7.0])
+        self.assertLessEqual(post.call_count, 2)  # la 1re vague seulement, puis plus rien
 
 
 class TestMelangeModeleMarche(unittest.TestCase):
