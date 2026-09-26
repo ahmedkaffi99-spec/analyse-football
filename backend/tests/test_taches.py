@@ -73,3 +73,19 @@ def test_configuration_de_la_base_sans_rien_editer():
     assert construire_database_url({"DATABASE_URL": "postgresql+psycopg://u:p@h/x"}) == "postgresql+psycopg://u:p@h/x"
     # Rien : SQLite local
     assert construire_database_url({}).startswith("sqlite:///")
+
+
+def test_envoyer_les_coupons_d_un_run_deja_calcule(monkeypatch):
+    envois = _faux_pipeline(monkeypatch, collecte_exemple(), profils_exemple())
+    assert taches.main(["run"]) == 0  # essai sans Telegram
+    assert envois == []
+    assert taches.main(["envoyer"]) == 0  # envoi des coupons déjà rédigés, sans nouvelle collecte
+    assert envois == [["ticket profil1", "ticket profil2", "ticket profil3"]]
+    assert taches.main(["envoyer"]) == 0  # déjà envoyé : pas de doublon
+    assert len(envois) == 1
+    assert taches.main(["envoyer", "--forcer"]) == 0
+    assert len(envois) == 2
+
+
+def test_envoyer_sans_run_termine():
+    assert taches.main(["envoyer"]) == 1

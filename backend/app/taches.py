@@ -2,6 +2,7 @@
 
     python -m app.taches run [--telegram] [--sans-redaction] [--si-aucun-ticket-aujourdhui]
     python -m app.taches verifier [--telegram]
+    python -m app.taches envoyer [--run-id N] [--forcer]
 
 Code de sortie 1 si le run finit en erreur : le workflow GitHub apparaît alors en rouge."""
 
@@ -58,6 +59,33 @@ def tache_verifier(args):
     return 0
 
 
+def tache_envoyer(args):
+    """Envoie sur Telegram les coupons DÉJÀ calculés et rédigés d'un run (sans relancer la
+    collecte ni l'IA) — ex. après un essai lancé sans Telegram. Par défaut : le dernier run
+    terminé. Jamais deux fois le même run, sauf --forcer."""
+    with SessionLocal() as db:
+        requete = select(Run).where(Run.statut == "termine").order_by(Run.id.desc())
+        if args.run_id is not None:
+            requete = select(Run).where(Run.id == args.run_id)
+        run = db.scalar(requete)
+        if not run:
+            print("❌ Aucun run terminé à envoyer.")
+            return 1
+        if run.envoye_telegram and not args.forcer:
+            print(f"ℹ️ Run {run.id} déjà envoyé sur Telegram — rien à faire (--forcer pour renvoyer).")
+            return 0
+        textes = [c.texte for c in run.coupons if c.texte]
+        if not textes:
+            print(f"❌ Run {run.id} ({run.statut}) : aucun coupon rédigé à envoyer.")
+            return 1
+        _, ae, _ = pipeline.modules()
+        run.envoye_telegram = bool(ae.agent5_envoyer_trois_coupons(textes))
+        db.commit()
+        print(f"{'✅' if run.envoye_telegram else '❌'} Run {run.id} : {len(textes)} coupon(s) "
+              f"{'envoyé(s)' if run.envoye_telegram else 'non envoyé(s) — voir erreur Telegram ci-dessus'}")
+        return 0 if run.envoye_telegram else 1
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Tâches planifiées bet_agent")
     sous = parser.add_subparsers(dest="tache", required=True)
@@ -68,10 +96,14 @@ def main(argv=None):
                        help="ne fait rien si un run a déjà abouti aujourd'hui (passage de secours)")
     p_verif = sous.add_parser("verifier", help="juge les jambes dont le match est terminé")
     p_verif.add_argument("--telegram", action="store_true", help="envoie le bilan quand tout est jugé")
+    p_envoi = sous.add_parser("envoyer", help="envoie sur Telegram les coupons déjà calculés d'un run")
+    p_envoi.add_argument("--run-id", type=int, help="numéro du run (défaut : dernier run terminé)")
+    p_envoi.add_argument("--forcer", action="store_true", help="renvoie même si déjà envoyé")
     args = parser.parse_args(argv)
 
     init_db()
-    return tache_run(args) if args.tache == "run" else tache_verifier(args)
+    taches = {"run": tache_run, "verifier": tache_verifier, "envoyer": tache_envoyer}
+    return taches[args.tache](args)
 
 
 if __name__ == "__main__":
