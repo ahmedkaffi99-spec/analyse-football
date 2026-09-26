@@ -16,7 +16,7 @@ from urllib3.util.retry import Retry
 # interception ; on désactive donc la vérification UNIQUEMENT pour ce domaine précis (déjà
 # intercepté de toute façon, donc aucune exposition supplémentaire), jamais pour les autres
 # APIs (Telegram, Groq, API-Football, Serper — toutes vérifiées normalement, non affectées).
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 from unidecode import unidecode
 from tenacity import retry, stop_after_attempt, wait_fixed, wait_exponential
@@ -191,7 +191,9 @@ FILTRE_LIGUES_SECOURS = [
     ("ligue 2", "france"),
     ("serie b", "italy"),
     ("2. bundesliga", "germany"),
-    ("segunda", "spain"),
+    ("segunda division", "spain"),   # 2e division seulement ("segunda" seul attrapait la 4e
+    ("laliga 2", "spain"),           #  division, Segunda Federación — constaté le 2026-09-26)
+    ("la liga 2", "spain"),
     ("super lig", "turkey"),
     ("pro league", "belgium"),
     ("premiership", "scotland"),
@@ -215,7 +217,14 @@ def est_equipe_feminine_api_football(nom):
 
 
 NB_MATCHS_MIN = 8   # objectif minimum de jambes pour un coupon jugé complet
-NB_MATCHS_MAX = 15  # plafond — au-delà, la collecte (API-Football/Serper) devient trop lente/coûteuse en quota
+NB_MATCHS_MAX = 15  # plafond de matchs AVEC marchés — au-delà, la collecte devient trop lente/coûteuse en quota
+# Nombre de candidats sondés : les cotes sont vérifiées EN PREMIER, un match sans marché 1xbet
+# est écarté sans aucun autre appel (stats, Elo, presse). On sonde donc plus large que
+# NB_MATCHS_MAX et on s'arrête dès que NB_MATCHS_MAX matchs exploitables sont trouvés
+# (constaté le 2026-09-26 : 13 matchs sur 15 sans marché avaient consommé tout le quota).
+NB_CANDIDATS_A_SONDER = 30
+# Délai minimal avant le coup d'envoi : laisser le temps de lire le coupon et de parier.
+MINUTES_MIN_AVANT_COUP_ENVOI = 45
 
 SEUIL_MATCH_ACCEPTABLE = 80  # relevé de 60 à 80 après un faux positif (équipes réserve "II" matchées à tort)
 
@@ -287,6 +296,17 @@ def _appel_team_statistics(team_id, league_id, season):
                       headers={"x-apisports-key": API_FOOTBALL_KEY},
                       params={"team": team_id, "league": league_id, "season": season}, timeout=15)
     return r.json().get("response", {})
+
+
+# Stats d'équipe mises en cache pour la durée du run : une même équipe (ou le même match
+# listé deux fois par OddsPapi) ne coûte qu'une seule série d'appels API-Football/TheSportsDB.
+_cache_stats_equipes = {}
+
+
+def stats_equipe_en_cache(cle, calcul):
+    if cle not in _cache_stats_equipes:
+        _cache_stats_equipes[cle] = calcul()
+    return _cache_stats_equipes[cle]
 
 
 def trouver_ligue_et_stats(team_id, nom_affichage):
@@ -598,15 +618,24 @@ _cache_clubelo = None
 SEUIL_MATCH_CLUBELO = 70
 
 
-@retry(stop=stop_after_attempt(4), wait=wait_exponential(multiplier=1, min=3, max=20))
+@retry(stop=stop_after_attempt(2), wait=wait_fixed(5))
 def _telecharger_clubelo_du_jour():
     # Timeout relevé de 15 à 25s le 2026-08-22 : un ReadTimeout à 15s peut aussi bien
     # être un vrai blocage réseau qu'une réponse simplement lente côté serveur — laisser
     # un peu plus de marge ne coûte rien (la SESSION retry déjà en place gère le reste).
     date_du_jour = datetime.now().strftime("%Y-%m-%d")
-    r = SESSION.get(f"http://api.clubelo.com/{date_du_jour}", timeout=25)
-    r.raise_for_status()
-    return r.text
+    # HTTPS d'abord, HTTP en secours (constaté le 2026-09-26 sur GitHub Actions : échec en HTTP).
+    derniere_erreur = None
+    for url in (f"https://api.clubelo.com/{date_du_jour}", f"http://api.clubelo.com/{date_du_jour}"):
+        try:
+            r = SESSION.get(url, timeout=25, headers={"User-Agent": "Mozilla/5.0 (analyse-football)"})
+            r.raise_for_status()
+            if r.text.startswith("Rank,Club"):
+                return r.text
+            derniere_erreur = ValueError(f"réponse inattendue de {url} : {r.text[:80]!r}")
+        except Exception as e:
+            derniere_erreur = e
+    raise derniere_erreur
 
 
 def charger_clubelo():
@@ -768,6 +797,21 @@ def recuperer_fixtures_api_football():
     return fixtures
 
 
+def assez_tot_avant_coup_envoi(depart_iso, maintenant=None):
+    """Faux si le match commence dans moins de MINUTES_MIN_AVANT_COUP_ENVOI minutes (ou est
+    déjà commencé). Une heure illisible ou absente n'exclut pas le match."""
+    if not depart_iso:
+        return True
+    try:
+        depart = datetime.fromisoformat(str(depart_iso).replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    if depart.tzinfo is None:
+        depart = depart.replace(tzinfo=timezone.utc)
+    maintenant = maintenant or datetime.now(timezone.utc)
+    return depart - maintenant >= timedelta(minutes=MINUTES_MIN_AVANT_COUP_ENVOI)
+
+
 def selectionner_matchs_du_jour(fixtures_oddspapi):
     """Sélectionne entre NB_MATCHS_MIN et NB_MATCHS_MAX matchs DIRECTEMENT depuis la liste
     de fixtures OddsPapi déjà récupérée (aucun appel réseau supplémentaire) — la découverte
@@ -783,6 +827,7 @@ def selectionner_matchs_du_jour(fixtures_oddspapi):
         fx for fx in fixtures_oddspapi
         if fx.get("hasOdds")
         and fx.get("statusName") == "Pre-Game"
+        and assez_tot_avant_coup_envoi(fx.get("startTime"))
         and not contient_indicateur_reserve(fx.get("participant1Name", ""))
         and not contient_indicateur_reserve(fx.get("participant2Name", ""))
         and not est_competition_feminine(fx.get("tournamentName"), fx.get("categoryName"))
@@ -855,7 +900,7 @@ def selectionner_matchs_du_jour(fixtures_oddspapi):
     prioritaires = sorted((fx for fx in candidats if est_prioritaire(fx)), key=lambda fx: fx.get("startTime", ""))
     reste = sorted((fx for fx in candidats if not est_prioritaire(fx)), key=lambda fx: fx.get("startTime", ""))
 
-    selection = (prioritaires + reste)[:NB_MATCHS_MAX]
+    selection = (prioritaires + reste)[:NB_CANDIDATS_A_SONDER]
     nb_prioritaires_retenus = sum(1 for fx in selection if est_prioritaire(fx))
 
     matchs = [(fx["participant1Name"], fx["participant2Name"]) for fx in selection]
@@ -1102,6 +1147,9 @@ def collecter_donnees():
     resultats = []
 
     for home_demande, away_demande in matchs_a_traiter:
+        if not SELECTION_MANUELLE_ACTIVE and sum(1 for r in resultats if r["oddspapi"]["tous_marches"]) >= NB_MATCHS_MAX:
+            print(f"   ✓ {NB_MATCHS_MAX} matchs avec marchés trouvés — sondage des candidats restants arrêté.")
+            break
         print(f"   → Collecte : {home_demande} vs {away_demande}")
 
         # --- API-Football : identité, ligue, saison, date ---
@@ -1146,6 +1194,10 @@ def collecter_donnees():
         else:
             print(f"      ⚠️ Aucune correspondance OddsPapi (meilleur score : {score_op:.0f}%)")
 
+        if not tous_marches and not SELECTION_MANUELLE_ACTIVE:
+            print("      ⏭️ Aucun marché exploitable — match écarté sans autre appel (stats, Elo, presse).")
+            continue
+
         # --- Serper : contexte web brut — utilise le nom OddsPapi (100% de match sur les 8)
         # si dispo, sinon le nom d'origine demandé. Ne dépend plus d'API-Football.
         contexte_web = None
@@ -1168,17 +1220,21 @@ def collecter_donnees():
         stats_home, stats_away = None, None
         if donnees_af and donnees_af.get("home_id"):
             print(f"      → Recherche stats historiques {nom_home_stats} (API-Football)...")
-            stats_home = trouver_ligue_et_stats(donnees_af["home_id"], nom_home_stats)
+            stats_home = stats_equipe_en_cache(("api_football", donnees_af["home_id"]),
+                                               lambda: trouver_ligue_et_stats(donnees_af["home_id"], nom_home_stats))
         if stats_home is None:
             print(f"      → Repli TheSportsDB pour {nom_home_stats}...")
-            stats_home = trouver_stats_thesportsdb(nom_home_stats)
+            stats_home = stats_equipe_en_cache(("thesportsdb", nom_home_stats),
+                                               lambda: trouver_stats_thesportsdb(nom_home_stats))
 
         if donnees_af and donnees_af.get("away_id"):
             print(f"      → Recherche stats historiques {nom_away_stats} (API-Football)...")
-            stats_away = trouver_ligue_et_stats(donnees_af["away_id"], nom_away_stats)
+            stats_away = stats_equipe_en_cache(("api_football", donnees_af["away_id"]),
+                                               lambda: trouver_ligue_et_stats(donnees_af["away_id"], nom_away_stats))
         if stats_away is None:
             print(f"      → Repli TheSportsDB pour {nom_away_stats}...")
-            stats_away = trouver_stats_thesportsdb(nom_away_stats)
+            stats_away = stats_equipe_en_cache(("thesportsdb", nom_away_stats),
+                                               lambda: trouver_stats_thesportsdb(nom_away_stats))
 
         # --- Understat : xG/xGA complémentaires, uniquement pour les 5 grands
         # championnats (voir UNDERSTAT_LIGUE_PAR_NOM) — n'écrase jamais stats_home/
@@ -1224,7 +1280,7 @@ def collecter_donnees():
 
     sortie = {
         "date_collecte": datetime.now().isoformat(),
-        "nb_matchs_demandes": len(matchs_a_traiter),
+        "nb_matchs_demandes": len(resultats),
         "nb_matchs_avec_marches": sum(1 for r in resultats if r["oddspapi"]["tous_marches"]),
         "nb_marches_total": sum(len(r["oddspapi"]["tous_marches"] or []) for r in resultats),
         "nb_equipes_avec_stats": sum(
@@ -1248,11 +1304,11 @@ def collecter_donnees():
     print(f"\n💾 Données sauvegardées dans {SORTIE_JSON}")
     print(f"   ✓ {sortie['nb_matchs_avec_marches']}/{sortie['nb_matchs_demandes']} matchs avec marchés 1xbet collectés")
     print(f"   ✓ {sortie['nb_marches_total']} marchés au total (1X2 exclu, tout le reste en détail)")
-    print(f"   ✓ {sortie['nb_equipes_avec_stats']}/{len(matchs_a_traiter) * 2} équipes avec stats historiques trouvées")
-    print(f"   ✓ {sortie['nb_equipes_avec_xg']}/{len(matchs_a_traiter) * 2} équipes avec xG/xGA Understat trouvées "
+    print(f"   ✓ {sortie['nb_equipes_avec_stats']}/{len(resultats) * 2} équipes avec stats historiques trouvées")
+    print(f"   ✓ {sortie['nb_equipes_avec_xg']}/{len(resultats) * 2} équipes avec xG/xGA Understat trouvées "
           f"(5 grands championnats uniquement)")
-    print(f"   ✓ {sortie['nb_equipes_avec_elo']}/{len(matchs_a_traiter) * 2} équipes avec rating ClubElo trouvées")
-    print(f"   ✓ {sortie['nb_equipes_avec_classement']}/{len(matchs_a_traiter) * 2} équipes avec classement "
+    print(f"   ✓ {sortie['nb_equipes_avec_elo']}/{len(resultats) * 2} équipes avec rating ClubElo trouvées")
+    print(f"   ✓ {sortie['nb_equipes_avec_classement']}/{len(resultats) * 2} équipes avec classement "
           f"football-data.org trouvées"
           f"{' (clé FOOTBALL_DATA_API_KEY absente)' if not FOOTBALL_DATA_API_KEY else ''}")
 

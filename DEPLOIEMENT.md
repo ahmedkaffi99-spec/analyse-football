@@ -50,9 +50,7 @@ Dépôt → **Settings** → **Secrets and variables** → **Actions** → **New
 | `API_FOOTBALL_KEY` | ✅ | |
 | `TELEGRAM_TOKEN` | ✅ | |
 | `TELEGRAM_CHAT_ID` | ✅ | |
-| `GROQ_API_KEY` | ✅ | |
-| `GEMINI_API_KEY` | recommandé | repli LLM |
-| `OPENROUTER_API_KEY` | recommandé | repli LLM |
+| `OPENROUTER_API_KEY` | ✅ | **seule IA utilisée** (rédaction des coupons) |
 | `SERPER_API_KEY` | recommandé | contexte web |
 | `FOOTBALL_DATA_API_KEY` | recommandé | classements |
 | `THESPORTSDB_API_KEY` | optionnel | sinon clé publique partagée |
@@ -105,3 +103,9 @@ curl -H "X-API-Key: TON_JETON" "https://fpwsitpdkruoknwmgjzr.supabase.co/functio
 **Sécurité** : bucket privé sans policy (aucun accès avec la clé publique), fonctions SQL `api_jeton_valide` / `api_statistiques` exécutables uniquement par le rôle serveur `service_role`, qui n'a qu'un droit de **lecture** sur les tables. Le code de la fonction est versionné dans [`edge-functions/api/index.ts`](edge-functions/api/index.ts) (volontairement hors d'un dossier `supabase/`, pour ne pas déclencher les branches de prévisualisation payantes de l'intégration GitHub de Supabase).
 
 Redéployer après modification : `supabase functions deploy api --no-verify-jwt --project-ref fpwsitpdkruoknwmgjzr` (depuis `edge-functions/`), ou demander à Claude.
+
+## IA : OpenRouter uniquement
+
+Toute la rédaction IA passe par **OpenRouter** (secret `OPENROUTER_API_KEY`). Les secrets `GROQ_API_KEY` et `GEMINI_API_KEY` ne sont plus utilisés : tu peux les supprimer de GitHub.
+Modèles essayés dans l'ordre : `openrouter/free`, `cohere/north-mini-code:free`, `poolside/laguna-xs-2.1:free` — modifiables sans toucher au code avec un secret ou une variable `OPENROUTER_MODELES` (liste séparée par des virgules), par exemple un modèle payant plus fiable.
+Si OpenRouter ne répond pas, les coupons sont quand même produits : le ticket est rédigé automatiquement à partir des chiffres calculés.
