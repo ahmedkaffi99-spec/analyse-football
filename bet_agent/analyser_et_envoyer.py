@@ -58,15 +58,10 @@ PROBA_MIN_FORTE = 60.0  # % — un marché n'est retenu que si le modèle lui do
 # de données et le MÊME pool de candidats (un seul appel à collecter_donnees, un seul calcul
 # Agent 3 par match) — si plusieurs profils sont configurés, seule change entre eux la
 # fourchette de cote totale visée, obtenue en choisissant quelles jambes du pool combiner.
-EDGE_MIN_POOL = 2.0    # % — plancher d'edge pour qu'un marché entre dans le pool de candidats
-# Volontairement bas (pas 50%+) : constaté en pratique (2026-07-24 et 25) que le COUPON 3
-# (cible cote 50-100) ratait systématiquement sa cible faute de jambes à cote suffisamment
-# haute dans le pool — un plancher de proba trop strict exclut justement les paris plus
-# risqués (cote plus haute) dont ce profil a besoin. La recherche de combinaison
-# (selectionner_combo_cote_cible) privilégie de toute façon la probabilité la plus forte
-# PARMI les combos qui atteignent la cible — les Coupons 1/2 (cibles basses) n'utiliseront
-# ces jambes plus risquées que si nécessaire pour respecter leur propre cible.
-PROBA_MIN_POOL = 30.0  # % — plancher de probabilité pour qu'un marché entre dans le pool de candidats
+# Depuis le 26/09/2026 : plus de plancher edge/probabilité ni de limite à 1 candidat par
+# catégorie ici — Python calcule les chiffres de TOUS les marchés modélisables (voir
+# evaluer_marches_toutes) et l'IA (stratège, DeepSeek en priorité) analyse et choisit
+# elle-même, au lieu de ratifier une short-list déjà pré-triée par un seuil Python.
 # L'IA stratège (agent_strategie.py) analyse, planifie et choisit les paris ; Python valide.
 # UTILISER_STRATEGE_IA=false revient à la seule composition automatique (Monte Carlo).
 UTILISER_STRATEGE_IA = os.getenv("UTILISER_STRATEGE_IA", "true").lower() not in ("0", "false", "non", "no")
@@ -75,7 +70,6 @@ UTILISER_STRATEGE_IA = os.getenv("UTILISER_STRATEGE_IA", "true").lower() not in 
 # impossible à gagner). Le coupon combine donc des matchs DIFFÉRENTS, pas des paris multiples
 # sur les mêmes.
 MAX_JAMBES_PAR_MATCH = 1
-NB_CANDIDATS_PAR_MATCH = 10  # plafond de sécurité — en pratique = le meilleur candidat de chaque catégorie de marché trouvée pour le match (~13 catégories possibles au total)
 
 # Choix du 26/09/2026 (demande explicite) : UN SEUL coupon "smart" combinant 10 à 15 matchs
 # DIFFÉRENTS (un seul pari par match, voir MAX_JAMBES_PAR_MATCH), plus 3 profils de risque
@@ -579,6 +573,31 @@ def evaluer_marches(marches, mu_home, mu_away, mu_corners=None, mu_cartons=None)
                  proba_poisson_pct=round(p_modele * 100, 1), proba_marche_pct=round(p_marche * 100, 1))
         retenus.append(c)
     return sorted(retenus, key=lambda c: (c["proba_modele_pct"], c["edge_pct"]), reverse=True)
+
+
+def evaluer_marches_toutes(marches, mu_home, mu_away, mu_corners=None, mu_cartons=None):
+    """Comme evaluer_marches, mais SANS le filtre edge/probabilité (candidat_valide) : renvoie
+    TOUS les marchés modélisables (edge et probabilité calculés pour chacun, y compris edge
+    négatif ou faible), au lieu d'une short-list déjà triée par un seuil Python. Demande
+    explicite de l'utilisateur (2026-09-26) : donner à l'IA l'ensemble des marchés réels avec
+    leurs chiffres, et la laisser analyser et choisir elle-même — pas seulement ratifier une
+    présélection. Les exclusions restantes (CATEGORIES_EXCLUES, COTE_MIN_JAMBE) sont des
+    limites de qualité de donnée/risque, pas un jugement sur la valeur du pari."""
+    marche_sans_marge = probabilites_sans_marge(marches)
+    retenus = []
+    for c in _evaluer_marches_brut(marches, mu_home, mu_away, mu_corners, mu_cartons):
+        if c["categorie"] in CATEGORIES_EXCLUES or c["cote"] < COTE_MIN_JAMBE:
+            continue
+        p_marche = marche_sans_marge.get((c["marche"], c["selection"]))
+        if p_marche is None:
+            continue
+        p_modele = c["proba_modele_pct"] / 100
+        p = (1 - POIDS_MARCHE) * p_modele + POIDS_MARCHE * p_marche
+        edge = calc_edge(p, c["cote"])
+        c.update(proba_modele_pct=round(p * 100, 1), edge_pct=round(edge, 1) if edge is not None else None,
+                 proba_poisson_pct=round(p_modele * 100, 1), proba_marche_pct=round(p_marche * 100, 1))
+        retenus.append(c)
+    return sorted(retenus, key=lambda c: (c["edge_pct"] if c["edge_pct"] is not None else -999), reverse=True)
 
 
 def candidat_valide(edge, proba):
@@ -1432,17 +1451,16 @@ def verifier_fraicheur_matchs(matchs_exploitables):
 
 
 def agent3_calcul_pool_candidats(donnees):
-    """AGENT 3 — variante 'pool' : comme agent3_calcul_mathematique, mais garde jusqu'à
-    NB_CANDIDATS_PAR_MATCH candidats distincts PAR MATCH (pas seulement le meilleur) —
-    nécessaire pour composer ensuite le(s) coupon(s) de PROFILS_COUPON, chacun ciblant sa
-    propre fourchette de cote totale, à partir du même pool. Renvoie {nom_match: [candidat, ...]}."""
-    global SEUIL_EDGE, PROBA_MIN_FORTE
-    SEUIL_EDGE, PROBA_MIN_FORTE = EDGE_MIN_POOL, PROBA_MIN_POOL
-
+    """AGENT 3 — variante 'pool' : calcule le contexte (buts attendus, Elo) et évalue TOUS les
+    marchés modélisables de chaque match (evaluer_marches_toutes, sans filtre edge/probabilité
+    ni limite à 1 candidat par catégorie) — demande explicite de l'utilisateur (2026-09-26) :
+    Python fournit les chiffres réels de chaque marché, l'IA (stratège, DeepSeek en priorité)
+    analyse et choisit elle-même, plutôt que de ratifier une short-list déjà pré-triée par
+    Python. Renvoie {nom_match: [candidat, ...]}."""
     matchs_exploitables = [m for m in donnees["matchs"] if m["oddspapi"]["tous_marches"]]
     matchs_exploitables = verifier_fraicheur_matchs(matchs_exploitables)
     print(f"   → {len(matchs_exploitables)} matchs avec marchés collectés à analyser "
-          f"(pool commun : edge≥{EDGE_MIN_POOL}% · proba≥{PROBA_MIN_POOL}%)")
+          f"(TOUS les marchés modélisables sont transmis à l'IA, sans présélection Python)")
 
     pool = {}
     for m in matchs_exploitables:
@@ -1489,23 +1507,11 @@ def agent3_calcul_pool_candidats(donnees):
         mu_corners = estimer_ligne_equilibree(marches, ["corner"])
         mu_cartons = estimer_ligne_equilibree(marches, ["card", "booking"])
 
-        candidats = evaluer_marches(marches, home_xg, away_xg, mu_corners, mu_cartons)
-        print(f"      → {len(marches)} marchés bruts scannés, {len(candidats)} candidat(s) valable(s)")
+        candidats = evaluer_marches_toutes(marches, home_xg, away_xg, mu_corners, mu_cartons)
+        print(f"      → {len(marches)} marchés bruts scannés, {len(candidats)} marché(s) modélisable(s) "
+              f"transmis à l'IA (aucune présélection Python)")
         if not candidats:
             continue
-
-        # Diversité de marché : garde le MEILLEUR candidat de CHAQUE catégorie trouvée pour
-        # ce match (BTTS, Handicap Asiatique, Double Chance, Pair/Impair, Clean Sheet, Win to
-        # Nil, Total...) — pas seulement les N plus probables tous confondus. evaluer_marches
-        # trie déjà par probabilité décroissante, donc le premier candidat rencontré par
-        # catégorie est le meilleur de cette catégorie. Sans ça, le pool est dominé par les
-        # marchés Total (souvent les plus probables) et les coupons finaux ne proposent jamais
-        # de BTTS/Handicap/etc. même quand ils sont valables.
-        meilleur_par_categorie = {}
-        for c in candidats:
-            if c["categorie"] not in meilleur_par_categorie:
-                meilleur_par_categorie[c["categorie"]] = c
-        candidats_diversifies = list(meilleur_par_categorie.values())[:NB_CANDIDATS_PAR_MATCH]
 
         nom_match = f"{home_nom} vs {away_nom}"
         pool[nom_match] = [
@@ -1513,10 +1519,10 @@ def agent3_calcul_pool_candidats(donnees):
                 "match": nom_match, "home_nom": home_nom, "away_nom": away_nom,
                 "fixture_id_oddspapi": m["oddspapi"]["fixture_id"], "pick": c, "contexte": contexte_match,
             }
-            for c in candidats_diversifies
+            for c in candidats
         ]
-        print(f"      → {len(candidats_diversifies)} catégorie(s) de marché distincte(s) retenue(s) "
-              f"pour ce match : {', '.join(c['categorie'] for c in candidats_diversifies)}")
+        categories = sorted({c["categorie"] for c in candidats})
+        print(f"      → {len(categories)} catégorie(s) de marché représentée(s) : {', '.join(categories)}")
     return pool
 
 

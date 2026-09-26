@@ -317,6 +317,40 @@ class TestMatchsVirtuelsEtMarches(unittest.TestCase):
         self.assertIsNotNone(ae.calculer_xg_depuis_stats(grand, grand))
 
 
+class TestPasDePreselectionPython(unittest.TestCase):
+    """Demande explicite du 26/09/2026 : Python ne doit plus réduire les marchés d'un match à
+    1 seul candidat par catégorie (BTTS, Total...) ni les filtrer par un seuil d'edge/proba —
+    TOUS les marchés modélisables sont transmis à l'IA, qui analyse et choisit elle-même."""
+
+    def _match_deux_lignes_total(self):
+        return {
+            "api_football": None, "match_demande": {"home": "A", "away": "B"},
+            "oddspapi": {"fixture_id": "f1", "tous_marches": [
+                {"marche": "Over Under Full Time", "handicap": 1.5, "periode": "fulltime",
+                 "selections": [{"selection": "Over", "cote": 1.5}, {"selection": "Under", "cote": 2.6}]},
+                {"marche": "Over Under Full Time", "handicap": 2.5, "periode": "fulltime",
+                 "selections": [{"selection": "Over", "cote": 2.0}, {"selection": "Under", "cote": 1.8}]},
+            ]},
+            "stats_historiques": {}, "clubelo": {}, "serper": {"resultats": []},
+        }
+
+    def test_plusieurs_candidats_de_la_meme_categorie_sont_gardes(self):
+        with mock.patch.object(ae, "verifier_fraicheur_matchs", side_effect=lambda m: m):
+            pool = ae.agent3_calcul_pool_candidats({"matchs": [self._match_deux_lignes_total()]})
+        candidats = pool["A vs B"]
+        # 2 lignes × Over/Under = jusqu'à 4 candidats "Total" — plus la limite "1 par catégorie"
+        self.assertGreater(len(candidats), 1)
+        self.assertTrue(all(c["pick"]["categorie"] == "Total" for c in candidats))
+
+    def test_evaluer_marches_toutes_garde_un_edge_faible_ou_negatif(self):
+        # evaluer_marches (filtré) exigerait edge > 2% ET proba >= 60% ; evaluer_marches_toutes
+        # ne filtre plus du tout — un marché avec un edge quasi nul doit quand même apparaître.
+        marches = [{"marche": "Over Under Full Time", "handicap": 2.5, "periode": "fulltime",
+                    "selections": [{"selection": "Over", "cote": 1.91}, {"selection": "Under", "cote": 1.91}]}]
+        retenus = ae.evaluer_marches_toutes(marches, 1.3, 1.2)  # cotes ~justes, edge proche de 0
+        self.assertEqual(len(retenus), 2)  # Over ET Under, malgré un edge faible
+
+
 class TestEloEtContexteWeb(unittest.TestCase):
     def test_elo_ajuste_la_repartition_sans_changer_le_total(self):
         mu_h, mu_a, esperance = ae.ajuster_xg_avec_elo(1.3, 1.3, 1900, 1600)
