@@ -107,6 +107,11 @@ def test_liste_des_modeles_gratuits(capsys, monkeypatch):
         {"id": "nvidia/grand:free", "name": "Grand", "context_length": 1000000,
          "supported_parameters": ["tools", "response_format"], "architecture": {"output_modalities": ["text"]}},
         {"id": "payant/modele", "name": "Payant", "context_length": 5, "pricing": {"prompt": "0.001", "completion": "0.002"}},
+        {"id": "deepseek/deepseek-v4", "name": "DeepSeek V4", "context_length": 128000,
+         "pricing": {"prompt": "0.0000001", "completion": "0.0000002"},
+         "supported_parameters": ["tools", "response_format"], "architecture": {"output_modalities": ["text"]}},
+        {"id": "openrouter/auto", "name": "Auto Router", "context_length": 2000000,
+         "pricing": {"prompt": "-1", "completion": "-1"}, "architecture": {"output_modalities": ["text"]}},
         {"id": "image/gen:free", "name": "Image", "architecture": {"output_modalities": ["image"]}},
     ]}
     reponse = SimpleNamespace(raise_for_status=lambda: None, json=lambda: donnees)
@@ -114,6 +119,9 @@ def test_liste_des_modeles_gratuits(capsys, monkeypatch):
     sortie = capsys.readouterr().out
     assert "MODELE | nvidia/grand:free | Grand | contexte 1000000 | outils oui | json oui" in sortie
     assert "PAYANT | payant/modele | Payant | $1500.0000/M tokens | contexte 5 | outils non | json non" in sortie
+    assert "PAYANT | deepseek/deepseek-v4" in sortie  # bien plus cheap : passe dans le top 10
+    assert "DEEPSEEK | deepseek/deepseek-v4 | DeepSeek V4" in sortie
+    assert "openrouter/auto" not in sortie  # tarif négatif (routeur variable) écarté, pas "le moins cher"
     assert "image/gen" not in sortie
 
 
