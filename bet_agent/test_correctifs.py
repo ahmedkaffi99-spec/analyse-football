@@ -317,6 +317,23 @@ class TestMatchsVirtuelsEtMarches(unittest.TestCase):
         self.assertIsNotNone(ae.calculer_xg_depuis_stats(grand, grand))
 
 
+class TestFiltreDuReplisAutomatiqueSeulement(unittest.TestCase):
+    """Le pool complet (edge négatif inclus) va à l'IA, mais selectionner_combo_cote_cible
+    (repli 100% Python, sans IA) doit quand même écarter les paris à edge négatif/faible —
+    sans jugement possible, il choisirait sinon un pari objectivement mauvais."""
+
+    def test_repli_automatique_ecarte_l_edge_negatif(self):
+        pool = {
+            "A vs B": [_selection("A vs B", "Total", "Over", 1.5, edge=-5.0)],   # edge négatif : écarté
+            "C vs D": [_selection("C vs D", "Total", "Over", 1.5, edge=8.0)],
+            "E vs F": [_selection("E vs F", "Total", "Over", 1.5, edge=8.0)],
+        }
+        # Un seul match a un edge exploitable en plus de C/D et E/F : 2 jambes possibles, pas 3.
+        self.assertIsNone(ae.selectionner_combo_cote_cible(pool, 3, 1.0, 100.0))
+        combo = ae.selectionner_combo_cote_cible(pool, 2, 1.0, 100.0)
+        self.assertEqual({c["match"] for c in combo}, {"C vs D", "E vs F"})
+
+
 class TestPasDePreselectionPython(unittest.TestCase):
     """Demande explicite du 26/09/2026 : Python ne doit plus réduire les marchés d'un match à
     1 seul candidat par catégorie (BTTS, Total...) ni les filtrer par un seuil d'edge/proba —

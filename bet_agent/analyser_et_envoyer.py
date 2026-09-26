@@ -71,6 +71,15 @@ UTILISER_STRATEGE_IA = os.getenv("UTILISER_STRATEGE_IA", "true").lower() not in 
 # sur les mêmes.
 MAX_JAMBES_PAR_MATCH = 1
 
+# L'IA voit le pool COMPLET (tous les marchés modélisables, y compris edge négatif — voir
+# evaluer_marches_toutes). Mais quand elle est indisponible (budget épuisé, panne) ou désactivée
+# (UTILISER_STRATEGE_IA=false), la composition automatique (Monte Carlo, selectionner_combo_
+# cote_cible) pige dans ce MÊME pool sans jugement possible — sans filtre, elle choisirait
+# parfois un pari objectivement mauvais (edge négatif, probabilité faible). Seuils appliqués
+# UNIQUEMENT à ce repli automatique, jamais à ce que reçoit l'IA.
+EDGE_MIN_FALLBACK_AUTO = 2.0
+PROBA_MIN_FALLBACK_AUTO = 30.0
+
 # Choix du 26/09/2026 (demande explicite) : UN SEUL coupon "smart" combinant 10 à 15 matchs
 # DIFFÉRENTS (un seul pari par match, voir MAX_JAMBES_PAR_MATCH), plus 3 profils de risque
 # fixes ni de cible de cote totale précise. La cote totale est mécaniquement élevée avec
@@ -1555,7 +1564,16 @@ def selectionner_combo_cote_cible(pool_par_match, nb_jambes, cote_min, cote_max,
        lement), constaté en pratique,
     3) la probabilité moyenne la plus forte, à diversité égale.
     Jamais None tant qu'il y a au moins nb_jambes candidats au total, jamais un chiffre
-    inventé — uniquement un choix parmi des candidats déjà calculés en pur Python."""
+    inventé — uniquement un choix parmi des candidats déjà calculés en pur Python.
+
+    Filtre edge/probabilité (EDGE_MIN_FALLBACK_AUTO, PROBA_MIN_FALLBACK_AUTO) appliqué ICI
+    seulement : le pool complet transmis par agent3_calcul_pool_candidats n'est plus filtré
+    (l'IA doit voir tous les marchés), mais ce repli 100% automatique n'a aucun jugement pour
+    écarter lui-même un edge négatif ou une probabilité trop faible."""
+    pool_par_match = {m: [c for c in candidats if (c["pick"].get("edge_pct") or -999) > EDGE_MIN_FALLBACK_AUTO
+                                              and c["pick"]["proba_modele_pct"] >= PROBA_MIN_FALLBACK_AUTO]
+                      for m, candidats in pool_par_match.items()}
+    pool_par_match = {m: c for m, c in pool_par_match.items() if c}
     matchs = list(pool_par_match.keys())
     tous_candidats = [c for candidats in pool_par_match.values() for c in candidats]
     if len(tous_candidats) < nb_jambes:
