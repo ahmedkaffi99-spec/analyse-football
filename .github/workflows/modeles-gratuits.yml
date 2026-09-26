@@ -23,4 +23,6 @@ jobs:
       - run: pip install -r backend/requirements.txt
       - name: Lister
         working-directory: backend
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: python -m app.taches modeles-gratuits

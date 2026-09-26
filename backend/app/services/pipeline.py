@@ -18,7 +18,7 @@ def modules():
     return collecte_donnees, analyser_et_envoyer, verifier_resultats
 
 
-def reinitialiser_caches(cd):
+def reinitialiser_caches(cd, ae=None):
     """Les modules du pipeline gardent des caches au niveau module, prévus pour un script
     lancé une fois par jour. Dans un serveur qui tourne plusieurs jours, ils serviraient les
     données de la veille (Elo du jour, xG, classements) — on les vide avant chaque run."""
@@ -27,6 +27,8 @@ def reinitialiser_caches(cd):
     cd._cache_classement_football_data.clear()
     cd._cache_stats_equipes.clear()
     cd.UNDERSTAT_SAISON = cd.saison_en_cours()
+    if ae is not None:
+        ae._cle_openrouter_refusee = None  # la clé a pu être corrigée depuis le run précédent
 
 
 _MOTIF_SECRET = re.compile(r"((?:apiKey|api_key|key|token)=)[^&\s'\")]+", re.IGNORECASE)

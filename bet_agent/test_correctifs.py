@@ -298,6 +298,17 @@ class TestOpenRouterSeulement(unittest.TestCase):
         self.assertEqual(appels, [("https://openrouter.ai/api/v1/chat/completions", ae.OPENROUTER_MODELS[0], "analyse-football")])
         self.assertFalse(hasattr(ae, "appel_groq") or hasattr(ae, "appel_gemini"))
 
+    def test_cle_refusee_arrete_tous_les_appels_du_run(self):
+        refus = mock.Mock(status_code=401, headers={}, json=lambda: {"error": {"message": "User not found."}})
+        with mock.patch.object(ae, "OPENROUTER_API_KEY", "cle"), \
+                mock.patch.object(ae, "_cle_openrouter_refusee", None), \
+                mock.patch.object(ae.requests, "post", return_value=refus) as post, \
+                mock.patch.object(ae.time, "sleep"):
+            for _ in range(3):
+                with self.assertRaisesRegex(ValueError, "Clé OpenRouter refusée"):
+                    ae.appel_llm("test")
+        self.assertEqual(post.call_count, 1)  # un seul appel, ni autre modèle ni nouvel essai
+
     def test_limite_de_debit_attend_puis_passe_au_modele_suivant(self):
         reponses = [mock.Mock(status_code=429, headers={"Retry-After": "7"},
                               json=lambda: {"error": {"message": "Rate limit"}})] * 2 + \

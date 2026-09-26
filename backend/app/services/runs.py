@@ -42,7 +42,7 @@ def executer_run(run_id, envoyer_telegram=False, rediger=True):
     donnees = None
     try:
         cd, ae, _ = pipeline.modules()
-        pipeline.reinitialiser_caches(cd)
+        pipeline.reinitialiser_caches(cd, ae)
         DOSSIER_DONNEES.mkdir(parents=True, exist_ok=True)
         sortie = DOSSIER_DONNEES / f"collecte_run_{run_id}.json"
         cd.SORTIE_JSON = str(sortie)

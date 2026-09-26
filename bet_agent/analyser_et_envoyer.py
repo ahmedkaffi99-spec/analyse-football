@@ -88,6 +88,9 @@ OPENROUTER_MODELES_DEFAUT = ("qwen/qwen3.8-27b:free,nvidia/nemotron-3-ultra-550b
 OPENROUTER_MODELS = [m.strip() for m in (os.getenv("OPENROUTER_MODELES") or OPENROUTER_MODELES_DEFAUT).split(",")
                      if m.strip()]
 OPENROUTER_ATTENTE_429_MAX = 60  # secondes max d'attente quand OpenRouter limite le débit
+# Clé refusée (HTTP 401) : inutile d'essayer d'autres modèles ni de réessayer pendant ce run
+# (run 5 : des dizaines d'appels « User not found » avaient coûté ~7 minutes).
+_cle_openrouter_refusee = None
 
 
 def _contenu_reponse(fournisseur, r):
@@ -837,8 +840,11 @@ def _attente_limite_debit(r):
 
 
 def appel_openrouter(prompt, max_tokens=2000):
+    global _cle_openrouter_refusee
     if not OPENROUTER_API_KEY:
         raise ValueError("OPENROUTER_API_KEY manquante")
+    if _cle_openrouter_refusee:
+        raise ValueError(_cle_openrouter_refusee)
     url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
@@ -860,6 +866,11 @@ def appel_openrouter(prompt, max_tokens=2000):
             except Exception as e:
                 derniere_erreur = e
                 print(f"   ⚠️ OpenRouter {modele} (essai {tentative + 1}/2) : {_cause(e)[:160]}")
+                if r is not None and r.status_code == 401:
+                    _cle_openrouter_refusee = (f"Clé OpenRouter refusée ({_cause(e)[:120]}) — vérifier le secret "
+                                               "OPENROUTER_API_KEY ; IA désactivée pour ce run")
+                    print(f"   ⛔ {_cle_openrouter_refusee}")
+                    raise ValueError(_cle_openrouter_refusee)
             # Limite de débit : attendre ce que demande OpenRouter ; sinon courte pause.
             time.sleep(_attente_limite_debit(r) if r is not None and r.status_code == 429 else 3)
     raise ValueError(f"Tous les modèles OpenRouter ont échoué (dernière erreur : {derniere_erreur})")

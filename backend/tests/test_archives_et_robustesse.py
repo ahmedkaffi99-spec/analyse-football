@@ -98,8 +98,10 @@ def test_tester_api_signale_une_route_en_panne(monkeypatch):
     assert tache_tester_api(None, reponses(panne="/statistiques")) == 1
 
 
-def test_liste_des_modeles_gratuits(capsys):
+def test_liste_des_modeles_gratuits(capsys, monkeypatch):
     from app.taches import tache_modeles_gratuits
+
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
 
     donnees = {"data": [
         {"id": "nvidia/grand:free", "name": "Grand", "context_length": 1000000,
@@ -112,3 +114,17 @@ def test_liste_des_modeles_gratuits(capsys):
     sortie = capsys.readouterr().out
     assert "MODELE | nvidia/grand:free | Grand | contexte 1000000 | outils oui | json oui" in sortie
     assert "payant/modele" not in sortie and "image/gen" not in sortie
+
+
+def test_verification_de_la_cle_openrouter(capsys, monkeypatch):
+    from app.taches import verifier_cle_openrouter
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-secrete")
+    refus = SimpleNamespace(status_code=401, json=lambda: {"error": {"message": "User not found."}})
+    assert verifier_cle_openrouter(SimpleNamespace(get=lambda url, headers, timeout: refus)) is False
+    ok = SimpleNamespace(status_code=200, json=lambda: {"data": {"is_free_tier": True, "limit": None, "usage": 0}})
+    assert verifier_cle_openrouter(SimpleNamespace(get=lambda url, headers, timeout: ok)) is True
+    sortie = capsys.readouterr().out
+    assert "CLE | REFUSÉE (HTTP 401 : User not found.)" in sortie
+    assert "CLE | valide | offre gratuite : oui" in sortie
+    assert "sk-or-secrete" not in sortie
