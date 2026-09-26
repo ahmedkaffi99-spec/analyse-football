@@ -12,7 +12,7 @@ from app.config import DOSSIER_DONNEES
 from app.database import SessionLocal
 from app.models import Run
 from app.services import pipeline
-from app.services.archives import archiver_run
+from app.services.archives import archiver_run, telecharger_collecte
 from app.services.persistance import enregistrer_collecte, enregistrer_coupons
 
 
@@ -36,19 +36,33 @@ def cloturer_runs_interrompus(db, maintenant=None):
     return clotures
 
 
-def executer_run(run_id, envoyer_telegram=False, rediger=True):
+def charger_collecte_du_jour(db, run_source_id, telecharger=telecharger_collecte):
+    """Collecte d'un run précédent du JOUR (les cotes d'un autre jour sont périmées)."""
+    source = db.get(Run, run_source_id)
+    if source is None:
+        raise ValueError(f"Run {run_source_id} introuvable")
+    if source.lance_le.date() != datetime.now(timezone.utc).date():
+        raise ValueError(f"Run {run_source_id} du {source.lance_le.date()} : cotes périmées, reprise refusée")
+    print(f"♻️ Reprise de la collecte du run {run_source_id} (aucun appel aux API sportives)")
+    return telecharger(db, source)
+
+
+def executer_run(run_id, envoyer_telegram=False, rediger=True, depuis_run=None):
     db = SessionLocal()
     run = db.get(Run, run_id)
     donnees = None
     try:
         cd, ae, _ = pipeline.modules()
         pipeline.reinitialiser_caches(cd, ae)
-        DOSSIER_DONNEES.mkdir(parents=True, exist_ok=True)
-        sortie = DOSSIER_DONNEES / f"collecte_run_{run_id}.json"
-        cd.SORTIE_JSON = str(sortie)
-        cd.collecter_donnees()
-        with open(sortie, encoding="utf-8") as f:
-            donnees = json.load(f)
+        if depuis_run:
+            donnees = charger_collecte_du_jour(db, depuis_run)
+        else:
+            DOSSIER_DONNEES.mkdir(parents=True, exist_ok=True)
+            sortie = DOSSIER_DONNEES / f"collecte_run_{run_id}.json"
+            cd.SORTIE_JSON = str(sortie)
+            cd.collecter_donnees()
+            with open(sortie, encoding="utf-8") as f:
+                donnees = json.load(f)
         index = enregistrer_collecte(db, run, donnees)
         db.commit()
 

@@ -128,3 +128,39 @@ def test_verification_de_la_cle_openrouter(capsys, monkeypatch):
     assert "CLE | REFUSÉE (HTTP 401 : User not found.)" in sortie
     assert "CLE | valide | offre gratuite : oui" in sortie
     assert "sk-or-secrete" not in sortie
+
+
+def test_telechargement_d_une_collecte_archivee():
+    from app.services.archives import telecharger_collecte
+
+    appels = []
+
+    def lire(url, timeout, params=None, headers=None):
+        appels.append((url, params, headers))
+        if url.endswith("/api/archives/lien"):
+            return SimpleNamespace(status_code=200, json=lambda: {"url": "https://signe/fichier"})
+        return SimpleNamespace(status_code=200, json=lambda: {"matchs": [{"id": 1}]})
+
+    assert telecharger_collecte(_fausse_base(), _faux_run(), lire=lire) == {"matchs": [{"id": 1}]}
+    assert appels[0][1] == {"chemin": "2026-09-26/run_7_collecte.json"}
+    assert appels[0][2] == {"X-API-Key": "jeton-vault"}
+    assert appels[1][0] == "https://signe/fichier"
+
+
+def test_reprise_seulement_depuis_un_run_du_jour():
+    import pytest
+
+    from app.services.runs import charger_collecte_du_jour
+
+    with SessionLocal() as db:
+        ancien = Run(source="api", statut="termine", lance_le=datetime.now(timezone.utc) - timedelta(days=1))
+        du_jour = Run(source="api", statut="termine", lance_le=datetime.now(timezone.utc))
+        db.add_all([ancien, du_jour])
+        db.commit()
+        telecharger = mock.Mock(return_value={"matchs": []})
+        assert charger_collecte_du_jour(db, du_jour.id, telecharger=telecharger) == {"matchs": []}
+        with pytest.raises(ValueError, match="périmées"):
+            charger_collecte_du_jour(db, ancien.id, telecharger=telecharger)
+        with pytest.raises(ValueError, match="introuvable"):
+            charger_collecte_du_jour(db, 999, telecharger=telecharger)
+        assert telecharger.call_count == 1

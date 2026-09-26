@@ -64,3 +64,20 @@ def archiver_run(db, run, donnees_collecte=None, poster=requests.post):
     if archives:
         print(f"   🗄️ Archivé dans Supabase Storage (bucket privé 'archives') : {', '.join(archives)}")
     return archives
+
+
+def telecharger_collecte(db, run_source, lire=requests.get):
+    """Relit la collecte brute archivée d'un run (lien signé de l'Edge Function) pour relancer
+    l'analyse sans refaire la collecte (aucun appel aux API sportives)."""
+    jeton = db.execute(REQUETE_JETON).scalar()
+    if not jeton:
+        raise RuntimeError("aucun secret 'api_token' dans le Vault")
+    chemin = f"{run_source.lance_le.date().isoformat()}/run_{run_source.id}_collecte.json"
+    r = lire(f"{config.SUPABASE_FONCTIONS_URL}/api/archives/lien", params={"chemin": chemin},
+             headers={"X-API-Key": jeton}, timeout=30)
+    if r.status_code != 200:
+        raise RuntimeError(f"archive {chemin} introuvable (HTTP {r.status_code})")
+    fichier = lire(r.json()["url"], timeout=60)
+    if fichier.status_code != 200:
+        raise RuntimeError(f"téléchargement de {chemin} impossible (HTTP {fichier.status_code})")
+    return fichier.json()

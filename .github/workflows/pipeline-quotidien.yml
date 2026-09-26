@@ -12,6 +12,10 @@ on:
         description: "Envoyer les coupons sur Telegram"
         type: boolean
         default: false
+      depuis_run:
+        description: "Reprendre la collecte d'un run du jour (numéro) : analyse + IA seulement"
+        type: string
+        default: ""
 
 concurrency:
   group: pipeline-quotidien
@@ -39,6 +43,7 @@ jobs:
       EVENEMENT: ${{ github.event_name }}
       PLANIFICATION: ${{ github.event.schedule }}
       TELEGRAM_MANUEL: ${{ inputs.telegram }}
+      DEPUIS_RUN: ${{ inputs.depuis_run }}
     steps:
       - uses: actions/checkout@v4
 
@@ -70,6 +75,10 @@ jobs:
             fi
           elif [ "$TELEGRAM_MANUEL" = "true" ]; then
             ARGS="$ARGS --telegram"
+          fi
+          if [ -n "$DEPUIS_RUN" ]; then
+            case "$DEPUIS_RUN" in *[!0-9]*) echo "::error::depuis_run doit être un numéro"; exit 1;; esac
+            ARGS="$ARGS --depuis-run $DEPUIS_RUN"
           fi
           python -m app.taches $ARGS
 
