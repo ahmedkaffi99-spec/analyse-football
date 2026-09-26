@@ -64,6 +64,9 @@ EDGE_MIN_POOL = 2.0    # % — plancher d'edge pour qu'un marché entre dans le 
 # PARMI les combos qui atteignent la cible — les Coupons 1/2 (cibles basses) n'utiliseront
 # ces jambes plus risquées que si nécessaire pour respecter leur propre cible.
 PROBA_MIN_POOL = 30.0  # % — plancher de probabilité pour qu'un marché entre dans le pool de candidats
+# L'IA stratège (agent_strategie.py) analyse, planifie et choisit les paris ; Python valide.
+# UTILISER_STRATEGE_IA=false revient à la seule composition automatique (Monte Carlo).
+UTILISER_STRATEGE_IA = os.getenv("UTILISER_STRATEGE_IA", "true").lower() not in ("0", "false", "non", "no")
 MAX_JAMBES_PAR_MATCH = 2  # au-delà, les paris d'un même match sont trop corrélés (constaté le
                           # 2026-09-26 : 8 jambes sur 3 matchs, coupon quasi impossible à gagner)
 NB_CANDIDATS_PAR_MATCH = 10  # plafond de sécurité — en pratique = le meilleur candidat de chaque catégorie de marché trouvée pour le match (~13 catégories possibles au total)
@@ -953,6 +956,7 @@ def _construire_donnees_prompt(selections_finales):
             f"edge {pick['edge_pct']}%\n"
             f"  Guide déjà rédigé (à recopier tel quel) : {pick['guide']}\n"
             f"  Onglet déjà déterminé (à recopier tel quel) : {pick['onglet']}\n"
+            + (f"  Raisonnement du stratège (à reprendre fidèlement) : {s['raison_ia']}\n" if s.get("raison_ia") else "")
         )
     return donnees_prompt + _construire_contexte_prompt(selections_finales)
 
@@ -1045,6 +1049,8 @@ def _tache_redaction(donnees_prompt, pronostic_texte, nb_jambes_attendues):
         f"sélection précise — ne l'invente pas, ne le résume pas, ne le change pas]\\n"
         f"   📍 Où parier : [recopie ICI, MOT POUR MOT, l''Onglet déjà déterminé' fourni plus haut pour "
         f"cette sélection précise — ne l'invente pas]\n"
+        f"   🧠 Pourquoi : [reprends fidèlement le 'Raisonnement du stratège' de cette sélection ; s'il "
+        f"n'y en a pas, OMETS cette ligne]\n"
         f"   📰 À savoir : [UNE phrase courte tirée du CONTEXTE PAR MATCH — absence, forme, rapport de "
         f"force Elo — utile pour ce pari ; si le contexte n'apporte rien de pertinent, OMETS cette ligne]'\n"
         f"Ligne vide entre chaque bloc match. Ne calcule et n'affiche AUCUNE cote totale ni probabilité "
@@ -1093,6 +1099,7 @@ def rediger_ticket_sans_ia(selections_finales):
             f"(edge {p['edge_pct']}% · Confiance : {niveau_confiance(p['edge_pct'])})\n"
             f"   📖 Guide : {p['guide']}\n"
             f"   📍 Où parier : {p['onglet']}"
+            + (f"\n   🧠 Pourquoi : {s['raison_ia']}" if s.get("raison_ia") else "")
         )
     return "\n\n".join(blocs)
 
@@ -1104,10 +1111,17 @@ def agent4_ia_analyse_pronostic_redaction(selections_finales):
     analyse -> pronostic -> rédaction pédagogique finale."""
     donnees_prompt = _construire_donnees_prompt(selections_finales)
 
-    analyse_texte = _tache_analyse(donnees_prompt, len(selections_finales))
-    time.sleep(6)
-    pronostic_texte = _tache_pronostic(donnees_prompt, analyse_texte)
-    time.sleep(6)
+    if all(s.get("raison_ia") for s in selections_finales):
+        # Coupon composé par le stratège : son raisonnement tient lieu d'analyse, et la
+        # confiance est déduite de l'edge en Python — 2 appels IA économisés par coupon.
+        pronostic_texte = "\n".join(
+            f"{s['match']} : {s['pick']['marche']} - {s['pick']['selection']} @ {s['pick']['cote']} — "
+            f"Confiance : {niveau_confiance(s['pick']['edge_pct'])}" for s in selections_finales)
+    else:
+        analyse_texte = _tache_analyse(donnees_prompt, len(selections_finales))
+        time.sleep(6)
+        pronostic_texte = _tache_pronostic(donnees_prompt, analyse_texte)
+        time.sleep(6)
     ticket_texte = _tache_redaction(donnees_prompt, pronostic_texte, len(selections_finales))
     if not ticket_texte:
         print("   ⚠️ Rédaction IA indisponible — ticket rédigé automatiquement à partir des chiffres calculés.")
@@ -1367,7 +1381,32 @@ def generer_trois_coupons(donnees):
     jambes_possibles = sum(min(len(v), MAX_JAMBES_PAR_MATCH) for v in pool.values())
     combos_deja_proposes = []
     resultats = []
+
+    # L'IA STRATÈGE compose d'abord (analyse, stratégie, choix) ; Python a validé chaque coupon.
+    strategie_ia = None
+    if UTILISER_STRATEGE_IA and pool:
+        try:
+            import agent_strategie
+            strategie_ia = agent_strategie.composer_coupons(pool, PROFILS_COUPON)
+        except Exception as e:
+            print(f"   ⚠️ Stratège IA indisponible ({_cause(e)[:150]}) — composition automatique.")
+    coupons_ia = (strategie_ia or {}).get("coupons", {})
+
     for profil in PROFILS_COUPON:
+        choix_ia = coupons_ia.get(profil["cle"])
+        if choix_ia and choix_ia.get("selections"):
+            selections = choix_ia["selections"]
+            print(f"   🧭 [{profil['nom']}] composé par l'IA : {len(selections)} jambes, cote totale "
+                  f"{_produit_cotes(selections):.2f} — {choix_ia.get('strategie', '')[:120]}")
+            combos_deja_proposes.append(frozenset((c["match"], c["pick"]["marche"], c["pick"]["selection"])
+                                                  for c in selections))
+            resultats.append({"profil": profil, "selections": selections, "strategie": choix_ia.get("strategie")})
+            continue
+        if choix_ia and "abstention" in choix_ia:
+            print(f"   🧭 [{profil['nom']}] l'IA s'abstient : {choix_ia['abstention'][:150]}")
+            resultats.append({"profil": profil, "selections": [], "abstention": choix_ia["abstention"]})
+            continue
+
         nb_jambes = min(profil["nb_jambes"], jambes_possibles)
         if nb_jambes < profil["nb_jambes"]:
             print(f"   ℹ️ [{profil['nom']}] {nb_jambes} jambes au lieu de {profil['nb_jambes']} "
@@ -1400,6 +1439,9 @@ def agent4_rediger_trois_coupons(resultats_profils):
     sections = []
     for item in resultats_profils:
         profil, selections = item["profil"], item["selections"]
+        if not selections and item.get("abstention"):
+            sections.append(f"{profil['nom']}\n🧭 _Pas de coupon aujourd'hui — l'IA s'abstient : {item['abstention']}_")
+            continue
         if not selections:
             sections.append(f"{profil['nom']}\n_Aucune sélection ne remplit les critères de ce profil aujourd'hui._")
             continue
@@ -1422,9 +1464,10 @@ def agent4_rediger_trois_coupons(resultats_profils):
                 f"match, donc la probabilité combinée ci-dessous est optimiste (jambes corrélées, "
                 f"pas indépendantes)._"
             )
+        ligne_strategie = f"🧭 Stratégie : {item['strategie']}\n\n" if item.get("strategie") else ""
         sections.append(
             f"{profil['nom']} — {len(selections)} jambes sur {nb_matchs_distincts} match{'s' if nb_matchs_distincts > 1 else ''}\n\n"
-            f"{ticket_texte}\n\n"
+            f"{ligne_strategie}{ticket_texte}\n\n"
             f"💰 Cote totale : *{cote_totale}* · 🎲 Probabilité combinée réelle : *{proba_combinee}%*"
             f"{avertissement_correlation}"
         )

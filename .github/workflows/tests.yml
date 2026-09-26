@@ -27,7 +27,7 @@ jobs:
 
       - name: Tests du pipeline
         working-directory: bet_agent
-        run: python -m unittest test_correctifs -v
+        run: python -m unittest test_correctifs test_agent_strategie -v
 
       - name: Tests du backend
         working-directory: backend

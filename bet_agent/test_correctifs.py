@@ -135,7 +135,8 @@ class TestCouponsJoursCreux(unittest.TestCase):
     def test_pas_plus_de_deux_paris_par_match_ni_coupons_identiques(self):
         pool = {m: [_selection(m, c, "Over", 1.3 + 0.1 * i) for i, c in enumerate(("Total", "BTTS", "Total Équipe 1"))]
                 for m in ("A vs B", "C vs D", "E vs F")}
-        with mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=pool):
+        with mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=pool), \
+                mock.patch.object(ae, "UTILISER_STRATEGE_IA", False):
             resultats = ae.generer_trois_coupons({"matchs": []})
         signatures = []
         for item in resultats:

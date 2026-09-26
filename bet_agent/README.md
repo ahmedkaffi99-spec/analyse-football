@@ -89,6 +89,7 @@ Le LLM **n'invente jamais un chiffre** : cotes, probabilités et edges sont calc
 | **1 — Matchs & cotes** | `collecte_donnees.py` | Données | sélectionne 8 à 15 matchs (5 grands championnats en priorité), récupère tous les marchés 1xBet sauf le 1X2 |
 | **2 — Stats & contexte** | `collecte_donnees.py` | Données | stats d'équipe (Understat → API-Football → TheSportsDB), Elo, classement, contexte web Serper |
 | **3 — Calcul** | `analyser_et_envoyer.py` · `agent3_calcul_pool_candidats` | Calcul | buts attendus → probabilités Poisson → edge sur chaque marché → pool de candidats → 3 combinés |
+| **3b — Stratège IA** | `agent_strategie.py` | IA | **analyse** chaque match (fiabilité, presse, Elo, écart modèle/marché), **planifie** une stratégie par profil et **choisit** les paris dans le catalogue de cotes réelles (par identifiant, jamais de cote inventée) ; Python **vérifie** (paris existants, 2 max par match, cote totale dans la cible) et renvoie ses calculs à l'IA qui corrige (3 allers-retours max) ; l'IA peut **s'abstenir** ; repli automatique (Monte Carlo) si elle échoue |
 | **4 — Rédaction IA** | `analyser_et_envoyer.py` · `agent4_*` | IA | 3 tâches : analyse → pronostic + confiance → ticket pédagogique pour débutant |
 | **5 — Livraison** | `analyser_et_envoyer.py` · `agent5_*` | Livraison | envoi Telegram, sauvegarde `ticket_du_jour.json` |
 | **6 — Vérification** | `verifier_resultats.py` | Contrôle | attend la fin des matchs, récupère les scores, juge chaque jambe, envoie le bilan |
