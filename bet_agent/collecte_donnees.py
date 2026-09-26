@@ -790,8 +790,16 @@ def recuperer_fixtures_api_football():
             params = {"date": date_cible}
             _respecter_rate_limit_api_football()
             r = SESSION.get(url, headers=headers, params=params, timeout=15)
-            lot = r.json().get("response", [])
-            fixtures.extend(lot)
+            data = r.json()
+            erreurs = data.get("errors")
+            if erreurs:
+                # API-Football renvoie souvent HTTP 200 même quota dépassé — seul le champ
+                # "errors" (non vide) le révèle ; sans ce contrôle, un quota épuisé donnait
+                # silencieusement "0 matchs", indiscernable d'un vrai jour sans match
+                # (constaté le 2026-09-26, lors du repli de vérification des résultats).
+                print(f"⚠️ API-Football erreur ({date_cible}) : {erreurs}")
+                continue
+            fixtures.extend(data.get("response", []))
         except Exception as e:
             print(f"⚠️ API-Football erreur ({date_cible}) : {e}")
     print(f"   → {len(fixtures)} matchs API-Football (hier/aujourd'hui/demain confondus)")
