@@ -162,6 +162,9 @@ def composer_coupons(pool, profils, appel=None, nb_tours=NB_TOURS_MAX):
     prompt, acceptes, analyse = prompt_base, {}, []
 
     for tour in range(1, nb_tours + 1):
+        if ae.budget_ia_epuise():
+            print("   ⏱️ Budget IA épuisé — le stratège s'arrête, composition automatique pour le reste.")
+            break
         print(f"   🧭 [Stratège IA] tour {tour}/{nb_tours} : analyse, stratégie et choix des paris...")
         try:
             # Marge large : les modèles de raisonnement comptent leur réflexion dans max_tokens.

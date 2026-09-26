@@ -298,6 +298,27 @@ class TestOpenRouterSeulement(unittest.TestCase):
         self.assertEqual(appels, [("https://openrouter.ai/api/v1/chat/completions", ae.OPENROUTER_MODELS[0], "analyse-football")])
         self.assertFalse(hasattr(ae, "appel_groq") or hasattr(ae, "appel_gemini"))
 
+    def test_budget_ia_epuise_plus_aucun_appel(self):
+        horloge = [1000.0]
+        lent = mock.Mock(status_code=504, headers={}, json=lambda: {"error": {"message": "timeout"}})
+
+        def post_lent(*a, **k):
+            horloge[0] += 60  # chaque modèle met 60 s à échouer
+            return lent
+
+        with mock.patch.object(ae, "OPENROUTER_API_KEY", "cle"), \
+                mock.patch.object(ae, "BUDGET_IA_SECONDES", 150), \
+                mock.patch.object(ae.time, "monotonic", lambda: horloge[0]), \
+                mock.patch.object(ae.time, "sleep"), \
+                mock.patch.object(ae.requests, "post", side_effect=post_lent) as post:
+            ae.reinitialiser_budget_ia()
+            with self.assertRaisesRegex(ValueError, "Budget IA de 150 s épuisé"):
+                ae.appel_llm("test")
+            self.assertEqual(post.call_count, 3)  # 3 x 60 s > 150 s : pas de 4e modèle
+            self.assertIsNone(ae._tache_redaction("donnees", "pronostic", 2))
+            self.assertEqual(post.call_count, 3)  # budget épuisé : la rédaction n'appelle plus rien
+            ae.reinitialiser_budget_ia()
+
     def test_cle_refusee_arrete_tous_les_appels_du_run(self):
         refus = mock.Mock(status_code=401, headers={}, json=lambda: {"error": {"message": "User not found."}})
         with mock.patch.object(ae, "OPENROUTER_API_KEY", "cle"), \

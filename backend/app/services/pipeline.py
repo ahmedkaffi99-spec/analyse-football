@@ -27,8 +27,8 @@ def reinitialiser_caches(cd, ae=None):
     cd._cache_classement_football_data.clear()
     cd._cache_stats_equipes.clear()
     cd.UNDERSTAT_SAISON = cd.saison_en_cours()
-    if ae is not None:
-        ae._cle_openrouter_refusee = None  # la clé a pu être corrigée depuis le run précédent
+    if hasattr(ae, "reinitialiser_budget_ia"):
+        ae.reinitialiser_budget_ia()  # budget IA neuf ; la clé a pu être corrigée depuis
 
 
 _MOTIF_SECRET = re.compile(r"((?:apiKey|api_key|key|token)=)[^&\s'\")]+", re.IGNORECASE)
