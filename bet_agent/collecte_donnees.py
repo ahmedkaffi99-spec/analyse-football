@@ -92,7 +92,7 @@ FOOTBALL_DATA_API_KEY = os.getenv("FOOTBALL_DATA_API_KEY")  # clé gratuite (10 
 # automatique. Mets à jour la date EN MÊME TEMPS que la liste.
 # ------------------------------------------------------------
 SELECTION_MANUELLE_ACTIVE = True
-MATCHS_MANUELS_DATE = "2026-08-22"
+MATCHS_MANUELS_DATE = "2026-09-26"
 
 # Si SELECTION_MANUELLE_ACTIVE=True : la liste EXACTE de matchs à collecter, dans
 # l'ordre. Si False : sert uniquement de filet de sécurité si la sélection
@@ -100,26 +100,10 @@ MATCHS_MANUELS_DATE = "2026-08-22"
 # Noms d'équipes : peu importe l'orthographe exacte (fuzzy matching), mais reste
 # proche du nom usuel pour un bon score de correspondance.
 #
-# Liste ci-dessous vérifiée manuellement sur 1xbet le 22/08/2026 (cotes 1X2
-# affichées = marché ouvert confirmé) : 6 Ligue 1, 4 Serie A, 3 La Liga,
-# 2 Premier League. Supercoupe d'Allemagne (Dortmund-Bayern) volontairement
-# exclue : coupe, pas la Bundesliga elle-même.
+# Demande explicite du 26/09/2026 : un seul match précis, vu sur 1xbet (marché 1X2 ouvert,
+# capture d'écran fournie) — match amical, coup d'envoi 23:30 UTC.
 MATCHS_MANUELS = [
-    ("Troyes AC", "Paris FC"),
-    ("Toulouse", "Lyon"),
-    ("Angers SCO", "Lille OSC"),
-    ("RC Lens", "Auxerre"),
-    ("Le Mans", "Stade Brestois 29"),
-    ("Nice", "Lorient"),
-    ("Valencia", "Celta de Vigo"),
-    ("Espanyol", "Real Madrid"),
-    ("Genoa", "SSC Naples"),
-    ("Parma", "Cagliari Calcio"),
-    ("Athletic Bilbao", "Séville"),
-    ("Inter Milan", "Monza 1912"),
-    ("Udinese Calcio", "Como"),
-    ("Brentford", "Tottenham Hotspur"),
-    ("Brighton & Hove Albion", "Aston Villa"),
+    ("United States", "Peru"),
 ]
 
 # Grandes ligues européennes uniquement — MLS et Brasileirão volontairement exclus
