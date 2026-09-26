@@ -16,6 +16,7 @@ Répartition des rôles (principe : « l'IA décide, Python vérifie et calcule 
 """
 
 import json
+import math
 import re
 
 import analyser_et_envoyer as ae
@@ -138,6 +139,31 @@ def signature(selections):
     return frozenset(s["match"] + s["pick"]["marche"] + s["pick"]["selection"] for s in selections)
 
 
+# Le prompt (règle 5) demande déjà de varier les marchés, mais un coupon réel (2026-09-26) a
+# quand même choisi 10 paris Under/BTTS No sur 10 alors que plusieurs matchs avaient d'autres
+# catégories disponibles ("stratégie délibérée de faible variance" selon l'IA elle-même) —
+# demande explicite de l'utilisateur : imposer une limite PYTHON, pas seulement une préférence
+# dans le texte du prompt.
+PART_MAX_PARIS_CONSERVATEURS = 0.7  # au plus 70% des jambes en Under/No si une alternative existe
+
+
+def _pari_conservateur(pick):
+    """Under/No : les paris "défensifs" (peu de buts/pas de but) qui dominent le catalogue à
+    cause du biais du modèle Poisson vers les totaux bas — pas une erreur en soi, mais un
+    coupon presque entièrement composé de ce type est moins robuste qu'un coupon varié."""
+    return str(pick.get("selection", "")).strip().lower() in ("under", "no")
+
+
+def _matchs_avec_alternative(catalogue):
+    """Matchs du catalogue où au moins un pari NON conservateur (Over/Yes/Handicap/Double
+    Chance...) est disponible — on n'exige jamais de varier un match qui n'offre QUE des
+    Under/No, ce serait impossible à satisfaire."""
+    par_match = {}
+    for c in catalogue.values():
+        par_match.setdefault(c["match"], []).append(c["pick"])
+    return {match for match, picks in par_match.items() if any(not _pari_conservateur(p) for p in picks)}
+
+
 def valider(proposition, catalogue, profils, signatures_existantes=()):
     """Contrôle la proposition de l'IA profil par profil. Renvoie
     (acceptes {cle: {"selections"|"abstention", "strategie"}}, problemes [str], calculs [str])."""
@@ -176,6 +202,18 @@ def valider(proposition, catalogue, profils, signatures_existantes=()):
         for match, nombre in par_match.items():
             if nombre > ae.MAX_JAMBES_PAR_MATCH:
                 erreurs.append(f"{nombre} paris sur {match} (maximum {ae.MAX_JAMBES_PAR_MATCH})")
+
+        conservateurs = [s for s in selections if _pari_conservateur(s["pick"])]
+        seuil = math.ceil(len(selections) * PART_MAX_PARIS_CONSERVATEURS) if selections else 0
+        if len(conservateurs) > seuil:
+            matchs_a_varier = sorted({s["match"] for s in conservateurs} & _matchs_avec_alternative(catalogue))
+            if matchs_a_varier:
+                erreurs.append(
+                    f"{len(conservateurs)}/{len(selections)} paris sont des Under/No (trop peu varié, "
+                    f"maximum {seuil} recommandé) ; une autre catégorie de marché existe dans le catalogue pour "
+                    f"{', '.join(matchs_a_varier)} — remplace au moins un pari Under/No par une alternative sur "
+                    "l'un de ces matchs")
+
         nb_jambes_min = profil.get("nb_jambes_min", NB_JAMBES_MIN_DEFAUT)
         if not nb_jambes_min <= len(selections) <= profil["nb_jambes"]:
             erreurs.append(f"{len(selections)} paris valides (il en faut entre {nb_jambes_min} et {profil['nb_jambes']})")
