@@ -971,11 +971,15 @@ def _requete_ia(poster, fournisseur, modele, prompt, max_tokens, json_attendu, d
             "HTTP-Referer": "https://github.com/ahmedkaffi99-spec/analyse-football",
             "X-Title": "analyse-football",
         }
-        if modele != DEEPSEEK_MODELE_PAYANT:
+        if modele == DEEPSEEK_MODELE_PAYANT:
+            # "low" comme les gratuits serait trop court pour le raisonnement plus poussé demandé
+            # explicitement par l'utilisateur ; mais un effort NON borné a consommé tout
+            # max_tokens en réflexion interne sans qu'il en reste pour la réponse — HTTP 200 avec
+            # un contenu vide, constaté deux fois de suite au run 24 (2026-09-26). "medium" borne
+            # le raisonnement tout en restant nettement au-dessus du "low" des modèles gratuits.
+            payload["reasoning"] = {"effort": "medium"}
+        else:
             payload["reasoning"] = {"effort": "low"}  # réflexion courte (modèles gratuits, souvent lents/saturés)
-        # DeepSeek (payant, prioritaire) garde son effort de raisonnement par défaut : demandé
-        # explicitement par l'utilisateur (2026-09-26) pour un choix de paris plus réfléchi que
-        # les modèles gratuits en "low effort".
     if json_attendu:
         payload["response_format"] = {"type": "json_object"}
     r = poster(url, headers=headers, json=payload, timeout=delai)
@@ -1002,9 +1006,17 @@ def appel_ia(prompt, max_tokens=2000, json_attendu=False):
     if OPENROUTER_API_KEY and not _deepseek_indisponible and "openrouter" not in _fournisseurs_refuses:
         restant = secondes_ia_restantes()
         if restant >= 10:
+            # Run 24 (2026-09-26) : appelé en direct (sans le garde-fou horloge murale du
+            # ThreadPoolExecutor utilisé plus bas), une réponse lente a bloqué ~135 s au lieu de
+            # s'arrêter à 90 s, épuisant le budget IA du run à elle seule, deux fois de suite —
+            # DeepSeek passe donc par le même exécuteur + timeout que la course en vagues.
+            delai = min(90, restant)
+            # Marge supplémentaire pour le raisonnement ("medium effort") en plus de la réponse
+            # elle-même — un modèle de raisonnement compte sa réflexion dans max_tokens.
+            futur_deepseek = _executeur_ia.submit(_requete_ia, requests.post, "openrouter", DEEPSEEK_MODELE_PAYANT,
+                                                   prompt, max_tokens + 3000, json_attendu, delai)
             try:
-                content = _requete_ia(requests.post, "openrouter", DEEPSEEK_MODELE_PAYANT, prompt, max_tokens,
-                                       json_attendu, min(90, restant))
+                content = futur_deepseek.result(timeout=delai + 2)
                 if not json_attendu or _json_present(content):
                     print(f"   ✓ Réponse via DeepSeek (prioritaire) {DEEPSEEK_MODELE_PAYANT}")
                     return content
@@ -1014,6 +1026,9 @@ def appel_ia(prompt, max_tokens=2000, json_attendu=False):
                 derniere_erreur = e
                 print(f"   ⚠️ DeepSeek indisponible pour le reste du run ({_cause(e)[:150]}) — repli sur la course habituelle.")
                 _deepseek_indisponible = True
+            except DelaiDepasse:
+                derniere_erreur = TimeoutError(f"DeepSeek : pas de réponse complète en {delai:.0f} s")
+                print(f"   ⚠️ DeepSeek (prioritaire) : sans réponse en {delai:.0f} s — repli sur la course habituelle.")
             except Exception as e:
                 derniere_erreur = e
                 print(f"   ⚠️ DeepSeek (prioritaire) indisponible cette fois ({_cause(e)[:150]}) — repli sur la course habituelle.")

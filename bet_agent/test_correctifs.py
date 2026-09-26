@@ -114,8 +114,29 @@ class TestDeepSeekPrioritaire(unittest.TestCase):
         url, auth, corps = appels[0]
         self.assertIn("openrouter.ai", url)
         self.assertEqual(corps["model"], ae.DEEPSEEK_MODELE_PAYANT)
-        self.assertNotIn("reasoning", corps)  # pas de "low effort" imposé à DeepSeek
+        self.assertEqual(corps["reasoning"], {"effort": "medium"})  # ni "low" (gratuits) ni non borné (run 24 : vide)
         self.assertEqual(auth, "Bearer sk-or-secrete")
+
+    def test_deepseek_reponse_vide_par_raisonnement_non_borne_declenche_le_repli(self):
+        # Run 24 (2026-09-26) : DeepSeek en effort non borné a renvoyé HTTP 200 avec un contenu
+        # vide (tout le budget de tokens consommé par le raisonnement interne), deux fois de
+        # suite, épuisant le budget IA du run à lui seul sans qu'aucun autre modèle soit essayé.
+        appels = []
+
+        def faux_post(url, headers, json, timeout):
+            appels.append(json["model"])
+            if json["model"] == ae.DEEPSEEK_MODELE_PAYANT:
+                return SimpleNamespace(status_code=200, json=lambda: {"choices": [{"message": {"content": ""}}]})
+            return SimpleNamespace(status_code=200, json=lambda: {"choices": [{"message": {"content": '{"ok": true}'}}]})
+
+        with mock.patch.object(ae, "OPENROUTER_API_KEY", "sk-or-secrete"), \
+                mock.patch.object(ae, "GROQ_API_KEY", "gsk-secrete"), \
+                mock.patch.object(ae, "GEMINI_API_KEY", None), \
+                mock.patch.object(ae.requests, "post", side_effect=faux_post):
+            resultat = ae.appel_ia("prompt", json_attendu=True)
+
+        self.assertEqual(resultat, '{"ok": true}')  # repli sur Groq, pas d'exception ni de blocage
+        self.assertIn(ae.DEEPSEEK_MODELE_PAYANT, appels)
 
     def test_repli_sur_groq_si_deepseek_echoue(self):
         def faux_post(url, headers, json, timeout):
