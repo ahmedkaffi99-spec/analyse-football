@@ -41,7 +41,8 @@ def tache_run(args):
         run_id = run.id
 
     print(f"🚀 Run {run_id} — Telegram : {'oui' if args.telegram else 'non'}")
-    executer_run(run_id, envoyer_telegram=args.telegram, rediger=not args.sans_redaction)
+    executer_run(run_id, envoyer_telegram=args.telegram, rediger=not args.sans_redaction,
+                 depuis_run=getattr(args, "depuis_run", None))
 
     with SessionLocal() as db:
         run = db.get(Run, run_id)
@@ -180,6 +181,8 @@ def main(argv=None):
     p_run.add_argument("--sans-redaction", action="store_true", help="n'appelle pas le LLM")
     p_run.add_argument("--si-aucun-ticket-aujourdhui", action="store_true",
                        help="ne fait rien si un run a déjà abouti aujourd'hui (passage de secours)")
+    p_run.add_argument("--depuis-run", type=int,
+                       help="reprend la collecte archivée de ce run du jour : analyse et IA seulement")
     p_verif = sous.add_parser("verifier", help="juge les jambes dont le match est terminé")
     p_verif.add_argument("--telegram", action="store_true", help="envoie le bilan quand tout est jugé")
     p_envoi = sous.add_parser("envoyer", help="envoie sur Telegram les coupons déjà calculés d'un run")
