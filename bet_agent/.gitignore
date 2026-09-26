@@ -1,0 +1,10 @@
+# Secrets — ne JAMAIS committer (voir envi.local.example)
+envi.local
+.env
+
+# Fichiers générés à chaque run
+*.log
+donnees_collectees.json
+ticket_du_jour.json
+memoire_agents.json
+__pycache__/
