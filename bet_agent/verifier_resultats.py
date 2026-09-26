@@ -57,6 +57,12 @@ def recuperer_fixtures_du_jour():
                           params={"apiKey": ODDSPAPI_KEY, "sportId": 10, "from": date_from, "to": date_to},
                           timeout=20, verify=VERIFIER_SSL_ODDSPAPI)
         if r.status_code != 200:
+            # Un statut non-200 ici (ex: 429 quota OddsPapi épuisé) fait échouer le lookup pour
+            # TOUTES les jambes en attente, qui apparaissent alors "pas_termine" même si les
+            # matchs sont réellement finis — un print discret ici évite de confondre "quota
+            # épuisé" avec "le match n'est pas fini" (constaté le 2026-09-26).
+            print(f"⚠️ OddsPapi /v4/fixtures a répondu {r.status_code} ({r.text[:150]}) — "
+                  f"impossible de vérifier les résultats à ce passage.")
             return {}
         return {fx["fixtureId"]: fx for fx in r.json()}
     except Exception as e:
