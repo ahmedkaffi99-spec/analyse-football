@@ -113,7 +113,8 @@ def test_liste_des_modeles_gratuits(capsys, monkeypatch):
     assert tache_modeles_gratuits(None, SimpleNamespace(get=lambda url, timeout: reponse)) == 0
     sortie = capsys.readouterr().out
     assert "MODELE | nvidia/grand:free | Grand | contexte 1000000 | outils oui | json oui" in sortie
-    assert "payant/modele" not in sortie and "image/gen" not in sortie
+    assert "PAYANT | payant/modele | Payant | $1500.0000/M tokens | contexte 5 | outils non | json non" in sortie
+    assert "image/gen" not in sortie
 
 
 def test_verification_de_la_cle_openrouter(capsys, monkeypatch):
