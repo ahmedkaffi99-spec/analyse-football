@@ -148,7 +148,10 @@ def verifier_cle_openrouter(requetes):
     return True
 
 
-GROQ_MODELES_PREFERES = ("llama-3.3-70b-versatile", "openai/gpt-oss-120b", "qwen/qwen3-32b", "llama-3.1-8b-instant")
+GROQ_MODELES_PREFERES = ("openai/gpt-oss-120b", "qwen/qwen3.8-27b", "llama-3.3-70b-versatile", "openai/gpt-oss-20b")
+# gemini-2.5-flash est fermé aux nouveaux comptes (HTTP 404, 2026-09-26) : les plus récents d'abord.
+GEMINI_MODELES_PREFERES = ("gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash",
+                           "gemini-flash-latest")
 PROMPT_TEST_IA = 'Réponds UNIQUEMENT avec ce JSON : {"ok": true}'
 
 
@@ -179,7 +182,8 @@ def tester_groq(requetes):
             return False
         reponse, duree = _chrono(lambda: requetes.post(
             "https://api.groq.com/openai/v1/chat/completions", headers=entetes, timeout=60,
-            json={"model": modele, "messages": [{"role": "user", "content": PROMPT_TEST_IA}], "max_tokens": 50}))
+            json={"model": modele, "messages": [{"role": "user", "content": PROMPT_TEST_IA}], "max_tokens": 400,
+                  "reasoning_effort": "low"}))
         if reponse.status_code != 200:
             print(f"GROQ | test {modele} : ÉCHEC HTTP {reponse.status_code} "
                   f"{str(reponse.json().get('error', {}).get('message', ''))[:120]}")
@@ -208,8 +212,7 @@ def tester_gemini(requetes):
         texte_ok = [m["name"].removeprefix("models/") for m in r.json().get("models", [])
                     if "generateContent" in (m.get("supportedGenerationMethods") or [])]
         print(f"GEMINI | clé valide | {len(texte_ok)} modèle(s) : {', '.join(texte_ok)}")
-        flash = [m for m in texte_ok if "flash" in m and "image" not in m and "tts" not in m and "live" not in m]
-        modele = next((m for m in flash if "lite" not in m), flash[0] if flash else (texte_ok[0] if texte_ok else None))
+        modele = next((m for m in GEMINI_MODELES_PREFERES if m in texte_ok), texte_ok[0] if texte_ok else None)
         if not modele:
             return False
         reponse, duree = _chrono(lambda: requetes.post(

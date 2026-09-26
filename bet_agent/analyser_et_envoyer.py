@@ -38,6 +38,8 @@ if not VERIFIER_SSL_ODDSPAPI:
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 ODDSPAPI_KEY = os.getenv("ODDSPAPI_KEY")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
@@ -79,11 +81,10 @@ PROFILS_COUPON = [
 ]
 SELECTION_INTERDITE = "12"  # double chance domicile-ou-extérieur, bannie par consigne
 
-# IA : OpenRouter UNIQUEMENT (choix du 2026-09-26). Modèles essayés dans l'ordre ; liste
-# modifiable sans toucher au code via OPENROUTER_MODELES="modele1,modele2".
-# Modèles gratuits essayés dans l'ordre (liste réelle d'OpenRouter, workflow « Modèles gratuits ») :
-# des modèles de raisonnement généralistes, ceux qui gèrent le JSON d'abord ; le routeur
-# openrouter/free en dernier recours. Remplaçable sans toucher au code via OPENROUTER_MODELES.
+# IA : Groq + Gemini + OpenRouter (2026-09-26). Listes modifiables sans toucher au code via
+# GROQ_MODELES, GEMINI_MODELES et OPENROUTER_MODELES="modele1,modele2".
+# OpenRouter : modèles gratuits (liste réelle, workflow « Modèles gratuits »), le routeur
+# openrouter/free en dernier recours.
 # Interrogés PAR VAGUES EN PARALLÈLE (IA_EN_PARALLELE à la fois) : la première réponse valide
 # gagne. Au run 9 (samedi midi), essayés un par un, tous étaient saturés (429) ou trop lents.
 # Les plus rapides d'abord ; Nemotron 3 Ultra retiré (4 min 30 sans JSON au run 8).
@@ -94,9 +95,16 @@ OPENROUTER_MODELES_DEFAUT = ("nvidia/nemotron-3.5-lightning:free,qwen/qwen3.8-27
 IA_EN_PARALLELE = int(os.getenv("IA_EN_PARALLELE", "4"))
 OPENROUTER_MODELS = [m.strip() for m in (os.getenv("OPENROUTER_MODELES") or OPENROUTER_MODELES_DEFAUT).split(",")
                      if m.strip()]
-# Clé refusée (HTTP 401) : inutile d'essayer d'autres modèles ni de réessayer pendant ce run
-# (run 5 : des dizaines d'appels « User not found » avaient coûté ~7 minutes).
-_cle_openrouter_refusee = None
+# Groq et Gemini (clés testées le 2026-09-26 : réponses en 0,4 s et 5,6 s) courent dans les
+# mêmes vagues qu'OpenRouter : la 1re vague mêle les trois fournisseurs.
+GROQ_MODELES = [m.strip() for m in os.getenv("GROQ_MODELES", "openai/gpt-oss-120b,qwen/qwen3.8-27b").split(",")
+                if m.strip()]
+GEMINI_MODELES = [m.strip() for m in os.getenv("GEMINI_MODELES", "gemini-3.8-flash,gemini-3.7-flash").split(",")
+                  if m.strip()]
+NOMS_FOURNISSEURS = {"openrouter": "OpenRouter", "groq": "Groq", "gemini": "Gemini"}
+# Fournisseur dont la clé est refusée : écarté pour le reste du run (run 5 : des dizaines
+# d'appels « User not found » avaient coûté ~7 minutes). Plus aucun fournisseur → plus d'IA.
+_fournisseurs_refuses = {}
 # Budget TOTAL de l'IA pour un run (stratège + rédaction). Au-delà, plus aucun appel : le
 # ticket est rédigé en Python. Le run 7 (2026-09-26) avait passé plus de 10 minutes en IA.
 BUDGET_IA_SECONDES = float(os.getenv("BUDGET_IA_SECONDES", "240"))
@@ -106,7 +114,7 @@ DELAI_REQUETE_IA_MAX = 60  # secondes max pour UNE réponse (au-delà : modèle 
 _executeur_ia = ThreadPoolExecutor(max_workers=16, thread_name_prefix="ia")
 
 
-class CleOpenRouterRefusee(ValueError):
+class CleIARefusee(ValueError):
     pass
 
 
@@ -125,8 +133,9 @@ _echeance_ia = None  # démarre au premier appel IA du run
 
 
 def reinitialiser_budget_ia():
-    global _echeance_ia, _cle_openrouter_refusee
-    _echeance_ia, _cle_openrouter_refusee = None, None
+    global _echeance_ia
+    _echeance_ia = None
+    _fournisseurs_refuses.clear()
 
 
 def secondes_ia_restantes():
@@ -884,81 +893,139 @@ def _cause(e):
     return str(e)
 
 
-def _appel_un_modele(poster, url, headers, modele, prompt, max_tokens, json_attendu, delai):
-    payload = {"model": modele, "messages": [{"role": "user", "content": prompt}], "max_tokens": max_tokens,
-               # Réflexion courte pour les modèles de raisonnement (ignoré par les autres).
-               "reasoning": {"effort": "low"}}
+def _cles_fournisseurs():
+    return {"openrouter": OPENROUTER_API_KEY, "groq": GROQ_API_KEY, "gemini": GEMINI_API_KEY}
+
+
+def candidats_ia():
+    """(fournisseur, modèle) dans l'ordre des vagues : les meilleurs de chaque fournisseur
+    d'abord (Groq, Gemini, OpenRouter mêlés), puis le reste. Sans clé ou clé refusée : écarté."""
+    cles = _cles_fournisseurs()
+    listes = {"groq": GROQ_MODELES, "gemini": GEMINI_MODELES, "openrouter": OPENROUTER_MODELS}
+    actifs = {f: list(m) for f, m in listes.items() if cles.get(f) and f not in _fournisseurs_refuses}
+    tete = []
+    for f in ("groq", "gemini"):
+        if actifs.get(f):
+            tete.append((f, actifs[f].pop(0)))
+    for _ in range(max(0, IA_EN_PARALLELE - len(tete))):
+        if actifs.get("openrouter"):
+            tete.append(("openrouter", actifs["openrouter"].pop(0)))
+    reste = [(f, m) for f in ("groq", "gemini", "openrouter") for m in actifs.get(f, [])]
+    return tete + reste
+
+
+def _requete_ia(poster, fournisseur, modele, prompt, max_tokens, json_attendu, delai):
+    """Une requête vers un fournisseur ; renvoie le texte ou lève une erreur lisible."""
+    nom = f"{NOMS_FOURNISSEURS[fournisseur]} {modele}"
+    if fournisseur == "gemini":
+        config = {"maxOutputTokens": max_tokens}
+        if json_attendu:
+            config["responseMimeType"] = "application/json"
+        r = poster(f"https://generativelanguage.googleapis.com/v1beta/models/{modele}:generateContent",
+                   headers={"x-goog-api-key": GEMINI_API_KEY, "Content-Type": "application/json"},
+                   json={"contents": [{"parts": [{"text": prompt}]}], "generationConfig": config}, timeout=delai)
+        try:
+            data = r.json()
+        except ValueError:
+            raise ValueError(f"{nom} HTTP {r.status_code} : réponse non JSON")
+        if r.status_code != 200 or "error" in data:
+            message = str((data.get("error") or {}).get("message", ""))[:200]
+            if r.status_code in (401, 403) or "API key not valid" in message:
+                raise CleIARefusee(f"{nom} HTTP {r.status_code} : {message}")
+            raise ValueError(f"{nom} HTTP {r.status_code} : {message}")
+        parties = ((data.get("candidates") or [{}])[0].get("content") or {}).get("parts") or []
+        texte = "".join(p.get("text", "") for p in parties if not p.get("thought")).strip()
+        if not texte:
+            raise ValueError(f"{nom} HTTP {r.status_code} : contenu vide")
+        return texte
+
+    payload = {"model": modele, "messages": [{"role": "user", "content": prompt}], "max_tokens": max_tokens}
+    if fournisseur == "groq":
+        url = "https://api.groq.com/openai/v1/chat/completions"
+        headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
+        if modele.startswith("openai/gpt-oss"):
+            payload["reasoning_effort"] = "low"  # réflexion courte (sinon réponse vide faute de place)
+    else:
+        url = "https://openrouter.ai/api/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "Content-Type": "application/json",
+            # Identification recommandée par OpenRouter (classement des applications, support)
+            "HTTP-Referer": "https://github.com/ahmedkaffi99-spec/analyse-football",
+            "X-Title": "analyse-football",
+        }
+        payload["reasoning"] = {"effort": "low"}  # réflexion courte (ignoré par les autres modèles)
     if json_attendu:
         payload["response_format"] = {"type": "json_object"}
     r = poster(url, headers=headers, json=payload, timeout=delai)
     try:
-        return _contenu_reponse(f"OpenRouter {modele}", r)
+        return _contenu_reponse(nom, r)
     except ValueError as e:
         if r.status_code == 401:
-            raise CleOpenRouterRefusee(str(e))
+            raise CleIARefusee(str(e))
         raise
 
 
-def appel_openrouter(prompt, max_tokens=2000, json_attendu=False):
-    global _cle_openrouter_refusee
-    if not OPENROUTER_API_KEY:
-        raise ValueError("OPENROUTER_API_KEY manquante")
-    if _cle_openrouter_refusee:
-        raise ValueError(_cle_openrouter_refusee)
-    url = "https://openrouter.ai/api/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type": "application/json",
-        # Identification recommandée par OpenRouter (classement des applications, support)
-        "HTTP-Referer": "https://github.com/ahmedkaffi99-spec/analyse-football",
-        "X-Title": "analyse-football",
-    }
+def appel_ia(prompt, max_tokens=2000, json_attendu=False):
+    """Vagues de IA_EN_PARALLELE modèles (Groq, Gemini, OpenRouter mêlés) interrogés EN MÊME
+    TEMPS : la première réponse valide (JSON lisible si json_attendu) l'emporte. Un modèle
+    saturé (429) ou lent ne retarde plus les autres. Jamais au-delà du budget IA du run."""
+    if not any(_cles_fournisseurs().values()):
+        raise ValueError("Aucune clé IA (OPENROUTER_API_KEY, GROQ_API_KEY, GEMINI_API_KEY)")
     derniere_erreur = None
-    # Vagues de IA_EN_PARALLELE modèles interrogés EN MÊME TEMPS : la première réponse valide
-    # (JSON lisible si json_attendu) l'emporte, les autres sont ignorées. Un modèle saturé (429)
-    # ou lent ne retarde plus les autres. Jamais au-delà du budget IA du run.
+    candidats = candidats_ia()
     taille = max(1, IA_EN_PARALLELE)
-    for i in range(0, len(OPENROUTER_MODELS), taille):
-        vague = OPENROUTER_MODELS[i:i + taille]
+    for i in range(0, len(candidats), taille):
+        vague = [c for c in candidats[i:i + taille] if c[0] not in _fournisseurs_refuses]
+        if not vague:
+            continue
         restant = secondes_ia_restantes()
         if restant < 5:
             raise ValueError(f"Budget IA de {BUDGET_IA_SECONDES:.0f} s épuisé — suite sans IA "
                              f"(dernière erreur : {derniere_erreur})")
         delai = min(DELAI_REQUETE_IA_MAX, restant)
-        futurs = {_executeur_ia.submit(_appel_un_modele, requests.post, url, headers, m, prompt, max_tokens,
-                                     json_attendu, delai): m
-                  for m in vague}
+        futurs = {_executeur_ia.submit(_requete_ia, requests.post, f, m, prompt, max_tokens, json_attendu, delai): (f, m)
+                  for f, m in vague}
         try:
             for futur in as_completed(futurs, timeout=delai + 2):
-                modele = futurs[futur]
+                fournisseur, modele = futurs[futur]
+                nom = f"{NOMS_FOURNISSEURS[fournisseur]} {modele}"
                 try:
                     content = futur.result()
-                except CleOpenRouterRefusee as e:
-                    _cle_openrouter_refusee = (f"Clé OpenRouter refusée ({_cause(e)[:120]}) — vérifier le secret "
-                                               "OPENROUTER_API_KEY ; IA désactivée pour ce run")
-                    print(f"   ⛔ {_cle_openrouter_refusee}")
-                    raise ValueError(_cle_openrouter_refusee)
+                except CleIARefusee as e:
+                    derniere_erreur = e
+                    variable = f"{fournisseur.upper()}_API_KEY"
+                    _fournisseurs_refuses[fournisseur] = (
+                        f"Clé {NOMS_FOURNISSEURS[fournisseur]} refusée ({_cause(e)[:120]}) — vérifier le secret "
+                        f"{variable} ; fournisseur écarté pour ce run")
+                    print(f"   ⛔ {_fournisseurs_refuses[fournisseur]}")
+                    continue
                 except Exception as e:
                     derniere_erreur = e
-                    print(f"   ⚠️ OpenRouter {modele} : {_cause(e)[:160]}")
+                    print(f"   ⚠️ {nom} : {_cause(e)[:160]}")
                     continue
                 if json_attendu and not _json_present(content):
-                    derniere_erreur = ValueError(f"{modele} : réponse sans JSON lisible")
-                    print(f"   ⚠️ OpenRouter {modele} : réponse sans JSON lisible, ignorée")
+                    derniere_erreur = ValueError(f"{nom} : réponse sans JSON lisible")
+                    print(f"   ⚠️ {nom} : réponse sans JSON lisible, ignorée")
                     continue
-                print(f"   ✓ Réponse via OpenRouter ({modele})")
+                print(f"   ✓ Réponse via {nom}")
                 return content
         except DelaiDepasse:
-            lents = [futurs[f] for f in futurs if not f.done()]
+            lents = [f"{NOMS_FOURNISSEURS[futurs[f][0]]} {futurs[f][1]}" for f in futurs if not f.done()]
             derniere_erreur = TimeoutError(f"pas de réponse complète en {delai:.0f} s")
             print(f"   ⚠️ Sans réponse en {delai:.0f} s : {', '.join(lents)}")
-    raise ValueError(f"Tous les modèles OpenRouter ont échoué (dernière erreur : {derniere_erreur})")
+    if _fournisseurs_refuses and not candidats_ia():
+        raise ValueError(" ; ".join(_fournisseurs_refuses.values()))
+    raise ValueError(f"Tous les modèles IA ont échoué (dernière erreur : {derniere_erreur})")
+
+
+appel_openrouter = appel_ia  # ancien nom, conservé pour compatibilité
 
 
 def appel_llm(prompt, max_tokens=3000, json_attendu=False):
-    """Toute l'IA passe par OpenRouter. Si aucun modèle ne répond, les tâches d'analyse sont
-    sautées et le ticket est rédigé en Python (voir rediger_ticket_sans_ia)."""
-    return appel_openrouter(prompt, max_tokens, json_attendu=json_attendu)
+    """L'IA passe par Groq, Gemini et OpenRouter en parallèle. Si aucun modèle ne répond, les
+    tâches d'analyse sont sautées et le ticket est rédigé en Python (rediger_ticket_sans_ia)."""
+    return appel_ia(prompt, max_tokens, json_attendu=json_attendu)
 
 
 def verifier_pas_de_12(texte):
