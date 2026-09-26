@@ -598,15 +598,24 @@ _cache_clubelo = None
 SEUIL_MATCH_CLUBELO = 70
 
 
-@retry(stop=stop_after_attempt(4), wait=wait_exponential(multiplier=1, min=3, max=20))
+@retry(stop=stop_after_attempt(2), wait=wait_fixed(5))
 def _telecharger_clubelo_du_jour():
     # Timeout relevé de 15 à 25s le 2026-08-22 : un ReadTimeout à 15s peut aussi bien
     # être un vrai blocage réseau qu'une réponse simplement lente côté serveur — laisser
     # un peu plus de marge ne coûte rien (la SESSION retry déjà en place gère le reste).
     date_du_jour = datetime.now().strftime("%Y-%m-%d")
-    r = SESSION.get(f"http://api.clubelo.com/{date_du_jour}", timeout=25)
-    r.raise_for_status()
-    return r.text
+    # HTTPS d'abord, HTTP en secours (constaté le 2026-09-26 sur GitHub Actions : échec en HTTP).
+    derniere_erreur = None
+    for url in (f"https://api.clubelo.com/{date_du_jour}", f"http://api.clubelo.com/{date_du_jour}"):
+        try:
+            r = SESSION.get(url, timeout=25, headers={"User-Agent": "Mozilla/5.0 (analyse-football)"})
+            r.raise_for_status()
+            if r.text.startswith("Rank,Club"):
+                return r.text
+            derniere_erreur = ValueError(f"réponse inattendue de {url} : {r.text[:80]!r}")
+        except Exception as e:
+            derniere_erreur = e
+    raise derniere_erreur
 
 
 def charger_clubelo():
