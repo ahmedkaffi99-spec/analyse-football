@@ -151,6 +151,17 @@ class TestCoherenceDesRaisons(unittest.TestCase):
         self.assertEqual(p1[0]["raison_ia"], "Over à 1.6, buts attendus")
 
 
+class TestFraicheurNePasEffacerSurErreurApi(unittest.TestCase):
+    def test_statut_non_200_garde_les_matchs_au_lieu_de_les_effacer(self):
+        # Run 16 (2026-09-26) : OddsPapi a répondu autre chose que 200 lors de la
+        # revérification, et le code traitait ça comme "aucun match n'existe" — 5 matchs
+        # avec de vraies cotes ont été jetés d'un coup, tous marqués "introuvable".
+        matchs = [{"oddspapi": {"fixture_id": "id1"}, "match_demande": {"home": "A", "away": "B"}}]
+        reponse_en_panne = mock.Mock(status_code=429, text="Too Many Requests")
+        with mock.patch.object(ae.requests, "get", return_value=reponse_en_panne):
+            self.assertEqual(ae.verifier_fraicheur_matchs(matchs), matchs)
+
+
 class TestCoupEnvoi(unittest.TestCase):
     def test_match_qui_commence_bientot_ecarte_a_la_reprise(self):
         from datetime import datetime, timezone

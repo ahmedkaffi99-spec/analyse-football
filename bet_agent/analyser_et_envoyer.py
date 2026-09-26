@@ -1349,7 +1349,15 @@ def verifier_fraicheur_matchs(matchs_exploitables):
         r = requests.get("https://api.oddspapi.io/v4/fixtures",
                           params={"apiKey": ODDSPAPI_KEY, "sportId": 10, "from": date_from, "to": date_to},
                           timeout=20, verify=VERIFIER_SSL_ODDSPAPI)
-        fixtures_actuelles = {fx["fixtureId"]: fx for fx in r.json()} if r.status_code == 200 else {}
+        if r.status_code != 200:
+            # Un statut non-200 (429 quota, 5xx...) n'est PAS "aucun match n'existe" : le
+            # traiter comme tel effaçait TOUS les matchs valides (constaté le 26/09/2026,
+            # run 16 : 5 matchs avec cotes réelles jetés d'un coup, "introuvable" pour les 5,
+            # faute d'avoir distingué une panne de l'API d'une vraie absence de fixture).
+            print(f"   ⚠️ Revérification fraîcheur : OddsPapi a répondu {r.status_code} "
+                  f"({r.text[:150]}) — poursuite sans ce filtre.")
+            return matchs_exploitables
+        fixtures_actuelles = {fx["fixtureId"]: fx for fx in r.json()}
     except Exception as e:
         print(f"   ⚠️ Impossible de revérifier la fraîcheur des matchs ({e}) — poursuite sans ce filtre.")
         return matchs_exploitables
