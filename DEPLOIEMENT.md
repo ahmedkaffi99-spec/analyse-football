@@ -107,5 +107,5 @@ Redéployer après modification : `supabase functions deploy api --no-verify-jwt
 ## IA : OpenRouter uniquement
 
 Toute la rédaction IA passe par **OpenRouter** (secret `OPENROUTER_API_KEY`). Les secrets `GROQ_API_KEY` et `GEMINI_API_KEY` ne sont plus utilisés : tu peux les supprimer de GitHub.
-Modèles essayés dans l'ordre : `openrouter/free`, `cohere/north-mini-code:free`, `poolside/laguna-xs-2.1:free` — modifiables sans toucher au code avec un secret ou une variable `OPENROUTER_MODELES` (liste séparée par des virgules), par exemple un modèle payant plus fiable.
+Modèles gratuits essayés dans l'ordre : `qwen/qwen3.8-27b:free`, `nvidia/nemotron-3-ultra-550b-a55b:free`, `nvidia/nemotron-3-super-120b-a12b:free`, `google/gemma-4-31b-it:free`, puis le routeur `openrouter/free` (liste actuelle : workflow « Modèles gratuits OpenRouter ») — modifiables sans toucher au code avec un secret ou une variable `OPENROUTER_MODELES` (liste séparée par des virgules), par exemple un modèle payant plus fiable.
 Si OpenRouter ne répond pas, les coupons sont quand même produits : le ticket est rédigé automatiquement à partir des chiffres calculés.

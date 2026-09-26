@@ -80,8 +80,13 @@ SELECTION_INTERDITE = "12"  # double chance domicile-ou-extérieur, bannie par c
 
 # IA : OpenRouter UNIQUEMENT (choix du 2026-09-26). Modèles essayés dans l'ordre ; liste
 # modifiable sans toucher au code via OPENROUTER_MODELES="modele1,modele2".
-OPENROUTER_MODELS = [m.strip() for m in (os.getenv("OPENROUTER_MODELES") or
-                     "openrouter/free,cohere/north-mini-code:free,poolside/laguna-xs-2.1:free").split(",") if m.strip()]
+# Modèles gratuits essayés dans l'ordre (liste réelle d'OpenRouter, workflow « Modèles gratuits ») :
+# des modèles de raisonnement généralistes, ceux qui gèrent le JSON d'abord ; le routeur
+# openrouter/free en dernier recours. Remplaçable sans toucher au code via OPENROUTER_MODELES.
+OPENROUTER_MODELES_DEFAUT = ("qwen/qwen3.8-27b:free,nvidia/nemotron-3-ultra-550b-a55b:free,"
+                             "nvidia/nemotron-3-super-120b-a12b:free,google/gemma-4-31b-it:free,openrouter/free")
+OPENROUTER_MODELS = [m.strip() for m in (os.getenv("OPENROUTER_MODELES") or OPENROUTER_MODELES_DEFAUT).split(",")
+                     if m.strip()]
 OPENROUTER_ATTENTE_429_MAX = 60  # secondes max d'attente quand OpenRouter limite le débit
 
 

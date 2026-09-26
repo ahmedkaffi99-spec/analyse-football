@@ -1132,7 +1132,10 @@ def collecter_donnees():
     if SELECTION_MANUELLE_ACTIVE and not liste_manuelle_du_jour:
         print(f"   ⚠️ Sélection manuelle active mais MATCHS_MANUELS date du {MATCHS_MANUELS_DATE} "
               f"(périmée) — ignorée, bascule sur la sélection automatique.")
-    if SELECTION_MANUELLE_ACTIVE and liste_manuelle_du_jour:
+    # Mode manuel RÉELLEMENT utilisé ce jour-là : une liste périmée ne désactive pas les règles
+    # de la sélection automatique (arrêt à NB_MATCHS_MAX, exclusion féminines / sans cotes).
+    mode_manuel = SELECTION_MANUELLE_ACTIVE and liste_manuelle_du_jour
+    if mode_manuel:
         print(f"   🎯 Sélection manuelle active — {len(MATCHS_MANUELS)} match(s) fournis directement, "
               f"sélection automatique par ligue ignorée.")
         matchs_a_traiter = MATCHS_MANUELS
@@ -1147,7 +1150,7 @@ def collecter_donnees():
     resultats = []
 
     for home_demande, away_demande in matchs_a_traiter:
-        if not SELECTION_MANUELLE_ACTIVE and sum(1 for r in resultats if r["oddspapi"]["tous_marches"]) >= NB_MATCHS_MAX:
+        if not mode_manuel and sum(1 for r in resultats if r["oddspapi"]["tous_marches"]) >= NB_MATCHS_MAX:
             print(f"   ✓ {NB_MATCHS_MAX} matchs avec marchés trouvés — sondage des candidats restants arrêté.")
             break
         print(f"   → Collecte : {home_demande} vs {away_demande}")
@@ -1172,7 +1175,7 @@ def collecter_donnees():
         else:
             print(f"      ⚠️ Aucune correspondance API-Football (meilleur score : {score_af:.0f}%)")
 
-        if not SELECTION_MANUELLE_ACTIVE and donnees_af and (
+        if not mode_manuel and donnees_af and (
                 est_equipe_feminine_api_football(donnees_af["home_name"])
                 or est_equipe_feminine_api_football(donnees_af["away_name"])):
             print(f"      ⏭️ Match féminin ({donnees_af['home_name']} vs {donnees_af['away_name']}) — ignoré.")
@@ -1194,7 +1197,7 @@ def collecter_donnees():
         else:
             print(f"      ⚠️ Aucune correspondance OddsPapi (meilleur score : {score_op:.0f}%)")
 
-        if not tous_marches and not SELECTION_MANUELLE_ACTIVE:
+        if not tous_marches and not mode_manuel:
             print("      ⏭️ Aucun marché exploitable — match écarté sans autre appel (stats, Elo, presse).")
             continue
 
