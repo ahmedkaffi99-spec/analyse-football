@@ -272,6 +272,8 @@ def tache_modeles_gratuits(args, requetes=None):
             prix_million = (float(prompt_prix) + float(completion_prix)) * 1_000_000 / 2
         except (TypeError, ValueError):
             continue  # pas de tarif chiffrable — ignoré (ni gratuit ni comparable en prix)
+        if prix_million <= 0:
+            continue  # routeurs à tarif variable (ex. openrouter/auto : prix négatif "spécial"), pas un vrai prix
         payants.append((prix_million, m["id"], m.get("name", ""), m.get("context_length") or 0, outils, json_ok))
     gratuits.sort(key=lambda x: -x[2])
     print(f"{len(gratuits)} modèle(s) texte gratuit(s) sur OpenRouter :")
@@ -279,11 +281,17 @@ def tache_modeles_gratuits(args, requetes=None):
         print(f"MODELE | {identifiant} | {nom} | contexte {contexte} | outils {'oui' if outils else 'non'} "
               f"| json {'oui' if json_ok else 'non'}")
     payants.sort()
-    print(f"\n{len(payants)} modèle(s) texte payant(s) — 10 moins chers (dollars / million de tokens, moyenne "
-          "prompt+réponse) :")
+    print(f"\n{len(payants)} modèle(s) texte payant(s) à tarif fixe — 10 moins chers (dollars / million de "
+          "tokens, moyenne prompt+réponse) :")
     for prix_million, identifiant, nom, contexte, outils, json_ok in payants[:10]:
         print(f"PAYANT | {identifiant} | {nom} | ${prix_million:.4f}/M tokens | contexte {contexte} | "
               f"outils {'oui' if outils else 'non'} | json {'oui' if json_ok else 'non'}")
+    deepseek = [p for p in payants if "deepseek" in p[1].lower()]
+    if deepseek:
+        print(f"\n{len(deepseek)} modèle(s) DeepSeek (tous, triés par prix) :")
+        for prix_million, identifiant, nom, contexte, outils, json_ok in deepseek:
+            print(f"DEEPSEEK | {identifiant} | {nom} | ${prix_million:.4f}/M tokens | contexte {contexte} | "
+                  f"outils {'oui' if outils else 'non'} | json {'oui' if json_ok else 'non'}")
     return 0
 
 
