@@ -70,15 +70,22 @@ PROBA_MIN_POOL = 30.0  # % — plancher de probabilité pour qu'un marché entre
 # L'IA stratège (agent_strategie.py) analyse, planifie et choisit les paris ; Python valide.
 # UTILISER_STRATEGE_IA=false revient à la seule composition automatique (Monte Carlo).
 UTILISER_STRATEGE_IA = os.getenv("UTILISER_STRATEGE_IA", "true").lower() not in ("0", "false", "non", "no")
-MAX_JAMBES_PAR_MATCH = 2  # au-delà, les paris d'un même match sont trop corrélés (constaté le
-                          # 2026-09-26 : 8 jambes sur 3 matchs, coupon quasi impossible à gagner)
+# Un seul pari par match, jamais deux (demande explicite du 26/09/2026 : les paris d'un même
+# match sont trop corrélés — constaté le même jour : 8 jambes sur 3 matchs, coupon quasi
+# impossible à gagner). Le coupon combine donc des matchs DIFFÉRENTS, pas des paris multiples
+# sur les mêmes.
+MAX_JAMBES_PAR_MATCH = 1
 NB_CANDIDATS_PAR_MATCH = 10  # plafond de sécurité — en pratique = le meilleur candidat de chaque catégorie de marché trouvée pour le match (~13 catégories possibles au total)
 
-# Choix du 26/09/2026 (demande explicite) : UN SEUL coupon "smart", plus 3 profils de risque
-# fixes. L'IA décide elle-même de l'ampleur du combiné (nombre de paris, cote totale) selon
-# la qualité des données du jour, dans une fourchette large plutôt qu'une cible imposée.
+# Choix du 26/09/2026 (demande explicite) : UN SEUL coupon "smart" combinant 10 à 15 matchs
+# DIFFÉRENTS (un seul pari par match, voir MAX_JAMBES_PAR_MATCH), plus 3 profils de risque
+# fixes ni de cible de cote totale précise. La cote totale est mécaniquement élevée avec
+# autant de jambes (≥ 1.2^10 ≈ 6 avec le plancher COTE_MIN_JAMBE) : cote_max n'est qu'un
+# garde-fou, pas un objectif — la vraie cible est le NOMBRE DE MATCHS (nb_jambes_min = 10,
+# nb_jambes = 15 ci-dessous).
 PROFILS_COUPON = [
-    {"cle": "coupon", "nom": "🎯 COUPON DU JOUR", "cote_min": 3.0, "cote_max": 50.0, "nb_jambes": 6},
+    {"cle": "coupon", "nom": "🎯 COUPON DU JOUR (10 à 15 matchs)", "cote_min": 5.0, "cote_max": 100000.0,
+     "nb_jambes_min": 10, "nb_jambes": 15},
 ]
 SELECTION_INTERDITE = "12"  # double chance domicile-ou-extérieur, bannie par consigne
 

@@ -117,8 +117,8 @@ Le LLM **n'invente jamais un chiffre** : cotes, probabilités et edges sont calc
 - **Edge** = (proba modèle − proba implicite de la cote) / proba implicite.
 - Sélection **« 12 » interdite** partout.
 
-### Le coupon du jour (jusqu'à 6 jambes)
-Un seul profil (`PROFILS_COUPON` dans `analyser_et_envoyer.py`) : cote totale visée entre 3 et 50, jusqu'à 6 paris. Ce n'est pas une cible fixe imposée : le stratège IA choisit lui-même, dans cette fourchette, le nombre de paris et la cote totale les plus défendables selon la qualité des données du jour — il peut viser un combiné prudent un jour creux, plus ambitieux un jour riche en matchs fiables.
+### Le coupon du jour (10 à 15 matchs différents)
+Un seul profil (`PROFILS_COUPON` dans `analyser_et_envoyer.py`) : **un seul pari par match** (`MAX_JAMBES_PAR_MATCH = 1`), en combinant entre 10 et 15 matchs différents (`nb_jambes_min` / `nb_jambes`). La cote totale n'est plus une cible précise — mécaniquement élevée avec autant de jambes, elle n'est qu'un garde-fou (`cote_min`/`cote_max` très larges). Le stratège IA choisit lui-même, dans cette fourchette, quels matchs et quels paris combiner selon la qualité des données du jour.
 
 Si l'IA échoue ou s'abstient, la composition automatique (Monte Carlo pondéré, 4000 essais) prend le relais : cote dans la cible → maximum de matchs distincts → maximum de types de paris → meilleure probabilité moyenne. Avertissement automatique si plusieurs jambes viennent du même match (probabilité combinée optimiste).
 

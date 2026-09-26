@@ -21,7 +21,11 @@ import re
 import analyser_et_envoyer as ae
 
 NB_TOURS_MAX = 3
-NB_JAMBES_MIN = 2
+# Plancher de jambes PAR DÉFAUT si un profil ne précise pas "nb_jambes_min" (les tests
+# génériques ci-dessous, avec de petits pools, s'appuient sur ce défaut bas). Le profil réel
+# (PROFILS_COUPON) fixe le sien à 10 : 10 à 15 matchs différents par coupon, cohérent avec
+# NB_MATCHS_MAX=15 collectés par jour. Un seul pari par match : voir ae.MAX_JAMBES_PAR_MATCH.
+NB_JAMBES_MIN_DEFAUT = 2
 
 
 def construire_catalogue(pool):
@@ -52,9 +56,9 @@ def construire_prompt(pool, profils, catalogue_texte):
     un_seul = n == 1
     description_profils = "\n".join(
         f"- {p['cle']} = {p['nom']} : cote totale entre {p['cote_min']} et {p['cote_max']}, "
-        f"entre {NB_JAMBES_MIN} et {p['nb_jambes']} paris — choisis TOI-MÊME, dans cette fourchette, le nombre de "
-        "paris et la cote totale les plus défendables selon la qualité des données du jour (pas d'obligation "
-        "d'atteindre le maximum)" for p in profils)
+        f"entre {p.get('nb_jambes_min', NB_JAMBES_MIN_DEFAUT)} et {p['nb_jambes']} paris — choisis TOI-MÊME, dans "
+        "cette fourchette, le nombre de paris et la cote totale les plus défendables selon la qualité des données "
+        "du jour (pas d'obligation d'atteindre le maximum)" for p in profils)
     exemple_coupons = ", ".join(
         '{"profil": "%s", "strategie": "1-2 phrases", "jambes": [{"id": "P3", "raison": "1 phrase"}]}' % p["cle"]
         for p in profils)
@@ -71,7 +75,9 @@ def construire_prompt(pool, profils, catalogue_texte):
         "RÈGLES ABSOLUES :\n"
         "1. Tu ne choisis QUE des paris du CATALOGUE, par leur identifiant (P1, P2...). Tu n'inventes jamais "
         "un pari, une cote ou un marché.\n"
-        "2. Dans un coupon : au plus 2 paris d'un même match, jamais deux paris contradictoires, jamais de doublon.\n"
+        f"2. Dans un coupon : au plus {ae.MAX_JAMBES_PAR_MATCH} pari(s) d'un même match, jamais deux paris "
+        "contradictoires, jamais de doublon — combine des matchs DIFFÉRENTS plutôt que d'empiler les paris sur "
+        "un même match.\n"
         "3. La cote totale (produit des cotes) doit tomber dans la cible du profil. Python la calcule et te la "
         "renverra : vise juste, sans calculer au centime.\n"
         "4. Qualité avant quantité : écarte les matchs aux données faibles ou dont la presse signale un risque "
@@ -164,8 +170,9 @@ def valider(proposition, catalogue, profils, signatures_existantes=()):
         for match, nombre in par_match.items():
             if nombre > ae.MAX_JAMBES_PAR_MATCH:
                 erreurs.append(f"{nombre} paris sur {match} (maximum {ae.MAX_JAMBES_PAR_MATCH})")
-        if not NB_JAMBES_MIN <= len(selections) <= profil["nb_jambes"]:
-            erreurs.append(f"{len(selections)} paris valides (il en faut entre {NB_JAMBES_MIN} et {profil['nb_jambes']})")
+        nb_jambes_min = profil.get("nb_jambes_min", NB_JAMBES_MIN_DEFAUT)
+        if not nb_jambes_min <= len(selections) <= profil["nb_jambes"]:
+            erreurs.append(f"{len(selections)} paris valides (il en faut entre {nb_jambes_min} et {profil['nb_jambes']})")
 
         cote = ae._produit_cotes(selections) if selections else 0
         proba = 1.0
