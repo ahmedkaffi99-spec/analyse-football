@@ -164,3 +164,35 @@ def test_reprise_seulement_depuis_un_run_du_jour():
         with pytest.raises(ValueError, match="introuvable"):
             charger_collecte_du_jour(db, 999, telecharger=telecharger)
         assert telecharger.call_count == 1
+
+
+def test_tester_les_ia_groq_et_gemini(capsys, monkeypatch):
+    from app.taches import tache_tester_ia
+
+    monkeypatch.setenv("GROQ_API_KEY", "gsk-secrete")
+    monkeypatch.setenv("GEMINI_API_KEY", "AIza-secrete")
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    appels = []
+
+    def get(url, headers, timeout, params=None):
+        appels.append(url)
+        if "groq" in url:
+            return SimpleNamespace(status_code=200, json=lambda: {"data": [{"id": "llama-3.3-70b-versatile"}]})
+        return SimpleNamespace(status_code=200, json=lambda: {"models": [
+            {"name": "models/gemini-2.5-flash", "supportedGenerationMethods": ["generateContent"]}]})
+
+    def post(url, headers, timeout, json):
+        appels.append(url)
+        if "groq" in url:
+            assert json["model"] == "llama-3.3-70b-versatile"
+            return SimpleNamespace(status_code=200, json=lambda: {"choices": [{"message": {"content": '{"ok": true}'}}]})
+        assert url.endswith("/models/gemini-2.5-flash:generateContent")
+        return SimpleNamespace(status_code=200, json=lambda: {
+            "candidates": [{"content": {"parts": [{"text": '{"ok": true}'}]}}]})
+
+    assert tache_tester_ia(None, SimpleNamespace(get=get, post=post)) == 0
+    sortie = capsys.readouterr().out
+    assert "GROQ | test llama-3.3-70b-versatile : OK" in sortie
+    assert "GEMINI | test gemini-2.5-flash : OK" in sortie
+    assert "BILAN | groq OK | gemini OK | openrouter KO" in sortie
+    assert "secrete" not in sortie and all("secrete" not in u for u in appels)
