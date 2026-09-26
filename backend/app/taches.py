@@ -121,6 +121,32 @@ def tache_tester_api(args, requetes=None):
     return 1 if echecs else 0
 
 
+def tache_modeles_gratuits(args, requetes=None):
+    """Liste les modèles GRATUITS d'OpenRouter (identifiant exact, contexte, prise en charge des
+    outils et du JSON) — pour choisir OPENROUTER_MODELES sans deviner les identifiants."""
+    import requests
+
+    requetes = requetes or requests
+    r = requetes.get("https://openrouter.ai/api/v1/models", timeout=30)
+    r.raise_for_status()
+    modeles = []
+    for m in r.json().get("data", []):
+        tarif = m.get("pricing") or {}
+        gratuit = str(m.get("id", "")).endswith(":free") or (
+            str(tarif.get("prompt")) in ("0", "0.0") and str(tarif.get("completion")) in ("0", "0.0"))
+        sortie = (m.get("architecture") or {}).get("output_modalities") or ["text"]
+        if gratuit and "text" in sortie:
+            parametres = m.get("supported_parameters") or []
+            modeles.append((m["id"], m.get("name", ""), m.get("context_length") or 0,
+                            "tools" in parametres, "response_format" in parametres or "structured_outputs" in parametres))
+    modeles.sort(key=lambda x: -x[2])
+    print(f"{len(modeles)} modèle(s) texte gratuit(s) sur OpenRouter :")
+    for identifiant, nom, contexte, outils, json_ok in modeles:
+        print(f"MODELE | {identifiant} | {nom} | contexte {contexte} | outils {'oui' if outils else 'non'} "
+              f"| json {'oui' if json_ok else 'non'}")
+    return 0
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Tâches planifiées bet_agent")
     sous = parser.add_subparsers(dest="tache", required=True)
@@ -135,8 +161,11 @@ def main(argv=None):
     p_envoi.add_argument("--run-id", type=int, help="numéro du run (défaut : dernier run terminé)")
     p_envoi.add_argument("--forcer", action="store_true", help="renvoie même si déjà envoyé")
     sous.add_parser("tester-api", help="vérifie l'Edge Function api en ligne (jeton du Vault)")
+    sous.add_parser("modeles-gratuits", help="liste les modèles gratuits d'OpenRouter (identifiants exacts)")
     args = parser.parse_args(argv)
 
+    if args.tache == "modeles-gratuits":  # n'a pas besoin de la base
+        return tache_modeles_gratuits(args)
     init_db()
     with SessionLocal() as db:
         cloturer_runs_interrompus(db)
