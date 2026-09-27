@@ -92,7 +92,7 @@ FOOTBALL_DATA_API_KEY = os.getenv("FOOTBALL_DATA_API_KEY")  # clé gratuite (10 
 # automatique. Mets à jour la date EN MÊME TEMPS que la liste.
 # ------------------------------------------------------------
 SELECTION_MANUELLE_ACTIVE = True
-MATCHS_MANUELS_DATE = "2026-09-26"
+MATCHS_MANUELS_DATE = "2026-09-27"
 
 # Si SELECTION_MANUELLE_ACTIVE=True : la liste EXACTE de matchs à collecter, dans
 # l'ordre. Si False : sert uniquement de filet de sécurité si la sélection
@@ -100,27 +100,23 @@ MATCHS_MANUELS_DATE = "2026-09-26"
 # Noms d'équipes : peu importe l'orthographe exacte (fuzzy matching), mais reste
 # proche du nom usuel pour un bon score de correspondance.
 #
-# Demande explicite du 26/09/2026 : TOUS les matchs vus sur 1xbet (marché 1X2 ouvert,
-# captures d'écran fournies) — 3 amicaux internationaux + 10 Ligue des nations UEFA.
-# Noms ajustés au run 14 : "United States" et "Czech Republic" ne correspondaient à AUCUN
-# nom OddsPapi (score fuzzy 25 et 57, seuil 80) — fixture_id_oddspapi resté null pour les
-# deux, malgré des marchés visibles sur l'appli 1xbet. Repris avec l'orthographe OddsPapi
-# ("USA" déjà correcte pour les autres sélections nationales US ; "Czechia" confirmée par
-# les runs précédents, où ce nom a bien trouvé une fixture — sans marché à ce moment-là).
+# Demande explicite du 27/09/2026 : TOUS les matchs vus sur 1xbet (marché 1X2 ouvert,
+# captures d'écran fournies) — 6 amicaux internationaux + 8 Ligue des nations UEFA.
 MATCHS_MANUELS = [
-    ("USA", "Peru"),
-    ("Canada", "Chile"),
+    ("Fiji", "Papua New Guinea"),
+    ("China", "New Zealand"),
+    ("Seychelles", "Sri Lanka"),
+    ("Vanuatu", "New Caledonia"),
+    ("Cook Islands", "Tahiti"),
     ("Mexico", "Colombia"),
-    ("North Macedonia", "Switzerland"),
-    ("Slovakia", "Moldova"),
-    ("Czechia", "Croatia"),
-    ("Faroe Islands", "Kazakhstan"),
-    ("Albania", "Belarus"),
-    ("England", "Spain"),
-    ("Bulgaria", "Luxembourg"),
-    ("Iceland", "Estonia"),
-    ("San Marino", "Finland"),
+    ("Israel", "Ireland"),
+    ("Norway", "Portugal"),
+    ("Denmark", "Wales"),
+    ("Serbia", "Netherlands"),
+    ("Germany", "Greece"),
     ("Lithuania", "Azerbaijan"),
+    ("Austria", "Kosovo"),
+    ("Gibraltar", "Andorra"),
 ]
 
 # Grandes ligues européennes uniquement — MLS et Brasileirão volontairement exclus
