@@ -126,7 +126,12 @@ def _formater_candidats_match(candidats):
 
 def _agent_risque(candidat, raison):
     """Second agent IA, indépendant du stratège principal — juge un pari déjà choisi plutôt
-    que d'en proposer. Ne recalcule jamais l'edge/la probabilité : donne juste un avis."""
+    que d'en proposer. Ne recalcule jamais l'edge/la probabilité : donne juste un avis.
+
+    PETITE tâche (une phrase, verdict rapide) : va directement à Groq/Gemini/OpenRouter
+    gratuits (appel_llm_petites_taches), sans passer par DeepSeek en priorité — demande
+    explicite du 27/09/2026 : réserver le solde payant de DeepSeek à la décision principale
+    du coupon, et donner un vrai rôle (pas juste un filet de secours) à ces trois modèles."""
     p = candidat["pick"]
     prompt = (
         "System: Tu es un agent RISQUE indépendant, sceptique par défaut. On te soumet UN pari "
@@ -139,7 +144,7 @@ def _agent_risque(candidat, raison):
         f"Justification de l'analyste : {raison}\n"
     )
     try:
-        return ae.appel_llm(prompt, max_tokens=200)
+        return ae.appel_llm_petites_taches(prompt, max_tokens=200)
     except Exception as e:
         return f"(agent risque indisponible : {ae._cause(e)[:100]})"
 

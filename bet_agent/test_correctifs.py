@@ -152,6 +152,25 @@ class TestDeepSeekPrioritaire(unittest.TestCase):
 
         self.assertEqual(resultat, '{"ok": true}')  # récupéré via Groq après l'échec de DeepSeek
 
+    def test_petites_taches_sautent_deepseek_et_vont_direct_au_gratuit(self):
+        # Demande explicite du 27/09/2026 : réserver le solde payant de DeepSeek à la décision
+        # principale du coupon, et donner un vrai rôle (pas juste un filet de secours) à
+        # Groq/Gemini/OpenRouter gratuits pour les petites tâches (second avis, rédaction...).
+        appels = []
+
+        def faux_post(url, headers, json, timeout):
+            appels.append(json["model"])
+            return SimpleNamespace(status_code=200, json=lambda: {"choices": [{"message": {"content": "avis rapide"}}]})
+
+        with mock.patch.object(ae, "OPENROUTER_API_KEY", "sk-or-secrete"), \
+                mock.patch.object(ae, "GROQ_API_KEY", "gsk-secrete"), \
+                mock.patch.object(ae, "GEMINI_API_KEY", None), \
+                mock.patch.object(ae.requests, "post", side_effect=faux_post):
+            resultat = ae.appel_llm_petites_taches("prompt")
+
+        self.assertEqual(resultat, "avis rapide")
+        self.assertNotIn(ae.DEEPSEEK_MODELE_PAYANT, appels)  # jamais interrogé pour une petite tâche
+
 
 class TestListeManuellePerimee(unittest.TestCase):
     def _collecter(self, date_liste):
@@ -271,7 +290,7 @@ class TestCouponsJoursCreux(unittest.TestCase):
 class TestRedactionSansIA(unittest.TestCase):
     def test_panne_de_tous_les_llm_ne_fait_plus_perdre_le_ticket(self):
         selections = [_selection("A vs B", "Total", "Over", 1.5, edge=12.0), _selection("C vs D", "BTTS", "Yes", 1.8, edge=25.0)]
-        with mock.patch.object(ae, "appel_llm", side_effect=ValueError("Tous les modèles ont échoué")), \
+        with mock.patch.object(ae, "appel_llm_petites_taches", side_effect=ValueError("Tous les modèles ont échoué")), \
                 mock.patch.object(ae.time, "sleep"):
             texte = ae.agent4_ia_analyse_pronostic_redaction(selections)
         # Format compact (2026-09-26) : une ligne par match, sans Guide/Où parier/Pourquoi —

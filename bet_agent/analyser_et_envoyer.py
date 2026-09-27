@@ -1024,19 +1024,24 @@ def _requete_ia(poster, fournisseur, modele, prompt, max_tokens, json_attendu, d
         raise
 
 
-def appel_ia(prompt, max_tokens=2000, json_attendu=False):
+def appel_ia(prompt, max_tokens=2000, json_attendu=False, prioriser_deepseek=True):
     """DeepSeek (payant, solde réel) d'abord, SEUL, avec son raisonnement complet : demandé en
     priorité par l'utilisateur pour un choix de paris plus réfléchi. En cas d'échec (ou de
     clé/solde indisponible) seulement, repli sur les vagues de IA_EN_PARALLELE modèles gratuits
     (Groq, Gemini, OpenRouter mêlés) interrogés EN MÊME TEMPS : la première réponse valide
     (JSON lisible si json_attendu) l'emporte. Un modèle saturé (429) ou lent ne retarde plus les
-    autres. Jamais au-delà du budget IA du run."""
+    autres. Jamais au-delà du budget IA du run.
+
+    prioriser_deepseek=False : saute DeepSeek et va directement à la course gratuite — pour les
+    PETITES tâches (ex: second avis "agent risque" de l'orchestrateur agentique) où Groq/Gemini/
+    OpenRouter gratuits suffisent largement et répondent en une fraction de seconde ; réserve le
+    solde payant de DeepSeek à la décision principale (demande explicite du 27/09/2026)."""
     global _deepseek_indisponible
     if not any(_cles_fournisseurs().values()):
         raise ValueError("Aucune clé IA (OPENROUTER_API_KEY, GROQ_API_KEY, GEMINI_API_KEY)")
     derniere_erreur = None
 
-    if OPENROUTER_API_KEY and not _deepseek_indisponible and "openrouter" not in _fournisseurs_refuses:
+    if prioriser_deepseek and OPENROUTER_API_KEY and not _deepseek_indisponible and "openrouter" not in _fournisseurs_refuses:
         restant = secondes_ia_restantes()
         if restant >= 10:
             # Run 24 (2026-09-26) : appelé en direct (sans le garde-fou horloge murale du
@@ -1158,6 +1163,14 @@ def appel_llm(prompt, max_tokens=3000, json_attendu=False):
     """L'IA passe par Groq, Gemini et OpenRouter en parallèle. Si aucun modèle ne répond, les
     tâches d'analyse sont sautées et le ticket est rédigé en Python (rediger_ticket_sans_ia)."""
     return appel_ia(prompt, max_tokens, json_attendu=json_attendu)
+
+
+def appel_llm_petites_taches(prompt, max_tokens=300):
+    """Pour les PETITES tâches (second avis, vérification légère, résumé court) : va directement
+    à la course Groq/Gemini/OpenRouter gratuits, sans passer par DeepSeek en priorité — demande
+    explicite du 27/09/2026 : réserver le solde payant de DeepSeek à la décision principale du
+    coupon, et donner du vrai travail (pas juste un rôle de secours) à Groq/Gemini/OpenRouter."""
+    return appel_ia(prompt, max_tokens, json_attendu=False, prioriser_deepseek=False)
 
 
 def verifier_pas_de_12(texte):
@@ -1287,7 +1300,7 @@ def _tache_analyse(donnees_prompt, nb_matchs):
     )
     print("   🧠 [Tâche 1/3] Analyse des sélections...")
     try:
-        return appel_llm(prompt, max_tokens=2000) or ""
+        return appel_llm_petites_taches(prompt, max_tokens=2000) or ""
     except Exception as e:
         print(f"   ⚠️ Analyse IA indisponible ({_cause(e)}) — on continue sans.")
         return ""
@@ -1307,7 +1320,7 @@ def _tache_pronostic(donnees_prompt, analyse_texte):
     )
     print("   🎯 [Tâche 2/3] Pronostic final...")
     try:
-        return appel_llm(prompt, max_tokens=2000) or ""
+        return appel_llm_petites_taches(prompt, max_tokens=2000) or ""
     except Exception as e:
         print(f"   ⚠️ Pronostic IA indisponible ({_cause(e)}) — on continue sans.")
         return ""
@@ -1356,7 +1369,7 @@ def _tache_redaction(donnees_prompt, pronostic_texte, nb_jambes_attendues):
         if budget_ia_epuise():
             break
         try:
-            candidat = appel_llm(prompt, max_tokens=3000)
+            candidat = appel_llm_petites_taches(prompt, max_tokens=3000)
         except Exception as e:
             print(f"      ⚠️ Tentative {tentative + 1}/3 échouée : {e}")
             pause_ia(5)

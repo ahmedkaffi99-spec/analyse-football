@@ -117,6 +117,18 @@ class TestBoucleAgentique(unittest.TestCase):
         self.assertIn("identifiant inconnu", contenu_outil)
 
 
+class TestAgentRisqueUtilisePetitesTaches(unittest.TestCase):
+    def test_avis_risque_passe_par_appel_llm_petites_taches_pas_deepseek(self):
+        # Demande explicite du 27/09/2026 : le second avis (petite tâche) doit renforcer
+        # Groq/Gemini/OpenRouter gratuits, jamais consommer le solde payant de DeepSeek.
+        with mock.patch.object(ae, "appel_llm_petites_taches", return_value="Pari défendable.") as petite, \
+                mock.patch.object(ae, "appel_llm") as principal:
+            avis = orch._agent_risque(POOL["A vs B"][0], "edge positif")
+        self.assertEqual(avis, "Pari défendable.")
+        petite.assert_called_once()
+        principal.assert_not_called()
+
+
 class TestIntegrationGenererCoupons(unittest.TestCase):
     def test_mode_agentique_utilise_par_generer_coupons(self):
         reponses = [
