@@ -1,43 +1,24 @@
 import os
-import requests
-from supabase import create_client, Client
+import sys
+from supabase import create_client
 
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
+# Récupération des variables d'environnement
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY")
 
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+if not SUPABASE_URL or not SUPABASE_KEY:
+    print("Erreur critique : Les variables SUPABASE_URL et SUPABASE_KEY doivent être définies.")
+    sys.exit(1)
+
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 def recuperer_donnees_supabase():
-    reponse = supabase.table("matches").select("*").execute()
+    print("Récupération des données depuis Supabase...")
+    # Utilisation de 'matchs' au lieu de 'matches'
+    reponse = supabase.table("matchs").select("*").execute()
     return reponse.data
 
-def analyser_avec_deepseek(donnees):
-    url = "https://api.deepseek.com/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    
-    prompt = f"Voici les données des matchs récupérées de Supabase : {donnees}. Agis en tant qu'expert en paris sportifs, analyse ces données et génère le meilleur coupon stratégique sous format JSON."
-
-    payload = {
-        "model": "deepseek-chat",
-        "messages": [{"role": "user", "content": prompt}],
-        "stream": False
-    }
-    
-    response = requests.post(url, headers=headers, json=payload, timeout=120)
-    resultat = response.json()
-    return resultat["choices"][0]["message"]["content"]
-
 if __name__ == "__main__":
-    print("Récupération des données depuis Supabase...")
     donnees_matchs = recuperer_donnees_supabase()
-    
-    print("Envoi des données à DeepSeek...")
-    strategie = analyser_avec_deepseek(donnees_matchs)
-    
-    print("Résultat :")
-    print(strategie)
-
+    print(f"Données récupérées avec succès : {donnees_matchs}")
