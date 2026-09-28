@@ -1,0 +1,33 @@
+name: Agent DeepSeek & Supabase
+
+on:
+  workflow_dispatch:
+    inputs:
+       message:
+        description: 'Message optionnel pour DeepSeek'
+        required: false
+        default: 'Analyser les derniers matchs de Supabase'
+
+jobs:
+  run-deepseek-agent:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Installer les dépendances
+        run: |
+          pip install supabase requests
+
+      - name: Lancer l'agent DeepSeek Supabase
+        run: |
+          python deepseek_supabase_agent.py
