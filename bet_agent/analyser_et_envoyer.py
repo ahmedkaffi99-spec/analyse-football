@@ -37,10 +37,10 @@ VERIFIER_SSL_ODDSPAPI = os.getenv("ODDSPAPI_SSL_NON_VERIFIE", "").lower() not in
 if not VERIFIER_SSL_ODDSPAPI:
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 ODDSPAPI_KEY = os.getenv("ODDSPAPI_KEY")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
@@ -101,6 +101,8 @@ SELECTION_INTERDITE = "12"  # double chance domicile-ou-extérieur, bannie par c
 OPENROUTER_MODELES_DEFAUT = ("nvidia/nemotron-3.5-lightning:free,qwen/qwen3.8-27b:free,"
                              "google/gemma-4-31b-it:free,nvidia/nemotron-3-super-120b-a12b:free,"
                              "google/gemma-4-26b-a4b-it:free,poolside/laguna-s-2.1:free,openrouter/free")
+DEEPSEEK_MODELS_DEFaut = "deepseek-chat,deepseek-reasoner"
+DEEPSEEK_MODELes = [m.strip() for m in (os.getenv("DEEPSEEK_MODELES") or DEEPSEEK_MODELS_DEFaut).split(",") if m.strip()]
 IA_EN_PARALLELE = int(os.getenv("IA_EN_PARALLELE", "4"))
 OPENROUTER_MODELS = [m.strip() for m in (os.getenv("OPENROUTER_MODELES") or OPENROUTER_MODELES_DEFAUT).split(",")
                      if m.strip()]
@@ -112,7 +114,14 @@ GROQ_MODELES = [m.strip() for m in (os.getenv("GROQ_MODELES") or "openai/gpt-oss
                 if m.strip()]
 GEMINI_MODELES = [m.strip() for m in (os.getenv("GEMINI_MODELES") or "gemini-3.8-flash,gemini-3.7-flash").split(",")
                   if m.strip()]
-NOMS_FOURNISSEURS = {"openrouter": "OpenRouter", "groq": "Groq", "gemini": "Gemini"}
+
+NOMS_FOURNISSEURS = {
+    "deepseek": "DeepSeek",
+    "openrouter": "OpenRouter",
+    "groq": "Groq",
+    "gemini": "Gemini"
+}
+
 # Fournisseur dont la clé est refusée : écarté pour le reste du run (run 5 : des dizaines
 # d'appels « User not found » avaient coûté ~7 minutes). Plus aucun fournisseur → plus d'IA.
 _fournisseurs_refuses = {}
