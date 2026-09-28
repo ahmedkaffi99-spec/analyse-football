@@ -40,6 +40,7 @@ if not VERIFIER_SSL_ODDSPAPI:
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 ODDSPAPI_KEY = os.getenv("ODDSPAPI_KEY")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
@@ -49,7 +50,7 @@ TICKET_DU_JOUR_JSON = "ticket_du_jour.json"
 SEUIL_EDGE = 5.0  # % — n'accepte un marché que si l'edge calculé dépasse ce seuil
 EDGE_MAX_PLAUSIBLE = 25.0  # % — resserré de 60 à 25 : même un vrai edge dépasse rarement ce niveau
                             # de façon fiable sur un bookmaker professionnel comme 1xbet
-PROBA_MIN_FORTE = 60.0  # % — un marché n'est retenu que si le modèle lui donne AU MOINS
+PROBA_MIN_FORTE = 600.0  # % — un marché n'est retenu que si le modèle lui donne AU MOINS
                          # cette probabilité de gagner (pas seulement un edge positif) : objectif
                          # "coupon smart" avec des jambes individuellement fortes, pas juste
                          # statistiquement avantageuses sur le papier
@@ -118,7 +119,7 @@ _fournisseurs_refuses = {}
 # Budget TOTAL de l'IA pour un run (stratège + rédaction). Au-delà, plus aucun appel : le
 # ticket est rédigé en Python. Le run 7 (2026-09-26) avait passé plus de 10 minutes en IA.
 BUDGET_IA_SECONDES = float(os.getenv("BUDGET_IA_SECONDES", "240"))
-DELAI_REQUETE_IA_MAX = 60  # secondes max pour UNE réponse (au-delà : modèle suivant)
+DELAI_REQUETE_IA_MAX = 600  # secondes max pour UNE réponse (au-delà : modèle suivant)
 # Délai « horloge murale » : le timeout de requests ne borne que chaque lecture réseau, et un
 # modèle qui envoie sa réponse au compte-gouttes le contournait (4 min 30 au run 8).
 _executeur_ia = ThreadPoolExecutor(max_workers=16, thread_name_prefix="ia")
