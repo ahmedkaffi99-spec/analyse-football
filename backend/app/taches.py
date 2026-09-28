@@ -163,6 +163,32 @@ def _chrono(fonction):
     return resultat, horloge.monotonic() - debut
 
 
+def tester_deepseek(requetes):
+    """Clé DeepSeek : une vraie réponse avec deepseek-flash, réflexion désactivée."""
+    cle = os.getenv("DEEPSEEK_API_KEY", "").strip()
+    if not cle:
+        print("DEEPSEEK | clé absente (secret DEEPSEEK_API_KEY non transmis)")
+        return False
+    modele = (os.getenv("DEEPSEEK_MODELES") or "deepseek-flash").split(",")[0].strip() or "deepseek-flash"
+    try:
+        reponse, duree = _chrono(lambda: requetes.post(
+            "https://api.deepseek.com/chat/completions",
+            headers={"Authorization": f"Bearer {cle}", "Content-Type": "application/json"}, timeout=60,
+            json={"model": modele, "messages": [{"role": "user", "content": PROMPT_TEST_IA}], "max_tokens": 400,
+                  "thinking": {"type": "disabled"}}))
+        if reponse.status_code != 200:
+            message = str((reponse.json().get("error") or {}).get("message", ""))[:120]
+            etat = "REFUSÉE" if reponse.status_code == 401 else "ÉCHEC"
+            print(f"DEEPSEEK | test {modele} : {etat} HTTP {reponse.status_code} {message}")
+            return False
+        texte = reponse.json()["choices"][0]["message"]["content"].strip()
+        print(f"DEEPSEEK | test {modele} : OK en {duree:.1f} s → {texte[:60]!r}")
+        return True
+    except Exception as e:
+        print(f"DEEPSEEK | test impossible ({type(e).__name__})")
+        return False
+
+
 def tester_groq(requetes):
     """Clé Groq : liste des modèles puis une vraie réponse (clé jamais affichée)."""
     cle = os.getenv("GROQ_API_KEY", "").strip()
@@ -263,7 +289,8 @@ def tache_tester_ia(args, requetes=None):
     import requests
 
     requetes = requetes or requests
-    resultats = {"groq": tester_groq(requetes), "gemini": tester_gemini(requetes),
+    resultats = {"deepseek": tester_deepseek(requetes), "groq": tester_groq(requetes),
+                 "gemini": tester_gemini(requetes),
                  "openrouter": verifier_cle_openrouter(requetes),
                  "openrouter_payant": tester_openrouter_payant(requetes)}
     print("BILAN | " + " | ".join(f"{nom} {'OK' if ok else 'KO'}" for nom, ok in resultats.items()))

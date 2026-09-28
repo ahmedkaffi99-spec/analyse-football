@@ -101,8 +101,9 @@ SELECTION_INTERDITE = "12"  # double chance domicile-ou-extérieur, bannie par c
 OPENROUTER_MODELES_DEFAUT = ("nvidia/nemotron-3.5-lightning:free,qwen/qwen3.8-27b:free,"
                              "google/gemma-4-31b-it:free,nvidia/nemotron-3-super-120b-a12b:free,"
                              "google/gemma-4-26b-a4b-it:free,poolside/laguna-s-2.1:free,openrouter/free")
-DEEPSEEK_MODELS_DEFaut = "deepseek-chat,deepseek-reasoner"
-DEEPSEEK_MODELes = [m.strip() for m in (os.getenv("DEEPSEEK_MODELES") or DEEPSEEK_MODELS_DEFaut).split(",") if m.strip()]
+# DeepSeek (API officielle) : deepseek-flash = DeepSeek-V4.1-Flash
+DEEPSEEK_MODELES = [m.strip() for m in (os.getenv("DEEPSEEK_MODELES") or "deepseek-flash").split(",")
+                    if m.strip()]
 IA_EN_PARALLELE = int(os.getenv("IA_EN_PARALLELE", "4"))
 OPENROUTER_MODELS = [m.strip() for m in (os.getenv("OPENROUTER_MODELES") or OPENROUTER_MODELES_DEFAUT).split(",")
                      if m.strip()]
@@ -914,23 +915,25 @@ def _cause(e):
 
 
 def _cles_fournisseurs():
-    return {"openrouter": OPENROUTER_API_KEY, "groq": GROQ_API_KEY, "gemini": GEMINI_API_KEY}
+    return {"deepseek": DEEPSEEK_API_KEY, "openrouter": OPENROUTER_API_KEY,
+            "groq": GROQ_API_KEY, "gemini": GEMINI_API_KEY}
 
 
 def candidats_ia():
     """(fournisseur, modèle) dans l'ordre des vagues : les meilleurs de chaque fournisseur
     d'abord (Groq, Gemini, OpenRouter mêlés), puis le reste. Sans clé ou clé refusée : écarté."""
     cles = _cles_fournisseurs()
-    listes = {"groq": GROQ_MODELES, "gemini": GEMINI_MODELES, "openrouter": OPENROUTER_MODELS}
+    listes = {"deepseek": DEEPSEEK_MODELES, "groq": GROQ_MODELES, "gemini": GEMINI_MODELES,
+              "openrouter": OPENROUTER_MODELS}
     actifs = {f: list(m) for f, m in listes.items() if cles.get(f) and f not in _fournisseurs_refuses}
     tete = []
-    for f in ("groq", "gemini"):
+    for f in ("deepseek", "groq", "gemini"):
         if actifs.get(f):
             tete.append((f, actifs[f].pop(0)))
     for _ in range(max(0, IA_EN_PARALLELE - len(tete))):
         if actifs.get("openrouter"):
             tete.append(("openrouter", actifs["openrouter"].pop(0)))
-    reste = [(f, m) for f in ("groq", "gemini", "openrouter") for m in actifs.get(f, [])]
+    reste = [(f, m) for f in ("deepseek", "groq", "gemini", "openrouter") for m in actifs.get(f, [])]
     return tete + reste
 
 
@@ -965,6 +968,10 @@ def _requete_ia(poster, fournisseur, modele, prompt, max_tokens, json_attendu, d
         headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
         if modele.startswith("openai/gpt-oss"):
             payload["reasoning_effort"] = "low"  # réflexion courte (sinon réponse vide faute de place)
+    elif fournisseur == "deepseek":
+        url = "https://api.deepseek.com/chat/completions"
+        headers = {"Authorization": f"Bearer {DEEPSEEK_API_KEY}", "Content-Type": "application/json"}
+        payload["thinking"] = {"type": "disabled"}  # réflexion coupée : réponse directe
     else:
         url = "https://openrouter.ai/api/v1/chat/completions"
         headers = {
