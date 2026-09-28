@@ -42,8 +42,8 @@ jobs:
       SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
       FOOTBALL_DATA_API_KEY: ${{ secrets.FOOTBALL_DATA_API_KEY }}
       THESPORTSDB_API_KEY: ${{ secrets.THESPORTSDB_API_KEY }}
-      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
       DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
       OPENROUTER_MODELES: ${{ vars.OPENROUTER_MODELES }}
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       GROQ_MODELES: ${{ vars.GROQ_MODELES }}
@@ -54,7 +54,7 @@ jobs:
       EVENEMENT: ${{ github.event_name }}
       TELEGRAM_MANUEL: ${{ inputs.telegram }}
       DEPUIS_RUN: ${{ inputs.depuis_run }}
-    steps:
+        steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
@@ -67,33 +67,39 @@ jobs:
 
       - name: Vérifier la configuration
         run: |
-          if [ -z "$DATABASE_URL" ] && [ -z "$SUPABASE_DB_PASSWORD" ]; then
-            echo "::error::Secret SUPABASE_DB_PASSWORD manquant (mot de passe de la base Supabase) — voir DEPLOIEMENT.md."
+          if [ -z "$DATABASE_URL" ] && [ -z "$SUPABASE_URL" ]; then
+            echo "::error::Secret SUPABASE_URL manquant"
             exit 1
           fi
 
       - run: pip install -r backend/requirements.txt
+      - run: pip install supabase requests
+
+      - name: Lancer l'agent DeepSeek et Supabase
+        run: |
+          python deepseek_supabase_agent.py
 
       - name: Lancer le pipeline
         working-directory: backend
         run: |
           ARGS="run"
           if [ "$EVENEMENT" = "schedule" ]; then
-            ARGS="$ARGS --telegram --si-aucun-ticket-aujourdhui"
+            ARGS="$ARGS --telegram --si-aucun-ticket-aucun-envoi"
           elif [ "$TELEGRAM_MANUEL" = "true" ]; then
             ARGS="$ARGS --telegram"
           fi
           if [ -n "$DEPUIS_RUN" ]; then
-            case "$DEPUIS_RUN" in *[!0-9]*) echo "::error::depuis_run doit être un numéro"; exit 1;; esac
+            case "$DEPUIS_RUN" in
+              *[!0-9]*) echo "::error::DEPUIS_RUN doit être un entier" && exit 1 ;;
+            esac
             ARGS="$ARGS --depuis-run $DEPUIS_RUN"
           fi
           python -m app.taches $ARGS
 
       - name: Conserver la collecte brute (7 jours)
-        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: collecte-${{ github.run_id }}
-          path: backend/data/*.json
+          name: collecte-brute
+          path: backend/data/brut/
           retention-days: 7
-          if-no-files-found: ignore
+
