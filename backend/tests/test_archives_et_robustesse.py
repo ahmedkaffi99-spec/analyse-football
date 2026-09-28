@@ -180,6 +180,7 @@ def test_tester_les_ia_groq_et_gemini(capsys, monkeypatch):
 
     monkeypatch.setenv("GROQ_API_KEY", "gsk-secrete")
     monkeypatch.setenv("GEMINI_API_KEY", "AIza-secrete")
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     appels = []
 
@@ -204,7 +205,7 @@ def test_tester_les_ia_groq_et_gemini(capsys, monkeypatch):
     sortie = capsys.readouterr().out
     assert "GROQ | test openai/gpt-oss-120b : OK" in sortie
     assert "GEMINI | test gemini-3.8-flash : OK" in sortie
-    assert "BILAN | groq OK | gemini OK | openrouter KO" in sortie
+    assert "BILAN | deepseek KO | groq OK | gemini OK | openrouter KO" in sortie
     assert "secrete" not in sortie and all("secrete" not in u for u in appels)
 
 
