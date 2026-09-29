@@ -170,3 +170,114 @@ def piloter(cle, outils, est_termine, mission, poster=requests.post, pause=time.
         if est_termine():
             return {"termine": True, "etapes": etape, "arret": "terminé", "tokens": tokens}
     return {"termine": est_termine(), "etapes": MAX_ETAPES, "arret": "nombre d'étapes maximal atteint", "tokens": tokens}
+
+
+def executer(mission=None, telegram=True):
+    """Branche le moteur agentique ci-dessus (piloter) sur la collecte/analyse réelles :
+    jusqu'ici (29/09/2026) ce fichier ne définissait que le moteur (prompt, schémas d'outils,
+    boucle) sans jamais être appelé par aucun workflow — demande explicite de l'utilisateur
+    de le rendre réellement autonome de bout en bout (DeepSeek décide lui-même quand collecter,
+    quand chercher plus d'info, quand proposer/rédiger/envoyer), pas seulement un moteur codé
+    mais jamais branché."""
+    import collecte_donnees as cd
+    import analyser_et_envoyer as ae
+    import agent_strategie as st
+
+    cle = os.getenv("DEEPSEEK_API_KEY")
+    if not cle:
+        print("❌ DEEPSEEK_API_KEY manquante — agent pilote indisponible.")
+        return {"termine": False, "arret": "clé DEEPSEEK_API_KEY manquante", "envoye": False}
+
+    profil = ae.PROFILS_COUPON[0]
+    etat = {
+        "donnees": None, "pool": None, "catalogue": None, "catalogue_texte": None,
+        "coupon_valide": None, "texte_redige": None, "nb_recherches": 0,
+        "termine": False, "envoye": False, "raison_abandon": None,
+    }
+
+    def collecter_donnees_outil():
+        if etat["donnees"] is not None:
+            return {"deja_fait": True, "nb_matchs_avec_marches": etat["donnees"]["nb_matchs_avec_marches"]}
+        etat["donnees"] = cd.collecter_donnees()
+        d = etat["donnees"]
+        return {"nb_matchs_demandes": d["nb_matchs_demandes"], "nb_matchs_avec_marches": d["nb_matchs_avec_marches"],
+                "nb_marches_total": d["nb_marches_total"]}
+
+    def voir_catalogue_outil():
+        if etat["donnees"] is None:
+            return {"erreur": "appelle d'abord collecter_donnees"}
+        if etat["catalogue"] is None:
+            etat["pool"] = ae.agent3_calcul_pool_candidats(etat["donnees"])
+            etat["catalogue"], etat["catalogue_texte"] = st.construire_catalogue(etat["pool"])
+        if not etat["catalogue"]:
+            return {"erreur": "aucun candidat exploitable — pas assez de matchs avec marchés 1xBet collectés"}
+        return {
+            "profil": {"nom": profil["nom"], "nb_jambes_min": profil.get("nb_jambes_min", 10),
+                       "nb_jambes_max": profil["nb_jambes"], "cote_min": profil["cote_min"],
+                       "cote_max": profil["cote_max"]},
+            "catalogue": etat["catalogue_texte"],
+        }
+
+    def rechercher_web_outil(requete):
+        if etat["nb_recherches"] >= 10:
+            return {"erreur": "limite de 10 recherches atteinte pour ce run"}
+        etat["nb_recherches"] += 1
+        try:
+            data = cd._appel_serper(requete)
+        except Exception as e:
+            return {"erreur": f"Serper indisponible : {e}"}
+        if not data:
+            return {"resultats": []}
+        organic = data.get("organic", [])[:5]
+        return {"resultats": [{"titre": r.get("title"), "extrait": r.get("snippet"), "lien": r.get("link")}
+                               for r in organic]}
+
+    def proposer_coupon_outil(strategie, jambes):
+        proposition = {"coupons": [{"profil": profil["cle"], "strategie": strategie, "jambes": jambes}]}
+        acceptes, problemes, calculs = st.valider(proposition, etat["catalogue"] or {}, [profil])
+        if problemes:
+            return {"valide": False, "problemes": problemes}
+        etat["coupon_valide"] = acceptes[profil["cle"]]
+        return {"valide": True, "calculs": calculs}
+
+    def rediger_coupon_outil():
+        if not etat["coupon_valide"] or not etat["coupon_valide"].get("selections"):
+            return {"erreur": "aucun coupon valide — appelle proposer_coupon d'abord"}
+        etat["texte_redige"] = ae.rediger_ticket_sans_ia(etat["coupon_valide"]["selections"])
+        return {"redige": True, "apercu": etat["texte_redige"][:200]}
+
+    def envoyer_telegram_outil():
+        if not etat["texte_redige"]:
+            return {"erreur": "aucun coupon rédigé — appelle rediger_coupon d'abord"}
+        etat["termine"] = True
+        if not telegram:
+            return {"envoye": False, "enregistre": True, "note": "envoi désactivé pour ce run (essai)"}
+        ok = ae.agent5_envoyer_coupons([etat["texte_redige"]])
+        etat["envoye"] = ok
+        return {"envoye": ok}
+
+    def abandonner_outil(raison):
+        etat["termine"] = True
+        etat["raison_abandon"] = raison
+        return {"abandonne": True, "raison": raison}
+
+    outils = {
+        "collecter_donnees": collecter_donnees_outil,
+        "voir_catalogue": voir_catalogue_outil,
+        "rechercher_web": rechercher_web_outil,
+        "proposer_coupon": proposer_coupon_outil,
+        "rediger_coupon": rediger_coupon_outil,
+        "envoyer_telegram": envoyer_telegram_outil,
+        "abandonner": abandonner_outil,
+    }
+
+    resultat = piloter(cle, outils, lambda: etat["termine"], mission or "Compose le coupon combiné du jour.")
+    resultat["envoye"] = etat["envoye"]
+    resultat["raison_abandon"] = etat["raison_abandon"]
+    return resultat
+
+
+if __name__ == "__main__":
+    telegram_actif = os.getenv("TELEGRAM_MANUEL", "").lower() in ("1", "true", "oui")
+    resultat_final = executer(telegram=telegram_actif)
+    print(f"\n🏁 Agent pilote terminé : {resultat_final}")

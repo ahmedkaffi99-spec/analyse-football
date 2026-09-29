@@ -1,0 +1,33 @@
+# Utilitaire de consultation manuelle : liste les matchs des 5 grands championnats sur une
+# période donnée (ex: jusqu'au 15 octobre) — ne collecte rien, ne parie sur rien, aucun envoi
+# Telegram. Sert à savoir quand la trêve internationale se termine et le calendrier normal reprend.
+name: Lister les matchs à venir
+
+on:
+  workflow_dispatch:
+    inputs:
+      jours:
+        description: "Nombre de jours à partir d'aujourd'hui"
+        type: string
+        default: "16"
+
+permissions:
+  contents: read
+
+jobs:
+  lister:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONUNBUFFERED: "1"
+      ODDSPAPI_KEY: ${{ secrets.ODDSPAPI_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: bet_agent/requirements.txt
+      - run: pip install -r bet_agent/requirements.txt
+      - working-directory: bet_agent
+        run: python lister_matchs_periode.py --jours "${{ inputs.jours }}"
