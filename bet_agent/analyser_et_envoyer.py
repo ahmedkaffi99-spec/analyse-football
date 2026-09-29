@@ -1546,7 +1546,13 @@ def agent3_calcul_pool_candidats(donnees):
             "buts_attendus": {"domicile": home_xg, "exterieur": away_xg},
         }
 
-        mu_corners = estimer_ligne_equilibree(marches, ["corner"])
+        # Désactivé (29/09/2026, demande explicite après une série de tickets perdus) :
+        # mu_corners était dérivé de la ligne 1xBet elle-même la plus équilibrée, puis comparé
+        # aux AUTRES lignes de corners du même bookmaker (ex: 10.5) — un edge purement circulaire
+        # qui ne mesure que la marge interne d'1xBet entre ses propres lignes, jamais une vraie
+        # valeur prédictive (aucune source de stats corners indépendante n'existe dans le
+        # pipeline). mu_corners=None fait ignorer ce marché (voir evaluer_marches_toutes).
+        mu_corners = None
         mu_cartons = estimer_ligne_equilibree(marches, ["card", "booking"])
 
         candidats = evaluer_marches_toutes(marches, home_xg, away_xg, mu_corners, mu_cartons)
