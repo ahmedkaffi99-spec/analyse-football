@@ -960,10 +960,22 @@ def verifier_quota_oddspapi():
         return False
 
 
+# Fenêtre de collecte normale : aujourd'hui + 2 jours. DATE_CIBLE_DEBUT/DATE_CIBLE_FIN
+# (AAAA-MM-JJ) permettent de viser une période différente pour un run ponctuel — ex: demande
+# explicite de l'utilisateur du 29/09/2026 de préparer un coupon pour le 10-12 octobre plutôt
+# que le jour même, pendant la trêve internationale où aucun grand championnat ne joue.
+DATE_CIBLE_DEBUT = os.getenv("DATE_CIBLE_DEBUT")
+DATE_CIBLE_FIN = os.getenv("DATE_CIBLE_FIN")
+
+
 @retry(stop=stop_after_attempt(4), wait=wait_exponential(multiplier=1, min=5, max=30))
 def _telecharger_fixtures_oddspapi():
-    date_from = datetime.now().strftime("%Y-%m-%dT00:00:00Z")
-    date_to = (datetime.now() + timedelta(days=2)).strftime("%Y-%m-%dT00:00:00Z")
+    if DATE_CIBLE_DEBUT and DATE_CIBLE_FIN:
+        date_from = f"{DATE_CIBLE_DEBUT}T00:00:00Z"
+        date_to = f"{DATE_CIBLE_FIN}T00:00:00Z"
+    else:
+        date_from = datetime.now().strftime("%Y-%m-%dT00:00:00Z")
+        date_to = (datetime.now() + timedelta(days=2)).strftime("%Y-%m-%dT00:00:00Z")
     url = "https://api.oddspapi.io/v4/fixtures"
     params = {"apiKey": ODDSPAPI_KEY, "sportId": 10, "from": date_from, "to": date_to}
     r = SESSION.get(url, params=params, timeout=(5, 20), verify=VERIFIER_SSL_ODDSPAPI)

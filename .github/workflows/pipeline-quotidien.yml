@@ -21,6 +21,14 @@ on:
         description: "Reprendre la collecte d'un run du jour (numéro) : analyse + IA seulement"
         type: string
         default: ""
+      date_debut:
+        description: "Date cible de début (AAAA-MM-JJ) — vide = aujourd'hui"
+        type: string
+        default: ""
+      date_fin:
+        description: "Date cible de fin (AAAA-MM-JJ) — vide = aujourd'hui+2j"
+        type: string
+        default: ""
 
 concurrency:
   group: pipeline-quotidien
@@ -55,6 +63,8 @@ jobs:
       EVENEMENT: ${{ github.event_name }}
       TELEGRAM_MANUEL: ${{ inputs.telegram }}
       DEPUIS_RUN: ${{ inputs.depuis_run }}
+      DATE_CIBLE_DEBUT: ${{ inputs.date_debut }}
+      DATE_CIBLE_FIN: ${{ inputs.date_fin }}
     steps:
       - uses: actions/checkout@v4
 
