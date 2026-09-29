@@ -1404,11 +1404,14 @@ def rediger_ticket_sans_ia(selections_finales):
     avec un coupon combiné de 10 à 15 matchs, la version détaillée dépassait régulièrement la
     limite dure de 4096 caractères de Telegram et le message finissait tronqué au milieu,
     perdant des matchs entiers (constaté sur le run du 26/09/2026). Un résumé tient en UN
-    seul message Telegram, sans jamais avoir besoin de le découper."""
+    seul message Telegram, sans jamais avoir besoin de le découper. Le niveau de confiance
+    (Faible/Moyen/Élevé, calculé en Python depuis l'edge — jamais estimé par l'IA) est affiché
+    pour chaque pari, demande explicite du 27/09/2026."""
     blocs = []
     for s in selections_finales:
         p = s["pick"]
-        blocs.append(f"⚽ *{s['match']}* — {p['marche']} : {p['selection']} @ {p['cote']} (edge {p['edge_pct']}%)")
+        blocs.append(f"⚽ *{s['match']}* — {p['marche']} : {p['selection']} @ {p['cote']} "
+                     f"(edge {p['edge_pct']}% · {niveau_confiance(p['edge_pct'])})")
     return "\n".join(blocs)
 
 

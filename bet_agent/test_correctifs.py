@@ -296,8 +296,8 @@ class TestRedactionSansIA(unittest.TestCase):
         # Format compact (2026-09-26) : une ligne par match, sans Guide/Où parier/Pourquoi —
         # garantit un ticket qui tient toujours en UN seul message Telegram (voir TestTelegram).
         self.assertEqual(texte.count("⚽"), 2)
-        self.assertIn("Total (2.5) : Over @ 1.5 (edge 12.0%)", texte)
-        self.assertIn("BTTS (2.5) : Yes @ 1.8 (edge 25.0%)", texte)
+        self.assertIn("Total (2.5) : Over @ 1.5 (edge 12.0% · Moyen)", texte)
+        self.assertIn("BTTS (2.5) : Yes @ 1.8 (edge 25.0% · Élevé)", texte)
 
     def test_erreur_gemini_en_liste_lisible(self):
         reponse = mock.Mock(status_code=429, json=lambda: [{"error": {"message": "Quota exceeded"}}])
