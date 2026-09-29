@@ -198,7 +198,14 @@ def executer(mission=None, telegram=True):
     def collecter_donnees_outil():
         if etat["donnees"] is not None:
             return {"deja_fait": True, "nb_matchs_avec_marches": etat["donnees"]["nb_matchs_avec_marches"]}
-        etat["donnees"] = cd.collecter_donnees()
+        # collecter_donnees() écrit le résultat dans SORTIE_JSON (= ENTREE_JSON côté
+        # analyser_et_envoyer.py) et ne renvoie rien (None) — même convention que main() dans
+        # analyser_et_envoyer.py, qui relit ce fichier plutôt que d'utiliser une valeur de
+        # retour. Bug constaté en pratique (29/09/2026) : supposer un retour direct plantait
+        # cet outil avec "TypeError: 'NoneType' object is not subscriptable".
+        cd.collecter_donnees()
+        with open(cd.SORTIE_JSON, "r", encoding="utf-8") as f:
+            etat["donnees"] = json.load(f)
         d = etat["donnees"]
         return {"nb_matchs_demandes": d["nb_matchs_demandes"], "nb_matchs_avec_marches": d["nb_matchs_avec_marches"],
                 "nb_marches_total": d["nb_marches_total"]}
