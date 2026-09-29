@@ -26,32 +26,44 @@ def statut_coupon(resultats):
 
 
 def verifier_jambes(db, jambes):
-    _, _, vr = pipeline.modules()
+    cd, _, vr = pipeline.modules()
     a_juger = [j for j in jambes if j.resultat == "en_attente" and j.fixture_id_oddspapi]
     compte = Counter()
     if not a_juger:
         return compte
 
     fixtures = vr.recuperer_fixtures_du_jour()
+    fixtures_af = None  # chargées à la demande (repli), une seule fois pour tout le passage
     scores = {}
     for jambe in a_juger:
-        fx = fixtures.get(jambe.fixture_id_oddspapi)
-        if not fx or fx.get("statusName") != "Finished":
-            compte["pas_termine"] += 1
-            continue
-        if jambe.fixture_id_oddspapi not in scores:
-            scores[jambe.fixture_id_oddspapi] = vr.recuperer_score(jambe.fixture_id_oddspapi)
-        score = scores[jambe.fixture_id_oddspapi]
-        if score is None:
-            jambe.resultat = "non_verifiable"
-            compte["non_verifiable"] += 1
-            continue
-        p1, p2 = score
         domicile = jambe.domicile or jambe.libelle_match.split(" vs ")[0]
-        if vr.home_est_participant1(domicile, fx.get("participant1Name"), fx.get("participant2Name")):
-            but_dom, but_ext = p1, p2
+        exterieur = jambe.libelle_match.split(" vs ")[-1]
+        fx = fixtures.get(jambe.fixture_id_oddspapi)
+        but_dom = but_ext = None
+        if fx and fx.get("statusName") == "Finished":
+            if jambe.fixture_id_oddspapi not in scores:
+                scores[jambe.fixture_id_oddspapi] = vr.recuperer_score(jambe.fixture_id_oddspapi)
+            score = scores[jambe.fixture_id_oddspapi]
+            if score is None:
+                jambe.resultat = "non_verifiable"
+                compte["non_verifiable"] += 1
+                continue
+            p1, p2 = score
+            if vr.home_est_participant1(domicile, fx.get("participant1Name"), fx.get("participant2Name")):
+                but_dom, but_ext = p1, p2
+            else:
+                but_dom, but_ext = p2, p1
         else:
-            but_dom, but_ext = p2, p1
+            # OddsPapi indisponible pour ce match (quota épuisé, panne, fixture introuvable) :
+            # repli sur API-Football (quota séparé), retrouvé par nom d'équipe.
+            if fixtures_af is None:
+                fixtures_af = vr.recuperer_fixtures_api_football_du_jour()
+            resultat_af = vr.trouver_score_api_football(domicile, exterieur, fixtures_af, cd)
+            if resultat_af is None:
+                compte["pas_termine"] += 1
+                continue
+            but_dom, but_ext = resultat_af
+
         pick = {"categorie": jambe.categorie, "selection": jambe.selection, "handicap": jambe.handicap}
         jambe.resultat = VERDICT_VERS_RESULTAT.get(vr.grader_pick(pick, but_dom, but_ext), "non_verifiable")
         compte[jambe.resultat] += 1

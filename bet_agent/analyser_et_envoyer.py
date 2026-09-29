@@ -50,7 +50,7 @@ TICKET_DU_JOUR_JSON = "ticket_du_jour.json"
 SEUIL_EDGE = 5.0  # % — n'accepte un marché que si l'edge calculé dépasse ce seuil
 EDGE_MAX_PLAUSIBLE = 25.0  # % — resserré de 60 à 25 : même un vrai edge dépasse rarement ce niveau
                             # de façon fiable sur un bookmaker professionnel comme 1xbet
-PROBA_MIN_FORTE = 600.0  # % — un marché n'est retenu que si le modèle lui donne AU MOINS
+PROBA_MIN_FORTE = 60.0  # % — un marché n'est retenu que si le modèle lui donne AU MOINS
                          # cette probabilité de gagner (pas seulement un edge positif) : objectif
                          # "coupon smart" avec des jambes individuellement fortes, pas juste
                          # statistiquement avantageuses sur le papier
@@ -59,15 +59,10 @@ PROBA_MIN_FORTE = 600.0  # % — un marché n'est retenu que si le modèle lui d
 # de données et le MÊME pool de candidats (un seul appel à collecter_donnees, un seul calcul
 # Agent 3 par match) — si plusieurs profils sont configurés, seule change entre eux la
 # fourchette de cote totale visée, obtenue en choisissant quelles jambes du pool combiner.
-EDGE_MIN_POOL = 2.0    # % — plancher d'edge pour qu'un marché entre dans le pool de candidats
-# Volontairement bas (pas 50%+) : constaté en pratique (2026-07-24 et 25) que le COUPON 3
-# (cible cote 50-100) ratait systématiquement sa cible faute de jambes à cote suffisamment
-# haute dans le pool — un plancher de proba trop strict exclut justement les paris plus
-# risqués (cote plus haute) dont ce profil a besoin. La recherche de combinaison
-# (selectionner_combo_cote_cible) privilégie de toute façon la probabilité la plus forte
-# PARMI les combos qui atteignent la cible — les Coupons 1/2 (cibles basses) n'utiliseront
-# ces jambes plus risquées que si nécessaire pour respecter leur propre cible.
-PROBA_MIN_POOL = 30.0  # % — plancher de probabilité pour qu'un marché entre dans le pool de candidats
+# Depuis le 26/09/2026 : plus de plancher edge/probabilité ni de limite à 1 candidat par
+# catégorie ici — Python calcule les chiffres de TOUS les marchés modélisables (voir
+# evaluer_marches_toutes) et l'IA (stratège, DeepSeek en priorité) analyse et choisit
+# elle-même, au lieu de ratifier une short-list déjà pré-triée par un seuil Python.
 # L'IA stratège (agent_strategie.py) analyse, planifie et choisit les paris ; Python valide.
 # UTILISER_STRATEGE_IA=false revient à la seule composition automatique (Monte Carlo).
 UTILISER_STRATEGE_IA = os.getenv("UTILISER_STRATEGE_IA", "true").lower() not in ("0", "false", "non", "no")
@@ -76,7 +71,15 @@ UTILISER_STRATEGE_IA = os.getenv("UTILISER_STRATEGE_IA", "true").lower() not in 
 # impossible à gagner). Le coupon combine donc des matchs DIFFÉRENTS, pas des paris multiples
 # sur les mêmes.
 MAX_JAMBES_PAR_MATCH = 1
-NB_CANDIDATS_PAR_MATCH = 10  # plafond de sécurité — en pratique = le meilleur candidat de chaque catégorie de marché trouvée pour le match (~13 catégories possibles au total)
+
+# L'IA voit le pool COMPLET (tous les marchés modélisables, y compris edge négatif — voir
+# evaluer_marches_toutes). Mais quand elle est indisponible (budget épuisé, panne) ou désactivée
+# (UTILISER_STRATEGE_IA=false), la composition automatique (Monte Carlo, selectionner_combo_
+# cote_cible) pige dans ce MÊME pool sans jugement possible — sans filtre, elle choisirait
+# parfois un pari objectivement mauvais (edge négatif, probabilité faible). Seuils appliqués
+# UNIQUEMENT à ce repli automatique, jamais à ce que reçoit l'IA.
+EDGE_MIN_FALLBACK_AUTO = 2.0
+PROBA_MIN_FALLBACK_AUTO = 30.0
 
 # Choix du 26/09/2026 (demande explicite) : UN SEUL coupon "smart" combinant 10 à 15 matchs
 # DIFFÉRENTS (un seul pari par match, voir MAX_JAMBES_PAR_MATCH), plus 3 profils de risque
@@ -115,21 +118,25 @@ GROQ_MODELES = [m.strip() for m in (os.getenv("GROQ_MODELES") or "openai/gpt-oss
                 if m.strip()]
 GEMINI_MODELES = [m.strip() for m in (os.getenv("GEMINI_MODELES") or "gemini-3.8-flash,gemini-3.7-flash").split(",")
                   if m.strip()]
-
 NOMS_FOURNISSEURS = {
     "deepseek": "DeepSeek",
     "openrouter": "OpenRouter",
     "groq": "Groq",
     "gemini": "Gemini"
 }
-
+# DeepSeek (OpenRouter payant, solde réel testé et confirmé le 2026-09-26) : demandé en
+# PRIORITAIRE par l'utilisateur — raisonnement plus poussé qu'un modèle gratuit en "low
+# effort", donc interrogé SEUL en premier (pas dans la course parallèle) avant tout repli sur
+# Groq/Gemini/OpenRouter gratuits. Coût négligeable (~0.03 $ le 1M tokens en entrée).
+DEEPSEEK_MODELE_PAYANT = os.getenv("OPENROUTER_MODELE_PAYANT", "deepseek/deepseek-v4.1-flash")
+_deepseek_indisponible = False
 # Fournisseur dont la clé est refusée : écarté pour le reste du run (run 5 : des dizaines
 # d'appels « User not found » avaient coûté ~7 minutes). Plus aucun fournisseur → plus d'IA.
 _fournisseurs_refuses = {}
 # Budget TOTAL de l'IA pour un run (stratège + rédaction). Au-delà, plus aucun appel : le
 # ticket est rédigé en Python. Le run 7 (2026-09-26) avait passé plus de 10 minutes en IA.
 BUDGET_IA_SECONDES = float(os.getenv("BUDGET_IA_SECONDES", "240"))
-DELAI_REQUETE_IA_MAX = 600  # secondes max pour UNE réponse (au-delà : modèle suivant)
+DELAI_REQUETE_IA_MAX = 60  # secondes max pour UNE réponse (au-delà : modèle suivant)
 # Délai « horloge murale » : le timeout de requests ne borne que chaque lecture réseau, et un
 # modèle qui envoie sa réponse au compte-gouttes le contournait (4 min 30 au run 8).
 _executeur_ia = ThreadPoolExecutor(max_workers=16, thread_name_prefix="ia")
@@ -154,9 +161,10 @@ _echeance_ia = None  # démarre au premier appel IA du run
 
 
 def reinitialiser_budget_ia():
-    global _echeance_ia
+    global _echeance_ia, _deepseek_indisponible
     _echeance_ia = None
     _fournisseurs_refuses.clear()
+    _deepseek_indisponible = False
 
 
 def secondes_ia_restantes():
@@ -585,6 +593,31 @@ def evaluer_marches(marches, mu_home, mu_away, mu_corners=None, mu_cartons=None)
     return sorted(retenus, key=lambda c: (c["proba_modele_pct"], c["edge_pct"]), reverse=True)
 
 
+def evaluer_marches_toutes(marches, mu_home, mu_away, mu_corners=None, mu_cartons=None):
+    """Comme evaluer_marches, mais SANS le filtre edge/probabilité (candidat_valide) : renvoie
+    TOUS les marchés modélisables (edge et probabilité calculés pour chacun, y compris edge
+    négatif ou faible), au lieu d'une short-list déjà triée par un seuil Python. Demande
+    explicite de l'utilisateur (2026-09-26) : donner à l'IA l'ensemble des marchés réels avec
+    leurs chiffres, et la laisser analyser et choisir elle-même — pas seulement ratifier une
+    présélection. Les exclusions restantes (CATEGORIES_EXCLUES, COTE_MIN_JAMBE) sont des
+    limites de qualité de donnée/risque, pas un jugement sur la valeur du pari."""
+    marche_sans_marge = probabilites_sans_marge(marches)
+    retenus = []
+    for c in _evaluer_marches_brut(marches, mu_home, mu_away, mu_corners, mu_cartons):
+        if c["categorie"] in CATEGORIES_EXCLUES or c["cote"] < COTE_MIN_JAMBE:
+            continue
+        p_marche = marche_sans_marge.get((c["marche"], c["selection"]))
+        if p_marche is None:
+            continue
+        p_modele = c["proba_modele_pct"] / 100
+        p = (1 - POIDS_MARCHE) * p_modele + POIDS_MARCHE * p_marche
+        edge = calc_edge(p, c["cote"])
+        c.update(proba_modele_pct=round(p * 100, 1), edge_pct=round(edge, 1) if edge is not None else None,
+                 proba_poisson_pct=round(p_modele * 100, 1), proba_marche_pct=round(p_marche * 100, 1))
+        retenus.append(c)
+    return sorted(retenus, key=lambda c: (c["edge_pct"] if c["edge_pct"] is not None else -999), reverse=True)
+
+
 def candidat_valide(edge, proba):
     """Un marché n'est retenu que s'il a À LA FOIS un edge plausible ET une probabilité
     de gain forte (PROBA_MIN_FORTE) — un edge élevé sur un pari à 30% de chances de gagner
@@ -981,7 +1014,15 @@ def _requete_ia(poster, fournisseur, modele, prompt, max_tokens, json_attendu, d
             "HTTP-Referer": "https://github.com/ahmedkaffi99-spec/analyse-football",
             "X-Title": "analyse-football",
         }
-        payload["reasoning"] = {"effort": "low"}  # réflexion courte (ignoré par les autres modèles)
+        if modele == DEEPSEEK_MODELE_PAYANT:
+            # "low" comme les gratuits serait trop court pour le raisonnement plus poussé demandé
+            # explicitement par l'utilisateur ; mais un effort NON borné a consommé tout
+            # max_tokens en réflexion interne sans qu'il en reste pour la réponse — HTTP 200 avec
+            # un contenu vide, constaté deux fois de suite au run 24 (2026-09-26). "medium" borne
+            # le raisonnement tout en restant nettement au-dessus du "low" des modèles gratuits.
+            payload["reasoning"] = {"effort": "medium"}
+        else:
+            payload["reasoning"] = {"effort": "low"}  # réflexion courte (modèles gratuits, souvent lents/saturés)
     if json_attendu:
         payload["response_format"] = {"type": "json_object"}
     r = poster(url, headers=headers, json=payload, timeout=delai)
@@ -993,13 +1034,53 @@ def _requete_ia(poster, fournisseur, modele, prompt, max_tokens, json_attendu, d
         raise
 
 
-def appel_ia(prompt, max_tokens=2000, json_attendu=False):
-    """Vagues de IA_EN_PARALLELE modèles (Groq, Gemini, OpenRouter mêlés) interrogés EN MÊME
-    TEMPS : la première réponse valide (JSON lisible si json_attendu) l'emporte. Un modèle
-    saturé (429) ou lent ne retarde plus les autres. Jamais au-delà du budget IA du run."""
+def appel_ia(prompt, max_tokens=2000, json_attendu=False, prioriser_deepseek=True):
+    """DeepSeek (payant, solde réel) d'abord, SEUL, avec son raisonnement complet : demandé en
+    priorité par l'utilisateur pour un choix de paris plus réfléchi. En cas d'échec (ou de
+    clé/solde indisponible) seulement, repli sur les vagues de IA_EN_PARALLELE modèles gratuits
+    (Groq, Gemini, OpenRouter mêlés) interrogés EN MÊME TEMPS : la première réponse valide
+    (JSON lisible si json_attendu) l'emporte. Un modèle saturé (429) ou lent ne retarde plus les
+    autres. Jamais au-delà du budget IA du run.
+
+    prioriser_deepseek=False : saute DeepSeek et va directement à la course gratuite — pour les
+    PETITES tâches (ex: second avis "agent risque" de l'orchestrateur agentique) où Groq/Gemini/
+    OpenRouter gratuits suffisent largement et répondent en une fraction de seconde ; réserve le
+    solde payant de DeepSeek à la décision principale (demande explicite du 27/09/2026)."""
+    global _deepseek_indisponible
     if not any(_cles_fournisseurs().values()):
         raise ValueError("Aucune clé IA (OPENROUTER_API_KEY, GROQ_API_KEY, GEMINI_API_KEY)")
     derniere_erreur = None
+
+    if prioriser_deepseek and OPENROUTER_API_KEY and not _deepseek_indisponible and "openrouter" not in _fournisseurs_refuses:
+        restant = secondes_ia_restantes()
+        if restant >= 10:
+            # Run 24 (2026-09-26) : appelé en direct (sans le garde-fou horloge murale du
+            # ThreadPoolExecutor utilisé plus bas), une réponse lente a bloqué ~135 s au lieu de
+            # s'arrêter à 90 s, épuisant le budget IA du run à elle seule, deux fois de suite —
+            # DeepSeek passe donc par le même exécuteur + timeout que la course en vagues.
+            delai = min(90, restant)
+            # Marge supplémentaire pour le raisonnement ("medium effort") en plus de la réponse
+            # elle-même — un modèle de raisonnement compte sa réflexion dans max_tokens.
+            futur_deepseek = _executeur_ia.submit(_requete_ia, requests.post, "openrouter", DEEPSEEK_MODELE_PAYANT,
+                                                   prompt, max_tokens + 3000, json_attendu, delai)
+            try:
+                content = futur_deepseek.result(timeout=delai + 2)
+                if not json_attendu or _json_present(content):
+                    print(f"   ✓ Réponse via DeepSeek (prioritaire) {DEEPSEEK_MODELE_PAYANT}")
+                    return content
+                derniere_erreur = ValueError("DeepSeek : réponse sans JSON lisible")
+                print("   ⚠️ DeepSeek (prioritaire) : réponse sans JSON lisible — repli sur la course habituelle.")
+            except CleIARefusee as e:
+                derniere_erreur = e
+                print(f"   ⚠️ DeepSeek indisponible pour le reste du run ({_cause(e)[:150]}) — repli sur la course habituelle.")
+                _deepseek_indisponible = True
+            except DelaiDepasse:
+                derniere_erreur = TimeoutError(f"DeepSeek : pas de réponse complète en {delai:.0f} s")
+                print(f"   ⚠️ DeepSeek (prioritaire) : sans réponse en {delai:.0f} s — repli sur la course habituelle.")
+            except Exception as e:
+                derniere_erreur = e
+                print(f"   ⚠️ DeepSeek (prioritaire) indisponible cette fois ({_cause(e)[:150]}) — repli sur la course habituelle.")
+
     candidats = candidats_ia()
     taille = max(1, IA_EN_PARALLELE)
     for i in range(0, len(candidats), taille):
@@ -1053,6 +1134,14 @@ def appel_llm(prompt, max_tokens=3000, json_attendu=False):
     """L'IA passe par Groq, Gemini et OpenRouter en parallèle. Si aucun modèle ne répond, les
     tâches d'analyse sont sautées et le ticket est rédigé en Python (rediger_ticket_sans_ia)."""
     return appel_ia(prompt, max_tokens, json_attendu=json_attendu)
+
+
+def appel_llm_petites_taches(prompt, max_tokens=300):
+    """Pour les PETITES tâches (second avis, vérification légère, résumé court) : va directement
+    à la course Groq/Gemini/OpenRouter gratuits, sans passer par DeepSeek en priorité — demande
+    explicite du 27/09/2026 : réserver le solde payant de DeepSeek à la décision principale du
+    coupon, et donner du vrai travail (pas juste un rôle de secours) à Groq/Gemini/OpenRouter."""
+    return appel_ia(prompt, max_tokens, json_attendu=False, prioriser_deepseek=False)
 
 
 def verifier_pas_de_12(texte):
@@ -1182,7 +1271,7 @@ def _tache_analyse(donnees_prompt, nb_matchs):
     )
     print("   🧠 [Tâche 1/3] Analyse des sélections...")
     try:
-        return appel_llm(prompt, max_tokens=2000) or ""
+        return appel_llm_petites_taches(prompt, max_tokens=2000) or ""
     except Exception as e:
         print(f"   ⚠️ Analyse IA indisponible ({_cause(e)}) — on continue sans.")
         return ""
@@ -1202,7 +1291,7 @@ def _tache_pronostic(donnees_prompt, analyse_texte):
     )
     print("   🎯 [Tâche 2/3] Pronostic final...")
     try:
-        return appel_llm(prompt, max_tokens=2000) or ""
+        return appel_llm_petites_taches(prompt, max_tokens=2000) or ""
     except Exception as e:
         print(f"   ⚠️ Pronostic IA indisponible ({_cause(e)}) — on continue sans.")
         return ""
@@ -1251,7 +1340,7 @@ def _tache_redaction(donnees_prompt, pronostic_texte, nb_jambes_attendues):
         if budget_ia_epuise():
             break
         try:
-            candidat = appel_llm(prompt, max_tokens=3000)
+            candidat = appel_llm_petites_taches(prompt, max_tokens=3000)
         except Exception as e:
             print(f"      ⚠️ Tentative {tentative + 1}/3 échouée : {e}")
             pause_ia(5)
@@ -1278,21 +1367,23 @@ def niveau_confiance(edge_pct):
 
 def rediger_ticket_sans_ia(selections_finales):
     """Ticket au MÊME format que celui demandé au LLM, construit en pur Python à partir des
-    chiffres, guides et onglets déjà calculés. Utilisé quand aucun LLM ne répond : une panne
-    de l'IA ne doit plus jamais faire perdre les coupons du jour
-    (constaté le 2026-09-26 : run entier en erreur pour une limite de débit)."""
+    chiffres déjà calculés. Utilisé quand aucun LLM ne répond : une panne de l'IA ne doit
+    plus jamais faire perdre les coupons du jour (constaté le 2026-09-26 : run entier en
+    erreur pour une limite de débit).
+
+    Format compact — une seule ligne par match (pas de Guide/Où parier/Pourquoi détaillés) :
+    avec un coupon combiné de 10 à 15 matchs, la version détaillée dépassait régulièrement la
+    limite dure de 4096 caractères de Telegram et le message finissait tronqué au milieu,
+    perdant des matchs entiers (constaté sur le run du 26/09/2026). Un résumé tient en UN
+    seul message Telegram, sans jamais avoir besoin de le découper. Le niveau de confiance
+    (Faible/Moyen/Élevé, calculé en Python depuis l'edge — jamais estimé par l'IA) est affiché
+    pour chaque pari, demande explicite du 27/09/2026."""
     blocs = []
     for s in selections_finales:
         p = s["pick"]
-        blocs.append(
-            f"⚽ {s['match']}\n"
-            f"   🎯 {p['marche']} : {p['selection']} @ {p['cote']} "
-            f"(edge {p['edge_pct']}% · Confiance : {niveau_confiance(p['edge_pct'])})\n"
-            f"   📖 Guide : {p['guide']}\n"
-            f"   📍 Où parier : {p['onglet']}"
-            + (f"\n   🧠 Pourquoi : {s['raison_ia']}" if s.get("raison_ia") else "")
-        )
-    return "\n\n".join(blocs)
+        blocs.append(f"⚽ *{s['match']}* — {p['marche']} : {p['selection']} @ {p['cote']} "
+                     f"(edge {p['edge_pct']}% · {niveau_confiance(p['edge_pct'])})")
+    return "\n".join(blocs)
 
 
 def agent4_ia_analyse_pronostic_redaction(selections_finales):
@@ -1400,17 +1491,16 @@ def verifier_fraicheur_matchs(matchs_exploitables):
 
 
 def agent3_calcul_pool_candidats(donnees):
-    """AGENT 3 — variante 'pool' : comme agent3_calcul_mathematique, mais garde jusqu'à
-    NB_CANDIDATS_PAR_MATCH candidats distincts PAR MATCH (pas seulement le meilleur) —
-    nécessaire pour composer ensuite le(s) coupon(s) de PROFILS_COUPON, chacun ciblant sa
-    propre fourchette de cote totale, à partir du même pool. Renvoie {nom_match: [candidat, ...]}."""
-    global SEUIL_EDGE, PROBA_MIN_FORTE
-    SEUIL_EDGE, PROBA_MIN_FORTE = EDGE_MIN_POOL, PROBA_MIN_POOL
-
+    """AGENT 3 — variante 'pool' : calcule le contexte (buts attendus, Elo) et évalue TOUS les
+    marchés modélisables de chaque match (evaluer_marches_toutes, sans filtre edge/probabilité
+    ni limite à 1 candidat par catégorie) — demande explicite de l'utilisateur (2026-09-26) :
+    Python fournit les chiffres réels de chaque marché, l'IA (stratège, DeepSeek en priorité)
+    analyse et choisit elle-même, plutôt que de ratifier une short-list déjà pré-triée par
+    Python. Renvoie {nom_match: [candidat, ...]}."""
     matchs_exploitables = [m for m in donnees["matchs"] if m["oddspapi"]["tous_marches"]]
     matchs_exploitables = verifier_fraicheur_matchs(matchs_exploitables)
     print(f"   → {len(matchs_exploitables)} matchs avec marchés collectés à analyser "
-          f"(pool commun : edge≥{EDGE_MIN_POOL}% · proba≥{PROBA_MIN_POOL}%)")
+          f"(TOUS les marchés modélisables sont transmis à l'IA, sans présélection Python)")
 
     pool = {}
     for m in matchs_exploitables:
@@ -1457,23 +1547,11 @@ def agent3_calcul_pool_candidats(donnees):
         mu_corners = estimer_ligne_equilibree(marches, ["corner"])
         mu_cartons = estimer_ligne_equilibree(marches, ["card", "booking"])
 
-        candidats = evaluer_marches(marches, home_xg, away_xg, mu_corners, mu_cartons)
-        print(f"      → {len(marches)} marchés bruts scannés, {len(candidats)} candidat(s) valable(s)")
+        candidats = evaluer_marches_toutes(marches, home_xg, away_xg, mu_corners, mu_cartons)
+        print(f"      → {len(marches)} marchés bruts scannés, {len(candidats)} marché(s) modélisable(s) "
+              f"transmis à l'IA (aucune présélection Python)")
         if not candidats:
             continue
-
-        # Diversité de marché : garde le MEILLEUR candidat de CHAQUE catégorie trouvée pour
-        # ce match (BTTS, Handicap Asiatique, Double Chance, Pair/Impair, Clean Sheet, Win to
-        # Nil, Total...) — pas seulement les N plus probables tous confondus. evaluer_marches
-        # trie déjà par probabilité décroissante, donc le premier candidat rencontré par
-        # catégorie est le meilleur de cette catégorie. Sans ça, le pool est dominé par les
-        # marchés Total (souvent les plus probables) et les coupons finaux ne proposent jamais
-        # de BTTS/Handicap/etc. même quand ils sont valables.
-        meilleur_par_categorie = {}
-        for c in candidats:
-            if c["categorie"] not in meilleur_par_categorie:
-                meilleur_par_categorie[c["categorie"]] = c
-        candidats_diversifies = list(meilleur_par_categorie.values())[:NB_CANDIDATS_PAR_MATCH]
 
         nom_match = f"{home_nom} vs {away_nom}"
         pool[nom_match] = [
@@ -1481,10 +1559,10 @@ def agent3_calcul_pool_candidats(donnees):
                 "match": nom_match, "home_nom": home_nom, "away_nom": away_nom,
                 "fixture_id_oddspapi": m["oddspapi"]["fixture_id"], "pick": c, "contexte": contexte_match,
             }
-            for c in candidats_diversifies
+            for c in candidats
         ]
-        print(f"      → {len(candidats_diversifies)} catégorie(s) de marché distincte(s) retenue(s) "
-              f"pour ce match : {', '.join(c['categorie'] for c in candidats_diversifies)}")
+        categories = sorted({c["categorie"] for c in candidats})
+        print(f"      → {len(categories)} catégorie(s) de marché représentée(s) : {', '.join(categories)}")
     return pool
 
 
@@ -1517,7 +1595,16 @@ def selectionner_combo_cote_cible(pool_par_match, nb_jambes, cote_min, cote_max,
        lement), constaté en pratique,
     3) la probabilité moyenne la plus forte, à diversité égale.
     Jamais None tant qu'il y a au moins nb_jambes candidats au total, jamais un chiffre
-    inventé — uniquement un choix parmi des candidats déjà calculés en pur Python."""
+    inventé — uniquement un choix parmi des candidats déjà calculés en pur Python.
+
+    Filtre edge/probabilité (EDGE_MIN_FALLBACK_AUTO, PROBA_MIN_FALLBACK_AUTO) appliqué ICI
+    seulement : le pool complet transmis par agent3_calcul_pool_candidats n'est plus filtré
+    (l'IA doit voir tous les marchés), mais ce repli 100% automatique n'a aucun jugement pour
+    écarter lui-même un edge négatif ou une probabilité trop faible."""
+    pool_par_match = {m: [c for c in candidats if (c["pick"].get("edge_pct") or -999) > EDGE_MIN_FALLBACK_AUTO
+                                              and c["pick"]["proba_modele_pct"] >= PROBA_MIN_FALLBACK_AUTO]
+                      for m, candidats in pool_par_match.items()}
+    pool_par_match = {m: c for m, c in pool_par_match.items() if c}
     matchs = list(pool_par_match.keys())
     tous_candidats = [c for candidats in pool_par_match.values() for c in candidats]
     if len(tous_candidats) < nb_jambes:
@@ -1696,13 +1783,43 @@ def agent4_rediger_coupons(resultats_profils):
 TELEGRAM_LIMITE_CARACTERES = 4096  # limite dure de l'API Telegram par message
 
 
+def decouper_message_telegram(entete, section, pied, limite=TELEGRAM_LIMITE_CARACTERES):
+    """Découpe une section (un profil de coupon) en un ou plusieurs messages Telegram sans
+    jamais couper un bloc de match en plein milieu (chaque bloc commence par "⚽ "). Avec
+    10 à 15 matchs détaillés dans un seul coupon, le texte dépasse régulièrement la limite
+    dure de 4096 caractères de Telegram ('Bad Request: message is too long') — on répartit
+    les blocs sur plusieurs messages successifs plutôt que de tronquer et perdre des matchs."""
+    marge_continuation = len("\n\n_(suite 9/9 dans le message suivant...)_") + 10
+    blocs = re.split(r"(?=\n⚽ )", section)  # garde le "⚽ " en tête de chaque bloc conservé
+    morceaux = [blocs[0]]
+    for bloc in blocs[1:]:
+        disponible = limite - len(pied) - marge_continuation
+        if len(morceaux[-1]) + len(bloc) > disponible and morceaux[-1].strip():
+            morceaux.append(bloc)
+        else:
+            morceaux[-1] += bloc
+
+    total = len(morceaux)
+    messages = []
+    for i, morceau in enumerate(morceaux, start=1):
+        prefixe = entete if i == 1 else entete.split("\n", 1)[0] + f" — partie {i}/{total}\n\n"
+        suffixe = pied if i == total else f"\n\n_(suite {i}/{total} dans le message suivant...)_"
+        message = prefixe + morceau + suffixe
+        if len(message) > limite:
+            # Cas extrême : un seul bloc de match dépasse à lui seul la limite (ne devrait
+            # jamais arriver en pratique) — filet de sécurité, coupe proprement ce morceau-là.
+            coupe = limite - len("\n\n_[message tronqué — trop long pour Telegram]_")
+            message = message[:coupe] + "\n\n_[message tronqué — trop long pour Telegram]_"
+        messages.append(message)
+    return messages
+
+
 def agent5_envoyer_coupons(sections):
-    """AGENT 5 — LIVRAISON. Envoie CHAQUE profil dans son PROPRE message Telegram — jamais un
-    seul message pour plusieurs profils (avec plusieurs jambes détaillées, le texte dépasse
-    vite la limite dure de 4096 caractères de Telegram, constaté en pratique : 'Bad Request:
-    message is too long'). Vérifie le succès RÉEL de chaque envoi (notifier_telegram renvoie
-    False en cas d'échec) plutôt que de supposer que ça a marché. Renvoie True seulement si
-    TOUS les messages sont partis."""
+    """AGENT 5 — LIVRAISON. Envoie CHAQUE profil dans son PROPRE message (ou plusieurs
+    messages successifs si trop long — voir decouper_message_telegram) — jamais un seul
+    message pour plusieurs profils. Vérifie le succès RÉEL de chaque envoi (notifier_telegram
+    renvoie False en cas d'échec) plutôt que de supposer que ça a marché. Renvoie True
+    seulement si TOUS les messages sont partis."""
     date_str = datetime.now().strftime("%d/%m/%Y à %H:%M")
     entete = f"🎯 *TICKETS DU JOUR — {date_str}*\nedge réel calculé par Poisson · 1xBet\n━━━━━━━━━━━━━━━━━━━━\n\n"
     pied = (
@@ -1712,19 +1829,15 @@ def agent5_envoyer_coupons(sections):
 
     tout_envoye = True
     for i, section in enumerate(sections, start=1):
-        message = entete + section + pied
-        if len(message) > TELEGRAM_LIMITE_CARACTERES:
-            # Filet de sécurité : coupe proprement plutôt que de laisser Telegram rejeter
-            # tout le message — perd le pied de page mais garde le contenu utile (le pari).
-            coupe = TELEGRAM_LIMITE_CARACTERES - len("\n\n_[message tronqué — trop long pour Telegram]_")
-            message = message[:coupe] + "\n\n_[message tronqué — trop long pour Telegram]_"
-            print(f"   ⚠️ Profil {i}/{len(sections)} tronqué ({len(entete) + len(section) + len(pied)} caractères, limite {TELEGRAM_LIMITE_CARACTERES})")
-        print(f"   📤 Envoi Telegram {i}/{len(sections)}...")
-        ok = notifier_telegram(message)
-        tout_envoye = tout_envoye and ok
-        if not ok:
-            print(f"   ❌ Échec d'envoi pour le message {i}/{len(sections)} — voir erreur ci-dessus.")
-        time.sleep(1)  # évite de rafaler l'API Telegram entre plusieurs messages
+        messages = decouper_message_telegram(entete, section, pied)
+        for j, message in enumerate(messages, start=1):
+            suffixe_log = f" (partie {j}/{len(messages)})" if len(messages) > 1 else ""
+            print(f"   📤 Envoi Telegram {i}/{len(sections)}{suffixe_log}...")
+            ok = notifier_telegram(message)
+            tout_envoye = tout_envoye and ok
+            if not ok:
+                print(f"   ❌ Échec d'envoi pour le message {i}/{len(sections)}{suffixe_log} — voir erreur ci-dessus.")
+            time.sleep(1)  # évite de rafaler l'API Telegram entre plusieurs messages
 
     return tout_envoye
 

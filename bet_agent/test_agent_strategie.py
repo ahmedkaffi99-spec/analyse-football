@@ -162,6 +162,43 @@ class TestFraicheurNePasEffacerSurErreurApi(unittest.TestCase):
             self.assertEqual(ae.verifier_fraicheur_matchs(matchs), matchs)
 
 
+class TestDiversiteDesMarches(unittest.TestCase):
+    """Demande explicite du 26/09/2026 : un coupon presque entièrement composé de paris
+    Under/No (biais du modèle Poisson) est refusé par Python quand une alternative existe,
+    même si le prompt le déconseille déjà — la règle 5 seule n'avait pas suffi en pratique
+    (l'IA a justifié un coupon 100% Under/No comme "stratégie délibérée de faible variance")."""
+
+    def test_trop_de_under_no_refuse_si_une_alternative_existe(self):
+        pool = {
+            "A vs B": [_sel("A vs B", "Total", "Under", 1.5)],                                    # P1 — pas d'alternative
+            "C vs D": [_sel("C vs D", "Total", "Under", 1.5)],                                    # P2 — pas d'alternative
+            "E vs F": [_sel("E vs F", "Total", "Under", 1.5)],                                    # P3 — pas d'alternative
+            "G vs H": [_sel("G vs H", "Total", "Under", 1.5), _sel("G vs H", "Total", "Over", 1.5)],  # P4, P5 — alternative dispo
+        }
+        catalogue, _ = st.construire_catalogue(pool)
+        profil = {"cle": "coupon", "nom": "x", "cote_min": 0.0, "cote_max": 1000.0, "nb_jambes": 4, "nb_jambes_min": 4}
+        proposition = {"coupons": [{"profil": "coupon", "strategie": "s",
+                                    "jambes": [{"id": "P1"}, {"id": "P2"}, {"id": "P3"}, {"id": "P4"}]}]}
+
+        acceptes, problemes, _ = st.valider(proposition, catalogue, [profil])
+
+        self.assertEqual(acceptes, {})
+        self.assertTrue(any("Under/No" in p and "G vs H" in p for p in problemes), problemes)
+
+    def test_accepte_si_aucune_alternative_nulle_part(self):
+        # Les 4 matchs n'offrent QUE du Under : impossible de varier, donc pas d'erreur.
+        pool = {m: [_sel(m, "Total", "Under", 1.5)] for m in ("A vs B", "C vs D", "E vs F", "G vs H")}
+        catalogue, _ = st.construire_catalogue(pool)
+        profil = {"cle": "coupon", "nom": "x", "cote_min": 0.0, "cote_max": 1000.0, "nb_jambes": 4, "nb_jambes_min": 4}
+        proposition = {"coupons": [{"profil": "coupon", "strategie": "s",
+                                    "jambes": [{"id": "P1"}, {"id": "P2"}, {"id": "P3"}, {"id": "P4"}]}]}
+
+        acceptes, problemes, _ = st.valider(proposition, catalogue, [profil])
+
+        self.assertEqual(problemes, [])
+        self.assertIn("coupon", acceptes)
+
+
 class TestCoupEnvoi(unittest.TestCase):
     def test_match_qui_commence_bientot_ecarte_a_la_reprise(self):
         from datetime import datetime, timezone

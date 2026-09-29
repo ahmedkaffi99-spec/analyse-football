@@ -4,6 +4,7 @@ import os
 import tempfile
 import unittest
 from datetime import datetime
+from types import SimpleNamespace
 from unittest import mock
 
 import analyser_et_envoyer as ae
@@ -65,6 +66,110 @@ class TestTelegram(unittest.TestCase):
         self.assertEqual(len(envoyes), 2)
         self.assertIn("parse_mode", envoyes[0])
         self.assertNotIn("parse_mode", envoyes[1])
+
+    def test_coupon_trop_long_est_decoupe_pas_tronque(self):
+        # Run 20 (2026-09-26) : un coupon de 12 jambes a dépassé 4096 caractères et Telegram
+        # a coupé le message en plein milieu, perdant le dernier match et le pied de page.
+        entete = "🎯 *TICKETS DU JOUR — 26/09/2026 à 14:50*\nedge réel calculé par Poisson · 1xBet\n━━━━━━━━━━━━━━━━━━━━\n\n"
+        pied = "\n\n━━━━━━━━━━━━━━━━━━━━\n⚠️ _Analyse automatisée à titre indicatif._"
+        bloc_match = "⚽ Équipe A{n} vs Équipe B{n}\n   🎯 Marché : Under @ 1.30 (edge 4.0%)\n" + "   🧠 Pourquoi : texte explicatif assez long pour peser sur la limite. " * 5
+        section = "🎯 COUPON DU JOUR — 12 jambes sur 12 matchs\n\n🧭 Stratégie : texte de stratégie.\n\n"
+        section += "\n".join(bloc_match.format(n=n) for n in range(1, 13))
+
+        messages = ae.decouper_message_telegram(entete, section, pied)
+
+        self.assertGreater(len(messages), 1)  # bien découpé, pas un seul message tronqué
+        for message in messages:
+            self.assertLessEqual(len(message), ae.TELEGRAM_LIMITE_CARACTERES)
+        # aucun match perdu : les 12 "⚽ Équipe A{n}" se retrouvent tous, répartis sur les messages
+        texte_complet = "".join(messages)
+        for n in range(1, 13):
+            self.assertIn(f"⚽ Équipe A{n} vs", texte_complet)
+        self.assertNotIn("tronqué", texte_complet)
+        self.assertIn(pied.strip(), messages[-1])  # le pied de page est bien présent (dernier message)
+
+
+class TestDeepSeekPrioritaire(unittest.TestCase):
+    """Demande explicite du 26/09/2026 : DeepSeek (payant, solde réel confirmé) doit être
+    essayé SEUL en premier, avant toute course parallèle avec les modèles gratuits."""
+
+    def setUp(self):
+        ae.reinitialiser_budget_ia()
+
+    def test_deepseek_repond_seul_pas_de_course_declenchee(self):
+        appels = []
+
+        def faux_post(url, headers, json, timeout):
+            appels.append((url, headers.get("Authorization"), json))
+            return SimpleNamespace(status_code=200, json=lambda: {"choices": [{"message": {"content": '{"ok": true}'}}]})
+
+        with mock.patch.object(ae, "OPENROUTER_API_KEY", "sk-or-secrete"), \
+                mock.patch.object(ae, "GROQ_API_KEY", "gsk-secrete"), \
+                mock.patch.object(ae, "GEMINI_API_KEY", "AIza-secrete"), \
+                mock.patch.object(ae.requests, "post", side_effect=faux_post):
+            resultat = ae.appel_ia("prompt", json_attendu=True)
+
+        self.assertEqual(resultat, '{"ok": true}')
+        self.assertEqual(len(appels), 1)  # une seule requête : DeepSeek, pas de vague parallèle
+        url, auth, corps = appels[0]
+        self.assertIn("openrouter.ai", url)
+        self.assertEqual(corps["model"], ae.DEEPSEEK_MODELE_PAYANT)
+        self.assertEqual(corps["reasoning"], {"effort": "medium"})  # ni "low" (gratuits) ni non borné (run 24 : vide)
+        self.assertEqual(auth, "Bearer sk-or-secrete")
+
+    def test_deepseek_reponse_vide_par_raisonnement_non_borne_declenche_le_repli(self):
+        # Run 24 (2026-09-26) : DeepSeek en effort non borné a renvoyé HTTP 200 avec un contenu
+        # vide (tout le budget de tokens consommé par le raisonnement interne), deux fois de
+        # suite, épuisant le budget IA du run à lui seul sans qu'aucun autre modèle soit essayé.
+        appels = []
+
+        def faux_post(url, headers, json, timeout):
+            appels.append(json["model"])
+            if json["model"] == ae.DEEPSEEK_MODELE_PAYANT:
+                return SimpleNamespace(status_code=200, json=lambda: {"choices": [{"message": {"content": ""}}]})
+            return SimpleNamespace(status_code=200, json=lambda: {"choices": [{"message": {"content": '{"ok": true}'}}]})
+
+        with mock.patch.object(ae, "OPENROUTER_API_KEY", "sk-or-secrete"), \
+                mock.patch.object(ae, "GROQ_API_KEY", "gsk-secrete"), \
+                mock.patch.object(ae, "GEMINI_API_KEY", None), \
+                mock.patch.object(ae.requests, "post", side_effect=faux_post):
+            resultat = ae.appel_ia("prompt", json_attendu=True)
+
+        self.assertEqual(resultat, '{"ok": true}')  # repli sur Groq, pas d'exception ni de blocage
+        self.assertIn(ae.DEEPSEEK_MODELE_PAYANT, appels)
+
+    def test_repli_sur_groq_si_deepseek_echoue(self):
+        def faux_post(url, headers, json, timeout):
+            if json["model"] == ae.DEEPSEEK_MODELE_PAYANT:
+                return SimpleNamespace(status_code=402, json=lambda: {"error": {"message": "Insufficient credits"}})
+            return SimpleNamespace(status_code=200, json=lambda: {"choices": [{"message": {"content": '{"ok": true}'}}]})
+
+        with mock.patch.object(ae, "OPENROUTER_API_KEY", "sk-or-secrete"), \
+                mock.patch.object(ae, "GROQ_API_KEY", "gsk-secrete"), \
+                mock.patch.object(ae, "GEMINI_API_KEY", None), \
+                mock.patch.object(ae.requests, "post", side_effect=faux_post):
+            resultat = ae.appel_ia("prompt", json_attendu=True)
+
+        self.assertEqual(resultat, '{"ok": true}')  # récupéré via Groq après l'échec de DeepSeek
+
+    def test_petites_taches_sautent_deepseek_et_vont_direct_au_gratuit(self):
+        # Demande explicite du 27/09/2026 : réserver le solde payant de DeepSeek à la décision
+        # principale du coupon, et donner un vrai rôle (pas juste un filet de secours) à
+        # Groq/Gemini/OpenRouter gratuits pour les petites tâches (second avis, rédaction...).
+        appels = []
+
+        def faux_post(url, headers, json, timeout):
+            appels.append(json["model"])
+            return SimpleNamespace(status_code=200, json=lambda: {"choices": [{"message": {"content": "avis rapide"}}]})
+
+        with mock.patch.object(ae, "OPENROUTER_API_KEY", "sk-or-secrete"), \
+                mock.patch.object(ae, "GROQ_API_KEY", "gsk-secrete"), \
+                mock.patch.object(ae, "GEMINI_API_KEY", None), \
+                mock.patch.object(ae.requests, "post", side_effect=faux_post):
+            resultat = ae.appel_llm_petites_taches("prompt")
+
+        self.assertEqual(resultat, "avis rapide")
+        self.assertNotIn(ae.DEEPSEEK_MODELE_PAYANT, appels)  # jamais interrogé pour une petite tâche
 
 
 class TestListeManuellePerimee(unittest.TestCase):
@@ -185,13 +290,14 @@ class TestCouponsJoursCreux(unittest.TestCase):
 class TestRedactionSansIA(unittest.TestCase):
     def test_panne_de_tous_les_llm_ne_fait_plus_perdre_le_ticket(self):
         selections = [_selection("A vs B", "Total", "Over", 1.5, edge=12.0), _selection("C vs D", "BTTS", "Yes", 1.8, edge=25.0)]
-        with mock.patch.object(ae, "appel_llm", side_effect=ValueError("Tous les modèles ont échoué")), \
+        with mock.patch.object(ae, "appel_llm_petites_taches", side_effect=ValueError("Tous les modèles ont échoué")), \
                 mock.patch.object(ae.time, "sleep"):
             texte = ae.agent4_ia_analyse_pronostic_redaction(selections)
+        # Format compact (2026-09-26) : une ligne par match, sans Guide/Où parier/Pourquoi —
+        # garantit un ticket qui tient toujours en UN seul message Telegram (voir TestTelegram).
         self.assertEqual(texte.count("⚽"), 2)
-        self.assertIn("Confiance : Moyen", texte)
-        self.assertIn("Confiance : Élevé", texte)
-        self.assertIn("📍 Où parier : onglet", texte)
+        self.assertIn("Total (2.5) : Over @ 1.5 (edge 12.0% · Moyen)", texte)
+        self.assertIn("BTTS (2.5) : Yes @ 1.8 (edge 25.0% · Élevé)", texte)
 
     def test_erreur_gemini_en_liste_lisible(self):
         reponse = mock.Mock(status_code=429, json=lambda: [{"error": {"message": "Quota exceeded"}}])
@@ -228,6 +334,57 @@ class TestMatchsVirtuelsEtMarches(unittest.TestCase):
         grand = dict(petit, matchs_joues=20)
         self.assertIsNone(ae.calculer_xg_depuis_stats(petit, grand))
         self.assertIsNotNone(ae.calculer_xg_depuis_stats(grand, grand))
+
+
+class TestFiltreDuReplisAutomatiqueSeulement(unittest.TestCase):
+    """Le pool complet (edge négatif inclus) va à l'IA, mais selectionner_combo_cote_cible
+    (repli 100% Python, sans IA) doit quand même écarter les paris à edge négatif/faible —
+    sans jugement possible, il choisirait sinon un pari objectivement mauvais."""
+
+    def test_repli_automatique_ecarte_l_edge_negatif(self):
+        pool = {
+            "A vs B": [_selection("A vs B", "Total", "Over", 1.5, edge=-5.0)],   # edge négatif : écarté
+            "C vs D": [_selection("C vs D", "Total", "Over", 1.5, edge=8.0)],
+            "E vs F": [_selection("E vs F", "Total", "Over", 1.5, edge=8.0)],
+        }
+        # Un seul match a un edge exploitable en plus de C/D et E/F : 2 jambes possibles, pas 3.
+        self.assertIsNone(ae.selectionner_combo_cote_cible(pool, 3, 1.0, 100.0))
+        combo = ae.selectionner_combo_cote_cible(pool, 2, 1.0, 100.0)
+        self.assertEqual({c["match"] for c in combo}, {"C vs D", "E vs F"})
+
+
+class TestPasDePreselectionPython(unittest.TestCase):
+    """Demande explicite du 26/09/2026 : Python ne doit plus réduire les marchés d'un match à
+    1 seul candidat par catégorie (BTTS, Total...) ni les filtrer par un seuil d'edge/proba —
+    TOUS les marchés modélisables sont transmis à l'IA, qui analyse et choisit elle-même."""
+
+    def _match_deux_lignes_total(self):
+        return {
+            "api_football": None, "match_demande": {"home": "A", "away": "B"},
+            "oddspapi": {"fixture_id": "f1", "tous_marches": [
+                {"marche": "Over Under Full Time", "handicap": 1.5, "periode": "fulltime",
+                 "selections": [{"selection": "Over", "cote": 1.5}, {"selection": "Under", "cote": 2.6}]},
+                {"marche": "Over Under Full Time", "handicap": 2.5, "periode": "fulltime",
+                 "selections": [{"selection": "Over", "cote": 2.0}, {"selection": "Under", "cote": 1.8}]},
+            ]},
+            "stats_historiques": {}, "clubelo": {}, "serper": {"resultats": []},
+        }
+
+    def test_plusieurs_candidats_de_la_meme_categorie_sont_gardes(self):
+        with mock.patch.object(ae, "verifier_fraicheur_matchs", side_effect=lambda m: m):
+            pool = ae.agent3_calcul_pool_candidats({"matchs": [self._match_deux_lignes_total()]})
+        candidats = pool["A vs B"]
+        # 2 lignes × Over/Under = jusqu'à 4 candidats "Total" — plus la limite "1 par catégorie"
+        self.assertGreater(len(candidats), 1)
+        self.assertTrue(all(c["pick"]["categorie"] == "Total" for c in candidats))
+
+    def test_evaluer_marches_toutes_garde_un_edge_faible_ou_negatif(self):
+        # evaluer_marches (filtré) exigerait edge > 2% ET proba >= 60% ; evaluer_marches_toutes
+        # ne filtre plus du tout — un marché avec un edge quasi nul doit quand même apparaître.
+        marches = [{"marche": "Over Under Full Time", "handicap": 2.5, "periode": "fulltime",
+                    "selections": [{"selection": "Over", "cote": 1.91}, {"selection": "Under", "cote": 1.91}]}]
+        retenus = ae.evaluer_marches_toutes(marches, 1.3, 1.2)  # cotes ~justes, edge proche de 0
+        self.assertEqual(len(retenus), 2)  # Over ET Under, malgré un edge faible
 
 
 class TestEloEtContexteWeb(unittest.TestCase):
@@ -324,6 +481,9 @@ class TestOpenRouterSeulement(unittest.TestCase):
                         mock.patch.object(ae, "GEMINI_API_KEY", None),
                         mock.patch.object(ae, "OPENROUTER_MODELS", ["m1", "m2", "m3", "m4", "m5"]),
                         mock.patch.object(ae, "IA_EN_PARALLELE", 2),
+                        # DeepSeek prioritaire testé séparément (TestDeepSeekPrioritaire) : désactivé
+                        # ici pour isoler la logique de vagues OpenRouter que cette classe teste.
+                        mock.patch.object(ae, "_deepseek_indisponible", True),
                         mock.patch.object(ae.time, "sleep")]
         for p in self.patches:
             p.start()
@@ -406,6 +566,7 @@ class TestOpenRouterSeulement(unittest.TestCase):
                 mock.patch.object(ae.time, "monotonic", lambda: horloge[0]), \
                 mock.patch.object(ae.requests, "post", side_effect=faux_post) as post:
             ae.reinitialiser_budget_ia()
+            ae._deepseek_indisponible = True  # reinitialiser_budget_ia() la remet à False : redésactivée ici
             with self.assertRaisesRegex(ValueError, "Budget IA de 100 s épuisé"):
                 ae.appel_llm("test")
             self.assertEqual(post.call_count, 4)  # 2 vagues x 30 s x 2 modèles > 100 s : pas de 3e vague
