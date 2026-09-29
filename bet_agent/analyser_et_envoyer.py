@@ -37,6 +37,7 @@ VERIFIER_SSL_ODDSPAPI = os.getenv("ODDSPAPI_SSL_NON_VERIFIE", "").lower() not in
 if not VERIFIER_SSL_ODDSPAPI:
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -65,11 +66,6 @@ PROBA_MIN_FORTE = 60.0  # % — un marché n'est retenu que si le modèle lui do
 # L'IA stratège (agent_strategie.py) analyse, planifie et choisit les paris ; Python valide.
 # UTILISER_STRATEGE_IA=false revient à la seule composition automatique (Monte Carlo).
 UTILISER_STRATEGE_IA = os.getenv("UTILISER_STRATEGE_IA", "true").lower() not in ("0", "false", "non", "no")
-# Demande explicite du 27/09/2026 : DeepSeek pilote lui-même la composition via des outils
-# (agent_orchestrateur_ia.py) au lieu de recevoir tout le pool en un seul prompt figé. Repli
-# automatique sur le stratège classique (course Groq/Gemini/OpenRouter) si la boucle agentique
-# échoue ou n'est pas activée — jamais un remplacement sans filet.
-MODE_AGENTIC = os.getenv("MODE_AGENTIC", "true").lower() not in ("0", "false", "non", "no")
 # Un seul pari par match, jamais deux (demande explicite du 26/09/2026 : les paris d'un même
 # match sont trop corrélés — constaté le même jour : 8 jambes sur 3 matchs, coupon quasi
 # impossible à gagner). Le coupon combine donc des matchs DIFFÉRENTS, pas des paris multiples
@@ -108,6 +104,9 @@ SELECTION_INTERDITE = "12"  # double chance domicile-ou-extérieur, bannie par c
 OPENROUTER_MODELES_DEFAUT = ("nvidia/nemotron-3.5-lightning:free,qwen/qwen3.8-27b:free,"
                              "google/gemma-4-31b-it:free,nvidia/nemotron-3-super-120b-a12b:free,"
                              "google/gemma-4-26b-a4b-it:free,poolside/laguna-s-2.1:free,openrouter/free")
+# DeepSeek (API officielle) : deepseek-flash = DeepSeek-V4.1-Flash
+DEEPSEEK_MODELES = [m.strip() for m in (os.getenv("DEEPSEEK_MODELES") or "deepseek-flash").split(",")
+                    if m.strip()]
 IA_EN_PARALLELE = int(os.getenv("IA_EN_PARALLELE", "4"))
 OPENROUTER_MODELS = [m.strip() for m in (os.getenv("OPENROUTER_MODELES") or OPENROUTER_MODELES_DEFAUT).split(",")
                      if m.strip()]
@@ -119,7 +118,12 @@ GROQ_MODELES = [m.strip() for m in (os.getenv("GROQ_MODELES") or "openai/gpt-oss
                 if m.strip()]
 GEMINI_MODELES = [m.strip() for m in (os.getenv("GEMINI_MODELES") or "gemini-3.8-flash,gemini-3.7-flash").split(",")
                   if m.strip()]
-NOMS_FOURNISSEURS = {"openrouter": "OpenRouter", "groq": "Groq", "gemini": "Gemini"}
+NOMS_FOURNISSEURS = {
+    "deepseek": "DeepSeek",
+    "openrouter": "OpenRouter",
+    "groq": "Groq",
+    "gemini": "Gemini"
+}
 # DeepSeek (OpenRouter payant, solde réel testé et confirmé le 2026-09-26) : demandé en
 # PRIORITAIRE par l'utilisateur — raisonnement plus poussé qu'un modèle gratuit en "low
 # effort", donc interrogé SEUL en premier (pas dans la course parallèle) avant tout repli sur
@@ -944,23 +948,25 @@ def _cause(e):
 
 
 def _cles_fournisseurs():
-    return {"openrouter": OPENROUTER_API_KEY, "groq": GROQ_API_KEY, "gemini": GEMINI_API_KEY}
+    return {"deepseek": DEEPSEEK_API_KEY, "openrouter": OPENROUTER_API_KEY,
+            "groq": GROQ_API_KEY, "gemini": GEMINI_API_KEY}
 
 
 def candidats_ia():
     """(fournisseur, modèle) dans l'ordre des vagues : les meilleurs de chaque fournisseur
     d'abord (Groq, Gemini, OpenRouter mêlés), puis le reste. Sans clé ou clé refusée : écarté."""
     cles = _cles_fournisseurs()
-    listes = {"groq": GROQ_MODELES, "gemini": GEMINI_MODELES, "openrouter": OPENROUTER_MODELS}
+    listes = {"deepseek": DEEPSEEK_MODELES, "groq": GROQ_MODELES, "gemini": GEMINI_MODELES,
+              "openrouter": OPENROUTER_MODELS}
     actifs = {f: list(m) for f, m in listes.items() if cles.get(f) and f not in _fournisseurs_refuses}
     tete = []
-    for f in ("groq", "gemini"):
+    for f in ("deepseek", "groq", "gemini"):
         if actifs.get(f):
             tete.append((f, actifs[f].pop(0)))
     for _ in range(max(0, IA_EN_PARALLELE - len(tete))):
         if actifs.get("openrouter"):
             tete.append(("openrouter", actifs["openrouter"].pop(0)))
-    reste = [(f, m) for f in ("groq", "gemini", "openrouter") for m in actifs.get(f, [])]
+    reste = [(f, m) for f in ("deepseek", "groq", "gemini", "openrouter") for m in actifs.get(f, [])]
     return tete + reste
 
 
@@ -995,6 +1001,10 @@ def _requete_ia(poster, fournisseur, modele, prompt, max_tokens, json_attendu, d
         headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
         if modele.startswith("openai/gpt-oss"):
             payload["reasoning_effort"] = "low"  # réflexion courte (sinon réponse vide faute de place)
+    elif fournisseur == "deepseek":
+        url = "https://api.deepseek.com/chat/completions"
+        headers = {"Authorization": f"Bearer {DEEPSEEK_API_KEY}", "Content-Type": "application/json"}
+        payload["thinking"] = {"type": "disabled"}  # réflexion coupée : réponse directe
     else:
         url = "https://openrouter.ai/api/v1/chat/completions"
         headers = {
@@ -1118,45 +1128,6 @@ def appel_ia(prompt, max_tokens=2000, json_attendu=False, prioriser_deepseek=Tru
 
 
 appel_openrouter = appel_ia  # ancien nom, conservé pour compatibilité
-
-
-def appel_ia_avec_outils(messages, outils, max_tokens=4000):
-    """Variante de appel_ia pour la boucle AGENTIQUE (agent_orchestrateur_ia.py) : transmet un
-    historique de messages complet et des "tools" (function calling OpenAI/OpenRouter), et
-    renvoie le message ENTIER de l'assistant (avec tool_calls éventuels) plutôt que son seul
-    texte — nécessaire pour que Python exécute les outils demandés et boucle. DeepSeek
-    uniquement (le function calling n'est pas garanti fiable côté modèles gratuits) ; lève une
-    exception si indisponible, à charge de l'appelant de retomber sur l'ancien stratège
-    (course Groq/Gemini/OpenRouter, sans outils)."""
-    if not OPENROUTER_API_KEY:
-        raise ValueError("OPENROUTER_API_KEY manquante — function calling agentic indisponible")
-    if _deepseek_indisponible:
-        raise ValueError("DeepSeek indisponible pour ce run (voir erreur précédente)")
-    restant = secondes_ia_restantes()
-    if restant < 10:
-        raise ValueError(f"Budget IA de {BUDGET_IA_SECONDES:.0f} s épuisé")
-    delai = min(90, restant)
-    payload = {"model": DEEPSEEK_MODELE_PAYANT, "messages": messages, "tools": outils,
-               "tool_choice": "auto", "max_tokens": max_tokens, "reasoning": {"effort": "medium"}}
-    headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json",
-        "HTTP-Referer": "https://github.com/ahmedkaffi99-spec/analyse-football", "X-Title": "analyse-football",
-    }
-    futur = _executeur_ia.submit(requests.post, "https://openrouter.ai/api/v1/chat/completions",
-                                  headers=headers, json=payload, timeout=delai)
-    try:
-        r = futur.result(timeout=delai + 2)
-    except DelaiDepasse:
-        raise TimeoutError(f"DeepSeek (agentic) : pas de réponse en {delai:.0f} s")
-    if r.status_code == 401:
-        raise CleIARefusee(f"DeepSeek HTTP 401 : {r.text[:150]}")
-    try:
-        data = r.json()
-    except ValueError:
-        raise ValueError(f"DeepSeek HTTP {r.status_code} : réponse non JSON")
-    if r.status_code != 200 or "error" in data:
-        raise ValueError(f"DeepSeek HTTP {r.status_code} : {str(data.get('error'))[:200]}")
-    return data["choices"][0]["message"]
 
 
 def appel_llm(prompt, max_tokens=3000, json_attendu=False):
@@ -1719,22 +1690,11 @@ def generer_coupons(donnees):
     # L'IA STRATÈGE compose d'abord (analyse, stratégie, choix) ; Python a validé chaque coupon.
     strategie_ia = None
     if UTILISER_STRATEGE_IA and pool:
-        if MODE_AGENTIC and len(PROFILS_COUPON) == 1:
-            # DeepSeek pilote lui-même (outils) — un seul profil pris en charge pour l'instant,
-            # cohérent avec la config de production actuelle (un seul coupon "smart" par jour).
-            try:
-                import agent_orchestrateur_ia
-                resultat_agentique = agent_orchestrateur_ia.composer_coupon_agentique(pool, PROFILS_COUPON[0])
-                if resultat_agentique:
-                    strategie_ia = {"coupons": {PROFILS_COUPON[0]["cle"]: resultat_agentique}, "analyse_matchs": []}
-            except Exception as e:
-                print(f"   ⚠️ Agent orchestrateur indisponible ({_cause(e)[:150]}) — repli sur le stratège classique.")
-        if strategie_ia is None:
-            try:
-                import agent_strategie
-                strategie_ia = agent_strategie.composer_coupons(pool, PROFILS_COUPON)
-            except Exception as e:
-                print(f"   ⚠️ Stratège IA indisponible ({_cause(e)[:150]}) — composition automatique.")
+        try:
+            import agent_strategie
+            strategie_ia = agent_strategie.composer_coupons(pool, PROFILS_COUPON)
+        except Exception as e:
+            print(f"   ⚠️ Stratège IA indisponible ({_cause(e)[:150]}) — composition automatique.")
     coupons_ia = (strategie_ia or {}).get("coupons", {})
 
     for profil in PROFILS_COUPON:
