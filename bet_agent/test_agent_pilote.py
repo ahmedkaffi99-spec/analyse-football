@@ -46,7 +46,8 @@ class TestExecuterAgentPilote(unittest.TestCase):
             _msg_outil("rediger_coupon", {}),
             _msg_outil("envoyer_telegram", {}),
         ]
-        with mock.patch.object(cd, "collecter_donnees", return_value=DONNEES_FACTICES), \
+        with mock.patch.object(cd, "collecter_donnees", return_value=None), \
+                mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(DONNEES_FACTICES))), \
                 mock.patch.object(ae, "PROFILS_COUPON", [PROFIL]), \
                 mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=POOL_FACTICE), \
                 mock.patch.object(ae, "agent5_envoyer_coupons", return_value=True) as envoi, \
@@ -72,7 +73,8 @@ class TestExecuterAgentPilote(unittest.TestCase):
             _msg_outil("rediger_coupon", {}),
             _msg_outil("envoyer_telegram", {}),
         ]
-        with mock.patch.object(cd, "collecter_donnees", return_value=DONNEES_FACTICES), \
+        with mock.patch.object(cd, "collecter_donnees", return_value=None), \
+                mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(DONNEES_FACTICES))), \
                 mock.patch.object(ae, "PROFILS_COUPON", [PROFIL]), \
                 mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=POOL_FACTICE), \
                 mock.patch.object(ae, "agent5_envoyer_coupons") as envoi, \
@@ -100,7 +102,8 @@ class TestExecuterAgentPilote(unittest.TestCase):
             _msg_outil("voir_catalogue", {}),
             _msg_outil("abandonner", {"raison": "catalogue vide"}),
         ]
-        with mock.patch.object(cd, "collecter_donnees", return_value=DONNEES_FACTICES), \
+        with mock.patch.object(cd, "collecter_donnees", return_value=None), \
+                mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(DONNEES_FACTICES))), \
                 mock.patch.object(ae, "PROFILS_COUPON", [PROFIL]), \
                 mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value={}), \
                 mock.patch.object(pilote, "_appel_api", side_effect=[(r, 65536) for r in reponses]) as appel:

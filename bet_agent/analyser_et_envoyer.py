@@ -1491,8 +1491,18 @@ def verifier_fraicheur_matchs(matchs_exploitables):
     if not matchs_exploitables:
         return matchs_exploitables
 
-    date_from = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%dT00:00:00Z")
-    date_to = (datetime.now() + timedelta(days=2)).strftime("%Y-%m-%dT00:00:00Z")
+    # Respecte DATE_CIBLE_DEBUT/FIN comme la collecte initiale (collecte_donnees.py) : sinon
+    # cette revérification, bornée à aujourd'hui+2j, marque à tort "introuvable" tout match
+    # d'une période cible différente (constaté le 29/09/2026 : 15/15 matchs valides du
+    # 10-13 octobre rejetés d'un coup faute de figurer dans la fenêtre par défaut).
+    date_cible_debut = os.getenv("DATE_CIBLE_DEBUT")
+    date_cible_fin = os.getenv("DATE_CIBLE_FIN")
+    if date_cible_debut and date_cible_fin:
+        date_from = f"{date_cible_debut}T00:00:00Z"
+        date_to = f"{date_cible_fin}T00:00:00Z"
+    else:
+        date_from = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%dT00:00:00Z")
+        date_to = (datetime.now() + timedelta(days=2)).strftime("%Y-%m-%dT00:00:00Z")
     try:
         r = requests.get("https://api.oddspapi.io/v4/fixtures",
                           params={"apiKey": ODDSPAPI_KEY, "sportId": 10, "from": date_from, "to": date_to},
@@ -1927,8 +1937,14 @@ def estimer_heure_fin_ticket(selections_finales):
     cette heure, au lieu de vérifier toutes les 30 minutes toute la soirée pour rien.
     Renvoie None si l'heure de coup d'envoi est introuvable (verifier_resultats.py vérifiera
     alors dès son premier passage, comme filet de sécurité)."""
-    date_from = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%dT00:00:00Z")
-    date_to = (datetime.now() + timedelta(days=2)).strftime("%Y-%m-%dT00:00:00Z")
+    date_cible_debut = os.getenv("DATE_CIBLE_DEBUT")
+    date_cible_fin = os.getenv("DATE_CIBLE_FIN")
+    if date_cible_debut and date_cible_fin:
+        date_from = f"{date_cible_debut}T00:00:00Z"
+        date_to = f"{date_cible_fin}T00:00:00Z"
+    else:
+        date_from = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%dT00:00:00Z")
+        date_to = (datetime.now() + timedelta(days=2)).strftime("%Y-%m-%dT00:00:00Z")
     try:
         r = requests.get("https://api.oddspapi.io/v4/fixtures",
                           params={"apiKey": ODDSPAPI_KEY, "sportId": 10, "from": date_from, "to": date_to},
