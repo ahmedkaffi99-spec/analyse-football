@@ -130,6 +130,11 @@ NOMS_FOURNISSEURS = {
 # Groq/Gemini/OpenRouter gratuits. Coût négligeable (~0.03 $ le 1M tokens en entrée).
 DEEPSEEK_MODELE_PAYANT = os.getenv("OPENROUTER_MODELE_PAYANT", "deepseek/deepseek-v4.1-flash")
 _deepseek_indisponible = False
+# DeepSeek via la plateforme OFFICIELLE (DEEPSEEK_API_KEY, solde réel de l'utilisateur sur
+# platform.deepseek.com) — celle-ci, PAS la variante OpenRouter ci-dessus, est celle que
+# l'utilisateur veut voir interrogée sans limite de temps (29/09/2026). Indisponibilité suivie
+# séparément : un échec de l'une ne doit pas empêcher de retenter l'autre.
+_deepseek_officiel_indisponible = False
 # Demande explicite de l'utilisateur (29/09/2026) : ne jamais limiter le temps de réflexion de
 # DeepSeek — ni par un plafond fixe (l'ancien min(90, ...)), ni par le budget IA partagé avec
 # les modèles gratuits (BUDGET_IA_SECONDES/DELAI_REQUETE_IA_MAX, pensés pour un échec rapide sur
@@ -959,19 +964,21 @@ def _cles_fournisseurs():
 
 def candidats_ia():
     """(fournisseur, modèle) dans l'ordre des vagues : les meilleurs de chaque fournisseur
-    d'abord (Groq, Gemini, OpenRouter mêlés), puis le reste. Sans clé ou clé refusée : écarté."""
+    d'abord (Groq, Gemini, OpenRouter mêlés), puis le reste. Sans clé ou clé refusée : écarté.
+    DeepSeek (plateforme officielle) n'y figure JAMAIS : il est interrogé à part, en priorité,
+    avec son propre délai généreux (DEEPSEEK_DELAI_MAX) — le mélanger à cette course rapide
+    de 60 s le couperait avant qu'il ait fini de réfléchir (thinking activé, voir _requete_ia)."""
     cles = _cles_fournisseurs()
-    listes = {"deepseek": DEEPSEEK_MODELES, "groq": GROQ_MODELES, "gemini": GEMINI_MODELES,
-              "openrouter": OPENROUTER_MODELS}
+    listes = {"groq": GROQ_MODELES, "gemini": GEMINI_MODELES, "openrouter": OPENROUTER_MODELS}
     actifs = {f: list(m) for f, m in listes.items() if cles.get(f) and f not in _fournisseurs_refuses}
     tete = []
-    for f in ("deepseek", "groq", "gemini"):
+    for f in ("groq", "gemini"):
         if actifs.get(f):
             tete.append((f, actifs[f].pop(0)))
     for _ in range(max(0, IA_EN_PARALLELE - len(tete))):
         if actifs.get("openrouter"):
             tete.append(("openrouter", actifs["openrouter"].pop(0)))
-    reste = [(f, m) for f in ("deepseek", "groq", "gemini", "openrouter") for m in actifs.get(f, [])]
+    reste = [(f, m) for f in ("groq", "gemini", "openrouter") for m in actifs.get(f, [])]
     return tete + reste
 
 
@@ -1009,7 +1016,12 @@ def _requete_ia(poster, fournisseur, modele, prompt, max_tokens, json_attendu, d
     elif fournisseur == "deepseek":
         url = "https://api.deepseek.com/chat/completions"
         headers = {"Authorization": f"Bearer {DEEPSEEK_API_KEY}", "Content-Type": "application/json"}
-        payload["thinking"] = {"type": "disabled"}  # réflexion coupée : réponse directe
+        # Réflexion complète activée (29/09/2026, demande explicite) : c'est la plateforme
+        # DeepSeek officielle (solde réel de l'utilisateur), interrogée en PRIORITÉ avec son
+        # propre délai généreux (DEEPSEEK_DELAI_MAX) — jamais dans la course rapide 60 s
+        # partagée avec les modèles gratuits (voir appel_ia). "disabled" donnait une réponse
+        # directe rapide mais sans le raisonnement plus poussé demandé pour ce fournisseur.
+        payload["thinking"] = {"type": "enabled"}
     else:
         url = "https://openrouter.ai/api/v1/chat/completions"
         headers = {
@@ -1051,10 +1063,36 @@ def appel_ia(prompt, max_tokens=2000, json_attendu=False, prioriser_deepseek=Tru
     PETITES tâches (ex: second avis "agent risque" de l'orchestrateur agentique) où Groq/Gemini/
     OpenRouter gratuits suffisent largement et répondent en une fraction de seconde ; réserve le
     solde payant de DeepSeek à la décision principale (demande explicite du 27/09/2026)."""
-    global _deepseek_indisponible
+    global _deepseek_indisponible, _deepseek_officiel_indisponible
     if not any(_cles_fournisseurs().values()):
         raise ValueError("Aucune clé IA (OPENROUTER_API_KEY, GROQ_API_KEY, GEMINI_API_KEY)")
     derniere_erreur = None
+
+    if (prioriser_deepseek and DEEPSEEK_API_KEY and not _deepseek_officiel_indisponible
+            and "deepseek" not in _fournisseurs_refuses):
+        # Plateforme DeepSeek officielle en premier (solde réel de l'utilisateur) : aucun
+        # plafond dérivé du budget IA partagé, son propre délai généreux (DEEPSEEK_DELAI_MAX),
+        # thinking activé (voir _requete_ia) pour un vrai raisonnement, pas une réponse directe.
+        delai = DEEPSEEK_DELAI_MAX
+        futur_deepseek_officiel = _executeur_ia.submit(_requete_ia, requests.post, "deepseek", DEEPSEEK_MODELES[0],
+                                                        prompt, max_tokens + 3000, json_attendu, delai)
+        try:
+            content = futur_deepseek_officiel.result(timeout=delai + 2)
+            if not json_attendu or _json_present(content):
+                print(f"   ✓ Réponse via DeepSeek officiel (prioritaire) {DEEPSEEK_MODELES[0]}")
+                return content
+            derniere_erreur = ValueError("DeepSeek officiel : réponse sans JSON lisible")
+            print("   ⚠️ DeepSeek officiel (prioritaire) : réponse sans JSON lisible — repli sur OpenRouter DeepSeek.")
+        except CleIARefusee as e:
+            derniere_erreur = e
+            print(f"   ⚠️ DeepSeek officiel indisponible pour le reste du run ({_cause(e)[:150]}) — repli sur OpenRouter DeepSeek.")
+            _deepseek_officiel_indisponible = True
+        except DelaiDepasse:
+            derniere_erreur = TimeoutError(f"DeepSeek officiel : pas de réponse complète en {delai:.0f} s")
+            print(f"   ⚠️ DeepSeek officiel (prioritaire) : sans réponse en {delai:.0f} s — repli sur OpenRouter DeepSeek.")
+        except Exception as e:
+            derniere_erreur = e
+            print(f"   ⚠️ DeepSeek officiel (prioritaire) indisponible cette fois ({_cause(e)[:150]}) — repli sur OpenRouter DeepSeek.")
 
     if prioriser_deepseek and OPENROUTER_API_KEY and not _deepseek_indisponible and "openrouter" not in _fournisseurs_refuses:
         # Aucun plafond dérivé du budget IA partagé (secondes_ia_restantes) : ce budget est là
