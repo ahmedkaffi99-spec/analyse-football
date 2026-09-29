@@ -18,7 +18,7 @@ from collecte_donnees import (SESSION, ODDSPAPI_KEY, VERIFIER_SSL_ODDSPAPI,
                               FILTRE_LIGUES_UNIQUES)
 
 
-def recuperer_fixtures(date_from, date_to):
+def _recuperer_tranche(date_from, date_to):
     url = "https://api.oddspapi.io/v4/fixtures"
     params = {"apiKey": ODDSPAPI_KEY, "sportId": 10,
               "from": date_from.strftime("%Y-%m-%dT00:00:00Z"),
@@ -29,6 +29,18 @@ def recuperer_fixtures(date_from, date_to):
         sys.exit(1)
     fixtures = r.json()
     return fixtures if isinstance(fixtures, list) else []
+
+
+def recuperer_fixtures(date_from, date_to):
+    # OddsPapi limite 'from'/'to' à 10 jours d'écart max quand seul sportId est fourni —
+    # on découpe donc la période en tranches de 9 jours (marge de sécurité) et on fusionne.
+    fixtures = []
+    curseur = date_from
+    while curseur < date_to:
+        fin_tranche = min(curseur + timedelta(days=9), date_to)
+        fixtures.extend(_recuperer_tranche(curseur, fin_tranche))
+        curseur = fin_tranche
+    return fixtures
 
 
 def correspond_a_une_ligue_majeure(fx):
@@ -52,6 +64,14 @@ def main():
           f"(5 grands championnats)...\n")
 
     fixtures = recuperer_fixtures(aujourdhui, fin)
+    vus, dedupliquees = set(), []
+    for fx in fixtures:
+        cle = fx.get("id") or (fx.get("participant1Name"), fx.get("participant2Name"), fx.get("startTime"))
+        if cle in vus:
+            continue
+        vus.add(cle)
+        dedupliquees.append(fx)
+    fixtures = dedupliquees
     print(f"→ {len(fixtures)} fixtures OddsPapi au total sur la période\n")
 
     par_date = defaultdict(list)
