@@ -1,0 +1,58 @@
+# Agent pilote DeepSeek autonome : contrairement à pipeline-quotidien.yml (Python collecte
+# d'abord, l'IA choisit ensuite), ici DeepSeek décide LUI-MÊME quand collecter, quand chercher
+# plus d'info, quand proposer/rédiger/envoyer — via des outils qu'il appelle à volonté
+# (bet_agent/agent_pilote.py). Demande explicite de l'utilisateur (29/09/2026) : un pipeline
+# réellement autonome, pas seulement une IA qui choisit parmi des données déjà collectées.
+name: Agent pilote DeepSeek
+
+on:
+  workflow_dispatch:
+    inputs:
+      telegram:
+        description: "Envoyer le coupon sur Telegram"
+        type: boolean
+        default: false
+      date_debut:
+        description: "Date cible de début (AAAA-MM-JJ) — vide = aujourd'hui"
+        type: string
+        default: ""
+      date_fin:
+        description: "Date cible de fin (AAAA-MM-JJ) — vide = aujourd'hui+2j"
+        type: string
+        default: ""
+
+concurrency:
+  group: agent-pilote-deepseek
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      PYTHONUNBUFFERED: "1"
+      ODDSPAPI_KEY: ${{ secrets.ODDSPAPI_KEY }}
+      API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+      SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
+      FOOTBALL_DATA_API_KEY: ${{ secrets.FOOTBALL_DATA_API_KEY }}
+      THESPORTSDB_API_KEY: ${{ secrets.THESPORTSDB_API_KEY }}
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+      DEEPSEEK_MODELES: ${{ vars.DEEPSEEK_MODELES }}
+      TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      TELEGRAM_MANUEL: ${{ inputs.telegram }}
+      DATE_CIBLE_DEBUT: ${{ inputs.date_debut }}
+      DATE_CIBLE_FIN: ${{ inputs.date_fin }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: bet_agent/requirements.txt
+      - run: pip install -r bet_agent/requirements.txt
+      - working-directory: bet_agent
+        run: python agent_pilote.py
