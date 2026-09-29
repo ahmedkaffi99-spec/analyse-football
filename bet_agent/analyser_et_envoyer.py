@@ -130,6 +130,11 @@ NOMS_FOURNISSEURS = {
 # Groq/Gemini/OpenRouter gratuits. Coût négligeable (~0.03 $ le 1M tokens en entrée).
 DEEPSEEK_MODELE_PAYANT = os.getenv("OPENROUTER_MODELE_PAYANT", "deepseek/deepseek-v4.1-flash")
 _deepseek_indisponible = False
+# Demande explicite de l'utilisateur (29/09/2026) : ne jamais limiter le temps de réflexion de
+# DeepSeek — ni par un plafond fixe (l'ancien min(90, ...)), ni par le budget IA partagé avec
+# les modèles gratuits (BUDGET_IA_SECONDES/DELAI_REQUETE_IA_MAX, pensés pour un échec rapide sur
+# des modèles gratuits souvent saturés). DeepSeek dispose de son propre délai, généreux.
+DEEPSEEK_DELAI_MAX = float(os.getenv("DEEPSEEK_DELAI_MAX", "900"))
 # Fournisseur dont la clé est refusée : écarté pour le reste du run (run 5 : des dizaines
 # d'appels « User not found » avaient coûté ~7 minutes). Plus aucun fournisseur → plus d'IA.
 _fournisseurs_refuses = {}
@@ -1052,34 +1057,31 @@ def appel_ia(prompt, max_tokens=2000, json_attendu=False, prioriser_deepseek=Tru
     derniere_erreur = None
 
     if prioriser_deepseek and OPENROUTER_API_KEY and not _deepseek_indisponible and "openrouter" not in _fournisseurs_refuses:
-        restant = secondes_ia_restantes()
-        if restant >= 10:
-            # Run 24 (2026-09-26) : appelé en direct (sans le garde-fou horloge murale du
-            # ThreadPoolExecutor utilisé plus bas), une réponse lente a bloqué ~135 s au lieu de
-            # s'arrêter à 90 s, épuisant le budget IA du run à elle seule, deux fois de suite —
-            # DeepSeek passe donc par le même exécuteur + timeout que la course en vagues.
-            delai = min(90, restant)
-            # Marge supplémentaire pour le raisonnement ("medium effort") en plus de la réponse
-            # elle-même — un modèle de raisonnement compte sa réflexion dans max_tokens.
-            futur_deepseek = _executeur_ia.submit(_requete_ia, requests.post, "openrouter", DEEPSEEK_MODELE_PAYANT,
-                                                   prompt, max_tokens + 3000, json_attendu, delai)
-            try:
-                content = futur_deepseek.result(timeout=delai + 2)
-                if not json_attendu or _json_present(content):
-                    print(f"   ✓ Réponse via DeepSeek (prioritaire) {DEEPSEEK_MODELE_PAYANT}")
-                    return content
-                derniere_erreur = ValueError("DeepSeek : réponse sans JSON lisible")
-                print("   ⚠️ DeepSeek (prioritaire) : réponse sans JSON lisible — repli sur la course habituelle.")
-            except CleIARefusee as e:
-                derniere_erreur = e
-                print(f"   ⚠️ DeepSeek indisponible pour le reste du run ({_cause(e)[:150]}) — repli sur la course habituelle.")
-                _deepseek_indisponible = True
-            except DelaiDepasse:
-                derniere_erreur = TimeoutError(f"DeepSeek : pas de réponse complète en {delai:.0f} s")
-                print(f"   ⚠️ DeepSeek (prioritaire) : sans réponse en {delai:.0f} s — repli sur la course habituelle.")
-            except Exception as e:
-                derniere_erreur = e
-                print(f"   ⚠️ DeepSeek (prioritaire) indisponible cette fois ({_cause(e)[:150]}) — repli sur la course habituelle.")
+        # Aucun plafond dérivé du budget IA partagé (secondes_ia_restantes) : ce budget est là
+        # pour couper court sur des modèles gratuits lents/saturés, pas pour brider DeepSeek.
+        # DeepSeek a son propre délai généreux (DEEPSEEK_DELAI_MAX), toujours utilisé en entier.
+        delai = DEEPSEEK_DELAI_MAX
+        # Marge supplémentaire pour le raisonnement ("medium effort") en plus de la réponse
+        # elle-même — un modèle de raisonnement compte sa réflexion dans max_tokens.
+        futur_deepseek = _executeur_ia.submit(_requete_ia, requests.post, "openrouter", DEEPSEEK_MODELE_PAYANT,
+                                               prompt, max_tokens + 3000, json_attendu, delai)
+        try:
+            content = futur_deepseek.result(timeout=delai + 2)
+            if not json_attendu or _json_present(content):
+                print(f"   ✓ Réponse via DeepSeek (prioritaire) {DEEPSEEK_MODELE_PAYANT}")
+                return content
+            derniere_erreur = ValueError("DeepSeek : réponse sans JSON lisible")
+            print("   ⚠️ DeepSeek (prioritaire) : réponse sans JSON lisible — repli sur la course habituelle.")
+        except CleIARefusee as e:
+            derniere_erreur = e
+            print(f"   ⚠️ DeepSeek indisponible pour le reste du run ({_cause(e)[:150]}) — repli sur la course habituelle.")
+            _deepseek_indisponible = True
+        except DelaiDepasse:
+            derniere_erreur = TimeoutError(f"DeepSeek : pas de réponse complète en {delai:.0f} s")
+            print(f"   ⚠️ DeepSeek (prioritaire) : sans réponse en {delai:.0f} s — repli sur la course habituelle.")
+        except Exception as e:
+            derniere_erreur = e
+            print(f"   ⚠️ DeepSeek (prioritaire) indisponible cette fois ({_cause(e)[:150]}) — repli sur la course habituelle.")
 
     candidats = candidats_ia()
     taille = max(1, IA_EN_PARALLELE)
