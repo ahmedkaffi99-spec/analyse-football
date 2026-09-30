@@ -105,7 +105,7 @@ def construire_prompt(pool, profils, catalogue_texte):
         f"suivant. {regle_distinction}Si aucun ensemble de paris n'est défendable, "
         "abstiens-toi : \"jambes\": [] et explique pourquoi dans \"strategie\".\n"
         "5. DIVERSIFIE les marchés — à deux niveaux : (a) ENTRE catégories : quand un match propose PLUSIEURS "
-        "catégories dans le catalogue (Total, BTTS, Handicap Asiatique, Win to Nil, Double Chance, Corners...), ne "
+        "catégories dans le catalogue (Total, BTTS, Handicap Européen, Win to Nil, Double Chance, Corners...), ne "
         "prends pas systématiquement la même catégorie pour tous les matchs — UNE catégorie ne devrait pas "
         "dépasser 40% des jambes du coupon si d'autres catégories existent pour ces matchs (ex: pas 3 \"Double "
         "Chance\" sur un coupon de 5). (b) DANS une même catégorie répétée "

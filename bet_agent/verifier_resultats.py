@@ -234,7 +234,9 @@ def grader_pick(pick, home_g, away_g):
         return juger_double_chance(selection, home_g, away_g)
     if categorie == "Draw No Bet":
         return juger_draw_no_bet(selection, home_g, away_g)
-    if categorie == "Handicap Asiatique":
+    if categorie in ("Handicap Européen", "Handicap Asiatique"):
+        # "Handicap Asiatique" : compatibilité avec les tickets persistés avant le renommage
+        # du 01/10/2026 (voir analyser_et_envoyer.expliquer_marche) — même logique de jugement.
         return juger_handicap(handicap, selection, home_g, away_g) if handicap is not None else None
     if categorie == "Pair/Impair":
         return juger_pair_impair(selection, home_g, away_g)

@@ -640,6 +640,55 @@ class TestCompleterAvecMarchesBruts(unittest.TestCase):
         self.assertIn("Correct Score", marches_du_pool)
 
 
+class TestLibelleHandicapEuropeenVsAsiatique(unittest.TestCase):
+    """Signalé par l'utilisateur le 01/10/2026 (captures 1xBet) : l'appli sépare deux onglets
+    réels — « Handicap » (lignes entières/demi : 0, -1, -1.5...) et « Asian Handicap » (lignes
+    de quart : .25/.75 uniquement) — mais OddsPapi ne renvoie qu'un seul marché "Asian
+    Handicap" pour les deux. Vérifié en base (Israël-Kosovo) : handicap=0 donne 2.324/1.665,
+    identique aux cotes affichées sous l'onglet « Handicap » de 1xBet. Le ticket ne doit donc
+    plus afficher "Asian Handicap" pour les lignes entières/demi (seules modélisées ici, les
+    lignes de quart étant exclues de _evaluer_marches_brut) — seulement pour les vraies lignes
+    de quart (gérées uniquement en marché brut, jamais modélisées)."""
+
+    def _marche_asian_handicap(self, handicap, cote_home=1.9, cote_away=1.9):
+        return {"marche": "Asian Handicap", "handicap": handicap, "periode": "fulltime",
+                "selections": [{"selection": "1", "cote": cote_home}, {"selection": "2", "cote": cote_away}]}
+
+    def test_ligne_entiere_modelisee_affichee_handicap_europeen(self):
+        marches = [self._marche_asian_handicap(0, cote_home=2.324, cote_away=1.665)]
+        candidats = ae.evaluer_marches_toutes(marches, 1.6, 1.1)
+        self.assertEqual(len(candidats), 2)
+        for c in candidats:
+            self.assertEqual(c["categorie"], "Handicap Européen")
+            self.assertTrue(c["marche"].startswith("Handicap Européen ("))
+            self.assertEqual(c["marche_oddspapi"], "Asian Handicap (0)")
+
+    def test_ligne_demi_modelisee_affichee_handicap_europeen(self):
+        marches = [self._marche_asian_handicap(-1.5, cote_home=1.16, cote_away=4.33)]
+        candidats = ae.evaluer_marches_toutes(marches, 1.6, 1.1)
+        self.assertTrue(candidats)
+        self.assertTrue(all(c["categorie"] == "Handicap Européen" for c in candidats))
+
+    def test_ligne_quart_jamais_modelisee_reste_en_brut_sous_asian_handicap(self):
+        marches = [self._marche_asian_handicap(-0.75, cote_home=3.9, cote_away=1.222)]
+        modelises = ae.evaluer_marches_toutes(marches, 1.6, 1.1)
+        self.assertEqual(modelises, [])  # ligne de quart : jamais modélisée
+        complets = ae.completer_avec_marches_bruts(modelises, marches)
+        self.assertEqual(len(complets), 2)
+        for c in complets:
+            self.assertEqual(c["categorie"], "Asian Handicap")
+            self.assertTrue(c["marche"].startswith("Asian Handicap ("))
+
+    def test_pas_de_doublon_entre_ligne_entiere_modelisee_et_pool_brut(self):
+        # Le marché brut OddsPapi (même ligne 0) ne doit pas réapparaître une 2e fois sous son
+        # nom brut "Asian Handicap (0)" alors qu'il est déjà modélisé sous "Handicap Européen".
+        marches = [self._marche_asian_handicap(0, cote_home=2.324, cote_away=1.665)]
+        modelises = ae.evaluer_marches_toutes(marches, 1.6, 1.1)
+        self.assertEqual(len(modelises), 2)
+        complets = ae.completer_avec_marches_bruts(modelises, marches)
+        self.assertEqual(len(complets), 2)  # rien ajouté en double
+
+
 class TestContexteWeb(unittest.TestCase):
     def test_contexte_web_extrait_du_match(self):
         stats = {"matchs_joues": 20, "buts_marques_domicile": 1.3, "buts_encaisses_domicile": 1.3,

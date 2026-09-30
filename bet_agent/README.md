@@ -108,8 +108,8 @@ Le LLM **n'invente jamais un chiffre** : cotes, probabilités et edges sont calc
   1. **stats API-Football des 10 derniers matchs joués** (`calculer_xg_depuis_stats_detaillees`, nécessite `STATS_DETAILLEES_ACTIVE=true`) ;
   2. stats API-Football de saison (`/teams/statistics`) ;
   3. estimation depuis les cotes (ligne Total et Handicap les plus équilibrées).
-- Probabilités de **Poisson** sur : Total (match, équipe 1, équipe 2), BTTS, Double Chance, Draw No Bet, Handicap asiatique, Pair/Impair, Clean Sheet, Win to Nil, corners/cartons.
-- Lignes quart (.25/.75) exclues des paris proposés.
+- Probabilités de **Poisson** sur : Total (match, équipe 1, équipe 2), BTTS, Double Chance, Draw No Bet, Handicap, Pair/Impair, Clean Sheet, Win to Nil, corners/cartons.
+- Lignes quart (.25/.75) jamais modélisées par Poisson (seulement en marché brut, sans calcul) : le marché OddsPapi "Asian Handicap" mélange en réalité deux onglets distincts sur 1xBet — lignes entières/demi (« Handicap », modélisées ici) et lignes de quart (« Asian Handicap », uniquement en brut) — constaté le 01/10/2026, corrigé côté affichage (`marche_oddspapi` garde le nom brut pour la déduplication, `marche` affiche le bon onglet).
 - **Edge** = (proba modèle − proba implicite de la cote) / proba implicite.
 - Sélection **« 12 » interdite** partout.
 
