@@ -248,7 +248,12 @@ def valider(proposition, catalogue, profils, signatures_existantes=()):
                 erreurs.append(f"{nombre} paris sur {match} (maximum {ae.MAX_JAMBES_PAR_MATCH})")
 
         conservateurs = [s for s in selections if _pari_conservateur(s["pick"])]
-        seuil = math.ceil(len(selections) * PART_MAX_PARIS_CONSERVATEURS) if selections else 0
+        # floor, pas ceil : avec ceil, un coupon de 5 jambes autorisait 4 Under/No (80%) sans
+        # jamais déclencher la règle des 70% (ceil(5*0.7)=4, et 4 n'est jamais > 4) — constaté
+        # en pratique le 30/09/2026 (coupon "IA choisit le nombre de matchs" à 5 jambes, 4 en
+        # Under/No malgré des alternatives disponibles, envoyé sans erreur). floor(5*0.7)=3
+        # applique réellement le plafond de 70% au lieu de l'arrondir vers le haut.
+        seuil = math.floor(len(selections) * PART_MAX_PARIS_CONSERVATEURS) if selections else 0
         if len(conservateurs) > seuil:
             matchs_a_varier = sorted({s["match"] for s in conservateurs} & _matchs_avec_alternative(catalogue))
             if matchs_a_varier:

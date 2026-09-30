@@ -198,6 +198,31 @@ class TestDiversiteDesMarches(unittest.TestCase):
         self.assertEqual(problemes, [])
         self.assertIn("coupon", acceptes)
 
+    def test_4_sur_5_conservateurs_refuse_regression_30_09(self):
+        # Reproduit exactement le coupon réel envoyé le 30/09/2026 (5 jambes, catégories
+        # TOUTES différentes — Total, Handicap Asiatique, Cartons, BTTS, Total Équipe 2 — mais
+        # 4/5 en Under/No quand même) : avec l'ancien seuil (math.ceil(5*0.7)=4), 4 n'est
+        # jamais > 4, donc AUCUNE règle ne s'appliquait (la règle par-catégorie ne voit rien,
+        # chaque catégorie n'apparaît qu'une fois ; la règle Under/No globale passait pile au
+        # plafond). Avec floor(5*0.7)=3, 4 > 3 doit refuser.
+        pool = {
+            "A vs B": [_sel("A vs B", "Total", "Under", 2.3), _sel("A vs B", "Total", "Over", 1.6)],
+            "C vs D": [_sel("C vs D", "Handicap Asiatique", "2", 2.3)],
+            "E vs F": [_sel("E vs F", "Total Cartons", "Under", 1.46), _sel("E vs F", "Total Cartons", "Over", 2.6)],
+            "G vs H": [_sel("G vs H", "BTTS", "No", 1.42), _sel("G vs H", "BTTS", "Yes", 2.7)],
+            "I vs J": [_sel("I vs J", "Total Équipe 2", "Under", 2.2), _sel("I vs J", "Total Équipe 2", "Over", 1.6)],
+        }
+        catalogue, _ = st.construire_catalogue(pool)
+        profil = {"cle": "coupon", "nom": "x", "cote_min": 0.0, "cote_max": 1000.0, "nb_jambes": 5, "nb_jambes_min": 1}
+        # A/Under, C/2 (handicap, pas conservateur), E/Under, G/No, I/Under = 4 conservateurs/5
+        proposition = {"coupons": [{"profil": "coupon", "strategie": "s",
+                                    "jambes": [{"id": "P1"}, {"id": "P3"}, {"id": "P4"}, {"id": "P6"}, {"id": "P8"}]}]}
+
+        acceptes, problemes, _ = st.valider(proposition, catalogue, [profil])
+
+        self.assertEqual(acceptes, {})
+        self.assertTrue(any("Under/No" in p for p in problemes), problemes)
+
 
 def _sel_ligne(match, categorie, selection, cote, handicap):
     """Comme _sel, mais avec une ligne (handicap) explicite — pour tester la diversité
