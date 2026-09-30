@@ -540,37 +540,37 @@ def charger_teams_data_understat(ligue_understat):
     return teams_data
 
 
-def trouver_stats_understat(nom_equipe, nom_ligue_detectee):
-    """xG/xGA moyens par match sur la saison en cours. Ne s'applique QUE si la
-    ligue détectée (API-Football/OddsPapi) correspond à l'un des 5 grands
-    championnats couverts par Understat — retourne None sinon, comme un repli
-    normal (voir stats_historiques dans collecter_donnees)."""
+def trouver_stats_understat(nom_equipe, nom_ligue_detectee=None):
+    """xG/xGA moyens par match sur la saison en cours. Cherche l'équipe dans les 5 grands
+    championnats domestiques couverts par Understat (Ligue 1, Premier League, Serie A,
+    Bundesliga, La Liga), quelle que soit la compétition du MATCH lui-même — demande
+    explicite de l'utilisateur (30/09/2026) : un match de Ligue des Champions (ou toute
+    autre coupe) oppose souvent deux équipes qui jouent chacune dans l'un de ces 5
+    championnats le week-end ; les exclure faute de correspondance sur le nom de la
+    compétition privait Understat de données pourtant disponibles (ex: Arsenal, Inter
+    Milan, Villarreal — tous des grands clubs des 5 ligues couvertes — en Ligue des
+    Champions). nom_ligue_detectee n'est plus utilisé (gardé pour compatibilité d'appel),
+    la recherche se fait désormais dans les 5 ligues à chaque fois (au pire 5 requêtes
+    Understat par run, déjà mises en cache — coût déjà annoncé comme le pire cas)."""
     from rapidfuzz import fuzz
 
-    nom_ligue_normalise = (nom_ligue_detectee or "").lower()
-    ligue_understat = next(
-        (code for mot_cle, code in UNDERSTAT_LIGUE_PAR_NOM.items() if mot_cle in nom_ligue_normalise),
-        None,
-    )
-    if not ligue_understat:
-        return None
-
-    teams_data = charger_teams_data_understat(ligue_understat)
-    if not teams_data:
-        return None
-
     cible = unidecode(nom_equipe).lower()
-    meilleur_score, meilleure_equipe = 0, None
-    for equipe in teams_data.values():
-        titre = equipe.get("title", "")
-        score = fuzz.token_set_ratio(cible, unidecode(titre).lower())
-        if score > meilleur_score:
-            meilleur_score, meilleure_equipe = score, equipe
+    meilleur_score, meilleure_equipe, ligue_trouvee = 0, None, None
+    for mot_cle, ligue_understat in UNDERSTAT_LIGUE_PAR_NOM.items():
+        teams_data = charger_teams_data_understat(ligue_understat)
+        if not teams_data:
+            continue
+        for equipe in teams_data.values():
+            titre = equipe.get("title", "")
+            score = fuzz.token_set_ratio(cible, unidecode(titre).lower())
+            if score > meilleur_score:
+                meilleur_score, meilleure_equipe, ligue_trouvee = score, equipe, ligue_understat
 
     if meilleur_score < SEUIL_MATCH_ACCEPTABLE or not meilleure_equipe:
-        print(f"      ⚠️ {nom_equipe} introuvable sur Understat ({ligue_understat}, "
+        print(f"      ⚠️ {nom_equipe} introuvable sur Understat (5 grands championnats, "
               f"meilleur score {meilleur_score:.0f}%)")
         return None
+    ligue_understat = ligue_trouvee
 
     historique = meilleure_equipe.get("history", [])
     if not historique:
@@ -1259,16 +1259,15 @@ def collecter_donnees():
             stats_away = stats_equipe_en_cache(("thesportsdb", nom_away_stats),
                                                lambda: trouver_stats_thesportsdb(nom_away_stats))
 
-        # --- Understat : xG/xGA complémentaires, uniquement pour les 5 grands
-        # championnats (voir UNDERSTAT_LIGUE_PAR_NOM) — n'écrase jamais stats_home/
-        # stats_away, s'ajoute à côté dans la sortie JSON.
-        nom_ligue_pour_understat = donnees_af["league_name"] if donnees_af else None
-        understat_home, understat_away = None, None
-        if nom_ligue_pour_understat:
-            print(f"      → Recherche xG/xGA {nom_home_stats} (Understat)...")
-            understat_home = trouver_stats_understat(nom_home_stats, nom_ligue_pour_understat)
-            print(f"      → Recherche xG/xGA {nom_away_stats} (Understat)...")
-            understat_away = trouver_stats_understat(nom_away_stats, nom_ligue_pour_understat)
+        # --- Understat : xG/xGA complémentaires, cherché dans les 5 grands championnats
+        # domestiques quel que soit la compétition du match (voir trouver_stats_understat) —
+        # ne dépend plus d'API-Football (donnees_af), dont le quota/compte peut être
+        # indisponible sans rapport avec la couverture réelle d'Understat. N'écrase jamais
+        # stats_home/stats_away, s'ajoute à côté dans la sortie JSON.
+        print(f"      → Recherche xG/xGA {nom_home_stats} (Understat)...")
+        understat_home = trouver_stats_understat(nom_home_stats)
+        print(f"      → Recherche xG/xGA {nom_away_stats} (Understat)...")
+        understat_away = trouver_stats_understat(nom_away_stats)
 
         # --- ClubElo : rating de force, toutes ligues (1 seule requête pour tout
         # le run, déjà en cache après le premier match traité).
@@ -1278,13 +1277,17 @@ def collecter_donnees():
         elo_away = trouver_elo(nom_away_stats)
 
         # --- football-data.org : classement officiel, 5 grands championnats
-        # uniquement, silencieusement désactivé si FOOTBALL_DATA_API_KEY absent.
+        # uniquement, silencieusement désactivé si FOOTBALL_DATA_API_KEY absent. Celui-ci a
+        # réellement besoin de la ligue du MATCH (contrairement à Understat ci-dessus) : le
+        # classement n'existe que dans la compétition du jour, pas dans la ligue domestique
+        # d'une équipe si le match lui-même est une coupe (ex: Ligue des Champions).
+        nom_ligue_du_match = donnees_af["league_name"] if donnees_af else None
         classement_home, classement_away = None, None
-        if nom_ligue_pour_understat:
+        if nom_ligue_du_match:
             print(f"      → Recherche classement {nom_home_stats} (football-data.org)...")
-            classement_home = trouver_classement(nom_home_stats, nom_ligue_pour_understat)
+            classement_home = trouver_classement(nom_home_stats, nom_ligue_du_match)
             print(f"      → Recherche classement {nom_away_stats} (football-data.org)...")
-            classement_away = trouver_classement(nom_away_stats, nom_ligue_pour_understat)
+            classement_away = trouver_classement(nom_away_stats, nom_ligue_du_match)
 
         resultats.append({
             "match_demande": {"home": home_demande, "away": away_demande},
