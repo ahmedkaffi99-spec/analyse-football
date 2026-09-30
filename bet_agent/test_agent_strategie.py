@@ -199,6 +199,101 @@ class TestDiversiteDesMarches(unittest.TestCase):
         self.assertIn("coupon", acceptes)
 
 
+def _sel_ligne(match, categorie, selection, cote, handicap):
+    """Comme _sel, mais avec une ligne (handicap) explicite — pour tester la diversité
+    direction+ligne au sein d'une même catégorie (ex: Corners Under 9.5 vs Over 8.5)."""
+    c = _sel(match, categorie, selection, cote)
+    c["pick"]["handicap"] = handicap
+    c["pick"]["marche"] = f"{categorie} ({handicap})"
+    return c
+
+
+class TestDiversiteMemeCategorie(unittest.TestCase):
+    """Demande explicite du 30/09/2026 : « oblige l'IA à choisir la diversité sur les marchés,
+    même marché — si elle choisit un pari corner Under, un autre Over, et un autre but 3.5, un
+    autre 2.5 » — généralise TestDiversiteDesMarches (Under/No) à N'IMPORTE QUELLE catégorie
+    répétée, en exigeant soit une direction différente, soit une ligne différente."""
+
+    def test_meme_categorie_meme_ligne_refuse_si_alternative_existe(self):
+        pool = {
+            "A vs B": [_sel_ligne("A vs B", "Total Corners", "Under", 1.5, 9.5)],
+            "C vs D": [_sel_ligne("C vs D", "Total Corners", "Under", 1.5, 9.5),
+                       _sel_ligne("C vs D", "Total Corners", "Over", 1.5, 9.5)],  # alternative dispo
+        }
+        catalogue, _ = st.construire_catalogue(pool)
+        profil = {"cle": "coupon", "nom": "x", "cote_min": 0.0, "cote_max": 1000.0, "nb_jambes": 2, "nb_jambes_min": 2}
+        proposition = {"coupons": [{"profil": "coupon", "strategie": "s",
+                                    "jambes": [{"id": "P1"}, {"id": "P2"}]}]}
+
+        acceptes, problemes, _ = st.valider(proposition, catalogue, [profil])
+
+        self.assertEqual(acceptes, {})
+        self.assertTrue(any("Total Corners" in p and "C vs D" in p for p in problemes), problemes)
+
+    def test_direction_differente_suffit_a_varier(self):
+        pool = {
+            "A vs B": [_sel_ligne("A vs B", "Total Corners", "Under", 1.5, 9.5)],
+            "C vs D": [_sel_ligne("C vs D", "Total Corners", "Over", 1.5, 9.5)],
+        }
+        catalogue, _ = st.construire_catalogue(pool)
+        profil = {"cle": "coupon", "nom": "x", "cote_min": 0.0, "cote_max": 1000.0, "nb_jambes": 2, "nb_jambes_min": 2}
+        proposition = {"coupons": [{"profil": "coupon", "strategie": "s",
+                                    "jambes": [{"id": "P1"}, {"id": "P2"}]}]}
+
+        acceptes, problemes, _ = st.valider(proposition, catalogue, [profil])
+
+        self.assertEqual(problemes, [])
+        self.assertIn("coupon", acceptes)
+
+    def test_ligne_differente_suffit_a_varier(self):
+        pool = {
+            "A vs B": [_sel_ligne("A vs B", "Total", "Over", 1.5, 2.5)],
+            "C vs D": [_sel_ligne("C vs D", "Total", "Over", 1.5, 3.5)],  # même direction, ligne différente
+        }
+        catalogue, _ = st.construire_catalogue(pool)
+        profil = {"cle": "coupon", "nom": "x", "cote_min": 0.0, "cote_max": 1000.0, "nb_jambes": 2, "nb_jambes_min": 2}
+        proposition = {"coupons": [{"profil": "coupon", "strategie": "s",
+                                    "jambes": [{"id": "P1"}, {"id": "P2"}]}]}
+
+        acceptes, problemes, _ = st.valider(proposition, catalogue, [profil])
+
+        self.assertEqual(problemes, [])
+        self.assertIn("coupon", acceptes)
+
+    def test_aucune_alternative_nulle_part_accepte(self):
+        # Les 2 matchs n'offrent QUE Corners Under 9.5 : impossible de varier, donc pas d'erreur.
+        pool = {m: [_sel_ligne(m, "Total Corners", "Under", 1.5, 9.5)] for m in ("A vs B", "C vs D")}
+        catalogue, _ = st.construire_catalogue(pool)
+        profil = {"cle": "coupon", "nom": "x", "cote_min": 0.0, "cote_max": 1000.0, "nb_jambes": 2, "nb_jambes_min": 2}
+        proposition = {"coupons": [{"profil": "coupon", "strategie": "s",
+                                    "jambes": [{"id": "P1"}, {"id": "P2"}]}]}
+
+        acceptes, problemes, _ = st.valider(proposition, catalogue, [profil])
+
+        self.assertEqual(problemes, [])
+        self.assertIn("coupon", acceptes)
+
+    def test_categories_differentes_pas_concernees(self):
+        # Total Corners Under et BTTS No : catégories différentes, la règle par-catégorie ne
+        # s'applique qu'à l'intérieur d'une MÊME catégorie (couvert par TestDiversiteDesMarches).
+        pool = {
+            "A vs B": [_sel_ligne("A vs B", "Total Corners", "Under", 1.5, 9.5)],
+            "C vs D": [_sel("C vs D", "BTTS", "No", 1.5)],
+        }
+        catalogue, _ = st.construire_catalogue(pool)
+        profil = {"cle": "coupon", "nom": "x", "cote_min": 0.0, "cote_max": 1000.0, "nb_jambes": 2, "nb_jambes_min": 2}
+        proposition = {"coupons": [{"profil": "coupon", "strategie": "s",
+                                    "jambes": [{"id": "P1"}, {"id": "P2"}]}]}
+
+        acceptes, problemes, _ = st.valider(proposition, catalogue, [profil])
+
+        # Peut être refusé par la règle Under/No générale (2/2 conservateurs, pas d'alternative
+        # BTTS/Corners dans le catalogue ici) ou accepté — seul importe qu'aucun message ne cite
+        # une exigence de variation "Total Corners" par-catégorie (un seul pari de cette
+        # catégorie, rien à varier).
+        self.assertFalse(any("Total Corners" in p and "varie" in p for p in problemes), problemes)
+
+
 class TestCoupEnvoi(unittest.TestCase):
     def test_match_qui_commence_bientot_ecarte_a_la_reprise(self):
         from datetime import datetime, timezone

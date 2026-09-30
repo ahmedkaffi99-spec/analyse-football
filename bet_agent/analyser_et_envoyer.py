@@ -555,7 +555,11 @@ def calc_edge(proba_modele, cote):
 # ------------------------------------------------------------
 POIDS_MARCHE = 0.65
 COTE_MIN_JAMBE = 1.20   # en dessous, un pari n'apporte presque rien au combiné mais ajoute un risque
-CATEGORIES_EXCLUES = ("Total Cartons",)  # modèle des cartons non fiable (points de carton, lignes mixtes)
+# Plus aucune catégorie exclue par défaut (demande explicite du 30/09/2026 : "ne limite les
+# marchés") — Total Cartons (modèle peu fiable, points de carton/lignes mixtes) était exclu
+# jusqu'au 30/09/2026, mais l'IA voit maintenant TOUS les marchés modélisables avec leurs vrais
+# chiffres (edge, probabilité) et juge elle-même de leur fiabilité, comme pour tout autre marché.
+CATEGORIES_EXCLUES = ()
 
 
 def _edge_calculable(edge, proba):

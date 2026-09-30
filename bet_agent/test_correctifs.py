@@ -687,7 +687,9 @@ class TestMelangeModeleMarche(unittest.TestCase):
             self.assertLess(c["proba_modele_pct"], 90)
             self.assertLessEqual(c["edge_pct"], ae.EDGE_MAX_PLAUSIBLE)
 
-    def test_petites_cotes_et_cartons_exclus(self):
+    def test_petites_cotes_exclues_mais_plus_les_cartons(self):
+        # Demande explicite du 30/09/2026 ("ne limite les marchés") : Total Cartons n'est plus
+        # exclu — seule la cote plancher (COTE_MIN_JAMBE) filtre encore.
         marches = [
             {"marche": "Over Under Full Time", "handicap": 4.5, "periode": "fulltime",
              "selections": [{"selection": "Over", "cote": 9.0}, {"selection": "Under", "cote": 1.08}]},
@@ -697,7 +699,7 @@ class TestMelangeModeleMarche(unittest.TestCase):
         with mock.patch.object(ae, "SEUIL_EDGE", 0.0), mock.patch.object(ae, "PROBA_MIN_FORTE", 0.0):
             retenus = ae.evaluer_marches(marches, 1.2, 1.0, mu_cartons=3.0)
         self.assertFalse(any(c["cote"] < ae.COTE_MIN_JAMBE for c in retenus))
-        self.assertFalse(any(c["categorie"] == "Total Cartons" for c in retenus))
+        self.assertTrue(any(c["categorie"] == "Total Cartons" for c in retenus))
 
 
 def _stats_fixture(team_id_local, corners=6, cartons_j=2, cartons_r=0, fautes=10, tirs_cadres=5,
