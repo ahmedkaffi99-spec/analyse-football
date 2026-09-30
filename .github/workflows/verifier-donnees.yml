@@ -26,6 +26,7 @@ jobs:
       PYTHONUNBUFFERED: "1"
       ODDSPAPI_KEY: ${{ secrets.ODDSPAPI_KEY }}
       API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+      API_FOOTBALL_QUOTA_PAR_MINUTE: ${{ vars.API_FOOTBALL_QUOTA_PAR_MINUTE }}
       SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
       DATE_CIBLE_DEBUT: ${{ inputs.date_debut }}
       DATE_CIBLE_FIN: ${{ inputs.date_fin }}

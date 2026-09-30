@@ -57,7 +57,13 @@ SESSION.mount("http://", HTTPAdapter(max_retries=_retry_reseau))
 # les appels partent sans pause — d'où les échecs "Aucune compétition trouvée après retries"
 # observés en fin de run (le rate limit vide la réponse, ce qui ressemble à tort à une
 # absence de données). Le rate limiter ci-dessous absorbe ça par des pauses, pas un échec.
-API_FOOTBALL_QUOTA_PAR_MINUTE = 9  # marge de sécurité sous les 10/min réels
+#
+# Surchargeable via API_FOOTBALL_QUOTA_PAR_MINUTE (envi.local ou secret/var GitHub Actions) :
+# 9 = marge de sécurité sous les 10/min du plan gratuit ; le plan Pro (souscrit le 30/09/2026)
+# autorise 300/min — sans surcharge, le rate limiter bridait un compte payant au débit du
+# plan gratuit (constaté : un test de 5 équipes a dépassé le timeout de 5 min du workflow,
+# chaque équipe prenant ~60s au lieu de quelques secondes).
+API_FOOTBALL_QUOTA_PAR_MINUTE = int(os.getenv("API_FOOTBALL_QUOTA_PAR_MINUTE") or "9")
 _horodatages_appels_api_football = deque()
 
 

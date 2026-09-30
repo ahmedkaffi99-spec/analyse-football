@@ -4,6 +4,9 @@ TELEGRAM_CHAT_ID=
 OPENROUTER_API_KEY=
 SERPER_API_KEY=
 API_FOOTBALL_KEY=
+# Optionnel : requêtes/minute autorisées par ton plan API-Football (défaut 9, marge de
+# sécurité sous les 10/min du plan gratuit). Plan Pro = 300/min, Ultra = 450/min, Mega = 900/min.
+API_FOOTBALL_QUOTA_PAR_MINUTE=
 ODDS_API_KEY=
 ODDSPAPI_KEY=
 GROQ_API_KEY=
