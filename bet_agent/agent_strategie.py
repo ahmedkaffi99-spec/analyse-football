@@ -4,12 +4,21 @@ une stratégie et CHOISIT elle-même les paris du coupon (choix du 26/09/2026 : 
 combiné "smart" par défaut — PROFILS_COUPON peut toujours définir plusieurs profils, le code
 ci-dessous reste générique à leur nombre).
 
-Répartition des rôles (principe : « l'IA décide, Python vérifie et calcule ») :
-- Python prépare un CATALOGUE de paris réels (cotes 1xBet, probabilités modèle/marché, edge),
-  identifiés P1, P2… — l'IA ne peut choisir QUE dans ce catalogue, jamais inventer une cote.
-- L'IA raisonne sur le contexte (presse, Elo, buts attendus, écart modèle/marché), décide de sa
-  stratégie, choisit ses paris (autant que la qualité des données du jour le justifie), et peut
-  s'ABSTENIR sur un profil si rien n'est défendable.
+Répartition des rôles (principe : « l'IA décide, Python vérifie — Python ne calcule plus les
+cotes à la place de l'IA ») :
+- Python prépare un CATALOGUE de TOUS les paris réels du jour (cotes 1xBet brutes, marché et
+  sélection, SANS probabilité ni edge calculés — demande explicite du 30/09/2026 : "ne filtre
+  pas les odds, donne brut à l'IA, ne calcule pas les odds pour l'IA"), identifiés P1, P2… —
+  l'IA ne peut choisir QUE dans ce catalogue, jamais inventer une cote, mais c'est ELLE seule
+  qui juge la valeur de chaque pari à partir des cotes et du contexte (elle a accès, en note
+  interne non montrée à l'IA, à une estimation Poisson pour certains marchés — utilisée
+  uniquement par le repli 100% Python sans IA si l'IA est indisponible, jamais montrée à l'IA
+  principale pour ne pas biaiser son propre jugement).
+- L'IA raisonne sur le contexte (presse, buts attendus, confrontations directes, blessures,
+  prédictions API-Football) et sur les cotes brutes de CHAQUE match, un match à la fois :
+  termine l'analyse complète d'un match (compare tous ses marchés) avant de passer au suivant,
+  choisit son pari par match, décide de sa stratégie globale, et peut s'ABSTENIR sur un profil
+  si rien n'est défendable.
 - Python contrôle chaque proposition (paris existants, pas de doublon, 2 paris max par match,
   cote totale dans la cible) et RENVOIE ses calculs à l'IA, qui corrige (NB_TOURS_MAX allers-retours).
 - Si l'IA échoue, l'ancienne composition automatique (Monte Carlo) prend le relais pour ce profil.
@@ -32,20 +41,20 @@ NB_JAMBES_MIN_DEFAUT = 2
 
 
 def construire_catalogue(pool):
-    """Renvoie ({id: sélection}, texte du catalogue groupé par match)."""
+    """Renvoie ({id: sélection}, texte du catalogue groupé par match). Cotes brutes UNIQUEMENT
+    (marché, sélection, cote) — aucune probabilité ni edge affichée à l'IA, même quand Python
+    a pu les calculer en interne (demande explicite du 30/09/2026) : l'IA doit juger elle-même
+    la valeur de chaque pari, pas ratifier un calcul Python. Le nombre de marchés par match peut
+    être élevé (200-300, aucun filtre) — l'IA compare TOUT avant de choisir, match par match."""
     catalogue, lignes, numero = {}, [], 0
     for match, candidats in pool.items():
-        lignes.append(f"\n## {match}")
+        lignes.append(f"\n## {match} ({len(candidats)} marchés)")
         for c in candidats:
             numero += 1
             cid = f"P{numero}"
             catalogue[cid] = c
             p = c["pick"]
-            detail_proba = ""
-            if p.get("proba_poisson_pct") is not None:
-                detail_proba = f" (modèle {p['proba_poisson_pct']}%, marché {p['proba_marche_pct']}%)"
-            lignes.append(f"- {cid} : {p['marche']} → {p['selection']} @ {p['cote']} | probabilité "
-                          f"{p['proba_modele_pct']}%{detail_proba} | edge {p['edge_pct']}% | {p['categorie']}")
+            lignes.append(f"- {cid} : {p['marche']} → {p['selection']} @ {p['cote']}")
     return catalogue, "\n".join(lignes)
 
 
@@ -84,8 +93,12 @@ def construire_prompt(pool, profils, catalogue_texte):
         "3. La cote totale (produit des cotes) doit tomber dans la cible du profil. Python la calcule et te la "
         "renverra : vise juste, sans calculer au centime.\n"
         "4. Qualité avant quantité : écarte les matchs aux données faibles ou dont la presse signale un risque "
-        "(absences clés, rotation, enjeu faible). Préfère les paris où le modèle ET le marché sont d'accord. "
-        f"{regle_distinction}Si aucun ensemble de paris n'est défendable, "
+        "(absences clés, rotation, enjeu faible). Le CATALOGUE ne donne QUE des cotes brutes (marché, sélection, "
+        "cote) — aucune probabilité ni edge n'est calculée par Python : c'est TOI qui juges la valeur de chaque "
+        "pari, à partir de la cote et du contexte (buts attendus, confrontations directes, blessures, "
+        "prédictions). Traite les matchs UN PAR UN : analyse et compare TOUS les marchés d'un match (200-300 "
+        "possibles, rien n'est présélectionné) avant de choisir son pari, puis seulement ensuite passe au match "
+        f"suivant. {regle_distinction}Si aucun ensemble de paris n'est défendable, "
         "abstiens-toi : \"jambes\": [] et explique pourquoi dans \"strategie\".\n"
         "5. DIVERSIFIE les marchés — à deux niveaux : (a) ENTRE catégories : quand un match propose PLUSIEURS "
         "catégories dans le catalogue (Total, BTTS, Handicap Asiatique, Win to Nil, Double Chance, Corners...), ne "
@@ -310,12 +323,12 @@ def valider(proposition, catalogue, profils, signatures_existantes=()):
         if not nb_jambes_min <= len(selections) <= profil["nb_jambes"]:
             erreurs.append(f"{len(selections)} paris valides (il en faut entre {nb_jambes_min} et {profil['nb_jambes']})")
 
+        # Plus de "probabilité combinée" affichée ici : Python ne calcule plus de probabilité
+        # par pari (30/09/2026, cotes brutes données à l'IA) — seule la cote totale, un fait
+        # brut (produit des cotes réelles), reste vérifiable par Python sans jugement de valeur.
         cote = ae._produit_cotes(selections) if selections else 0
-        proba = 1.0
-        for s in selections:
-            proba *= s["pick"]["proba_modele_pct"] / 100
         calculs.append(f"{cle} : {len(selections)} paris, cote totale {cote:.2f} "
-                       f"(cible {profil['cote_min']}-{profil['cote_max']}), probabilité combinée {proba * 100:.1f}%")
+                       f"(cible {profil['cote_min']}-{profil['cote_max']})")
         if selections and not profil["cote_min"] <= cote <= profil["cote_max"]:
             sens = "trop basse : ajoute un pari ou remplace par des cotes plus hautes" if cote < profil["cote_min"] \
                 else "trop haute : retire un pari ou remplace par des cotes plus basses"

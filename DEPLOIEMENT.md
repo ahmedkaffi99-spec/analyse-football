@@ -80,6 +80,7 @@ Dépôt privé : **2 000 minutes gratuites par mois** sur GitHub Actions. Estima
 ## Consulter les données
 
 - **Supabase** (projet `analyse-football`) → **Table Editor** : tables `runs`, `matchs`, `cotes`, `coupons`, `jambes`.
+- **Vues par match** (`backend/vues.sql`, déjà appliquées) : `vue_matchs_complets` (un match par ligne, avec le nombre de cotes/marchés collectés et tout son contexte) et `vue_cotes_par_match` (chaque cote avec les équipes/la ligue déjà jointes) — évite de croiser `matchs`/`cotes` à la main pour voir les 200-300 marchés d'un match.
 - **API privée** (optionnelle, sur ton PC) : `cd backend && uvicorn app.main:app` avec le même `DATABASE_URL` et un `API_TOKEN` dans `backend/.env` — voir [`backend/README.md`](backend/README.md).
 
 ## Option avancée

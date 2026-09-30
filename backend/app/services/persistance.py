@@ -16,13 +16,20 @@ def parse_datetime(valeur):
 
 
 def stats_combine(selections):
-    """Même calcul que analyser_et_envoyer.calculer_stats_combine (produit des cotes et des
-    probabilités), refait ici pour que l'import ne dépende pas du pipeline."""
+    """Même calcul que analyser_et_envoyer.calculer_stats_combine (produit des cotes réelles,
+    et de la probabilité modèle quand elle existe), refait ici pour que l'import ne dépende pas
+    du pipeline. Depuis le 30/09/2026, une jambe peut être un marché brut sans probabilité
+    calculée (voir completer_avec_marches_bruts) : la probabilité combinée devient alors None
+    plutôt qu'un 0% trompeur (au moins une jambe sans probabilité modèle)."""
     cote, proba = 1.0, 1.0
     for s in selections:
         cote *= s["pick"]["cote"]
-        proba *= (s["pick"].get("proba_modele_pct") or 0) / 100
-    return round(cote, 2), round(proba * 100, 1)
+        p = s["pick"].get("proba_modele_pct")
+        if p is None:
+            proba = None
+        elif proba is not None:
+            proba *= p / 100
+    return round(cote, 2), (round(proba * 100, 1) if proba is not None else None)
 
 
 def enregistrer_collecte(db, run, donnees):

@@ -39,7 +39,10 @@ class TestStratege(unittest.TestCase):
         catalogue, texte = st.construire_catalogue(POOL)
         self.assertEqual(list(catalogue), ["P1", "P2", "P3", "P4", "P5", "P6"])
         self.assertIn("P5 : Total (2.5) → Over @ 2.0", texte)
-        self.assertIn("modèle 64.0%, marché 58.0%", texte)
+        # Depuis le 30/09/2026 : cotes brutes uniquement, aucune probabilité/edge affichée à
+        # l'IA (demande explicite "ne calcule pas les odds pour l'IA").
+        self.assertNotIn("probabilité", texte)
+        self.assertNotIn("edge", texte)
 
     def test_choix_valide_des_le_premier_tour(self):
         # P1 (Total) + P4 (BTTS) : catégories différentes, pas de souci de dominance (règle du

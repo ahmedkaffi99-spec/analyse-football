@@ -546,6 +546,66 @@ class TestPasDePreselectionPython(unittest.TestCase):
         self.assertEqual(len(retenus), 2)  # Over ET Under, malgré un edge faible
 
 
+class TestCompleterAvecMarchesBruts(unittest.TestCase):
+    """Demande explicite du 30/09/2026 : "ne filtre pas les odds et donne brut à l'IA, ne
+    calcule pas les odds pour l'IA" — en plus des marchés que Python sait modéliser (buts,
+    corners...), TOUS les autres marchés du match (tirs, fautes, correct score...) doivent
+    aussi atteindre l'IA, sans probabilité ni edge calculés (None), pour qu'elle juge
+    elle-même leur valeur à partir de la cote brute."""
+
+    def test_marches_non_modelisables_ajoutes_sans_calcul(self):
+        marches = [
+            {"marche": "Over Under Full Time", "handicap": 2.5, "periode": "fulltime",
+             "selections": [{"selection": "Over", "cote": 1.9}, {"selection": "Under", "cote": 1.9}]},
+            {"marche": "Shots On Target - Over Under Full Time", "handicap": 10.5, "periode": "fulltime",
+             "selections": [{"selection": "Over", "cote": 1.85}, {"selection": "Under", "cote": 1.95}]},
+            {"marche": "Correct Score", "handicap": None, "periode": "fulltime",
+             "selections": [{"selection": "2:1", "cote": 8.5}, {"selection": "1:1", "cote": 6.5}]},
+        ]
+        modelises = ae.evaluer_marches_toutes(marches, 1.3, 1.2)
+        complets = ae.completer_avec_marches_bruts(modelises, marches)
+        # Les 2 buts (Over/Under) modélisés restent inchangés, + 4 bruts (tirs O/U, correct score x2)
+        self.assertEqual(len(modelises), 2)
+        self.assertEqual(len(complets), 6)
+        bruts = [c for c in complets if c not in modelises]
+        self.assertEqual(len(bruts), 4)
+        self.assertTrue(all(c["proba_modele_pct"] is None and c["edge_pct"] is None for c in bruts))
+        self.assertIn("Shots On Target - Over Under Full Time", {c["categorie"] for c in bruts})
+        self.assertIn("Correct Score", {c["categorie"] for c in bruts})
+
+    def test_periode_mi_temps_toujours_exclue_des_bruts(self):
+        marches = [{"marche": "Corners - Over Under Second Half", "handicap": 3.5, "periode": "secondhalf",
+                    "selections": [{"selection": "Over", "cote": 1.26}, {"selection": "Under", "cote": 3.5}]}]
+        complets = ae.completer_avec_marches_bruts([], marches)
+        self.assertEqual(complets, [])
+
+    def test_pas_de_doublon_avec_un_marche_deja_modelise(self):
+        marches = [{"marche": "Over Under Full Time", "handicap": 2.5, "periode": "fulltime",
+                    "selections": [{"selection": "Over", "cote": 1.9}, {"selection": "Under", "cote": 1.9}]}]
+        modelises = ae.evaluer_marches_toutes(marches, 1.3, 1.2)
+        complets = ae.completer_avec_marches_bruts(modelises, marches)
+        self.assertEqual(len(complets), len(modelises))  # rien ajouté, déjà tout couvert
+
+    def test_integration_pool_contient_les_marches_bruts(self):
+        donnees = {"matchs": [{
+            "match_demande": {"home": "A", "away": "B"}, "api_football": None,
+            "oddspapi": {"fixture_id": "f1", "tous_marches": [
+                {"marche": "Over Under Full Time", "handicap": 2.5, "periode": "fulltime",
+                 "selections": [{"selection": "Over", "cote": 1.9}, {"selection": "Under", "cote": 1.9}]},
+                {"marche": "Correct Score", "handicap": None, "periode": "fulltime",
+                 "selections": [{"selection": "2:1", "cote": 8.5}]},
+            ]},
+            "serper": None, "stats_historiques": {"home": None, "away": None},
+            "stats_detaillees_10_matchs": {"home": None, "away": None},
+            "classement": {"home": None, "away": None},
+            "head_to_head": None, "blessures": None, "predictions_api_football": None,
+        }]}
+        with mock.patch.object(ae, "verifier_fraicheur_matchs", side_effect=lambda ms: ms):
+            pool = ae.agent3_calcul_pool_candidats(donnees)
+        marches_du_pool = {c["pick"]["categorie"] for c in pool["A vs B"]}
+        self.assertIn("Correct Score", marches_du_pool)
+
+
 class TestContexteWeb(unittest.TestCase):
     def test_contexte_web_extrait_du_match(self):
         stats = {"matchs_joues": 20, "buts_marques_domicile": 1.3, "buts_encaisses_domicile": 1.3,

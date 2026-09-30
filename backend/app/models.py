@@ -107,7 +107,11 @@ class Jambe(Base):
     libelle_match: Mapped[str] = mapped_column(String(250))
     domicile: Mapped[str | None] = mapped_column(String(120))
     fixture_id_oddspapi: Mapped[str | None] = mapped_column(String(64), index=True)
-    categorie: Mapped[str] = mapped_column(String(40))
+    # 160, pas 40 : depuis le 30/09/2026 la catégorie peut être le nom brut d'un marché
+    # non modélisé par Python (voir completer_avec_marches_bruts), potentiellement long
+    # ("Shots On Target - Over Under Full Time"...), plus les libellés courts historiques
+    # ("Total", "BTTS"...). Même longueur que "marche" ci-dessous par cohérence.
+    categorie: Mapped[str] = mapped_column(String(160))
     marche: Mapped[str] = mapped_column(String(160))
     handicap: Mapped[float | None] = mapped_column(Float)
     selection: Mapped[str] = mapped_column(String(64))

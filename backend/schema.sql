@@ -86,7 +86,7 @@ CREATE TABLE IF NOT EXISTS jambes (
 	libelle_match VARCHAR(250) NOT NULL, 
 	domicile VARCHAR(120), 
 	fixture_id_oddspapi VARCHAR(64), 
-	categorie VARCHAR(40) NOT NULL, 
+	categorie VARCHAR(160) NOT NULL, 
 	marche VARCHAR(160) NOT NULL, 
 	handicap FLOAT, 
 	selection VARCHAR(64) NOT NULL, 

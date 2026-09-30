@@ -656,6 +656,43 @@ def evaluer_marches_toutes(marches, mu_home, mu_away, mu_corners=None, mu_carton
     return sorted(retenus, key=lambda c: (c["edge_pct"] if c["edge_pct"] is not None else -999), reverse=True)
 
 
+def completer_avec_marches_bruts(candidats_modelises, marches):
+    """Ajoute, en plus des marchés déjà modélisés par Poisson (buts/corners/cartons/BTTS/
+    Double Chance/...), TOUS les autres marchés/sélections MATCH ENTIER du match — tirs,
+    fautes, touches, hors-jeu, coups francs, correct score, etc. — qu'aucune branche de
+    _evaluer_marches_brut ne sait modéliser (pas de source de données indépendante). Demande
+    explicite de l'utilisateur (30/09/2026) : "ne filtre pas les odds, donne brut à l'IA" —
+    un match a typiquement 200-300 marchés bruts (hors 1X2, déjà exclu à la collecte), l'IA
+    doit tous les voir, pas seulement la poignée que Python sait chiffrer. Ces marchés bruts
+    n'ont PAS de probabilité/edge (proba_modele_pct/edge_pct = None) : ils restent disponibles
+    dans le pool (pour l'IA), mais le repli 100% Python sans IA (selectionner_combo_cote_
+    cible) les ignore automatiquement puisqu'il exige un edge calculé — comportement inchangé
+    pour ce repli, seul le choix de l'IA principale s'élargit."""
+    deja_vus = {(c["marche"], c["selection"]) for c in candidats_modelises}
+    resultat = list(candidats_modelises)
+    for marche in marches:
+        if not est_marche_match_entier(marche):
+            continue
+        nom_marche = marche.get("marche") or "Marché"
+        handicap = marche.get("handicap")
+        nom_avec_ligne = f"{nom_marche} ({handicap})" if handicap is not None else nom_marche
+        for s in marche.get("selections", []):
+            cote = s.get("cote")
+            if not cote or cote <= 1:
+                continue
+            cle = (nom_avec_ligne, s["selection"])
+            if cle in deja_vus:
+                continue
+            deja_vus.add(cle)
+            resultat.append({
+                "categorie": nom_marche, "marche": nom_avec_ligne, "handicap": handicap,
+                "selection": s["selection"], "cote": cote,
+                "proba_modele_pct": None, "edge_pct": None, "guide": None, "onglet": None,
+                "proba_poisson_pct": None, "proba_marche_pct": None,
+            })
+    return resultat
+
+
 def candidat_valide(edge, proba):
     """Un marché n'est retenu que s'il a À LA FOIS un edge plausible ET une probabilité
     de gain forte (PROBA_MIN_FORTE) — un edge élevé sur un pari à 30% de chances de gagner
@@ -1506,16 +1543,23 @@ def agent4_ia_analyse_pronostic_redaction(selections_finales):
 
 
 def calculer_stats_combine(selections_finales):
-    """Calcule la cote totale ET la probabilité combinée réelle du ticket (produit des
-    probabilités modèle de chaque jambe) — en pur Python, jamais laissé au LLM. C'est ce
-    chiffre, pas la somme des edges individuels, qui dit honnêtement la vraie chance de
-    gagner le combiné EN ENTIER (toutes les jambes en même temps)."""
+    """Calcule la cote totale (produit des cotes réelles, un fait brut) et, quand disponible,
+    la probabilité combinée (produit des probabilités modèle de chaque jambe) — en pur Python,
+    jamais laissé au LLM. Depuis le 30/09/2026, les marchés bruts (sans probabilité calculée,
+    voir completer_avec_marches_bruts) peuvent composer un coupon : la probabilité combinée
+    n'est alors plus calculable honnêtement (au moins une jambe sans probabilité modèle) et
+    vaut None plutôt qu'un chiffre trompeur (ex: 0%, ou une probabilité partielle qui omet
+    silencieusement une jambe)."""
     cote_totale = 1.0
     proba_combinee = 1.0
     for s in selections_finales:
         cote_totale *= s["pick"]["cote"]
-        proba_combinee *= s["pick"]["proba_modele_pct"] / 100
-    return round(cote_totale, 2), round(proba_combinee * 100, 1)
+        p = s["pick"].get("proba_modele_pct")
+        if p is None:
+            proba_combinee = None
+        elif proba_combinee is not None:
+            proba_combinee *= p / 100
+    return round(cote_totale, 2), (round(proba_combinee * 100, 1) if proba_combinee is not None else None)
 
 
 MINUTES_MIN_AVANT_COUP_ENVOI = 45  # même règle qu'à la collecte : pas de match qui commence bientôt
@@ -1658,9 +1702,11 @@ def agent3_calcul_pool_candidats(donnees):
         mu_cartons = (calculer_mu_cartons_depuis_stats_detaillees(stats_detaillees.get("home"), stats_detaillees.get("away"))
                       or estimer_ligne_equilibree(marches, ["card", "booking"]))
 
-        candidats = evaluer_marches_toutes(marches, home_xg, away_xg, mu_corners, mu_cartons)
-        print(f"      → {len(marches)} marchés bruts scannés, {len(candidats)} marché(s) modélisable(s) "
-              f"transmis à l'IA (aucune présélection Python)")
+        candidats_modelises = evaluer_marches_toutes(marches, home_xg, away_xg, mu_corners, mu_cartons)
+        candidats = completer_avec_marches_bruts(candidats_modelises, marches)
+        print(f"      → {len(marches)} marchés bruts scannés, {len(candidats_modelises)} modélisé(s) par "
+              f"Poisson + {len(candidats) - len(candidats_modelises)} brut(s) sans calcul — {len(candidats)} "
+              f"marché(s) au total transmis à l'IA (aucun filtré, aucune présélection Python)")
         if not candidats:
             continue
 
@@ -1673,7 +1719,13 @@ def agent3_calcul_pool_candidats(donnees):
             for c in candidats
         ]
         categories = sorted({c["categorie"] for c in candidats})
-        print(f"      → {len(categories)} catégorie(s) de marché représentée(s) : {', '.join(categories)}")
+        # Avec les marchés bruts inclus, chaque nom de marché distinct devient sa propre
+        # catégorie (potentiellement 100+) — la liste complète noierait les logs, seul le
+        # compte est utile ici (le détail reste dans le catalogue transmis à l'IA).
+        if len(categories) <= 15:
+            print(f"      → {len(categories)} catégorie(s) de marché représentée(s) : {', '.join(categories)}")
+        else:
+            print(f"      → {len(categories)} catégorie(s) de marché représentée(s) (détail dans le catalogue)")
     return pool
 
 
@@ -1881,10 +1933,11 @@ def agent4_rediger_coupons(resultats_profils):
                 f"pas indépendantes)._"
             )
         ligne_strategie = f"🧭 Stratégie : {item['strategie']}\n\n" if item.get("strategie") else ""
+        ligne_proba = f" · 🎲 Probabilité combinée réelle : *{proba_combinee}%*" if proba_combinee is not None else ""
         sections.append(
             f"{profil['nom']} — {len(selections)} jambes sur {nb_matchs_distincts} match{'s' if nb_matchs_distincts > 1 else ''}\n\n"
             f"{ligne_strategie}{ticket_texte}\n\n"
-            f"💰 Cote totale : *{cote_totale}* · 🎲 Probabilité combinée réelle : *{proba_combinee}%*"
+            f"💰 Cote totale : *{cote_totale}*{ligne_proba}"
             f"{avertissement_correlation}"
         )
         pause_ia(2)
