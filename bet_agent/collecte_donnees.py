@@ -19,7 +19,7 @@ from urllib3.util.retry import Retry
 from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 from unidecode import unidecode
-from tenacity import retry, stop_after_attempt, wait_fixed, wait_exponential
+from tenacity import retry, stop_after_attempt, wait_fixed, wait_exponential, RetryError
 
 load_dotenv("envi.local")
 
@@ -257,6 +257,21 @@ MARKET_NAMES_CACHE = {}
 # API-FOOTBALL — 1 seul appel pour situer les 8 matchs
 # ============================================================
 
+
+def _cause_reelle(e):
+    """Une fonction décorée par @retry (tenacity) qui échoue après tous les essais lève une
+    RetryError qui masque l'exception réelle du dernier essai derrière un repr de Future peu
+    lisible (ex: "RetryError[<Future ... state=finished raised ValueError>]") — sans ce
+    déballage, un message d'erreur API-Football précis (quota, plan, compte suspendu) devient
+    illisible dans les logs (constaté le 30/09/2026 lors du diagnostic des stats détaillées)."""
+    if isinstance(e, RetryError):
+        try:
+            return e.last_attempt.exception()
+        except Exception:
+            pass
+    return e
+
+
 MAX_TENTATIVES_SAISON = 3  # plafonne les appels /teams/statistics par équipe (quota API-Football limité)
 
 # Le plan gratuit API-Football rejette catégoriquement /teams/statistics pour les saisons
@@ -323,7 +338,7 @@ def trouver_ligue_et_stats(team_id, nom_affichage):
     try:
         entrees = _appel_leagues_api_football(team_id)
     except Exception as e:
-        print(f"      ⚠️ Aucune compétition trouvée pour {nom_affichage} (ID {team_id}) après retries : {e}")
+        print(f"      ⚠️ Aucune compétition trouvée pour {nom_affichage} (ID {team_id}) après retries : {_cause_reelle(e)}")
         return None
 
     # Priorité : championnats (League) avant coupes, puis saison la plus récente d'abord
@@ -442,7 +457,7 @@ def recuperer_stats_10_derniers_matchs(team_id, nom_affichage):
     try:
         fixtures = _appel_derniers_fixtures(team_id, NB_DERNIERS_MATCHS_DETAILLES)
     except Exception as e:
-        print(f"      ⚠️ Derniers matchs introuvables pour {nom_affichage} (ID {team_id}) après retries : {e}")
+        print(f"      ⚠️ Derniers matchs introuvables pour {nom_affichage} (ID {team_id}) après retries : {_cause_reelle(e)}")
         return None
     if not fixtures:
         return None
@@ -828,7 +843,7 @@ def charger_classement_api_football(league_id, season):
         groupes = reponse[0]["league"]["standings"] if reponse else []
         table = [ligne for groupe in groupes for ligne in groupe]
     except Exception as e:
-        print(f"      ⚠️ Classement API-Football indisponible pour ligue {league_id}/{season} après retries : {e}")
+        print(f"      ⚠️ Classement API-Football indisponible pour ligue {league_id}/{season} après retries : {_cause_reelle(e)}")
         table = None
     _cache_classement_api_football[cle] = table
     return table
