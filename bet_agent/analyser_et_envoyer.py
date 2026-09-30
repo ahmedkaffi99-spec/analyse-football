@@ -83,16 +83,23 @@ MAX_JAMBES_PAR_MATCH = 1
 EDGE_MIN_FALLBACK_AUTO = 2.0
 PROBA_MIN_FALLBACK_AUTO = 30.0
 
-# Choix du 26/09/2026 (demande explicite) : UN SEUL coupon "smart" combinant des matchs
-# DIFFÉRENTS (un seul pari par match, voir MAX_JAMBES_PAR_MATCH), sans cible de cote totale
-# précise (cote_max n'est qu'un garde-fou, pas un objectif).
+# Choix du 26/09/2026 (demande explicite) : coupon(s) combinant des matchs DIFFÉRENTS (un
+# seul pari par match, voir MAX_JAMBES_PAR_MATCH).
 # Choix du 30/09/2026 (demande explicite : "je laisse le choix à l'IA de choisir combien elle
 # veut") : plus de fourchette de nombre de jambes imposée par Python — nb_jambes_min=1 et
 # nb_jambes=NB_MATCHS_MAX (plafond mécanique = nombre de matchs collectés, un seul pari par
-# match). L'IA stratège choisit elle-même combien de paris inclure, sans plancher ni plafond
-# arbitraire au-delà de ce qui est physiquement disponible ce jour-là.
+# match) pour chaque profil. L'IA stratège choisit elle-même combien de paris inclure dans
+# CHAQUE coupon, sans plancher ni plafond arbitraire au-delà de ce qui est physiquement
+# disponible ce jour-là — seule la cible de cote totale distingue les 3 profils.
+# Repassé à 3 profils le 30/09/2026 (demande explicite : "3 trois type de coupon sur un
+# seule run") — un seul pool/catalogue calculé une fois (agent3_calcul_pool_candidats),
+# 3 compositions différentes en aval, 3 messages Telegram séparés (agent5_envoyer_coupons).
 PROFILS_COUPON = [
-    {"cle": "coupon", "nom": "🎯 COUPON DU JOUR (l'IA choisit le nombre de matchs)", "cote_min": 5.0,
+    {"cle": "sur", "nom": "🛡️ COUPON SÛR (cote 5-15)", "cote_min": 5.0,
+     "cote_max": 15.0, "nb_jambes_min": 1, "nb_jambes": cd.NB_MATCHS_MAX},
+    {"cle": "equilibre", "nom": "⚖️ COUPON ÉQUILIBRÉ (cote 15-50)", "cote_min": 15.0,
+     "cote_max": 50.0, "nb_jambes_min": 1, "nb_jambes": cd.NB_MATCHS_MAX},
+    {"cle": "audacieux", "nom": "🔥 COUPON AUDACIEUX (cote 50+)", "cote_min": 50.0,
      "cote_max": 100000.0, "nb_jambes_min": 1, "nb_jambes": cd.NB_MATCHS_MAX},
 ]
 SELECTION_INTERDITE = "12"  # double chance domicile-ou-extérieur, bannie par consigne
@@ -2000,7 +2007,7 @@ def agent5_envoyer_coupons(sections):
     renvoie False en cas d'échec) plutôt que de supposer que ça a marché. Renvoie True
     seulement si TOUS les messages sont partis."""
     date_str = datetime.now().strftime("%d/%m/%Y à %H:%M")
-    entete = f"🎯 *TICKETS DU JOUR — {date_str}*\nedge réel calculé par Poisson · 1xBet\n━━━━━━━━━━━━━━━━━━━━\n\n"
+    entete = f"🎯 *TICKETS DU JOUR — {date_str}*\nanalyse IA sur cotes réelles · 1xBet\n━━━━━━━━━━━━━━━━━━━━\n\n"
     pied = (
         f"\n\n━━━━━━━━━━━━━━━━━━━━\n"
         f"⚠️ _Analyse automatisée à titre indicatif — vérifie toujours les cotes en direct sur 1xBet avant de parier._"

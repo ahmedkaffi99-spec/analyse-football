@@ -413,11 +413,15 @@ class TestUnSeulCouponDixAQuinzeMatchs(unittest.TestCase):
     plafond mécanique NB_MATCHS_MAX (un seul pari par match possible)."""
 
     def test_reglages_du_coupon_du_jour(self):
+        # Repassé à 3 profils le 30/09/2026 (demande explicite : "3 trois type de coupon sur
+        # un seule run") — un seul distingo entre eux : la cible de cote totale.
         self.assertEqual(ae.MAX_JAMBES_PAR_MATCH, 1)
-        self.assertEqual(len(ae.PROFILS_COUPON), 1)
-        profil = ae.PROFILS_COUPON[0]
-        self.assertEqual(profil["nb_jambes_min"], 1)
-        self.assertEqual(profil["nb_jambes"], cd.NB_MATCHS_MAX)
+        self.assertEqual(len(ae.PROFILS_COUPON), 3)
+        cles = {p["cle"] for p in ae.PROFILS_COUPON}
+        self.assertEqual(cles, {"sur", "equilibre", "audacieux"})
+        for profil in ae.PROFILS_COUPON:
+            self.assertEqual(profil["nb_jambes_min"], 1)
+            self.assertEqual(profil["nb_jambes"], cd.NB_MATCHS_MAX)
 
     def test_deux_paris_sur_le_meme_match_refuses_par_l_ia(self):
         pool = {"A vs B": [_selection("A vs B", "Total", "Over", 1.5), _selection("A vs B", "BTTS", "Yes", 1.6)]}
