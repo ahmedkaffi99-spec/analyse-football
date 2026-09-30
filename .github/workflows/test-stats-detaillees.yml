@@ -16,7 +16,7 @@ jobs:
     env:
       PYTHONUNBUFFERED: "1"
       API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
-      API_FOOTBALL_QUOTA_PAR_MINUTE: ${{ vars.API_FOOTBALL_QUOTA_PAR_MINUTE }}
+      API_FOOTBALL_QUOTA_PAR_MINUTE: ${{ secrets.API_FOOTBALL_QUOTA_PAR_MINUTE }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
