@@ -50,6 +50,57 @@ class TestXgUnderstat(unittest.TestCase):
         self.assertIsNone(ae.calculer_xg_depuis_understat(None, away))
 
 
+class TestXgStatsDetaillees(unittest.TestCase):
+    """calculer_xg_depuis_stats_detaillees — remplace Understat (bloqué la quasi-totalité du
+    temps, voir trouver_stats_understat) par du calcul Python sur les VRAIES stats des 10
+    derniers matchs API-Football (recuperer_stats_10_derniers_matchs) — demande explicite de
+    l'utilisateur (30/09/2026)."""
+
+    def test_calcul(self):
+        home = {"buts_marques_moyenne": 2.0, "buts_encaisses_moyenne": 1.0}
+        away = {"buts_marques_moyenne": 1.2, "buts_encaisses_moyenne": 1.6}
+        self.assertEqual(ae.calculer_xg_depuis_stats_detaillees(home, away), (1.8, 1.1))
+
+    def test_absent_renvoie_none(self):
+        self.assertIsNone(ae.calculer_xg_depuis_stats_detaillees(None, {"buts_marques_moyenne": 1.0}))
+        self.assertIsNone(ae.calculer_xg_depuis_stats_detaillees({}, {}))
+
+    def test_champ_manquant_renvoie_none(self):
+        home = {"buts_marques_moyenne": 2.0, "buts_encaisses_moyenne": None}
+        away = {"buts_marques_moyenne": 1.2, "buts_encaisses_moyenne": 1.6}
+        self.assertIsNone(ae.calculer_xg_depuis_stats_detaillees(home, away))
+
+    def test_prioritaire_sur_understat_dans_le_pool(self):
+        # Les deux sources sont disponibles : stats_detaillees_10_matchs doit l'emporter.
+        donnees = {"matchs": [{
+            "match_demande": {"home": "A", "away": "B"},
+            "api_football": None,
+            "oddspapi": {"fixture_id": "f1", "tous_marches": [
+                {"marche": "Over Under Full Time", "handicap": 2.5, "periode": "fulltime",
+                 "selections": [{"selection": "Over", "cote": 1.9}, {"selection": "Under", "cote": 1.9}]},
+            ]},
+            "serper": None,
+            "stats_historiques": {"home": None, "away": None},
+            "stats_detaillees_10_matchs": {
+                "home": {"buts_marques_moyenne": 2.0, "buts_encaisses_moyenne": 1.0},
+                "away": {"buts_marques_moyenne": 1.2, "buts_encaisses_moyenne": 1.6},
+            },
+            "understat_xg": {
+                "home": {"matchs_joues": 5, "xg_moyen_par_match": 9.0, "xga_moyen_par_match": 9.0},
+                "away": {"matchs_joues": 5, "xg_moyen_par_match": 9.0, "xga_moyen_par_match": 9.0},
+            },
+            "clubelo": {"home": None, "away": None},
+            "classement": {"home": None, "away": None},
+            "head_to_head": None, "blessures": None, "predictions_api_football": None,
+        }]}
+        with mock.patch.object(ae, "verifier_fraicheur_matchs", side_effect=lambda ms: ms):
+            pool = ae.agent3_calcul_pool_candidats(donnees)
+        candidat = pool["A vs B"][0]
+        # 1.8/1.1 (stats détaillées), pas ~9/9 (Understat) — avant ajustement Elo (aucun Elo ici).
+        self.assertEqual(candidat["contexte"]["buts_attendus"]["domicile"], 1.8)
+        self.assertEqual(candidat["contexte"]["buts_attendus"]["exterieur"], 1.1)
+
+
 class TestTelegram(unittest.TestCase):
     def test_repli_texte_brut_si_markdown_casse(self):
         erreur = mock.Mock(status_code=400, text='{"description":"Bad Request: can\'t parse entities"}')

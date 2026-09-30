@@ -297,6 +297,31 @@ def calculer_xg_depuis_stats(stats_home, stats_away):
     return round(max(0.15, mu_home), 2), round(max(0.15, mu_away), 2)
 
 
+def calculer_xg_depuis_stats_detaillees(sd_home, sd_away):
+    """Buts attendus depuis les VRAIES stats des 10 DERNIERS matchs joués (API-Football,
+    recuperer_stats_10_derniers_matchs) — demande explicite de l'utilisateur (30/09/2026) :
+    remplacer Understat (bloqué la quasi-totalité du temps par un anti-bot, voir
+    trouver_stats_understat, 0% de réussite constaté en pratique) par du calcul Python sur
+    des données API-Football fiables, plutôt que de dépendre d'un scraping HTML qui échoue.
+    Même méthode que calculer_xg_depuis_stats (moyenne de l'attaque de l'une et de la
+    défense de l'autre), mais sur la FORME RÉCENTE (10 derniers matchs, toutes compétitions)
+    plutôt que la moyenne de saison domicile/extérieur — prioritaire dans la chaîne de calcul
+    car mesuré sur des matchs réellement joués récemment, jamais périmé par un plan API
+    limité à une vieille saison (contrairement à calculer_xg_depuis_stats)."""
+    if not sd_home or not sd_away:
+        return None
+    champs = (sd_home.get("buts_marques_moyenne"), sd_home.get("buts_encaisses_moyenne"),
+              sd_away.get("buts_marques_moyenne"), sd_away.get("buts_encaisses_moyenne"))
+    if None in champs:
+        return None
+    try:
+        mu_home = (float(sd_home["buts_marques_moyenne"]) + float(sd_away["buts_encaisses_moyenne"])) / 2
+        mu_away = (float(sd_away["buts_marques_moyenne"]) + float(sd_home["buts_encaisses_moyenne"])) / 2
+    except (TypeError, ValueError):
+        return None
+    return round(max(0.15, mu_home), 2), round(max(0.15, mu_away), 2)
+
+
 NB_MATCHS_MIN_UNDERSTAT = 3  # en début de saison, sous ce seuil la moyenne xG est trop bruitée
 
 
@@ -1590,10 +1615,16 @@ def agent3_calcul_pool_candidats(donnees):
         print(f"   → Calcul : {home_nom} vs {away_nom}")
 
         stats_hist = m.get("stats_historiques") or {}
+        stats_detaillees = m.get("stats_detaillees_10_matchs") or {}
         understat = m.get("understat_xg") or {}
+        xg_detaillees = calculer_xg_depuis_stats_detaillees(stats_detaillees.get("home"), stats_detaillees.get("away"))
         xg_understat = calculer_xg_depuis_understat(understat.get("home"), understat.get("away"))
         xg_stats = calculer_xg_depuis_stats(stats_hist.get("home"), stats_hist.get("away"))
-        if xg_understat:
+        if xg_detaillees:
+            home_xg, away_xg = xg_detaillees
+            print(f"      ✓ Buts attendus depuis les VRAIES stats des 10 derniers matchs (API-Football) : "
+                  f"{home_xg} / {away_xg}")
+        elif xg_understat:
             home_xg, away_xg = xg_understat
             print(f"      ✓ Buts attendus depuis les xG Understat de la saison en cours : {home_xg} / {away_xg}")
         elif xg_stats:
@@ -1610,7 +1641,7 @@ def agent3_calcul_pool_candidats(donnees):
 
         elo_home, elo_away = elo_du_match(m)
         esperance_elo = None
-        if xg_understat or xg_stats:
+        if xg_detaillees or xg_understat or xg_stats:
             home_xg, away_xg, esperance_elo = ajuster_xg_avec_elo(home_xg, away_xg, elo_home, elo_away)
             if esperance_elo is not None:
                 print(f"      ✓ Ajusté avec l'Elo ({elo_home:.0f} vs {elo_away:.0f}, victoire domicile espérée "
