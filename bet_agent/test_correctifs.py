@@ -460,6 +460,7 @@ class TestCollecteEfficace(unittest.TestCase):
                                   side_effect=lambda fid: marches if fid in ("f1", "f3", "f4") else None) as cotes, \
                 mock.patch.object(cd, "collecter_contexte_serper", return_value=None) as serper, \
                 mock.patch.object(cd, "trouver_stats_thesportsdb", return_value=None), \
+                mock.patch.object(cd, "trouver_stats_understat", return_value=None), \
                 mock.patch.object(cd, "trouver_elo", return_value=None):
             cd._cache_stats_equipes.clear()
             cd.collecter_donnees()
