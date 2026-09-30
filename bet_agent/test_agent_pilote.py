@@ -241,6 +241,39 @@ class TestTroisProfilsMemeRun(unittest.TestCase):
         self.assertEqual(len(textes_envoyes), 3)
         self.assertIn("rien de sûr aujourd'hui", textes_envoyes[0])
 
+    def test_ticket_affiche_la_cote_totale_et_la_strategie(self):
+        # Demande explicite du 30/09/2026 : "il ecrit affiche pas les envoie telegrame les
+        # cote total et raisonnement total" — chaque ticket doit reprendre la stratégie donnée
+        # par l'IA (paramètre "strategie" de proposer_coupon) et la cote totale combinée.
+        reponses = [
+            _msg_outil("collecter_donnees", {}),
+            _msg_outil("voir_catalogue", {}),  # profil 1/3
+            _msg_outil("proposer_coupon", {"strategie": "double sécurité sur des favoris nets", "jambes": [
+                {"id": "P1", "raison": "r1"}, {"id": "P2", "raison": "r2"}]}),
+            _msg_outil("voir_catalogue", {}),  # profil 2/3
+            _msg_outil("proposer_coupon", {"strategie": "s2", "jambes": [
+                {"id": "P3", "raison": "r1"}, {"id": "P4", "raison": "r2"}]}),
+            _msg_outil("voir_catalogue", {}),  # profil 3/3
+            _msg_outil("proposer_coupon", {"strategie": "s3", "jambes": [
+                {"id": "P5", "raison": "r1"}, {"id": "P6", "raison": "r2"}]}),
+            _msg_outil("envoyer_telegram", {}),
+        ]
+        with mock.patch.object(cd, "collecter_donnees", return_value=None), \
+                mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(DONNEES_FACTICES))), \
+                mock.patch.object(ae, "PROFILS_COUPON", [PROFIL_1, PROFIL_2, PROFIL_3]), \
+                mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=POOL_SIX_MATCHS), \
+                mock.patch.object(ae, "agent5_envoyer_coupons", return_value=True) as envoi, \
+                mock.patch.object(pilote, "_appel_api", side_effect=[(r, 65536) for r in reponses]):
+            resultat = pilote.executer(mission="test", telegram=True)
+
+        self.assertTrue(resultat["termine"])
+        textes_envoyes = envoi.call_args.args[0]
+        # La stratégie de l'IA est reprise telle quelle dans le ticket du profil.
+        self.assertIn("double sécurité sur des favoris nets", textes_envoyes[0])
+        # La cote totale combinée (1.8 * 1.8 = 3.24) est affichée.
+        self.assertIn("Cote totale", textes_envoyes[0])
+        self.assertIn("3.24", textes_envoyes[0])
+
     def test_envoyer_telegram_refuse_si_profils_restants(self):
         reponses = [
             _msg_outil("collecter_donnees", {}),

@@ -292,9 +292,15 @@ def executer(mission=None, telegram=True):
         selections = resultat_profil.get("selections") or []
         if selections:
             texte = ae.rediger_ticket_sans_ia(selections)
+            cote_totale, _ = ae.calculer_stats_combine(selections)
+            strategie_txt = (strategie or "").strip()
+            entete_profil = f"*{profil['nom']}*"
+            if strategie_txt:
+                entete_profil += f"\n🧭 _{strategie_txt}_"
+            etat["textes"].append(f"{entete_profil}\n\n{texte}\n\n💰 *Cote totale : {cote_totale}*")
         else:
             texte = f"_{resultat_profil.get('abstention') or 'Aucun pari jugé défendable pour ce profil.'}_"
-        etat["textes"].append(f"*{profil['nom']}*\n\n{texte}")
+            etat["textes"].append(f"*{profil['nom']}*\n\n{texte}")
         etat["resultats_profils"].append({"profil": profil, "selections": selections})
         etat["profil_index"] += 1
         reste = len(etat["profils"]) - etat["profil_index"]
