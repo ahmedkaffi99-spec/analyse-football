@@ -92,7 +92,7 @@ FOOTBALL_DATA_API_KEY = os.getenv("FOOTBALL_DATA_API_KEY")  # clé gratuite (10 
 # automatique. Mets à jour la date EN MÊME TEMPS que la liste.
 # ------------------------------------------------------------
 SELECTION_MANUELLE_ACTIVE = True
-MATCHS_MANUELS_DATE = "2026-09-27"
+MATCHS_MANUELS_DATE = "2026-10-13"
 
 # Si SELECTION_MANUELLE_ACTIVE=True : la liste EXACTE de matchs à collecter, dans
 # l'ordre. Si False : sert uniquement de filet de sécurité si la sélection
@@ -100,23 +100,21 @@ MATCHS_MANUELS_DATE = "2026-09-27"
 # Noms d'équipes : peu importe l'orthographe exacte (fuzzy matching), mais reste
 # proche du nom usuel pour un bon score de correspondance.
 #
-# Demande explicite du 27/09/2026 : TOUS les matchs vus sur 1xbet (marché 1X2 ouvert,
-# captures d'écran fournies) — 6 amicaux internationaux + 8 Ligue des nations UEFA.
+# Demande explicite du 29/09/2026 : matchs de Ligue des Champions choisis par l'utilisateur
+# à partir de captures d'écran 1xBet, 13-14 octobre 2026 (12 matchs, doublons retirés).
 MATCHS_MANUELS = [
-    ("Fiji", "Papua New Guinea"),
-    ("China", "New Zealand"),
-    ("Seychelles", "Sri Lanka"),
-    ("Vanuatu", "New Caledonia"),
-    ("Cook Islands", "Tahiti"),
-    ("Mexico", "Colombia"),
-    ("Israel", "Ireland"),
-    ("Norway", "Portugal"),
-    ("Denmark", "Wales"),
-    ("Serbia", "Netherlands"),
-    ("Germany", "Greece"),
-    ("Lithuania", "Azerbaijan"),
-    ("Austria", "Kosovo"),
-    ("Gibraltar", "Andorra"),
+    ("Bodo/Glimt", "Borussia Dortmund"),
+    ("Aston Villa", "Fenerbahce"),
+    ("Roma", "Real Madrid"),
+    ("Real Betis", "Porto"),
+    ("Manchester City", "Paris Saint-Germain"),
+    ("LASK Linz", "Liverpool"),
+    ("Inter Milano", "Club Brugge"),
+    ("Galatasaray", "Barcelona"),
+    ("Villarreal", "Napoli"),
+    ("Viking", "Bayern Munich"),
+    ("Atletico Madrid", "Manchester United"),
+    ("Arsenal", "Lille OSC"),
 ]
 
 # Grandes ligues européennes uniquement — MLS et Brasileirão volontairement exclus
@@ -1145,7 +1143,12 @@ def collecter_donnees():
     except Exception as e:
         print(f"   ⚠️ OddsPapi fixtures indisponible après retries : {e}")
         fixtures_oddspapi = []
-    liste_manuelle_du_jour = MATCHS_MANUELS_DATE == datetime.now().strftime("%Y-%m-%d")
+    # Comparée à la date cible du run (DATE_CIBLE_DEBUT) quand elle est fournie, sinon à
+    # aujourd'hui — sans ça, une sélection manuelle préparée pour une période future (ex: un
+    # run lancé le 29/09 pour des matchs du 13/10) serait toujours jugée "périmée", puisque
+    # "aujourd'hui" ne correspondrait jamais à la date de la liste avant le jour J lui-même.
+    date_reference = DATE_CIBLE_DEBUT or datetime.now().strftime("%Y-%m-%d")
+    liste_manuelle_du_jour = MATCHS_MANUELS_DATE == date_reference
     if SELECTION_MANUELLE_ACTIVE and not liste_manuelle_du_jour:
         print(f"   ⚠️ Sélection manuelle active mais MATCHS_MANUELS date du {MATCHS_MANUELS_DATE} "
               f"(périmée) — ignorée, bascule sur la sélection automatique.")
