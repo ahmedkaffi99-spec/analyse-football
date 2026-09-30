@@ -27,6 +27,8 @@ jobs:
       ODDSPAPI_KEY: ${{ secrets.ODDSPAPI_KEY }}
       API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
       API_FOOTBALL_QUOTA_PAR_MINUTE: ${{ secrets.API_FOOTBALL_QUOTA_PAR_MINUTE }}
+      STATS_DETAILLEES_ACTIVE: ${{ secrets.STATS_DETAILLEES_ACTIVE }}
+      SAISON_MAX_PLAN_GRATUIT: ${{ secrets.SAISON_MAX_PLAN_GRATUIT }}
       SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
       DATE_CIBLE_DEBUT: ${{ inputs.date_debut }}
       DATE_CIBLE_FIN: ${{ inputs.date_fin }}

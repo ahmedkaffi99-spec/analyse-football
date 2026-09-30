@@ -286,7 +286,9 @@ MAX_TENTATIVES_SAISON = 3  # plafonne les appels /teams/statistics par équipe (
 # tentatives de chaque équipe (saisons 2026/2025) sont systématiquement perdues avant
 # d'atteindre 2024 qui, lui, répond — ce qui épuise le quota par minute avant la fin de la
 # collecte (constaté : 9/16 équipes seulement, échecs concentrés en fin de liste de matchs).
-SAISON_MAX_PLAN_GRATUIT = 2024
+# Surchargeable via SAISON_MAX_PLAN_GRATUIT (plan Pro souscrit le 30/09/2026 : saisons
+# 2025/2026 accessibles, cette limite ne s'applique plus).
+SAISON_MAX_PLAN_GRATUIT = int(os.getenv("SAISON_MAX_PLAN_GRATUIT") or "2024")
 
 
 @retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
