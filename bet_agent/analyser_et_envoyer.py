@@ -1501,20 +1501,35 @@ def rediger_ticket_sans_ia(selections_finales):
     """Ticket au MÊME format que celui demandé au LLM, construit en pur Python à partir des
     chiffres déjà calculés. Utilisé quand aucun LLM ne répond : une panne de l'IA ne doit
     plus jamais faire perdre les coupons du jour (constaté le 2026-09-26 : run entier en
-    erreur pour une limite de débit).
+    erreur pour une limite de débit). Réutilisé aussi par l'agent pilote pour rédiger CHAQUE
+    coupon qu'il compose lui-même (agent_pilote.py:rediger_coupon_outil), pas seulement en
+    repli — d'où le nom historique un peu trompeur.
 
     Format compact — une seule ligne par match (pas de Guide/Où parier/Pourquoi détaillés) :
     avec un coupon combiné de 10 à 15 matchs, la version détaillée dépassait régulièrement la
     limite dure de 4096 caractères de Telegram et le message finissait tronqué au milieu,
     perdant des matchs entiers (constaté sur le run du 26/09/2026). Un résumé tient en UN
-    seul message Telegram, sans jamais avoir besoin de le découper. Le niveau de confiance
-    (Faible/Moyen/Élevé, calculé en Python depuis l'edge — jamais estimé par l'IA) est affiché
-    pour chaque pari, demande explicite du 27/09/2026."""
+    seul message Telegram, sans jamais avoir besoin de le découper.
+
+    Si l'IA a fourni une raison pour ce pari (raison_ia, agent pilote/stratège), on l'affiche
+    telle quelle : c'est la vraie justification de son choix depuis que le catalogue ne
+    contient plus de probabilité/edge calculée (30/09/2026). Sinon (repli 100% Python sans
+    IA, selectionner_combo_cote_cible), le niveau de confiance (Faible/Moyen/Élevé, calculé
+    depuis l'edge, jamais estimé par l'IA — demande du 27/09/2026) reste affiché : c'est alors
+    la SEULE justification du choix. Ne jamais afficher "edge None%" (constaté le 30/09/2026,
+    run 59 : une jambe sur un marché brut sans edge calculé affichait "edge None% · Faible"
+    dans le vrai message Telegram envoyé)."""
     blocs = []
     for s in selections_finales:
         p = s["pick"]
-        blocs.append(f"⚽ *{s['match']}* — {p['marche']} : {p['selection']} @ {p['cote']} "
-                     f"(edge {p['edge_pct']}% · {niveau_confiance(p['edge_pct'])})")
+        raison = (s.get("raison_ia") or "").strip()
+        if raison:
+            detail = raison
+        elif p.get("edge_pct") is not None:
+            detail = f"edge {p['edge_pct']}% · {niveau_confiance(p['edge_pct'])}"
+        else:
+            detail = "marché brut, sans calcul Python"
+        blocs.append(f"⚽ *{s['match']}* — {p['marche']} : {p['selection']} @ {p['cote']} ({detail})")
     return "\n".join(blocs)
 
 

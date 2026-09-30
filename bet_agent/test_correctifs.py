@@ -376,6 +376,36 @@ def _selection(match, categorie, selection, cote, edge=8.0):
                      "cote": cote, "proba_modele_pct": 70.0, "edge_pct": edge, "guide": "guide", "onglet": "onglet"}}
 
 
+class TestRedactionSansEdgeNone(unittest.TestCase):
+    """Constaté en production le 30/09/2026 (run 59, 15 matchs manuels) : le vrai message
+    Telegram envoyé contenait "edge None% · Faible" pour une jambe sur un marché brut
+    (sans edge calculé) — rediger_ticket_sans_ia affichait p['edge_pct'] sans vérifier qu'il
+    existe. rediger_coupon_outil (agent_pilote.py) appelle TOUJOURS cette fonction, même
+    quand l'IA a choisi le pari elle-même et fourni une raison : il faut afficher cette
+    raison plutôt qu'un "edge None%" qui ne reflète jamais le vrai processus de décision."""
+
+    def test_jamais_edge_none_affiche(self):
+        s = _selection("A vs B", "Correct Score", "2:1", 8.5, edge=None)
+        s["pick"]["proba_modele_pct"] = None
+        texte = ae.rediger_ticket_sans_ia([s])
+        self.assertNotIn("None", texte)
+        self.assertIn("marché brut, sans calcul Python", texte)
+
+    def test_raison_ia_affichee_si_fournie(self):
+        s = _selection("A vs B", "Total", "Over", 1.9, edge=-5.0)
+        s["raison_ia"] = "forme offensive des deux équipes, buts attendus élevés"
+        texte = ae.rediger_ticket_sans_ia([s])
+        self.assertIn("forme offensive des deux équipes, buts attendus élevés", texte)
+        self.assertNotIn("edge", texte)
+
+    def test_edge_affiche_si_pas_de_raison_ia(self):
+        # Repli 100% Python sans IA (selectionner_combo_cote_cible) : pas de raison_ia,
+        # l'edge calculé reste la seule justification du choix.
+        s = _selection("A vs B", "Total", "Over", 1.9, edge=12.3)
+        texte = ae.rediger_ticket_sans_ia([s])
+        self.assertIn("edge 12.3% · Moyen", texte)
+
+
 class TestUnSeulCouponDixAQuinzeMatchs(unittest.TestCase):
     """Verrouille le réglage explicite du 26/09/2026 (un seul coupon combiné, un seul pari par
     match, pas de cible de cote totale précise) et celui du 30/09/2026 : plus de plancher/
