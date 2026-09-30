@@ -360,14 +360,16 @@ def trouver_ligue_et_stats(team_id, nom_affichage):
 # STATS DÉTAILLÉES SUR LES 10 DERNIERS MATCHS — buts, corners, cartons, fautes (et plus),
 # demande explicite de l'utilisateur (30/09/2026). Seule API-Football expose ces données
 # match par match (endpoint /fixtures/statistics) ; TheSportsDB/Understat/ClubElo ne
-# donnent au mieux que les buts. DÉSACTIVÉ PAR DÉFAUT (STATS_DETAILLEES_ACTIVE=False) :
+# donnent au mieux que les buts. DÉSACTIVÉ PAR DÉFAUT :
 # ~11 appels API-Football par équipe (1 liste + jusqu'à 10 statistiques par match), donc
 # ~22 par match — beaucoup trop coûteux en quota pour tourner par défaut sur un plan
-# gratuit à 10 req/min. À activer explicitement une fois le compte API-Football en état
-# de supporter ce volume (plan payant, ou usage ponctuel plutôt qu'à chaque run).
+# gratuit à 10 req/min. Activable ponctuellement via STATS_DETAILLEES_ACTIVE=true (envi.local
+# ou secret/var GitHub Actions) pour un test isolé, sans devoir changer le code — bascule
+# durable en dur ici une fois le compte API-Football en état de supporter ce volume à chaque
+# run (plan payant).
 # ============================================================
 
-STATS_DETAILLEES_ACTIVE = False
+STATS_DETAILLEES_ACTIVE = os.getenv("STATS_DETAILLEES_ACTIVE", "").lower() in ("1", "true", "oui")
 NB_DERNIERS_MATCHS_DETAILLES = 10
 NB_MATCHS_MIN_STATS_DETAILLEES = 3  # sous ce seuil, la moyenne est trop bruitée pour être fiable
 
