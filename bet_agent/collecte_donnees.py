@@ -1086,7 +1086,7 @@ def recuperer_marches_pour_fixture(fixture_id):
     try:
         data = _telecharger_odds_oddspapi(fixture_id)
     except Exception as e:
-        print(f"      ⚠️ OddsPapi odds indisponible après retries : {e}")
+        print(f"      ⚠️ OddsPapi odds indisponible après retries : {_cause_reelle(e)}")
         return None
     if not data:
         return None
@@ -1152,7 +1152,7 @@ def collecter_contexte_serper(home, away):
     try:
         data = _appel_serper(query)
     except Exception as e:
-        print(f"      ⚠️ Serper indisponible après retries : {e}")
+        print(f"      ⚠️ Serper indisponible après retries : {_cause_reelle(e)}")
         return None
     if not data:
         return None
@@ -1183,7 +1183,7 @@ def collecter_donnees():
         fixtures_oddspapi = _telecharger_fixtures_oddspapi()
         print(f"   ✓ {len(fixtures_oddspapi)} fixtures OddsPapi chargées")
     except Exception as e:
-        print(f"   ⚠️ OddsPapi fixtures indisponible après retries : {e}")
+        print(f"   ⚠️ OddsPapi fixtures indisponible après retries : {_cause_reelle(e)}")
         fixtures_oddspapi = []
     # Comparée à la date cible du run (DATE_CIBLE_DEBUT) quand elle est fournie, sinon à
     # aujourd'hui — sans ça, une sélection manuelle préparée pour une période future (ex: un
