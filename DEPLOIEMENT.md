@@ -12,11 +12,13 @@ Minutes décalées exprès : GitHub saute souvent les tâches planifiées pile s
 
 | Workflow | Fichier | Remplace (Termux) |
 |---|---|---|
-| Pipeline quotidien | `.github/workflows/pipeline-quotidien.yml` | `orchestrateur.py` + `relancer_si_echec.py` |
+| Pipeline quotidien | `.github/workflows/pipeline-quotidien.yml` | `orchestrateur.py` + `relancer_si_echec.py` — moteur officiel (30/09/2026) : agent pilote DeepSeek autonome (`--moteur agent`, par défaut), repli possible sur l'ancien enchaînement déterministe (`--moteur deterministe`) |
 | Vérification des résultats | `.github/workflows/verification-resultats.yml` | `verifier_resultats.py` |
 | Tests | `.github/workflows/tests.yml` | — (lancé à chaque push) |
 | Envoyer sur Telegram | `.github/workflows/envoyer-telegram.yml` | — (à la main : envoie les coupons déjà calculés d'un run, ex. après un essai sans Telegram) |
 | Tester l'API | `.github/workflows/tester-api.yml` | — (à la main et chaque lundi : vérifie l'API en ligne route par route) |
+| Diagnostics | `.github/workflows/diagnostics.yml` | — (à la main : IA, stats détaillées API-Football, marchés disponibles, ou modèles OpenRouter gratuits, au choix) |
+| Lister les matchs à venir | `.github/workflows/lister-matchs.yml` | — (à la main : calendrier des 5 grands championnats, sans collecte ni pari) |
 
 ## Étape 1 — Le projet Supabase
 
@@ -107,5 +109,6 @@ Redéployer après modification : `supabase functions deploy api --no-verify-jwt
 ## IA : OpenRouter uniquement
 
 Toute la rédaction IA passe par **OpenRouter** (secret `OPENROUTER_API_KEY`). Les secrets `GROQ_API_KEY` et `GEMINI_API_KEY` ne sont plus utilisés : tu peux les supprimer de GitHub.
-IA : **Groq, Gemini et OpenRouter en parallèle**, par vagues de 4 (la première réponse valide l'emporte). 1re vague : Groq `openai/gpt-oss-120b`, Gemini `gemini-3.8-flash` et 2 modèles gratuits d'OpenRouter ; puis Groq `qwen/qwen3.8-27b`, Gemini `gemini-3.7-flash` et les autres modèles gratuits d'OpenRouter (`nvidia/nemotron-3.5-lightning:free`, `qwen/qwen3.8-27b:free`, `google/gemma-4-31b-it:free`… jusqu'au routeur `openrouter/free`). Secrets : `GROQ_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY` (un fournisseur sans clé, ou dont la clé est refusée, est simplement écarté). L'IA dispose de 4 minutes au total par run (`BUDGET_IA_SECONDES`) et de 60 s par vague. Listes modifiables sans toucher au code avec les variables `GROQ_MODELES`, `GEMINI_MODELES`, `OPENROUTER_MODELES` (séparées par des virgules). Vérifier les clés : workflow « Tester les IA ».
+IA : **Groq, Gemini et OpenRouter en parallèle**, par vagues de 4 (la première réponse valide l'emporte). 1re vague : Groq `openai/gpt-oss-120b`, Gemini `gemini-3.8-flash` et 2 modèles gratuits d'OpenRouter ; puis Groq `qwen/qwen3.8-27b`, Gemini `gemini-3.7-flash` et les autres modèles gratuits d'OpenRouter (`nvidia/nemotron-3.5-lightning:free`, `qwen/qwen3.8-27b:free`, `google/gemma-4-31b-it:free`… jusqu'au routeur `openrouter/free`). Secrets : `GROQ_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY` (un fournisseur sans clé, ou dont la clé est refusée, est simplement écarté). L'IA dispose de 4 minutes au total par run (`BUDGET_IA_SECONDES`) et de 60 s par vague. Listes modifiables sans toucher au code avec les variables `GROQ_MODELES`, `GEMINI_MODELES`, `OPENROUTER_MODELES` (séparées par des virgules). Vérifier les clés : workflow « Diagnostics » (choix « ia »). Ne s'applique qu'au moteur `deterministe`
+— le moteur officiel `agent` rédige lui-même son ticket (DeepSeek uniquement, sans ces vagues Groq/Gemini/OpenRouter).
 Si OpenRouter ne répond pas, les coupons sont quand même produits : le ticket est rédigé automatiquement à partir des chiffres calculés.

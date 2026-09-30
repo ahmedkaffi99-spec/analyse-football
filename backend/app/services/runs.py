@@ -47,13 +47,44 @@ def charger_collecte_du_jour(db, run_source_id, telecharger=telecharger_collecte
     return telecharger(db, source)
 
 
-def executer_run(run_id, envoyer_telegram=False, rediger=True, depuis_run=None):
+def executer_run(run_id, envoyer_telegram=False, rediger=True, depuis_run=None, moteur="deterministe"):
+    """moteur="agent" (officiel depuis le 30/09/2026, demande explicite de l'utilisateur : fusion
+    de l'agent pilote DeepSeek comme pipeline officiel) : DeepSeek décide lui-même quand
+    collecter, chercher du web, proposer/rédiger/envoyer (bet_agent/agent_pilote.py) — persisté
+    en base exactement comme l'ancien enchaînement déterministe (mêmes tables, même archivage).
+    moteur="deterministe" : ancien enchaînement fixe (collecte -> calcul -> IA ratifie une
+    short-list), conservé pour --depuis-run (reprise d'une collecte archivée, non supporté par
+    l'agent qui pilote sa propre collecte) et comme repli si besoin."""
     db = SessionLocal()
     run = db.get(Run, run_id)
     donnees = None
     try:
         cd, ae, _ = pipeline.modules()
         pipeline.reinitialiser_caches(cd, ae)
+
+        if moteur == "agent":
+            if depuis_run:
+                raise ValueError("--depuis-run n'est pas supporté avec le moteur agent (il pilote "
+                                 "sa propre collecte, il n'y a pas de fichier à reprendre)")
+            agent_pilote = pipeline.charger_agent_pilote()
+            DOSSIER_DONNEES.mkdir(parents=True, exist_ok=True)
+            cd.SORTIE_JSON = str(DOSSIER_DONNEES / f"collecte_run_{run_id}.json")
+            resultat_agent = agent_pilote.executer(telegram=envoyer_telegram)
+            donnees = resultat_agent.get("donnees")
+            index = enregistrer_collecte(db, run, donnees) if donnees is not None else {}
+            if donnees is not None:
+                db.commit()
+            resultats = resultat_agent.get("resultats_profils") or []
+            if any(item["selections"] for item in resultats):
+                enregistrer_coupons(db, run, resultats, index, textes=resultat_agent.get("textes"))
+                run.envoye_telegram = bool(resultat_agent.get("envoye"))
+                run.statut = "termine"
+            else:
+                run.statut = "abandonne"
+                run.detail = (resultat_agent.get("raison_abandon") or resultat_agent.get("arret")
+                              or "Agent pilote : aucune sélection retenue.")
+            return
+
         if depuis_run:
             donnees = charger_collecte_du_jour(db, depuis_run)
         else:

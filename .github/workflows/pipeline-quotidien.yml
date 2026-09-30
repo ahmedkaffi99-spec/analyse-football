@@ -1,5 +1,8 @@
 # Remplace le cron Termux de midi (orchestrateur.py + relancer_si_echec.py).
 # Les coupons sont enregistrés dans la base Supabase (secret DATABASE_URL) et envoyés sur Telegram.
+# Moteur officiel depuis le 30/09/2026 (demande explicite) : l'agent pilote DeepSeek autonome
+# (bet_agent/agent_pilote.py), fusionné ici avec la persistance Supabase — remplace
+# l'ancien workflow séparé "Agent pilote DeepSeek" (aucune base, coupon jamais archivé).
 name: Pipeline quotidien
 
 on:
@@ -17,8 +20,15 @@ on:
         description: "Envoyer les coupons sur Telegram"
         type: boolean
         default: false
+      moteur:
+        description: "Moteur : agent pilote DeepSeek autonome (officiel), ou ancien enchaînement déterministe"
+        type: choice
+        options:
+          - agent
+          - deterministe
+        default: agent
       depuis_run:
-        description: "Reprendre la collecte d'un run du jour (numéro) : analyse + IA seulement"
+        description: "Reprendre la collecte d'un run du jour (numéro) : analyse + IA seulement (moteur deterministe uniquement)"
         type: string
         default: ""
       date_debut:
@@ -63,6 +73,7 @@ jobs:
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       EVENEMENT: ${{ github.event_name }}
       TELEGRAM_MANUEL: ${{ inputs.telegram }}
+      MOTEUR: ${{ inputs.moteur }}
       DEPUIS_RUN: ${{ inputs.depuis_run }}
       DATE_CIBLE_DEBUT: ${{ inputs.date_debut }}
       DATE_CIBLE_FIN: ${{ inputs.date_fin }}
@@ -94,6 +105,9 @@ jobs:
             ARGS="$ARGS --telegram --si-aucun-ticket-aujourdhui"
           elif [ "$TELEGRAM_MANUEL" = "true" ]; then
             ARGS="$ARGS --telegram"
+          fi
+          if [ -n "$MOTEUR" ]; then
+            ARGS="$ARGS --moteur $MOTEUR"
           fi
           if [ -n "$DEPUIS_RUN" ]; then
             case "$DEPUIS_RUN" in

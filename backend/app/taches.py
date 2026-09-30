@@ -1,6 +1,7 @@
 """Tâches planifiées, lancées par GitHub Actions (ou à la main) — sans serveur :
 
-    python -m app.taches run [--telegram] [--sans-redaction] [--si-aucun-ticket-aujourdhui]
+    python -m app.taches run [--telegram] [--moteur agent|deterministe] [--sans-redaction] \
+[--si-aucun-ticket-aujourdhui]
     python -m app.taches verifier [--telegram]
     python -m app.taches envoyer [--run-id N] [--forcer]
     python -m app.taches tester-api
@@ -42,9 +43,9 @@ def tache_run(args):
         db.commit()
         run_id = run.id
 
-    print(f"🚀 Run {run_id} — Telegram : {'oui' if args.telegram else 'non'}")
+    print(f"🚀 Run {run_id} — Telegram : {'oui' if args.telegram else 'non'} — moteur : {args.moteur}")
     executer_run(run_id, envoyer_telegram=args.telegram, rediger=not args.sans_redaction,
-                 depuis_run=getattr(args, "depuis_run", None))
+                 depuis_run=getattr(args, "depuis_run", None), moteur=args.moteur)
 
     with SessionLocal() as db:
         run = db.get(Run, run_id)
@@ -360,7 +361,11 @@ def main(argv=None):
     p_run.add_argument("--si-aucun-ticket-aujourdhui", action="store_true",
                        help="ne fait rien si un run a déjà abouti aujourd'hui (passage de secours)")
     p_run.add_argument("--depuis-run", type=int,
-                       help="reprend la collecte archivée de ce run du jour : analyse et IA seulement")
+                       help="reprend la collecte archivée de ce run du jour : analyse et IA seulement "
+                            "(moteur deterministe uniquement)")
+    p_run.add_argument("--moteur", choices=["agent", "deterministe"], default="agent",
+                       help="agent = agent pilote DeepSeek autonome, officiel par défaut (30/09/2026) ; "
+                            "deterministe = ancien enchaînement fixe collecte->calcul->IA ratifie")
     p_verif = sous.add_parser("verifier", help="juge les jambes dont le match est terminé")
     p_verif.add_argument("--telegram", action="store_true", help="envoie le bilan quand tout est jugé")
     p_envoi = sous.add_parser("envoyer", help="envoie sur Telegram les coupons déjà calculés d'un run")

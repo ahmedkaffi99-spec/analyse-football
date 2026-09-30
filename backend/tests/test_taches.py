@@ -10,30 +10,30 @@ from tests.test_api import _faux_pipeline
 
 def test_tache_run_enregistre_et_relance_evitee(monkeypatch):
     envois = _faux_pipeline(monkeypatch, collecte_exemple(), profils_exemple())
-    assert taches.main(["run", "--telegram"]) == 0
+    assert taches.main(["run", "--telegram", "--moteur", "deterministe"]) == 0
     assert len(envois) == 1
     # Passage de secours : un ticket existe déjà aujourd'hui → rien n'est relancé
-    assert taches.main(["run", "--si-aucun-ticket-aujourdhui"]) == 0
+    assert taches.main(["run", "--si-aucun-ticket-aujourdhui", "--moteur", "deterministe"]) == 0
     with SessionLocal() as db:
         assert db.query(Run).count() == 1
 
 
 def test_run_manuel_sans_telegram_ne_bloque_pas_le_passage_planifie(monkeypatch):
     envois = _faux_pipeline(monkeypatch, collecte_exemple(), profils_exemple())
-    assert taches.main(["run"]) == 0  # essai manuel, rien envoyé
-    assert taches.main(["run", "--telegram", "--si-aucun-ticket-aujourdhui"]) == 0
+    assert taches.main(["run", "--moteur", "deterministe"]) == 0  # essai manuel, rien envoyé
+    assert taches.main(["run", "--telegram", "--si-aucun-ticket-aujourdhui", "--moteur", "deterministe"]) == 0
     assert len(envois) == 1
-    assert taches.main(["run", "--telegram", "--si-aucun-ticket-aujourdhui"]) == 0  # déjà envoyé
+    assert taches.main(["run", "--telegram", "--si-aucun-ticket-aujourdhui", "--moteur", "deterministe"]) == 0  # déjà envoyé
     with SessionLocal() as db:
         assert db.query(Run).count() == 2
 
 
 def test_tache_run_en_erreur_code_retour_1(monkeypatch):
     _faux_pipeline(monkeypatch, collecte_exemple(), profils_exemple(), erreur=RuntimeError("panne"))
-    assert taches.main(["run"]) == 1
+    assert taches.main(["run", "--moteur", "deterministe"]) == 1
     # Après une erreur, le passage de secours relance bien
     _faux_pipeline(monkeypatch, collecte_exemple(), profils_exemple())
-    assert taches.main(["run", "--si-aucun-ticket-aujourdhui"]) == 0
+    assert taches.main(["run", "--si-aucun-ticket-aujourdhui", "--moteur", "deterministe"]) == 0
     with SessionLocal() as db:
         assert [r.statut for r in db.query(Run).order_by(Run.id)] == ["erreur", "termine"]
 
@@ -87,7 +87,7 @@ def test_configuration_de_la_base_sans_rien_editer():
 
 def test_envoyer_les_coupons_d_un_run_deja_calcule(monkeypatch):
     envois = _faux_pipeline(monkeypatch, collecte_exemple(), profils_exemple())
-    assert taches.main(["run"]) == 0  # essai sans Telegram
+    assert taches.main(["run", "--moteur", "deterministe"]) == 0  # essai sans Telegram
     assert envois == []
     assert taches.main(["envoyer"]) == 0  # envoi des coupons déjà rédigés, sans nouvelle collecte
     assert envois == [["ticket profil1", "ticket profil2", "ticket profil3"]]

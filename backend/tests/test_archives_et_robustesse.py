@@ -67,7 +67,7 @@ def test_run_bloque_ne_bloque_plus_le_suivant(monkeypatch):
         db.add(Run(source="api", statut="en_cours", lance_le=datetime.now(timezone.utc) - timedelta(hours=5)))
         db.commit()
     _faux_pipeline(monkeypatch, collecte_exemple(), profils_exemple())
-    assert taches.main(["run", "--si-aucun-ticket-aujourdhui"]) == 0
+    assert taches.main(["run", "--si-aucun-ticket-aujourdhui", "--moteur", "deterministe"]) == 0
     with SessionLocal() as db:
         assert [r.statut for r in db.query(Run).order_by(Run.id)] == ["erreur", "termine"]
 

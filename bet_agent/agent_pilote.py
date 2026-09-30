@@ -188,7 +188,8 @@ def executer(mission=None, telegram=True):
     cle = os.getenv("DEEPSEEK_API_KEY")
     if not cle:
         print("❌ DEEPSEEK_API_KEY manquante — agent pilote indisponible.")
-        return {"termine": False, "arret": "clé DEEPSEEK_API_KEY manquante", "envoye": False}
+        return {"termine": False, "arret": "clé DEEPSEEK_API_KEY manquante", "envoye": False,
+                "donnees": None, "resultats_profils": [], "textes": None, "raison_abandon": None}
 
     profil = ae.PROFILS_COUPON[0]
     etat = {
@@ -283,6 +284,14 @@ def executer(mission=None, telegram=True):
     resultat = piloter(cle, outils, lambda: etat["termine"], mission or "Compose le coupon combiné du jour.")
     resultat["envoye"] = etat["envoye"]
     resultat["raison_abandon"] = etat["raison_abandon"]
+    # Champs consommés par backend/app/services/runs.py (fusion du 30/09/2026, demande explicite
+    # de l'utilisateur : agent pilote = pipeline officiel, persisté en base comme l'ancien
+    # enchaînement déterministe) — même forme que ce que renvoyait analyser_et_envoyer.
+    # generer_coupons(), pour réutiliser enregistrer_collecte/enregistrer_coupons telles quelles.
+    resultat["donnees"] = etat["donnees"]
+    selections = (etat["coupon_valide"] or {}).get("selections") or []
+    resultat["resultats_profils"] = [{"profil": profil, "selections": selections}]
+    resultat["textes"] = [etat["texte_redige"]] if etat["texte_redige"] else None
     return resultat
 
 
