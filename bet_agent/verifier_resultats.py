@@ -44,7 +44,7 @@ TICKET_JSON = "ticket_du_jour.json"
 
 # Corners/cartons : aucune donnée de score fournie par OddsPapi (uniquement les buts) —
 # ces jambes ne peuvent pas être vérifiées automatiquement, jamais inventées.
-CATEGORIES_NON_VERIFIABLES = ("Total Corners", "Total Cartons")
+CATEGORIES_NON_VERIFIABLES = ("Total Corners", "Total Cartons", "Handicap Corners", "Handicap Cartons")
 
 
 def recuperer_fixtures_du_jour():

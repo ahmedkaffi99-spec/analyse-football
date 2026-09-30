@@ -90,8 +90,11 @@ class TestMuCornersEtCartonsStatsDetaillees(unittest.TestCase):
     def test_calcul_corners(self):
         home = {"corners_pour_moyenne": 6.0, "corners_contre_moyenne": 4.0}
         away = {"corners_pour_moyenne": 3.0, "corners_contre_moyenne": 5.0}
-        # mu_home = (6.0 + 5.0)/2 = 5.5 ; mu_away = (3.0 + 4.0)/2 = 3.5 ; total = 9.0
-        self.assertEqual(ae.calculer_mu_corners_depuis_stats_detaillees(home, away), 9.0)
+        # mu_home = (6.0 + 5.0)/2 = 5.5 ; mu_away = (3.0 + 4.0)/2 = 3.5
+        # Depuis le 01/10/2026 (demande explicite "calcule en poisson le handicap corners") :
+        # renvoie le split (mu_home, mu_away), pas seulement le total — Handicap Corners a
+        # besoin des deux séparément, comme le handicap principal a besoin de home_xg/away_xg.
+        self.assertEqual(ae.calculer_mu_corners_depuis_stats_detaillees(home, away), (5.5, 3.5))
 
     def test_corners_absent_ou_champ_manquant_renvoie_none(self):
         self.assertIsNone(ae.calculer_mu_corners_depuis_stats_detaillees(None, {}))
@@ -102,7 +105,8 @@ class TestMuCornersEtCartonsStatsDetaillees(unittest.TestCase):
     def test_calcul_cartons(self):
         home = {"cartons_jaunes_moyenne": 2.0}
         away = {"cartons_jaunes_moyenne": 1.5}
-        self.assertEqual(ae.calculer_mu_cartons_depuis_stats_detaillees(home, away), 3.5)
+        # Même changement que les corners : split (mu_home, mu_away), pas le total.
+        self.assertEqual(ae.calculer_mu_cartons_depuis_stats_detaillees(home, away), (2.0, 1.5))
 
     def test_cartons_absent_renvoie_none(self):
         self.assertIsNone(ae.calculer_mu_cartons_depuis_stats_detaillees(None, {"cartons_jaunes_moyenne": 1.0}))
@@ -691,6 +695,67 @@ class TestAsianHandicapVsEuropeanHandicapMarchesDistincts(unittest.TestCase):
         self.assertIn("European Handicap (-1)", noms)
         categories = {c["categorie"] for c in complets}
         self.assertEqual(categories, {"Handicap Asiatique", "European Handicap"})
+
+
+class TestHandicapCornersEtCartonsModelisesEnPoisson(unittest.TestCase):
+    """Demande explicite du 01/10/2026 : "carton et corner faut calcule en poisson [le
+    handicap], et les autres donc" — Corners - Handicap et Bookings - Handicap sont
+    maintenant modélisés (proba_handicap_couvert, même modèle que le handicap principal) via
+    mu_corners_equipes/mu_cartons_equipes (split domicile/extérieur), et non plus laissés en
+    marché brut sans calcul quand ce split est disponible."""
+
+    def test_corners_handicap_modelise_avec_le_split_par_equipe(self):
+        marches = [{"marche": "Corners - Handicap", "handicap": -1.5, "periode": "fulltime",
+                    "selections": [{"selection": "1", "cote": 1.9}, {"selection": "2", "cote": 1.9}]}]
+        candidats = ae.evaluer_marches_toutes(marches, 1.5, 1.2, mu_corners_equipes=(6.0, 4.0))
+        self.assertEqual(len(candidats), 2)
+        for c in candidats:
+            self.assertEqual(c["categorie"], "Handicap Corners")
+            self.assertIsNotNone(c["proba_modele_pct"])
+
+    def test_bookings_handicap_modelise_avec_le_split_par_equipe(self):
+        marches = [{"marche": "Bookings - Handicap", "handicap": 0, "periode": "fulltime",
+                    "selections": [{"selection": "1", "cote": 1.8}, {"selection": "2", "cote": 2.0}]}]
+        candidats = ae.evaluer_marches_toutes(marches, 1.5, 1.2, mu_cartons_equipes=(1.8, 2.3))
+        self.assertEqual(len(candidats), 2)
+        for c in candidats:
+            self.assertEqual(c["categorie"], "Handicap Cartons")
+
+    def test_sans_split_disponible_reste_en_marche_brut_sans_calcul(self):
+        # mu_corners_equipes/mu_cartons_equipes absents (pas de stats détaillées, ni repli
+        # marché possible) : comportement inchangé, le marché reste brut, sans probabilité.
+        marches = [{"marche": "Corners - Handicap", "handicap": -1.5, "periode": "fulltime",
+                    "selections": [{"selection": "1", "cote": 1.9}, {"selection": "2", "cote": 1.9}]}]
+        modelises = ae.evaluer_marches_toutes(marches, 1.5, 1.2)
+        self.assertEqual(modelises, [])
+        complets = ae.completer_avec_marches_bruts(modelises, marches)
+        self.assertEqual(len(complets), 2)
+        for c in complets:
+            self.assertEqual(c["categorie"], "Corners - Handicap")
+            self.assertIsNone(c["proba_modele_pct"])
+
+    def test_ligne_quart_jamais_modelisee_meme_avec_split_disponible(self):
+        # Cohérence avec le handicap principal : les lignes de quart ne sont jamais modélisées.
+        marches = [{"marche": "Corners - Handicap", "handicap": -0.75, "periode": "fulltime",
+                    "selections": [{"selection": "1", "cote": 1.9}, {"selection": "2", "cote": 1.9}]}]
+        candidats = ae.evaluer_marches_toutes(marches, 1.5, 1.2, mu_corners_equipes=(6.0, 4.0))
+        self.assertEqual(candidats, [])
+
+    def test_repli_marche_team1_team2_pour_les_cartons_quand_stats_absentes(self):
+        # Demande explicite : dériver le split cartons depuis les lignes de marché "Team 1"/
+        # "Team 2" quand les stats détaillées manquent (choix confirmé par l'utilisateur).
+        marches = [
+            {"marche": "Bookings - Over Under Team 1", "handicap": 2.0, "periode": "fulltime",
+             "selections": [{"selection": "Over", "cote": 1.95}, {"selection": "Under", "cote": 1.9}]},
+            {"marche": "Bookings - Over Under Team 2", "handicap": 2.5, "periode": "fulltime",
+             "selections": [{"selection": "Over", "cote": 2.0}, {"selection": "Under", "cote": 1.85}]},
+        ]
+        h = ae.estimer_ligne_equilibree(marches, ["card", "booking"], equipe=1)
+        a = ae.estimer_ligne_equilibree(marches, ["card", "booking"], equipe=2)
+        self.assertEqual((h, a), (2.0, 2.5))
+        # Ne doit JAMAIS piocher dans l'autre équipe ni dans une éventuelle ligne globale.
+        self.assertNotEqual(ae.estimer_ligne_equilibree(marches, ["card", "booking"], equipe=1),
+                             ae.estimer_ligne_equilibree(marches, ["card", "booking"], equipe=2))
 
 
 class TestContexteWeb(unittest.TestCase):
