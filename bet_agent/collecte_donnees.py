@@ -273,12 +273,16 @@ def _appel_leagues_api_football(team_id):
     _respecter_rate_limit_api_football()
     r = SESSION.get("https://v3.football.api-sports.io/leagues",
                       headers={"x-apisports-key": API_FOOTBALL_KEY}, params={"team": team_id}, timeout=15)
-    entrees = r.json().get("response", [])
+    data = r.json()
+    entrees = data.get("response", [])
     if not entrees:
         # Une réponse vide sur /leagues pour une équipe pro connue est presque toujours un
         # hoquet transitoire de l'API (constaté en pratique), pas une vraie absence de données
-        # — on déclenche un retry plutôt que d'abandonner tout de suite.
-        raise ValueError("réponse /leagues vide")
+        # — on déclenche un retry plutôt que d'abandonner tout de suite. Mais si "errors" est
+        # rempli (quota dépassé, plan insuffisant, compte suspendu — HTTP 200 quand même), le
+        # retry n'y changera rien : autant le dire clairement plutôt que "réponse vide" opaque.
+        erreurs = data.get("errors")
+        raise ValueError(f"réponse /leagues vide{f' — API-Football : {erreurs}' if erreurs else ''}")
     return entrees
 
 
@@ -288,7 +292,11 @@ def _appel_team_statistics(team_id, league_id, season):
     r = SESSION.get("https://v3.football.api-sports.io/teams/statistics",
                       headers={"x-apisports-key": API_FOOTBALL_KEY},
                       params={"team": team_id, "league": league_id, "season": season}, timeout=15)
-    return r.json().get("response", {})
+    data = r.json()
+    erreurs = data.get("errors")
+    if erreurs:
+        raise ValueError(f"API-Football a renvoyé une erreur : {erreurs}")
+    return data.get("response", {})
 
 
 # Stats d'équipe mises en cache pour la durée du run : une même équipe (ou le même match
@@ -380,7 +388,15 @@ def _appel_derniers_fixtures(team_id, n):
     r = SESSION.get("https://v3.football.api-sports.io/fixtures",
                       headers={"x-apisports-key": API_FOOTBALL_KEY},
                       params={"team": team_id, "last": n, "status": "FT"}, timeout=15)
-    return r.json().get("response", [])
+    data = r.json()
+    # API-Football renvoie souvent du JSON 200 OK avec "response": [] ET un "errors" rempli
+    # (quota dépassé, plan insuffisant, compte suspendu) — sans lever d'exception HTTP. Sans ce
+    # contrôle, l'appelant voit juste une liste vide, indiscernable d'une équipe sans historique
+    # (constaté le 30/09/2026 : 0/5 grands clubs connus, échec silencieux sans message clair).
+    erreurs = data.get("errors")
+    if erreurs:
+        raise ValueError(f"API-Football a renvoyé une erreur : {erreurs}")
+    return data.get("response", [])
 
 
 @retry(stop=stop_after_attempt(2), wait=wait_fixed(2))
@@ -389,7 +405,11 @@ def _appel_statistiques_fixture(fixture_id):
     r = SESSION.get("https://v3.football.api-sports.io/fixtures/statistics",
                       headers={"x-apisports-key": API_FOOTBALL_KEY},
                       params={"fixture": fixture_id}, timeout=15)
-    return r.json().get("response", [])
+    data = r.json()
+    erreurs = data.get("errors")
+    if erreurs:
+        raise ValueError(f"API-Football a renvoyé une erreur : {erreurs}")
+    return data.get("response", [])
 
 
 def _valeur_stat(bloc_stats, type_cherche):
@@ -792,7 +812,11 @@ def _appel_standings_api_football(league_id, season):
     r = SESSION.get("https://v3.football.api-sports.io/standings",
                       headers={"x-apisports-key": API_FOOTBALL_KEY},
                       params={"league": league_id, "season": season}, timeout=15)
-    return r.json().get("response", [])
+    data = r.json()
+    erreurs = data.get("errors")
+    if erreurs:
+        raise ValueError(f"API-Football a renvoyé une erreur : {erreurs}")
+    return data.get("response", [])
 
 
 def charger_classement_api_football(league_id, season):
