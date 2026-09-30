@@ -1259,6 +1259,25 @@ def _construire_contexte_prompt(selections_finales):
             if elo.get("esperance_domicile_pct") is not None:
                 ligne += f", espérance de victoire domicile {elo['esperance_domicile_pct']}%"
             lignes.append(ligne)
+        h2h = ctx.get("head_to_head") or {}
+        if h2h.get("matchs_analyses"):
+            lignes.append(f"- Confrontations directes (API-Football, {h2h['matchs_analyses']} matchs) : "
+                          f"{h2h['victoires_home']} victoire(s) domicile, {h2h['nuls']} nul(s), "
+                          f"{h2h['victoires_away']} victoire(s) extérieur, "
+                          f"{h2h['buts_home_moyenne']}-{h2h['buts_away_moyenne']} buts en moyenne")
+        blessures = ctx.get("blessures") or {}
+        for cote, libelle in (("home", "domicile"), ("away", "extérieur")):
+            joueurs = blessures.get(cote) or []
+            if joueurs:
+                noms = ", ".join(f"{j['nom']} ({j['motif']})" for j in joueurs if j.get("nom"))
+                lignes.append(f"- Absences déclarées ({libelle}, API-Football) : {noms}")
+        predictions = ctx.get("predictions_api_football") or {}
+        if predictions.get("vainqueur_conseille"):
+            ligne = f"- Prédiction API-Football (second avis, indépendant du modèle) : {predictions['vainqueur_conseille']} favori"
+            if predictions.get("victoire_home_pct") is not None:
+                ligne += (f" ({predictions['victoire_home_pct']}% domicile / {predictions.get('nul_pct')}% nul / "
+                          f"{predictions.get('victoire_away_pct')}% extérieur)")
+            lignes.append(ligne)
         extraits = ctx.get("contexte_web") or []
         if extraits:
             lignes.append("- Extraits de presse récents :")
@@ -1600,6 +1619,9 @@ def agent3_calcul_pool_candidats(donnees):
             "contexte_web": extraire_contexte_web(m),
             "elo": {"domicile": elo_home, "exterieur": elo_away, "esperance_domicile_pct": esperance_elo},
             "buts_attendus": {"domicile": home_xg, "exterieur": away_xg},
+            "head_to_head": m.get("head_to_head"),
+            "blessures": m.get("blessures"),
+            "predictions_api_football": m.get("predictions_api_football"),
         }
 
         # Désactivé (29/09/2026, demande explicite après une série de tickets perdus) :

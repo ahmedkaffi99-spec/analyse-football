@@ -849,5 +849,70 @@ class TestClassementApiFootball(unittest.TestCase):
         self.assertFalse(hasattr(cd, "THESPORTSDB_KEY"))
 
 
+class TestHeadToHeadBlessuresPredictions(unittest.TestCase):
+    """Nouveaux endpoints API-Football demandés explicitement le 30/09/2026 ("appelle tous
+    les endpoints, ne limite rien") : confrontations directes, blessures/suspensions,
+    prédictions propriétaires — endpoints pertinents pour l'analyse d'un match précis."""
+
+    def test_head_to_head_calcule_correctement(self):
+        confrontations = [
+            {"teams": {"home": {"id": 100}, "away": {"id": 200}}, "goals": {"home": 2, "away": 1}},
+            {"teams": {"home": {"id": 200}, "away": {"id": 100}}, "goals": {"home": 0, "away": 0}},
+            {"teams": {"home": {"id": 100}, "away": {"id": 200}}, "goals": {"home": 1, "away": 3}},
+        ]
+        with mock.patch.object(cd, "_appel_head_to_head", return_value=confrontations):
+            resultat = cd.recuperer_head_to_head(100, 200, "Équipe A", "Équipe B")
+        self.assertIsNotNone(resultat)
+        self.assertEqual(resultat["matchs_analyses"], 3)
+        self.assertEqual(resultat["victoires_home"], 1)  # match 1 (2-1, A domicile)
+        self.assertEqual(resultat["nuls"], 1)  # match 2 (0-0)
+        self.assertEqual(resultat["victoires_away"], 1)  # match 3 (1-3, A domicile mais perd)
+        self.assertEqual(resultat["buts_home_moyenne"], round((2 + 0 + 1) / 3, 2))
+        self.assertEqual(resultat["buts_away_moyenne"], round((1 + 0 + 3) / 3, 2))
+
+    def test_head_to_head_aucune_confrontation_renvoie_none(self):
+        with mock.patch.object(cd, "_appel_head_to_head", return_value=[]):
+            resultat = cd.recuperer_head_to_head(100, 200, "Équipe A", "Équipe B")
+        self.assertIsNone(resultat)
+
+    def test_blessures_reparties_par_equipe(self):
+        entrees = [
+            {"team": {"id": 100}, "player": {"name": "Joueur 1", "reason": "Blessure au genou", "type": "Injury"}},
+            {"team": {"id": 200}, "player": {"name": "Joueur 2", "reason": "Suspension", "type": "Suspended"}},
+        ]
+        with mock.patch.object(cd, "_appel_blessures", return_value=entrees):
+            resultat = cd.recuperer_blessures(999, 100, 200, "Équipe A", "Équipe B")
+        self.assertEqual(len(resultat["home"]), 1)
+        self.assertEqual(resultat["home"][0]["nom"], "Joueur 1")
+        self.assertEqual(len(resultat["away"]), 1)
+        self.assertEqual(resultat["away"][0]["nom"], "Joueur 2")
+
+    def test_blessures_liste_vide_si_aucune(self):
+        with mock.patch.object(cd, "_appel_blessures", return_value=[]):
+            resultat = cd.recuperer_blessures(999, 100, 200, "Équipe A", "Équipe B")
+        self.assertEqual(resultat, {"home": [], "away": []})
+
+    def test_predictions_nettoie_les_pourcentages(self):
+        reponse = [{"predictions": {
+            "winner": {"name": "Équipe A"},
+            "percent": {"home": "55%", "draw": "25%", "away": "20%"},
+            "goals": {"home": "-2.5", "away": "+1.5"},
+            "under_over": "2.5",
+            "advice": "Combo double chance",
+        }}]
+        with mock.patch.object(cd, "_appel_predictions", return_value=reponse):
+            resultat = cd.recuperer_predictions(999, "Équipe A", "Équipe B")
+        self.assertEqual(resultat["vainqueur_conseille"], "Équipe A")
+        self.assertEqual(resultat["victoire_home_pct"], 55.0)
+        self.assertEqual(resultat["nul_pct"], 25.0)
+        self.assertEqual(resultat["victoire_away_pct"], 20.0)
+        self.assertEqual(resultat["conseil_texte"], "Combo double chance")
+
+    def test_predictions_reponse_vide_renvoie_none(self):
+        with mock.patch.object(cd, "_appel_predictions", return_value=[]):
+            resultat = cd.recuperer_predictions(999, "Équipe A", "Équipe B")
+        self.assertIsNone(resultat)
+
+
 if __name__ == "__main__":
     unittest.main()

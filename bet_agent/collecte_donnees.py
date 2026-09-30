@@ -916,6 +916,177 @@ def recuperer_fixtures_api_football():
     return fixtures
 
 
+# ============================================================
+# CONFRONTATIONS DIRECTES (head-to-head), BLESSURES/SUSPENSIONS, PRÉDICTIONS — demande
+# explicite de l'utilisateur (30/09/2026, plan Pro) : appeler les endpoints API-Football
+# supplémentaires pertinents pour l'analyse d'un match (pas les endpoints hors-sujet pour un
+# coupon de paris : trophées, transferts, biographies d'entraîneurs, stades...). Chacun
+# dépend de donnees_af["fixture_id_api_football"] (le match doit avoir été identifié sur
+# API-Football) — silencieusement absent sinon, comme le reste des sources API-Football.
+# ============================================================
+
+NB_CONFRONTATIONS_H2H = 10
+
+
+@retry(stop=stop_after_attempt(2), wait=wait_fixed(2))
+def _appel_head_to_head(home_id, away_id, n):
+    _respecter_rate_limit_api_football()
+    r = SESSION.get("https://v3.football.api-sports.io/fixtures/headtohead",
+                      headers={"x-apisports-key": API_FOOTBALL_KEY},
+                      params={"h2h": f"{home_id}-{away_id}", "last": n}, timeout=15)
+    data = r.json()
+    erreurs = data.get("errors")
+    if erreurs:
+        raise ValueError(f"API-Football a renvoyé une erreur : {erreurs}")
+    return data.get("response", [])
+
+
+def recuperer_head_to_head(home_id, away_id, nom_home, nom_away):
+    """Confrontations directes passées entre les deux équipes (toutes compétitions
+    confondues) : victoires de chaque équipe, nuls, moyenne de buts — un signal que le
+    modèle Poisson (basé sur la forme générale) ne capture pas (ex : une équipe historiquement
+    dominée par son adversaire malgré une meilleure forme récente)."""
+    try:
+        confrontations = _appel_head_to_head(home_id, away_id, NB_CONFRONTATIONS_H2H)
+    except Exception as e:
+        print(f"      ⚠️ Head-to-head introuvable pour {nom_home} vs {nom_away} après retries : {_cause_reelle(e)}")
+        return None
+    if not confrontations:
+        return None
+
+    victoires_home, victoires_away, nuls = 0, 0, 0
+    buts_home_total, buts_away_total = 0, 0
+    for fx in confrontations:
+        equipes = fx.get("teams", {})
+        est_home_domicile = equipes.get("home", {}).get("id") == home_id
+        buts = fx.get("goals", {})
+        bh = buts.get("home") if est_home_domicile else buts.get("away")
+        ba = buts.get("away") if est_home_domicile else buts.get("home")
+        if bh is None or ba is None:
+            continue
+        buts_home_total += bh
+        buts_away_total += ba
+        if bh > ba:
+            victoires_home += 1
+        elif ba > bh:
+            victoires_away += 1
+        else:
+            nuls += 1
+
+    matchs_jour = victoires_home + victoires_away + nuls
+    if matchs_jour == 0:
+        return None
+    resultat = {
+        "source": "api_football_head_to_head",
+        "matchs_analyses": matchs_jour,
+        "victoires_home": victoires_home,
+        "victoires_away": victoires_away,
+        "nuls": nuls,
+        "buts_home_moyenne": round(buts_home_total / matchs_jour, 2),
+        "buts_away_moyenne": round(buts_away_total / matchs_jour, 2),
+    }
+    print(f"      ✓ {nom_home} vs {nom_away} (API-Football, {matchs_jour} confrontation(s)) : "
+          f"{victoires_home}V/{nuls}N/{victoires_away}V pour {nom_away}, "
+          f"{resultat['buts_home_moyenne']}-{resultat['buts_away_moyenne']} buts en moyenne")
+    return resultat
+
+
+@retry(stop=stop_after_attempt(2), wait=wait_fixed(2))
+def _appel_blessures(fixture_id):
+    _respecter_rate_limit_api_football()
+    r = SESSION.get("https://v3.football.api-sports.io/injuries",
+                      headers={"x-apisports-key": API_FOOTBALL_KEY},
+                      params={"fixture": fixture_id}, timeout=15)
+    data = r.json()
+    erreurs = data.get("errors")
+    if erreurs:
+        raise ValueError(f"API-Football a renvoyé une erreur : {erreurs}")
+    return data.get("response", [])
+
+
+def recuperer_blessures(fixture_id, home_id, away_id, nom_home, nom_away):
+    """Blessures/suspensions déclarées pour CE match précis (endpoint /injuries?fixture=),
+    séparées par équipe — complémentaire aux résultats Serper (souvent plus à jour mais non
+    structurés) : ici, liste exacte des joueurs et du motif (blessure/suspension) tel que
+    déclaré à l'API. Une seule requête pour les deux équipes."""
+    try:
+        entrees = _appel_blessures(fixture_id)
+    except Exception as e:
+        print(f"      ⚠️ Blessures introuvables pour {nom_home} vs {nom_away} après retries : {_cause_reelle(e)}")
+        return None
+    if not entrees:
+        return {"home": [], "away": []}
+
+    par_equipe = {"home": [], "away": []}
+    for entree in entrees:
+        team_id = entree.get("team", {}).get("id")
+        joueur = entree.get("player", {})
+        fiche = {"nom": joueur.get("name"), "motif": joueur.get("reason"), "type": joueur.get("type")}
+        if team_id == home_id:
+            par_equipe["home"].append(fiche)
+        elif team_id == away_id:
+            par_equipe["away"].append(fiche)
+    print(f"      ✓ {nom_home} vs {nom_away} (API-Football, blessures) : "
+          f"{len(par_equipe['home'])} chez {nom_home}, {len(par_equipe['away'])} chez {nom_away}")
+    return par_equipe
+
+
+@retry(stop=stop_after_attempt(2), wait=wait_fixed(2))
+def _appel_predictions(fixture_id):
+    _respecter_rate_limit_api_football()
+    r = SESSION.get("https://v3.football.api-sports.io/predictions",
+                      headers={"x-apisports-key": API_FOOTBALL_KEY},
+                      params={"fixture": fixture_id}, timeout=15)
+    data = r.json()
+    erreurs = data.get("errors")
+    if erreurs:
+        raise ValueError(f"API-Football a renvoyé une erreur : {erreurs}")
+    return data.get("response", [])
+
+
+def _pourcentage_api_football(valeur):
+    """API-Football renvoie les pourcentages de /predictions sous forme de chaîne ("45%"),
+    jamais un nombre — même nettoyage que _valeur_stat pour les stats détaillées."""
+    if valeur is None:
+        return None
+    try:
+        return float(str(valeur).replace("%", "").strip())
+    except ValueError:
+        return None
+
+
+def recuperer_predictions(fixture_id, nom_home, nom_away):
+    """Second avis probabiliste, indépendant du modèle Poisson interne : les prédictions
+    propriétaires d'API-Football (vainqueur, over/under, conseil textuel) — un désaccord
+    marqué entre les deux modèles est un signal utile pour l'IA stratège (moins de confiance
+    sur ce marché), pas une vérité à suivre aveuglément."""
+    try:
+        reponse = _appel_predictions(fixture_id)
+    except Exception as e:
+        print(f"      ⚠️ Prédictions introuvables pour {nom_home} vs {nom_away} après retries : {_cause_reelle(e)}")
+        return None
+    if not reponse:
+        return None
+
+    p = reponse[0].get("predictions", {})
+    pourcentages = p.get("percent") or {}
+    resultat = {
+        "source": "api_football_predictions",
+        "vainqueur_conseille": (p.get("winner") or {}).get("name"),
+        "victoire_home_pct": _pourcentage_api_football(pourcentages.get("home")),
+        "victoire_away_pct": _pourcentage_api_football(pourcentages.get("away")),
+        "nul_pct": _pourcentage_api_football(pourcentages.get("draw")),
+        "buts_attendus_home": p.get("goals", {}).get("home"),
+        "buts_attendus_away": p.get("goals", {}).get("away"),
+        "over_under_conseille": p.get("under_over"),
+        "conseil_texte": p.get("advice"),
+    }
+    print(f"      ✓ {nom_home} vs {nom_away} (API-Football, prédictions) : "
+          f"{resultat['vainqueur_conseille'] or '—'}, {resultat['victoire_home_pct']}/"
+          f"{resultat['nul_pct']}/{resultat['victoire_away_pct']}")
+    return resultat
+
+
 def assez_tot_avant_coup_envoi(depart_iso, maintenant=None):
     """Faux si le match commence dans moins de MINUTES_MIN_AVANT_COUP_ENVOI minutes (ou est
     déjà commencé). Une heure illisible ou absente n'exclut pas le match."""
@@ -1415,6 +1586,22 @@ def collecter_donnees():
             classement_away = trouver_classement(donnees_af["away_id"], stats_away.get("league_id"),
                                                   stats_away.get("season"), nom_away_stats)
 
+        # --- Confrontations directes, blessures/suspensions, prédictions : API-Football,
+        # demande explicite du 30/09/2026 ("appelle tous les endpoints, ne limite rien").
+        # Tous les trois ont besoin du match identifié sur API-Football (fixture_id_api_
+        # football) — silencieusement absents sinon, comme le reste des sources API-Football.
+        head_to_head, blessures, predictions = None, None, None
+        if donnees_af and donnees_af.get("home_id") and donnees_af.get("away_id"):
+            print(f"      → Recherche confrontations directes {nom_home_stats} vs {nom_away_stats} (API-Football)...")
+            head_to_head = recuperer_head_to_head(donnees_af["home_id"], donnees_af["away_id"],
+                                                   nom_home_stats, nom_away_stats)
+        if donnees_af and donnees_af.get("fixture_id_api_football"):
+            print(f"      → Recherche blessures/suspensions {nom_home_stats} vs {nom_away_stats} (API-Football)...")
+            blessures = recuperer_blessures(donnees_af["fixture_id_api_football"], donnees_af.get("home_id"),
+                                             donnees_af.get("away_id"), nom_home_stats, nom_away_stats)
+            print(f"      → Recherche prédictions {nom_home_stats} vs {nom_away_stats} (API-Football)...")
+            predictions = recuperer_predictions(donnees_af["fixture_id_api_football"], nom_home_stats, nom_away_stats)
+
         resultats.append({
             "match_demande": {"home": home_demande, "away": away_demande},
             "api_football": donnees_af,
@@ -1429,6 +1616,9 @@ def collecter_donnees():
             "understat_xg": {"home": understat_home, "away": understat_away},
             "clubelo": {"home": elo_home, "away": elo_away},
             "classement": {"home": classement_home, "away": classement_away},
+            "head_to_head": head_to_head,
+            "blessures": blessures,
+            "predictions_api_football": predictions,
         })
 
     sortie = {
@@ -1451,6 +1641,9 @@ def collecter_donnees():
         "nb_equipes_avec_classement": sum(
             1 for r in resultats for cote in ("home", "away") if r["classement"][cote]
         ),
+        "nb_matchs_avec_head_to_head": sum(1 for r in resultats if r["head_to_head"]),
+        "nb_matchs_avec_blessures": sum(1 for r in resultats if r["blessures"] is not None),
+        "nb_matchs_avec_predictions": sum(1 for r in resultats if r["predictions_api_football"]),
         "matchs": resultats,
     }
 
@@ -1469,6 +1662,9 @@ def collecter_donnees():
     print(f"   ✓ {sortie['nb_equipes_avec_elo']}/{len(resultats) * 2} équipes avec rating ClubElo trouvées")
     print(f"   ✓ {sortie['nb_equipes_avec_classement']}/{len(resultats) * 2} équipes avec classement "
           f"API-Football trouvées")
+    print(f"   ✓ {sortie['nb_matchs_avec_head_to_head']}/{len(resultats)} matchs avec confrontations directes trouvées")
+    print(f"   ✓ {sortie['nb_matchs_avec_blessures']}/{len(resultats)} matchs avec blessures/suspensions vérifiées")
+    print(f"   ✓ {sortie['nb_matchs_avec_predictions']}/{len(resultats)} matchs avec prédictions API-Football trouvées")
 
 
 if __name__ == "__main__":
