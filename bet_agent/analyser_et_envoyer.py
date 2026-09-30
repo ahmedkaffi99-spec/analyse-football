@@ -624,7 +624,7 @@ def evaluer_marches(marches, mu_home, mu_away, mu_corners=None, mu_cartons=None)
     for c in _evaluer_marches_brut(marches, mu_home, mu_away, mu_corners, mu_cartons):
         if c["categorie"] in CATEGORIES_EXCLUES or c["cote"] < COTE_MIN_JAMBE:
             continue
-        p_marche = marche_sans_marge.get((c.get("marche_oddspapi", c["marche"]), c["selection"]))
+        p_marche = marche_sans_marge.get((c["marche"], c["selection"]))
         if p_marche is None:
             continue
         p_modele = c["proba_modele_pct"] / 100
@@ -651,7 +651,7 @@ def evaluer_marches_toutes(marches, mu_home, mu_away, mu_corners=None, mu_carton
     for c in _evaluer_marches_brut(marches, mu_home, mu_away, mu_corners, mu_cartons):
         if c["categorie"] in CATEGORIES_EXCLUES or c["cote"] < COTE_MIN_JAMBE:
             continue
-        p_marche = marche_sans_marge.get((c.get("marche_oddspapi", c["marche"]), c["selection"]))
+        p_marche = marche_sans_marge.get((c["marche"], c["selection"]))
         if p_marche is None:
             continue
         p_modele = c["proba_modele_pct"] / 100
@@ -675,10 +675,7 @@ def completer_avec_marches_bruts(candidats_modelises, marches):
     dans le pool (pour l'IA), mais le repli 100% Python sans IA (selectionner_combo_cote_
     cible) les ignore automatiquement puisqu'il exige un edge calculé — comportement inchangé
     pour ce repli, seul le choix de l'IA principale s'élargit."""
-    # marche_oddspapi (nom brut, avant correction d'affichage type "Handicap Européen") sert
-    # de clé de déduplication — pas "marche" (le nom éventuellement corrigé), sinon un marché
-    # déjà modélisé réapparaîtrait ici en double sous son nom brut OddsPapi.
-    deja_vus = {(c.get("marche_oddspapi", c["marche"]), c["selection"]) for c in candidats_modelises}
+    deja_vus = {(c["marche"], c["selection"]) for c in candidats_modelises}
     resultat = list(candidats_modelises)
     for marche in marches:
         if not est_marche_match_entier(marche):
@@ -686,16 +683,6 @@ def completer_avec_marches_bruts(candidats_modelises, marches):
         nom_marche = marche.get("marche") or "Marché"
         handicap = marche.get("handicap")
         nom_avec_ligne = f"{nom_marche} ({handicap})" if handicap is not None else nom_marche
-        # Même correction d'affichage que dans _candidat() : le marché brut "Asian Handicap"
-        # d'OddsPapi mélange lignes entières/demi (onglet réel "Handicap" sur 1xBet) et lignes
-        # de quart (onglet réel "Asian Handicap") — seules les lignes de quart sont le vrai
-        # Asian Handicap ; la clé de dédup (deja_vus) reste basée sur nom_avec_ligne, non affecté.
-        nom_bas = nom_marche.lower()
-        est_handicap_principal = ("asian handicap" in nom_bas and "corner" not in nom_bas
-                                   and "card" not in nom_bas and "booking" not in nom_bas)
-        nom_affiche = ("Handicap Européen" if est_handicap_principal and handicap is not None
-                       and not _est_ligne_quart(handicap) else nom_marche)
-        nom_affiche_avec_ligne = f"{nom_affiche} ({handicap})" if handicap is not None else nom_affiche
         for s in marche.get("selections", []):
             cote = s.get("cote")
             if not cote or cote <= 1:
@@ -705,8 +692,7 @@ def completer_avec_marches_bruts(candidats_modelises, marches):
                 continue
             deja_vus.add(cle)
             resultat.append({
-                "categorie": nom_affiche, "marche": nom_affiche_avec_ligne,
-                "marche_oddspapi": nom_avec_ligne, "handicap": handicap,
+                "categorie": nom_marche, "marche": nom_avec_ligne, "handicap": handicap,
                 "selection": s["selection"], "cote": cote,
                 "proba_modele_pct": None, "edge_pct": None, "guide": None, "onglet": None,
                 "proba_poisson_pct": None, "proba_marche_pct": None,
@@ -865,19 +851,22 @@ def _evaluer_marches_brut(marches, mu_home, mu_away, mu_corners=None, mu_cartons
                     if _edge_calculable(edge, p_away_dnb):
                         candidats.append(_candidat(marche["marche"], handicap, s, p_away_dnb, edge, "Draw No Bet"))
 
-        # --- Handicap (lignes entières/demi uniquement — voir note nom_affiche ci-dessous) ---
+        # --- Asian Handicap ---
+        # Marché OddsPapi "Asian Handicap" (2 voies, push possible sur les lignes entières) —
+        # à NE PAS confondre avec le marché OddsPapi "European Handicap" (3 voies, 1/X/2, un
+        # vrai marché DISTINCT, vu en base sur d'autres matchs, ex: Juventus W-Napoli W). Un
+        # renommage d'affichage en "Handicap Européen" a été tenté le 01/10/2026 (captures
+        # 1xBet séparant visuellement "Handicap" de "Asian Handicap"), puis ANNULÉ le même
+        # jour : il entrait en collision avec ce vrai marché "European Handicap" distinct —
+        # deux paris pourraient alors porter le même libellé avec des cotes totalement
+        # différentes pour la même ligne. Le nom brut OddsPapi "Asian Handicap" reste donc
+        # affiché tel quel, y compris pour les lignes entières/demi que cette branche modélise
+        # (les lignes de quart sont exclues juste au-dessus, jamais modélisées ici).
         elif "asian handicap" in nom and "corner" not in nom and "card" not in nom and "booking" not in nom:
             if handicap is None:
                 continue
             if _est_ligne_quart(handicap):
-                continue  # ligne .25/.75 exclue ici : jamais modélisée, gérée en brut (pool)
-            # OddsPapi ne renvoie qu'un seul marché "Asian Handicap" qui mélange lignes
-            # entières/demi ET lignes de quart — mais 1xBet les sépare en deux onglets
-            # réels ("Handicap" vs "Asian Handicap", captures utilisateur du 01/10/2026).
-            # Puisque cette branche exclut déjà les lignes de quart (ligne au-dessus), tout
-            # ce qu'elle modélise correspond en réalité à l'onglet "Handicap" (dit européen :
-            # lignes entières/demi, push possible sur les lignes entières) — jamais au vrai
-            # "Asian Handicap" (quarts, géré uniquement par le pool brut, jamais ici).
+                continue  # ligne .25/.75 non fiable comme option réelle sur 1xbet
             for s in selections:
                 sel = s["selection"].lower()
                 if "home" in sel or sel == "1":
@@ -888,8 +877,7 @@ def _evaluer_marches_brut(marches, mu_home, mu_away, mu_corners=None, mu_cartons
                     continue
                 edge = calc_edge(proba, s["cote"])
                 if _edge_calculable(edge, proba):
-                    candidats.append(_candidat(marche["marche"], handicap, s, proba, edge,
-                                                "Handicap Européen", nom_affiche="Handicap Européen"))
+                    candidats.append(_candidat(marche["marche"], handicap, s, proba, edge, "Handicap Asiatique"))
 
         # --- Odd/Even (Pair/Impair) — nombre total de buts du match ---
         elif ("odd even" in nom and "team" not in nom
@@ -1016,43 +1004,33 @@ def expliquer_marche(categorie, selection_brute, handicap):
                  f"soit l'équipe {num} ({cote_txt}) ne gagne pas, soit l'adversaire marque au moins un but")
         return guide, f"onglet Win to Nil équipe {num}"
 
-    if categorie in ("Handicap Européen", "Handicap Asiatique"):
-        # "Handicap Asiatique" gardé pour les tickets déjà persistés avant la correction du
-        # 01/10/2026 (renommage en "Handicap Européen" pour les lignes entières/demi, seules
-        # modélisées ici — voir _candidat/nom_affiche).
+    if categorie in ("Handicap Asiatique", "Handicap Européen"):
+        # "Handicap Européen" gardé en compatibilité : un renommage bref le 01/10/2026 (annulé
+        # le même jour, collision avec le vrai marché OddsPapi distinct "European Handicap",
+        # 3 voies 1/X/2) a pu être persisté entre-temps sur d'éventuels tickets.
         if sel in ("home", "1"):
             cote_txt, h_effectif = "domicile", handicap
         elif sel in ("away", "2"):
             cote_txt, h_effectif = "extérieure", -handicap
         else:
-            return f"handicap : {selection_brute}", "onglet Handicap"
+            return f"handicap asiatique : {selection_brute}", "onglet Handicap Asiatique"
         if h_effectif >= 0:
             guide = f"l'équipe {cote_txt} part avec un avantage fictif de {h_effectif} but(s)"
         else:
             guide = f"l'équipe {cote_txt} part avec un désavantage fictif de {abs(h_effectif)} but(s)"
-        return guide, "onglet Handicap"
+        return guide, "onglet Handicap Asiatique"
 
     return None, None
 
 
-def _candidat(nom_marche, handicap, selection, proba, edge, categorie, nom_affiche=None):
+def _candidat(nom_marche, handicap, selection, proba, edge, categorie):
     # La ligne (handicap) est intégrée AU NOM du marché — pas laissée comme détail séparé
     # que le LLM pourrait oublier de reprendre dans le ticket final.
-    # nom_affiche : nom CORRIGÉ à afficher au lieu du nom brut OddsPapi (ex: "Handicap
-    # Européen" au lieu du littéral "Asian Handicap" qu'OddsPapi renvoie aussi pour les
-    # lignes entières/demi — constaté le 01/10/2026 via captures 1xBet : l'appli sépare
-    # "Handicap" (lignes entières/demi, ex: 0, -1, -1.5) de "Asian Handicap" (lignes de
-    # quart .25/.75 uniquement), mais OddsPapi ne renvoie qu'un seul marché "Asian Handicap"
-    # pour les deux. marche_oddspapi garde le nom brut pour la déduplication avec le pool
-    # de marchés non modélisés (completer_avec_marches_bruts), qui lui ignore nom_affiche.
-    marche_oddspapi = f"{nom_marche} ({handicap})" if handicap is not None else nom_marche
-    nom_avec_ligne = (f"{nom_affiche} ({handicap})" if handicap is not None else nom_affiche) \
-        if nom_affiche else marche_oddspapi
+    nom_avec_ligne = f"{nom_marche} ({handicap})" if handicap is not None else nom_marche
     guide, onglet = expliquer_marche(categorie, selection["selection"], handicap)
     return {
         "categorie": categorie,
         "marche": nom_avec_ligne,
-        "marche_oddspapi": marche_oddspapi,
         "handicap": handicap,
         "selection": selection["selection"],
         "cote": selection["cote"],
