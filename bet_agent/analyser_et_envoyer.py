@@ -296,6 +296,48 @@ def calculer_xg_depuis_stats_detaillees(sd_home, sd_away):
     return round(max(0.15, mu_home), 2), round(max(0.15, mu_away), 2)
 
 
+def calculer_mu_corners_depuis_stats_detaillees(sd_home, sd_away):
+    """Corners totaux attendus (domicile + extérieur) depuis les VRAIES stats des 10 derniers
+    matchs (API-Football, recuperer_stats_10_derniers_matchs) — réactive Total Corners,
+    désactivé le 29/09/2026 (mu_corners=None) faute de source indépendante : la seule donnée
+    disponible alors était la ligne 1xBet elle-même, comparée à d'AUTRES lignes de corners du
+    même bookmaker — un edge purement circulaire, jamais une vraie valeur prédictive. Cette
+    donnée (corners_pour_moyenne/corners_contre_moyenne, 15 métriques API-Football) existe
+    depuis le 30/09/2026 (compte passé Pro, capacité de la collecter systématiquement) : même
+    méthode que les buts (calculer_xg_depuis_stats_detaillees), moyenne de l'attaque de l'une
+    et de la défense de l'autre pour chaque camp, puis somme des deux pour le total du match."""
+    if not sd_home or not sd_away:
+        return None
+    champs = (sd_home.get("corners_pour_moyenne"), sd_home.get("corners_contre_moyenne"),
+              sd_away.get("corners_pour_moyenne"), sd_away.get("corners_contre_moyenne"))
+    if None in champs:
+        return None
+    try:
+        mu_home = (float(sd_home["corners_pour_moyenne"]) + float(sd_away["corners_contre_moyenne"])) / 2
+        mu_away = (float(sd_away["corners_pour_moyenne"]) + float(sd_home["corners_contre_moyenne"])) / 2
+    except (TypeError, ValueError):
+        return None
+    return round(max(0.5, mu_home + mu_away), 2)
+
+
+def calculer_mu_cartons_depuis_stats_detaillees(sd_home, sd_away):
+    """Cartons (jaunes) totaux attendus (domicile + extérieur) depuis les VRAIES stats des 10
+    derniers matchs (API-Football) — remplace, quand disponible, l'ancienne méthode circulaire
+    (estimer_ligne_equilibree : ligne 1xBet comparée à elle-même, même défaut que les corners
+    avant leur désactivation). Cartons rouges exclus (trop rares sur 10 matchs pour un signal
+    fiable) ; pas de notion d'attaque/défense comme pour les buts ou les corners — un carton
+    est reçu par une équipe pour son propre comportement, pas "concédé" par l'adversaire."""
+    if not sd_home or not sd_away:
+        return None
+    cj_home, cj_away = sd_home.get("cartons_jaunes_moyenne"), sd_away.get("cartons_jaunes_moyenne")
+    if cj_home is None or cj_away is None:
+        return None
+    try:
+        return round(max(0.5, float(cj_home) + float(cj_away)), 2)
+    except (TypeError, ValueError):
+        return None
+
+
 def _est_ligne_quart(x):
     r = x * 4
     return abs(r - round(r)) < 1e-6 and (round(r) % 2 != 0)
@@ -1603,14 +1645,18 @@ def agent3_calcul_pool_candidats(donnees):
             "predictions_api_football": m.get("predictions_api_football"),
         }
 
-        # Désactivé (29/09/2026, demande explicite après une série de tickets perdus) :
-        # mu_corners était dérivé de la ligne 1xBet elle-même la plus équilibrée, puis comparé
-        # aux AUTRES lignes de corners du même bookmaker (ex: 10.5) — un edge purement circulaire
-        # qui ne mesure que la marge interne d'1xBet entre ses propres lignes, jamais une vraie
-        # valeur prédictive (aucune source de stats corners indépendante n'existe dans le
-        # pipeline). mu_corners=None fait ignorer ce marché (voir evaluer_marches_toutes).
-        mu_corners = None
-        mu_cartons = estimer_ligne_equilibree(marches, ["card", "booking"])
+        # Réactivé le 30/09/2026 (compte API-Football passé Pro, "on est pro, on ne limite
+        # plus aucun marché, même corners") : mu_corners/mu_cartons viennent maintenant des
+        # VRAIES stats des 10 derniers matchs quand disponibles (voir calculer_mu_corners_
+        # depuis_stats_detaillees / calculer_mu_cartons_depuis_stats_detaillees) — jamais de
+        # la ligne 1xBet elle-même (edge circulaire, la cause de la désactivation du
+        # 29/09/2026). Repli sur l'ancienne méthode marché-sur-marché pour les cartons
+        # SEULEMENT si les stats détaillées manquent (mieux qu'aucun marché Cartons) ; aucun
+        # repli pour les corners (jamais fiable) — mu_corners reste None, marché ignoré,
+        # plutôt que d'inventer un chiffre.
+        mu_corners = calculer_mu_corners_depuis_stats_detaillees(stats_detaillees.get("home"), stats_detaillees.get("away"))
+        mu_cartons = (calculer_mu_cartons_depuis_stats_detaillees(stats_detaillees.get("home"), stats_detaillees.get("away"))
+                      or estimer_ligne_equilibree(marches, ["card", "booking"]))
 
         candidats = evaluer_marches_toutes(marches, home_xg, away_xg, mu_corners, mu_cartons)
         print(f"      → {len(marches)} marchés bruts scannés, {len(candidats)} marché(s) modélisable(s) "

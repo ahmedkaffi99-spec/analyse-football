@@ -80,6 +80,63 @@ class TestXgStatsDetaillees(unittest.TestCase):
         self.assertEqual(candidat["contexte"]["buts_attendus"]["exterieur"], 1.1)
 
 
+class TestMuCornersEtCartonsStatsDetaillees(unittest.TestCase):
+    """Réactivation de Total Corners et passage de Total Cartons aux VRAIES stats des 10
+    derniers matchs (30/09/2026, "on est pro, on ne limite plus aucun marché, même corners") —
+    corners_pour_moyenne/corners_contre_moyenne et cartons_jaunes_moyenne existent depuis le
+    compte API-Football Pro, remplaçant l'ancienne méthode circulaire (ligne 1xBet comparée à
+    elle-même) pour les cartons, et le None pur (marché ignoré) pour les corners."""
+
+    def test_calcul_corners(self):
+        home = {"corners_pour_moyenne": 6.0, "corners_contre_moyenne": 4.0}
+        away = {"corners_pour_moyenne": 3.0, "corners_contre_moyenne": 5.0}
+        # mu_home = (6.0 + 5.0)/2 = 5.5 ; mu_away = (3.0 + 4.0)/2 = 3.5 ; total = 9.0
+        self.assertEqual(ae.calculer_mu_corners_depuis_stats_detaillees(home, away), 9.0)
+
+    def test_corners_absent_ou_champ_manquant_renvoie_none(self):
+        self.assertIsNone(ae.calculer_mu_corners_depuis_stats_detaillees(None, {}))
+        self.assertIsNone(ae.calculer_mu_corners_depuis_stats_detaillees(
+            {"corners_pour_moyenne": 6.0, "corners_contre_moyenne": None},
+            {"corners_pour_moyenne": 3.0, "corners_contre_moyenne": 5.0}))
+
+    def test_calcul_cartons(self):
+        home = {"cartons_jaunes_moyenne": 2.0}
+        away = {"cartons_jaunes_moyenne": 1.5}
+        self.assertEqual(ae.calculer_mu_cartons_depuis_stats_detaillees(home, away), 3.5)
+
+    def test_cartons_absent_renvoie_none(self):
+        self.assertIsNone(ae.calculer_mu_cartons_depuis_stats_detaillees(None, {"cartons_jaunes_moyenne": 1.0}))
+
+    def test_corners_et_cartons_utilises_dans_le_pool(self):
+        donnees = {"matchs": [{
+            "match_demande": {"home": "A", "away": "B"},
+            "api_football": None,
+            "oddspapi": {"fixture_id": "f1", "tous_marches": [
+                {"marche": "Corners - Over Under Full Time", "handicap": 9.5, "periode": "fulltime",
+                 "selections": [{"selection": "Over", "cote": 1.9}, {"selection": "Under", "cote": 1.9}]},
+                {"marche": "Bookings - Over Under Full Time", "handicap": 3.5, "periode": "fulltime",
+                 "selections": [{"selection": "Over", "cote": 1.9}, {"selection": "Under", "cote": 1.9}]},
+            ]},
+            "serper": None,
+            "stats_historiques": {"home": None, "away": None},
+            "stats_detaillees_10_matchs": {
+                "home": {"buts_marques_moyenne": 2.0, "buts_encaisses_moyenne": 1.0,
+                         "corners_pour_moyenne": 6.0, "corners_contre_moyenne": 4.0,
+                         "cartons_jaunes_moyenne": 2.0},
+                "away": {"buts_marques_moyenne": 1.2, "buts_encaisses_moyenne": 1.6,
+                         "corners_pour_moyenne": 3.0, "corners_contre_moyenne": 5.0,
+                         "cartons_jaunes_moyenne": 1.5},
+            },
+            "classement": {"home": None, "away": None},
+            "head_to_head": None, "blessures": None, "predictions_api_football": None,
+        }]}
+        with mock.patch.object(ae, "verifier_fraicheur_matchs", side_effect=lambda ms: ms):
+            pool = ae.agent3_calcul_pool_candidats(donnees)
+        categories = {c["pick"]["categorie"] for c in pool["A vs B"]}
+        self.assertIn("Total Corners", categories)
+        self.assertIn("Total Cartons", categories)
+
+
 class TestTelegram(unittest.TestCase):
     def test_repli_texte_brut_si_markdown_casse(self):
         erreur = mock.Mock(status_code=400, text='{"description":"Bad Request: can\'t parse entities"}')
