@@ -77,7 +77,11 @@ def construire_prompt(pool, profils, catalogue_texte):
     mission = (f"composer le coupon combiné 1xBet du jour à partir du CATALOGUE ci-dessous" if un_seul
                else f"composer les {n} coupons combinés 1xBet du jour à partir du CATALOGUE ci-dessous")
     regle_distinction = "" if un_seul else (
-        f"Les {n} coupons doivent être différents. ")
+        f"Les {n} coupons doivent être différents : tu peux reprendre un MATCH déjà utilisé dans un autre "
+        "coupon, mais jamais le MÊME pari exact (même marché, même sélection) — Python le refuse. Diversifie "
+        "aussi les catégories à l'échelle des PLUSIEURS coupons, pas seulement à l'intérieur d'un seul (ex: si "
+        "un coupon a pris \"Corners Under 9.5\", varie sur un autre coupon avec \"Corners Over 10.5\" ou une "
+        "autre catégorie plutôt que reprendre \"Corners Under 9.5\" sur un autre match). ")
     return (
         "System: Tu es un analyste-parieur professionnel, prudent et méthodique. Tu RAISONNES, tu "
         "PLANIFIES et tu CHOISIS. Réponds UNIQUEMENT en français, et UNIQUEMENT avec un objet JSON valide "
@@ -194,20 +198,31 @@ def _signature_direction_ligne(pick):
     return str(pick.get("selection", "")).strip().lower(), pick.get("handicap")
 
 
-def _categories_peu_variees(selections, catalogue):
+def _categories_peu_variees(selections, catalogue, deja_presents=()):
     """Généralise _pari_conservateur/PART_MAX_PARIS_CONSERVATEURS à N'IMPORTE QUELLE catégorie
     de marché (pas seulement Under/No) : si une même catégorie (ex: "Total Corners") est
-    utilisée au moins 2 fois dans le coupon avec TOUJOURS la même direction ET la même ligne
-    (ex: "Corners Under 9.5" à chaque fois), alors qu'une alternative (Over, ou une autre ligne)
-    existait dans le catalogue pour au moins un des matchs concernés, exige de varier — ne
-    s'applique jamais à un match qui n'offre réellement que cette seule ligne."""
+    utilisée au moins 2 fois avec TOUJOURS la même direction ET la même ligne (ex: "Corners
+    Under 9.5" à chaque fois — deux paris de la même catégorie sont considérés variés dès que
+    l'un des deux diffère : Over vs Under, OU une ligne différente comme Corners 10.5 vs 9.5,
+    ou Total Over 3.5 vs Over 2.5), alors qu'une alternative existait dans le catalogue pour
+    au moins un des matchs concernés, exige de varier — ne s'applique jamais à un match qui
+    n'offre réellement que cette seule ligne.
+
+    deja_presents (30/09/2026, demande explicite : "ne choisis pas au profil suivant ce que le
+    profil précédent a déjà choisi") = sélections DÉJÀ VERROUILLÉES d'autres profils composés
+    plus tôt dans le même run — comptent pour repérer un manque de variété à l'échelle du run
+    entier, mais ne sont plus modifiables : un problème n'est signalé QUE si au moins une des
+    jambes en cause vient de `selections` (ce profil-ci, encore modifiable)."""
     erreurs = []
+    ids_courants = {id(s) for s in selections}
     par_categorie = {}
-    for s in selections:
+    for s in (*deja_presents, *selections):
         par_categorie.setdefault(s["pick"]["categorie"], []).append(s)
     for categorie, groupe in par_categorie.items():
         if len(groupe) < 2 or len({_signature_direction_ligne(s["pick"]) for s in groupe}) > 1:
             continue  # une seule occurrence, ou déjà varié (direction et/ou ligne différente)
+        if not any(id(s) in ids_courants for s in groupe):
+            continue  # entièrement issu de profils déjà verrouillés — rien à corriger ici
         direction, ligne = _signature_direction_ligne(groupe[0]["pick"])
         matchs_concernes = {s["match"] for s in groupe}
         matchs_avec_alt = {
@@ -218,8 +233,9 @@ def _categories_peu_variees(selections, catalogue):
         if matchs_avec_alt:
             ligne_txt = f" ({ligne})" if ligne is not None else ""
             erreurs.append(
-                f"{len(groupe)} paris « {categorie} » tous en « {direction}{ligne_txt} » — varie (direction "
-                f"opposée, ou une ligne différente) sur au moins {', '.join(sorted(matchs_avec_alt))}")
+                f"{len(groupe)} paris « {categorie} » tous en « {direction}{ligne_txt} » (y compris dans "
+                f"d'autres profils déjà composés ce run) — varie (direction opposée, ou une ligne différente) "
+                f"sur au moins {', '.join(sorted(matchs_avec_alt))}")
     return erreurs
 
 
@@ -230,23 +246,31 @@ def _categories_peu_variees(selections, catalogue):
 PART_MAX_MEME_CATEGORIE = 0.4  # au plus 40% des jambes d'une même catégorie si une autre existe
 
 
-def _categories_dominantes(selections, catalogue):
+def _categories_dominantes(selections, catalogue, deja_presents=()):
     """Une catégorie de marché ne doit pas dominer le coupon (ex: 3 Double Chance sur 5 jambes,
     même avec des directions différentes 1X/2X) quand une catégorie DIFFÉRENTE existait dans le
     catalogue pour au moins un des matchs concernés — complémentaire à _categories_peu_variees
     (qui regarde direction+ligne à l'intérieur d'une même catégorie déjà répétée), celle-ci
-    regarde la répétition de la catégorie elle-même, quelle que soit la direction retenue."""
+    regarde la répétition de la catégorie elle-même, quelle que soit la direction retenue.
+
+    deja_presents : voir _categories_peu_variees — sélections verrouillées d'autres profils
+    déjà composés ce run, comptées dans le seuil mais jamais la cause d'une erreur à elles
+    seules (il faut qu'au moins une jambe de `selections`, ce profil-ci, soit en cause)."""
     erreurs = []
+    ids_courants = {id(s) for s in selections}
+    toutes = (*deja_presents, *selections)
     par_categorie = {}
-    for s in selections:
+    for s in toutes:
         par_categorie.setdefault(s["pick"]["categorie"], []).append(s)
-    seuil = math.floor(len(selections) * PART_MAX_MEME_CATEGORIE) if selections else 0
+    seuil = math.floor(len(toutes) * PART_MAX_MEME_CATEGORIE) if toutes else 0
     for categorie, groupe in par_categorie.items():
         # Une catégorie choisie une seule fois n'est jamais "dominante", même sur un petit coupon
         # où floor(n*0.4) vaut 0 (ex: 2 jambes) — sans ce garde-fou, un coupon de 2 jambes en 2
         # catégories DIFFÉRENTES (aucune répétition) serait signalé à tort.
         if len(groupe) < 2 or len(groupe) <= seuil:
             continue
+        if not any(id(s) in ids_courants for s in groupe):
+            continue  # entièrement issu de profils déjà verrouillés — rien à corriger ici
         matchs_concernes = {s["match"] for s in groupe}
         matchs_avec_alt = {
             c["match"] for c in catalogue.values()
@@ -254,17 +278,28 @@ def _categories_dominantes(selections, catalogue):
         }
         if matchs_avec_alt:
             erreurs.append(
-                f"{len(groupe)}/{len(selections)} paris sont de la catégorie « {categorie} » (trop dominant, "
-                f"maximum {seuil} recommandé) ; une autre catégorie de marché existe dans le catalogue pour "
-                f"{', '.join(sorted(matchs_avec_alt))} — remplace au moins un pari « {categorie} » par une "
-                "autre catégorie sur l'un de ces matchs")
+                f"{len(groupe)}/{len(toutes)} paris (toutes profils confondus ce run) sont de la catégorie "
+                f"« {categorie} » (trop dominant, maximum {seuil} recommandé) ; une autre catégorie de marché "
+                f"existe dans le catalogue pour {', '.join(sorted(matchs_avec_alt))} — remplace au moins un "
+                f"pari « {categorie} » par une autre catégorie sur l'un de ces matchs")
     return erreurs
 
 
-def valider(proposition, catalogue, profils, signatures_existantes=()):
+def valider(proposition, catalogue, profils, signatures_existantes=(), selections_precedentes=()):
     """Contrôle la proposition de l'IA profil par profil. Renvoie
-    (acceptes {cle: {"selections"|"abstention", "strategie"}}, problemes [str], calculs [str])."""
+    (acceptes {cle: {"selections"|"abstention", "strategie"}}, problemes [str], calculs [str]).
+
+    selections_precedentes (30/09/2026, demande explicite : "je veux [...] ne choisis pas au
+    profil suivant ce que le profil précédent a déjà choisi") : sélections déjà VERROUILLÉES
+    d'un profil composé avant cet appel (agent pilote : un profil par appel, l'appelant passe
+    l'historique accumulé ; stratège déterministe : les profils précédents de la MÊME
+    proposition, accumulés ci-dessous au fil de la boucle). Deux effets : (1) un pari déjà
+    utilisé ailleurs (même match, même marché, même sélection) est refusé pour un profil
+    suivant — chaque profil doit proposer des paris différents ; (2) la diversité de catégorie
+    (_categories_peu_variees/_categories_dominantes) se mesure sur le run ENTIER, pas profil
+    par profil isolément."""
     acceptes, problemes, calculs, signatures = {}, [], [], list(signatures_existantes)
+    toutes_selections_verrouillees = list(selections_precedentes)
     par_profil = {c.get("profil"): c for c in (proposition.get("coupons") or []) if isinstance(c, dict)}
     for profil in profils:
         cle = profil["cle"]
@@ -279,6 +314,8 @@ def valider(proposition, catalogue, profils, signatures_existantes=()):
             calculs.append(f"{cle} : abstention acceptée.")
             continue
 
+        dejas_utilises = {(s["match"], s["pick"]["marche"], s["pick"]["selection"])
+                          for s in toutes_selections_verrouillees}
         erreurs, selections, par_match, ids_vus = [], [], {}, set()
         for jambe in jambes:
             cid = str((jambe or {}).get("id", "")).strip().upper()
@@ -291,6 +328,12 @@ def valider(proposition, catalogue, profils, signatures_existantes=()):
             ids_vus.add(cid)
             selection = dict(catalogue[cid], pick=dict(catalogue[cid]["pick"]),
                              raison_ia=str(jambe.get("raison") or "").strip())
+            cle_pick = (selection["match"], selection["pick"]["marche"], selection["pick"]["selection"])
+            if cle_pick in dejas_utilises:
+                erreurs.append(f"{cid} : « {selection['pick']['marche']} → {selection['pick']['selection']} » "
+                               f"sur {selection['match']} déjà choisi dans un autre profil ce run — choisis un "
+                               "autre pari ou un autre match pour ce profil")
+                continue
             probleme = incoherence_raison(selection["raison_ia"], selection["pick"])
             if probleme:
                 erreurs.append(f"{cid} : {probleme} — réécris la raison de CE pari")
@@ -316,8 +359,8 @@ def valider(proposition, catalogue, profils, signatures_existantes=()):
                     f"{', '.join(matchs_a_varier)} — remplace au moins un pari Under/No par une alternative sur "
                     "l'un de ces matchs")
 
-        erreurs.extend(_categories_peu_variees(selections, catalogue))
-        erreurs.extend(_categories_dominantes(selections, catalogue))
+        erreurs.extend(_categories_peu_variees(selections, catalogue, deja_presents=toutes_selections_verrouillees))
+        erreurs.extend(_categories_dominantes(selections, catalogue, deja_presents=toutes_selections_verrouillees))
 
         nb_jambes_min = profil.get("nb_jambes_min", NB_JAMBES_MIN_DEFAUT)
         if not nb_jambes_min <= len(selections) <= profil["nb_jambes"]:
@@ -342,6 +385,7 @@ def valider(proposition, catalogue, profils, signatures_existantes=()):
         else:
             signatures.append(empreinte)
             acceptes[cle] = {"selections": selections, "strategie": strategie}
+            toutes_selections_verrouillees.extend(selections)
     return acceptes, problemes, calculs
 
 

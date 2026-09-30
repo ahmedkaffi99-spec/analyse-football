@@ -118,6 +118,20 @@ PROFIL_2 = {"cle": "equilibre", "nom": "⚖️ ÉQUILIBRÉ", "cote_min": 0.0, "c
 PROFIL_3 = {"cle": "audacieux", "nom": "🔥 AUDACIEUX", "cote_min": 0.0, "cote_max": 1000.0, "nb_jambes_min": 1, "nb_jambes": 2}
 
 
+def _pick(categorie, marche, selection, cote):
+    return {"categorie": categorie, "marche": marche, "handicap": 2.5, "selection": selection, "cote": cote,
+            "proba_modele_pct": None, "edge_pct": None, "proba_poisson_pct": None, "proba_marche_pct": None}
+
+
+# 6 matchs, un pick chacun (P1..P6) : assez pour que 3 profils de 2 jambes composent chacun
+# des paris DIFFÉRENTS, sans jamais avoir besoin de réutiliser le même pari qu'un profil
+# précédent (voir TestTroisProfilsMemeRun ci-dessous).
+POOL_SIX_MATCHS = {
+    f"M{i} vs A{i}": [{"match": f"M{i} vs A{i}", "pick": _pick("Total", "Total (2.5)", sel, 1.8)}]
+    for i, sel in enumerate(["Over", "Under", "Over", "Under", "Over", "Under"], start=1)
+}
+
+
 class TestTroisProfilsMemeRun(unittest.TestCase):
     """Demande explicite du 30/09/2026 : "3 trois type de coupon sur un seule run et envoie
     telegrame" — un seul pool/catalogue calculé une fois, 3 compositions séquentielles
@@ -136,16 +150,16 @@ class TestTroisProfilsMemeRun(unittest.TestCase):
                 {"id": "P1", "raison": "r1"}, {"id": "P2", "raison": "r2"}]}),
             _msg_outil("voir_catalogue", {}),  # profil 2/3
             _msg_outil("proposer_coupon", {"strategie": "s2", "jambes": [
-                {"id": "P1", "raison": "r1"}, {"id": "P2", "raison": "r2"}]}),
+                {"id": "P3", "raison": "r1"}, {"id": "P4", "raison": "r2"}]}),
             _msg_outil("voir_catalogue", {}),  # profil 3/3
             _msg_outil("proposer_coupon", {"strategie": "s3", "jambes": [
-                {"id": "P1", "raison": "r1"}, {"id": "P2", "raison": "r2"}]}),
+                {"id": "P5", "raison": "r1"}, {"id": "P6", "raison": "r2"}]}),
             _msg_outil("envoyer_telegram", {}),
         ]
         with mock.patch.object(cd, "collecter_donnees", return_value=None), \
                 mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(DONNEES_FACTICES))), \
                 mock.patch.object(ae, "PROFILS_COUPON", [PROFIL_1, PROFIL_2, PROFIL_3]), \
-                mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=POOL_FACTICE), \
+                mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=POOL_SIX_MATCHS), \
                 mock.patch.object(ae, "agent5_envoyer_coupons", return_value=True) as envoi, \
                 mock.patch.object(pilote, "_appel_api", side_effect=[(r, 65536) for r in reponses]):
             resultat = pilote.executer(mission="test", telegram=True)
@@ -162,6 +176,40 @@ class TestTroisProfilsMemeRun(unittest.TestCase):
         self.assertIn("ÉQUILIBRÉ", textes_envoyes[1])
         self.assertIn("AUDACIEUX", textes_envoyes[2])
 
+    def test_meme_pari_refuse_dans_un_profil_suivant(self):
+        # Demande explicite du 30/09/2026 : "ne choisis pas au profil suivant ce que le profil
+        # précédent a déjà choisi" — Python doit refuser P1/P2 dans le 2e profil puisqu'ils ont
+        # déjà été verrouillés dans le 1er, forçant l'IA à proposer autre chose (P3/P4 ici).
+        reponses = [
+            _msg_outil("collecter_donnees", {}),
+            _msg_outil("voir_catalogue", {}),  # profil 1/3
+            _msg_outil("proposer_coupon", {"strategie": "s1", "jambes": [
+                {"id": "P1", "raison": "r1"}, {"id": "P2", "raison": "r2"}]}),
+            _msg_outil("voir_catalogue", {}),  # profil 2/3, tentative 1 (refusée)
+            _msg_outil("proposer_coupon", {"strategie": "s2", "jambes": [
+                {"id": "P1", "raison": "r1"}, {"id": "P2", "raison": "r2"}]}),
+            _msg_outil("proposer_coupon", {"strategie": "s2 corrigé", "jambes": [
+                {"id": "P3", "raison": "r1"}, {"id": "P4", "raison": "r2"}]}),
+            _msg_outil("voir_catalogue", {}),  # profil 3/3
+            _msg_outil("proposer_coupon", {"strategie": "s3", "jambes": [
+                {"id": "P5", "raison": "r1"}, {"id": "P6", "raison": "r2"}]}),
+            _msg_outil("envoyer_telegram", {}),
+        ]
+        with mock.patch.object(cd, "collecter_donnees", return_value=None), \
+                mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(DONNEES_FACTICES))), \
+                mock.patch.object(ae, "PROFILS_COUPON", [PROFIL_1, PROFIL_2, PROFIL_3]), \
+                mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=POOL_SIX_MATCHS), \
+                mock.patch.object(ae, "agent5_envoyer_coupons", return_value=True), \
+                mock.patch.object(pilote, "_appel_api", side_effect=[(r, 65536) for r in reponses]) as appel:
+            resultat = pilote.executer(mission="test", telegram=True)
+
+        self.assertTrue(resultat["termine"])
+        self.assertTrue(resultat["envoye"])
+        # Le message renvoyé à l'IA après la tentative refusée mentionne bien la vraie cause.
+        messages_4e_appel = appel.call_args_list[4].args[1]
+        contenus_outils = [m["content"] for m in messages_4e_appel if m.get("role") == "tool"]
+        self.assertTrue(any("déjà choisi dans un autre profil" in c for c in contenus_outils))
+
     def test_abstention_sur_un_profil_continue_les_autres(self):
         reponses = [
             _msg_outil("collecter_donnees", {}),
@@ -172,13 +220,13 @@ class TestTroisProfilsMemeRun(unittest.TestCase):
                 {"id": "P1", "raison": "r1"}, {"id": "P2", "raison": "r2"}]}),
             _msg_outil("voir_catalogue", {}),  # profil 3/3
             _msg_outil("proposer_coupon", {"strategie": "s3", "jambes": [
-                {"id": "P1", "raison": "r1"}, {"id": "P2", "raison": "r2"}]}),
+                {"id": "P3", "raison": "r1"}, {"id": "P4", "raison": "r2"}]}),
             _msg_outil("envoyer_telegram", {}),
         ]
         with mock.patch.object(cd, "collecter_donnees", return_value=None), \
                 mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(DONNEES_FACTICES))), \
                 mock.patch.object(ae, "PROFILS_COUPON", [PROFIL_1, PROFIL_2, PROFIL_3]), \
-                mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=POOL_FACTICE), \
+                mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=POOL_SIX_MATCHS), \
                 mock.patch.object(ae, "agent5_envoyer_coupons", return_value=True) as envoi, \
                 mock.patch.object(pilote, "_appel_api", side_effect=[(r, 65536) for r in reponses]):
             resultat = pilote.executer(mission="test", telegram=True)

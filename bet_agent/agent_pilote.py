@@ -24,9 +24,13 @@ du début à la fin, en autonomie, avec tes outils. Réponds et écris en franç
 MISSION : produire 3 coupons combinés du jour, un par PROFIL de risque (sûr, équilibré, audacieux — cote \
 totale cible différente pour chacun), chacun de matchs DIFFÉRENTS (un seul pari par match), choisis dans le \
 MÊME catalogue de paris réels — TOI SEUL décides combien de matchs inclure dans chaque coupon, selon la \
-qualité des données du jour. Tu composes les 3 coupons L'UN APRÈS L'AUTRE (jamais en parallèle), tu peux \
-réutiliser un match dans plusieurs profils avec un pari différent ou le même. Tu peux t'abstenir sur UN \
-profil si rien n'est défendable pour sa cible de cote, sans que ça t'empêche de composer les autres.
+qualité des données du jour. Tu composes les 3 coupons L'UN APRÈS L'AUTRE (jamais en parallèle). Tu peux \
+réutiliser un MATCH déjà pris dans un profil précédent, mais jamais le MÊME pari exact (même marché, même \
+sélection) — Python le refuse. Diversifie aussi les CATÉGORIES à l'échelle des 3 profils, pas seulement à \
+l'intérieur d'un seul coupon (ex: si le profil sûr a pris "Corners Under 9.5", varie sur le profil suivant \
+avec "Corners Over 10.5" ou une autre catégorie plutôt que reprendre "Corners Under 9.5" sur un autre match — \
+Over/Under = diversité, une ligne différente (9.5 vs 10.5, 2.5 vs 3.5) = diversité aussi). Tu peux t'abstenir \
+sur UN profil si rien n'est défendable pour sa cible de cote, sans que ça t'empêche de composer les autres.
 
 LE CATALOGUE NE CONTIENT QUE DES COTES BRUTES (marché, sélection, cote réelle 1xBet) — AUCUNE \
 probabilité ni edge n'est calculée par Python : c'est TOI qui analyses et juges la valeur de chaque pari, à \
@@ -276,7 +280,12 @@ def executer(mission=None, telegram=True):
             return {"erreur": "les 3 profils ont déjà leur coupon (ou une abstention) — appelle envoyer_telegram"}
         profil = etat["profils"][etat["profil_index"]]
         proposition = {"coupons": [{"profil": profil["cle"], "strategie": strategie, "jambes": jambes}]}
-        acceptes, problemes, calculs = st.valider(proposition, etat["catalogue"] or {}, [profil])
+        # selections_precedentes : paris déjà verrouillés dans les profils composés plus tôt
+        # dans CE run — interdit de les réutiliser et étend la diversité de catégorie à
+        # l'échelle du run entier, pas seulement de ce profil (demande explicite du 30/09/2026).
+        selections_precedentes = [s for r in etat["resultats_profils"] for s in r["selections"]]
+        acceptes, problemes, calculs = st.valider(proposition, etat["catalogue"] or {}, [profil],
+                                                  selections_precedentes=selections_precedentes)
         if problemes:
             return {"valide": False, "problemes": problemes}
         resultat_profil = acceptes[profil["cle"]]

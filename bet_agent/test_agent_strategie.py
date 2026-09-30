@@ -375,6 +375,96 @@ class TestCategorieDominante(unittest.TestCase):
         self.assertIn("coupon", acceptes)
 
 
+class TestDiversiteEtDoublonsEntreProfils(unittest.TestCase):
+    """Demande explicite du 30/09/2026 : "ne choisis pas au profil suivant ce que le profil
+    précédent a déjà choisi" + diversité de catégorie à l'échelle du run entier, pas profil par
+    profil isolément. valider() traite les profils d'une même proposition dans l'ordre et
+    verrouille les sélections d'un profil accepté avant de passer au suivant ; selections_
+    precedentes permet d'injecter le même historique quand chaque profil vient d'un appel
+    valider() séparé (agent pilote, un profil à la fois)."""
+
+    def _pool_six_matchs(self):
+        # 6 matchs, une seule catégorie "Total" chacun (P1 Over, P2 Under, P3 Over, P4 Under,
+        # P5 Over, P6 Under) : aucune alternative de catégorie nulle part, donc les règles de
+        # diversité par catégorie ne se déclenchent jamais ici — isole le test sur la seule
+        # règle testée (refus du pari exactement identique entre profils).
+        return {
+            f"M{i} vs A{i}": [_sel(f"M{i} vs A{i}", "Total", sel, 1.8)]
+            for i, sel in enumerate(["Over", "Under", "Over", "Under", "Over", "Under"], start=1)
+        }
+
+    def test_meme_pari_exact_refuse_dans_le_profil_suivant(self):
+        pool = self._pool_six_matchs()
+        catalogue, _ = st.construire_catalogue(pool)
+        profils = [{"cle": "p1", "nom": "x", "cote_min": 0.0, "cote_max": 1000.0, "nb_jambes": 2, "nb_jambes_min": 2},
+                   {"cle": "p2", "nom": "y", "cote_min": 0.0, "cote_max": 1000.0, "nb_jambes": 2, "nb_jambes_min": 2}]
+        proposition = {"coupons": [
+            {"profil": "p1", "strategie": "s", "jambes": [{"id": "P1"}, {"id": "P2"}]},
+            # P1 réutilisé (même match, même marché, même sélection) — doit être refusé.
+            {"profil": "p2", "strategie": "s", "jambes": [{"id": "P1"}, {"id": "P3"}]},
+        ]}
+
+        acceptes, problemes, _ = st.valider(proposition, catalogue, profils)
+
+        self.assertIn("p1", acceptes)
+        self.assertNotIn("p2", acceptes)
+        self.assertTrue(any("déjà choisi dans un autre profil" in p for p in problemes), problemes)
+
+    def test_meme_match_autre_marche_accepte_dans_le_profil_suivant(self):
+        # A vs B propose Total ET BTTS (P1, P2) : réutiliser le MATCH avec un pari DIFFÉRENT
+        # (P2 au lieu de P1) dans un autre profil reste autorisé.
+        pool = {
+            "A vs B": [_sel("A vs B", "Total", "Over", 1.8), _sel("A vs B", "BTTS", "Yes", 1.7)],
+            "C vs D": [_sel("C vs D", "Total", "Over", 1.8)],
+            "E vs F": [_sel("E vs F", "Total", "Over", 1.8)],
+        }
+        catalogue, _ = st.construire_catalogue(pool)
+        profils = [{"cle": "p1", "nom": "x", "cote_min": 0.0, "cote_max": 1000.0, "nb_jambes": 1, "nb_jambes_min": 1},
+                   {"cle": "p2", "nom": "y", "cote_min": 0.0, "cote_max": 1000.0, "nb_jambes": 1, "nb_jambes_min": 1}]
+        proposition = {"coupons": [
+            {"profil": "p1", "strategie": "s", "jambes": [{"id": "P1"}]},  # A vs B, Total Over
+            {"profil": "p2", "strategie": "s", "jambes": [{"id": "P2"}]},  # A vs B, BTTS Yes — match repris, pari différent
+        ]}
+
+        acceptes, problemes, _ = st.valider(proposition, catalogue, profils)
+
+        self.assertEqual(problemes, [])
+        self.assertIn("p1", acceptes)
+        self.assertIn("p2", acceptes)
+
+    def test_categorie_dominante_a_l_echelle_du_run_entier(self):
+        # profil1 : 1 seul pari "Double Chance" (P1) + 1 BTTS (P4) — pas dominant à lui seul
+        # (1/2, sous le seuil). profil2 ajoute un 2e Double Chance (P5) sur un autre match :
+        # à l'échelle du run, 2 Double Chance sur 3 paris (67%) dépasse le seuil de 40%, mais
+        # seulement visible en comptant le profil précédent (deja_presents).
+        pool = {
+            "A vs B": [_sel("A vs B", "Double Chance", "2X", 1.33), _sel("A vs B", "Total", "Over", 1.9)],
+            "C vs D": [_sel("C vs D", "Double Chance", "1X", 1.37), _sel("C vs D", "BTTS", "Yes", 1.8)],
+            "E vs F": [_sel("E vs F", "Double Chance", "2X", 1.6), _sel("E vs F", "Total", "Under", 1.5)],
+        }
+        catalogue, _ = st.construire_catalogue(pool)
+        profils = [{"cle": "p1", "nom": "x", "cote_min": 0.0, "cote_max": 1000.0, "nb_jambes": 2, "nb_jambes_min": 2},
+                   {"cle": "p2", "nom": "y", "cote_min": 0.0, "cote_max": 1000.0, "nb_jambes": 1, "nb_jambes_min": 1}]
+        proposition = {"coupons": [
+            {"profil": "p1", "strategie": "s", "jambes": [{"id": "P1"}, {"id": "P4"}]},  # A/2X, C/BTTS
+            {"profil": "p2", "strategie": "s", "jambes": [{"id": "P5"}]},  # E/2X — 2e Double Chance du run
+        ]}
+
+        acceptes, problemes, _ = st.valider(proposition, catalogue, profils)
+
+        self.assertIn("p1", acceptes)
+        self.assertNotIn("p2", acceptes)
+        self.assertTrue(any("Double Chance" in p and "dominant" in p for p in problemes), problemes)
+
+    def test_fonctions_diversite_acceptent_deja_presents_vide_par_defaut(self):
+        # Compatibilité : les appels existants sans deja_presents continuent de fonctionner
+        # exactement comme avant (aucune régression pour les appelants qui l'ignorent).
+        selections = [_sel("A vs B", "Total", "Over", 1.8), _sel("C vs D", "Total", "Over", 1.8)]
+        catalogue, _ = st.construire_catalogue({"A vs B": [selections[0]], "C vs D": [selections[1]]})
+        self.assertEqual(st._categories_peu_variees(selections, catalogue), [])
+        self.assertEqual(st._categories_dominantes(selections, catalogue), [])
+
+
 class TestCoupEnvoi(unittest.TestCase):
     def test_match_qui_commence_bientot_ecarte_a_la_reprise(self):
         from datetime import datetime, timezone

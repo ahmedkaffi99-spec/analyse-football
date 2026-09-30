@@ -47,6 +47,35 @@ def test_moteur_agent_termine_et_persiste_le_coupon(monkeypatch):
         assert len(coupon.jambes) == len(selections)
 
 
+def test_moteur_agent_persiste_les_3_profils_separement(monkeypatch):
+    # Demande explicite du 30/09/2026 : "je veux chaque profil stocke sur les base" — repassé
+    # à 3 profils (sûr/équilibré/audacieux) composés dans le même run par agent_pilote.py ;
+    # chacun doit devenir sa PROPRE ligne Coupon (avec son texte et ses jambes), pas fusionnés.
+    profils = profils_exemple()
+    _faux_agent_pilote(monkeypatch, {
+        "donnees": collecte_exemple(), "resultats_profils": profils,
+        "textes": ["ticket profil 1", "ticket profil 2", "ticket profil 3 (abstention)"],
+        "envoye": True, "raison_abandon": None,
+    })
+
+    assert taches.main(["run", "--telegram", "--moteur", "agent"]) == 0
+
+    with SessionLocal() as db:
+        run = db.query(Run).one()
+        assert run.statut == "termine"
+        assert run.envoye_telegram is True
+        assert len(run.coupons) == 3
+        coupons_par_cle = {c.profil: c for c in run.coupons}
+        assert set(coupons_par_cle) == {"profil1", "profil2", "profil3"}
+        assert coupons_par_cle["profil1"].texte == "ticket profil 1"
+        assert len(coupons_par_cle["profil1"].jambes) == 2
+        assert coupons_par_cle["profil2"].texte == "ticket profil 2"
+        assert len(coupons_par_cle["profil2"].jambes) == 1
+        # profil3 : aucune sélection (abstention) — toujours sa propre ligne, 0 jambe.
+        assert coupons_par_cle["profil3"].texte == "ticket profil 3 (abstention)"
+        assert len(coupons_par_cle["profil3"].jambes) == 0
+
+
 def test_moteur_agent_abstention_marque_le_run_abandonne(monkeypatch):
     _faux_agent_pilote(monkeypatch, {
         "donnees": collecte_exemple(), "resultats_profils": [{"profil": _profil_unique(), "selections": []}],
