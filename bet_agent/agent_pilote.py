@@ -21,8 +21,10 @@ STATUTS_A_REESSAYER = (429, 500, 502, 503, 504)
 PROMPT_SYSTEME = """Tu es l'agent pilote d'un pipeline de coupons de paris football (1xBet). Tu conduis le run \
 du début à la fin, en autonomie, avec tes outils. Réponds et écris en français.
 
-MISSION : produire UN coupon combiné du jour de 10 à 15 matchs DIFFÉRENTS (un seul pari par match), choisi \
-dans le CATALOGUE de paris réels, le faire rédiger, puis l'envoyer. Ou t'abstenir si rien n'est défendable.
+MISSION : produire UN coupon combiné du jour de matchs DIFFÉRENTS (un seul pari par match), choisi \
+dans le CATALOGUE de paris réels — TOI SEUL décides combien de matchs inclure, selon la qualité des données du \
+jour (pas d'obligation d'un nombre minimum ni d'atteindre un maximum) — le faire rédiger, puis l'envoyer. Ou \
+t'abstenir si rien n'est défendable.
 
 ORDRE CONSEILLÉ (tu peux l'adapter, revenir en arrière ou chercher plus d'information) :
 1. collecter_donnees  2. voir_catalogue  3. (optionnel) rechercher_web pour vérifier une blessure, une \
@@ -219,7 +221,7 @@ def executer(mission=None, telegram=True):
         if not etat["catalogue"]:
             return {"erreur": "aucun candidat exploitable — pas assez de matchs avec marchés 1xBet collectés"}
         return {
-            "profil": {"nom": profil["nom"], "nb_jambes_min": profil.get("nb_jambes_min", 10),
+            "profil": {"nom": profil["nom"], "nb_jambes_min": profil.get("nb_jambes_min", 1),
                        "nb_jambes_max": profil["nb_jambes"], "cote_min": profil["cote_min"],
                        "cote_max": profil["cote_max"]},
             "catalogue": etat["catalogue_texte"],

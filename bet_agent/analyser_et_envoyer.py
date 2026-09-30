@@ -21,6 +21,8 @@ import requests
 import urllib3
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as DelaiDepasse, as_completed
 
+import collecte_donnees as cd  # uniquement pour NB_MATCHS_MAX (plafond de jambes du profil)
+
 # Voir collecte_donnees.py pour le détail : OddsPapi est intercepté par un boîtier réseau
 # (Fortinet) qui re-signe son certificat avec une CA non reconnue — désactivé uniquement
 # pour ce domaine précis (déjà intercepté de toute façon), jamais pour Telegram/OpenRouter.
@@ -81,15 +83,17 @@ MAX_JAMBES_PAR_MATCH = 1
 EDGE_MIN_FALLBACK_AUTO = 2.0
 PROBA_MIN_FALLBACK_AUTO = 30.0
 
-# Choix du 26/09/2026 (demande explicite) : UN SEUL coupon "smart" combinant 10 à 15 matchs
-# DIFFÉRENTS (un seul pari par match, voir MAX_JAMBES_PAR_MATCH), plus 3 profils de risque
-# fixes ni de cible de cote totale précise. La cote totale est mécaniquement élevée avec
-# autant de jambes (≥ 1.2^10 ≈ 6 avec le plancher COTE_MIN_JAMBE) : cote_max n'est qu'un
-# garde-fou, pas un objectif — la vraie cible est le NOMBRE DE MATCHS (nb_jambes_min = 10,
-# nb_jambes = 15 ci-dessous).
+# Choix du 26/09/2026 (demande explicite) : UN SEUL coupon "smart" combinant des matchs
+# DIFFÉRENTS (un seul pari par match, voir MAX_JAMBES_PAR_MATCH), sans cible de cote totale
+# précise (cote_max n'est qu'un garde-fou, pas un objectif).
+# Choix du 30/09/2026 (demande explicite : "je laisse le choix à l'IA de choisir combien elle
+# veut") : plus de fourchette de nombre de jambes imposée par Python — nb_jambes_min=1 et
+# nb_jambes=NB_MATCHS_MAX (plafond mécanique = nombre de matchs collectés, un seul pari par
+# match). L'IA stratège choisit elle-même combien de paris inclure, sans plancher ni plafond
+# arbitraire au-delà de ce qui est physiquement disponible ce jour-là.
 PROFILS_COUPON = [
-    {"cle": "coupon", "nom": "🎯 COUPON DU JOUR (10 à 15 matchs)", "cote_min": 5.0, "cote_max": 100000.0,
-     "nb_jambes_min": 10, "nb_jambes": 15},
+    {"cle": "coupon", "nom": "🎯 COUPON DU JOUR (l'IA choisit le nombre de matchs)", "cote_min": 5.0,
+     "cote_max": 100000.0, "nb_jambes_min": 1, "nb_jambes": cd.NB_MATCHS_MAX},
 ]
 SELECTION_INTERDITE = "12"  # double chance domicile-ou-extérieur, bannie par consigne
 
