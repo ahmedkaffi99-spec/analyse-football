@@ -582,14 +582,27 @@ def trouver_stats_understat(nom_equipe, nom_ligue_detectee=None):
     xg_moyen = round(xg_total / matchs_joues, 2)
     xga_moyen = round(xga_total / matchs_joues, 2)
 
+    # Forme récente (5 derniers matchs, demande explicite du 30/09/2026) — même esprit que
+    # trouver_stats_thesportsdb : la moyenne saison entière peut masquer un changement de
+    # forme récent (bonne/mauvaise série). "history" est dans l'ordre chronologique de
+    # disputes des matchs (ordre natif Understat), donc les 5 derniers éléments = les 5
+    # derniers matchs joués. Champ complémentaire, ne remplace pas la moyenne saison
+    # (déjà utilisée ailleurs par calculer_xg_depuis_understat).
+    cinq_derniers = historique[-5:]
+    xg_moyen_recent = round(sum(float(m.get("xG", 0)) for m in cinq_derniers) / len(cinq_derniers), 2)
+    xga_moyen_recent = round(sum(float(m.get("xGA", 0)) for m in cinq_derniers) / len(cinq_derniers), 2)
+
     print(f"      ✓ {meilleure_equipe.get('title')} (Understat, score {meilleur_score:.0f}%) : "
-          f"xG {xg_moyen} / xGA {xga_moyen} par match sur {matchs_joues} matchs")
+          f"xG {xg_moyen} / xGA {xga_moyen} par match sur {matchs_joues} matchs (5 derniers : "
+          f"xG {xg_moyen_recent} / xGA {xga_moyen_recent})")
 
     return {
         "source": "understat_xg",
         "matchs_joues": matchs_joues,
         "xg_moyen_par_match": xg_moyen,
         "xga_moyen_par_match": xga_moyen,
+        "xg_moyen_5_derniers": xg_moyen_recent,
+        "xga_moyen_5_derniers": xga_moyen_recent,
     }
 
 
