@@ -7,13 +7,13 @@ name: Pipeline quotidien
 
 on:
   schedule:
-    # GitHub saute souvent les crons placés pile sur l'heure (aucun passage le 2026-09-26) :
-    # minutes décalées + passages de secours. Chaque passage ne fait rien si les coupons du
-    # jour sont déjà partis sur Telegram ou si un run est en cours.
-    - cron: "7 10 * * *"   # ~10h07 UTC = 12h07 heure de Paris l'été (11h07 l'hiver)
-    - cron: "37 10 * * *"
-    - cron: "7 11 * * *"
-    - cron: "37 11 * * *"
+    # Demande explicite du 30/09/2026 : un passage CHAQUE HEURE, automatique, sans intervention,
+    # jusqu'à ce qu'un coupon parte sur Telegram (visible vers midi heure de Paris). Minute décalée
+    # (:07, pas :00) : GitHub saute souvent les crons placés pile sur l'heure. Chaque passage ne
+    # fait rien si les coupons du jour sont déjà partis sur Telegram ou si un run est en cours
+    # (ticket_deja_produit_aujourdhui) — un seul coupon envoyé par jour, les passages suivants
+    # sont des no-op silencieux, pas des doublons.
+    - cron: "7 6-13 * * *"  # toutes les heures de 6h07 à 13h07 UTC = 7h07-15h07 Paris (été), 6h07-14h07 (hiver)
   workflow_dispatch:
     inputs:
       telegram:
