@@ -89,7 +89,9 @@ def construire_prompt(pool, profils, catalogue_texte):
         "abstiens-toi : \"jambes\": [] et explique pourquoi dans \"strategie\".\n"
         "5. DIVERSIFIE les marchés — à deux niveaux : (a) ENTRE catégories : quand un match propose PLUSIEURS "
         "catégories dans le catalogue (Total, BTTS, Handicap Asiatique, Win to Nil, Double Chance, Corners...), ne "
-        "prends pas systématiquement la même catégorie pour tous les matchs. (b) DANS une même catégorie répétée "
+        "prends pas systématiquement la même catégorie pour tous les matchs — UNE catégorie ne devrait pas "
+        "dépasser 40% des jambes du coupon si d'autres catégories existent pour ces matchs (ex: pas 3 \"Double "
+        "Chance\" sur un coupon de 5). (b) DANS une même catégorie répétée "
         "sur plusieurs matchs : varie la direction ET/OU la ligne — si tu prends un \"Corners Under\" sur un "
         "match, prends un \"Corners Over\" sur un autre plutôt qu'encore un Under ; si tu prends un \"Total 2.5\" "
         "sur un match, prends un \"Total 3.5\" (ou un Under) sur un autre plutôt que répéter la même ligne. "
@@ -208,6 +210,44 @@ def _categories_peu_variees(selections, catalogue):
     return erreurs
 
 
+# Constaté en pratique le 30/09/2026 (run réel, coupon envoyé) : 3 des 5 jambes en "Double
+# Chance" (2X, 2X, 1X) — _categories_peu_variees ne l'a pas vu car la DIRECTION différait
+# (1X vs 2X, donc "déjà varié" à ses yeux), alors que la CATÉGORIE, elle, dominait le coupon.
+# Cette règle-ci regarde la catégorie seule, peu importe la direction choisie à l'intérieur.
+PART_MAX_MEME_CATEGORIE = 0.4  # au plus 40% des jambes d'une même catégorie si une autre existe
+
+
+def _categories_dominantes(selections, catalogue):
+    """Une catégorie de marché ne doit pas dominer le coupon (ex: 3 Double Chance sur 5 jambes,
+    même avec des directions différentes 1X/2X) quand une catégorie DIFFÉRENTE existait dans le
+    catalogue pour au moins un des matchs concernés — complémentaire à _categories_peu_variees
+    (qui regarde direction+ligne à l'intérieur d'une même catégorie déjà répétée), celle-ci
+    regarde la répétition de la catégorie elle-même, quelle que soit la direction retenue."""
+    erreurs = []
+    par_categorie = {}
+    for s in selections:
+        par_categorie.setdefault(s["pick"]["categorie"], []).append(s)
+    seuil = math.floor(len(selections) * PART_MAX_MEME_CATEGORIE) if selections else 0
+    for categorie, groupe in par_categorie.items():
+        # Une catégorie choisie une seule fois n'est jamais "dominante", même sur un petit coupon
+        # où floor(n*0.4) vaut 0 (ex: 2 jambes) — sans ce garde-fou, un coupon de 2 jambes en 2
+        # catégories DIFFÉRENTES (aucune répétition) serait signalé à tort.
+        if len(groupe) < 2 or len(groupe) <= seuil:
+            continue
+        matchs_concernes = {s["match"] for s in groupe}
+        matchs_avec_alt = {
+            c["match"] for c in catalogue.values()
+            if c["match"] in matchs_concernes and c["pick"]["categorie"] != categorie
+        }
+        if matchs_avec_alt:
+            erreurs.append(
+                f"{len(groupe)}/{len(selections)} paris sont de la catégorie « {categorie} » (trop dominant, "
+                f"maximum {seuil} recommandé) ; une autre catégorie de marché existe dans le catalogue pour "
+                f"{', '.join(sorted(matchs_avec_alt))} — remplace au moins un pari « {categorie} » par une "
+                "autre catégorie sur l'un de ces matchs")
+    return erreurs
+
+
 def valider(proposition, catalogue, profils, signatures_existantes=()):
     """Contrôle la proposition de l'IA profil par profil. Renvoie
     (acceptes {cle: {"selections"|"abstention", "strategie"}}, problemes [str], calculs [str])."""
@@ -264,6 +304,7 @@ def valider(proposition, catalogue, profils, signatures_existantes=()):
                     "l'un de ces matchs")
 
         erreurs.extend(_categories_peu_variees(selections, catalogue))
+        erreurs.extend(_categories_dominantes(selections, catalogue))
 
         nb_jambes_min = profil.get("nb_jambes_min", NB_JAMBES_MIN_DEFAUT)
         if not nb_jambes_min <= len(selections) <= profil["nb_jambes"]:

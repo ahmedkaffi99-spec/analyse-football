@@ -24,7 +24,8 @@ def _sel(match, categorie, selection, cote):
 POOL = {
     "A vs B": [_sel("A vs B", "Total", "Over", 1.6), _sel("A vs B", "BTTS", "Yes", 1.8)],   # P1, P2
     "C vs D": [_sel("C vs D", "Total", "Under", 1.5), _sel("C vs D", "BTTS", "No", 1.9)],   # P3, P4
-    "E vs F": [_sel("E vs F", "Total", "Over", 2.0)],                                       # P5
+    "E vs F": [_sel("E vs F", "Total", "Over", 2.0),                                        # P5
+               _sel("E vs F", "Handicap Asiatique", "1", 2.0)],                             # P6
 }
 
 
@@ -36,21 +37,23 @@ def _reponse(coupons, analyse=None):
 class TestStratege(unittest.TestCase):
     def test_catalogue_identifiants_et_chiffres(self):
         catalogue, texte = st.construire_catalogue(POOL)
-        self.assertEqual(list(catalogue), ["P1", "P2", "P3", "P4", "P5"])
+        self.assertEqual(list(catalogue), ["P1", "P2", "P3", "P4", "P5", "P6"])
         self.assertIn("P5 : Total (2.5) → Over @ 2.0", texte)
         self.assertIn("modèle 64.0%, marché 58.0%", texte)
 
     def test_choix_valide_des_le_premier_tour(self):
+        # P1 (Total) + P4 (BTTS) : catégories différentes, pas de souci de dominance (règle du
+        # 30/09/2026) ; idem P2 (BTTS) + P3 (Total) + P6 (Handicap) pour profil2.
         reponse = _reponse([
-            {"profil": "profil1", "strategie": "Paris solides", "jambes": [{"id": "P1", "raison": "r1"}, {"id": "P3", "raison": "r3"}]},
+            {"profil": "profil1", "strategie": "Paris solides", "jambes": [{"id": "P1", "raison": "r1"}, {"id": "P4", "raison": "r3"}]},
             {"profil": "profil2", "strategie": "Plus audacieux", "jambes": [
-                {"id": "P2", "raison": "r2"}, {"id": "P4", "raison": "r4"}, {"id": "P5", "raison": "r5"}]},
+                {"id": "P2", "raison": "r2"}, {"id": "P3", "raison": "r4"}, {"id": "P6", "raison": "r5"}]},
         ])
         appel = mock.Mock(return_value="```json\n" + reponse + "\n```")
         resultat = st.composer_coupons(POOL, PROFILS, appel=appel)
         self.assertEqual(appel.call_count, 1)
         p1 = resultat["coupons"]["profil1"]
-        self.assertEqual([s["pick"]["selection"] for s in p1["selections"]], ["Over", "Under"])
+        self.assertEqual([s["pick"]["selection"] for s in p1["selections"]], ["Over", "No"])
         self.assertEqual(p1["selections"][0]["raison_ia"], "r1")
         self.assertEqual(p1["strategie"], "Paris solides")
 
@@ -60,8 +63,8 @@ class TestStratege(unittest.TestCase):
             {"profil": "profil2", "strategie": "s", "jambes": [{"id": "P1"}, {"id": "P2"}]},         # cote 2.88 < 4
         ])
         bonne = _reponse([
-            {"profil": "profil1", "strategie": "s", "jambes": [{"id": "P1"}, {"id": "P3"}]},
-            {"profil": "profil2", "strategie": "s", "jambes": [{"id": "P2"}, {"id": "P4"}, {"id": "P5"}]},
+            {"profil": "profil1", "strategie": "s", "jambes": [{"id": "P1"}, {"id": "P4"}]},
+            {"profil": "profil2", "strategie": "s", "jambes": [{"id": "P2"}, {"id": "P3"}, {"id": "P6"}]},
         ])
         appel = mock.Mock(side_effect=[mauvaise, bonne])
         resultat = st.composer_coupons(POOL, PROFILS, appel=appel)
@@ -84,7 +87,7 @@ class TestStratege(unittest.TestCase):
     def test_abstention_acceptee(self):
         reponse = _reponse([
             {"profil": "profil1", "strategie": "Aucune valeur fiable aujourd'hui", "jambes": []},
-            {"profil": "profil2", "strategie": "s", "jambes": [{"id": "P2"}, {"id": "P4"}, {"id": "P5"}]},
+            {"profil": "profil2", "strategie": "s", "jambes": [{"id": "P2"}, {"id": "P3"}, {"id": "P6"}]},
         ])
         resultat = st.composer_coupons(POOL, PROFILS, appel=mock.Mock(return_value=reponse))
         self.assertEqual(resultat["coupons"]["profil1"]["abstention"], "Aucune valeur fiable aujourd'hui")
@@ -96,8 +99,8 @@ class TestStratege(unittest.TestCase):
         # Vérifie que le pipeline reste générique à N profils (PROFILS_COUPON n'en définit
         # qu'un seul par défaut depuis le 26/09/2026, mais le code doit supporter plusieurs).
         reponse = _reponse([
-            {"profil": "profil1", "strategie": "Stratégie sûre", "jambes": [{"id": "P1", "raison": "r"}, {"id": "P3", "raison": "r"}]},
-            {"profil": "profil2", "strategie": "s", "jambes": [{"id": "P2"}, {"id": "P4"}, {"id": "P5"}]},
+            {"profil": "profil1", "strategie": "Stratégie sûre", "jambes": [{"id": "P1", "raison": "r"}, {"id": "P4", "raison": "r"}]},
+            {"profil": "profil2", "strategie": "s", "jambes": [{"id": "P2"}, {"id": "P3"}, {"id": "P6"}]},
         ])
         with mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=POOL), \
                 mock.patch.object(ae, "PROFILS_COUPON", PROFILS + [
@@ -111,7 +114,7 @@ class TestStratege(unittest.TestCase):
     def test_integration_generer_coupons_un_seul_profil(self):
         # PROFILS_COUPON par défaut depuis le 26/09/2026 : un seul coupon "smart".
         reponse = _reponse([
-            {"profil": "coupon", "strategie": "Combiné du jour", "jambes": [{"id": "P2", "raison": "r"}, {"id": "P4", "raison": "r"}]},
+            {"profil": "coupon", "strategie": "Combiné du jour", "jambes": [{"id": "P2", "raison": "r"}, {"id": "P6", "raison": "r"}]},
         ])
         profil_unique = [{"cle": "coupon", "nom": "🎯 COUPON DU JOUR", "cote_min": 3.0, "cote_max": 50.0, "nb_jambes": 6}]
         with mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=POOL), \
@@ -137,12 +140,12 @@ class TestCoherenceDesRaisons(unittest.TestCase):
     def test_la_raison_incoherente_est_corrigee_au_tour_suivant(self):
         mauvaise = _reponse([
             {"profil": "profil1", "strategie": "s", "jambes": [{"id": "P1", "raison": "Under à 1.5"},
-                                                             {"id": "P3", "raison": "r3"}]},
+                                                             {"id": "P4", "raison": "r3"}]},
             {"profil": "profil2", "strategie": "s", "jambes": [
-                {"id": "P2", "raison": "r2"}, {"id": "P4", "raison": "r4"}, {"id": "P5", "raison": "r5"}]}])
+                {"id": "P2", "raison": "r2"}, {"id": "P3", "raison": "r4"}, {"id": "P6", "raison": "r5"}]}])
         bonne = _reponse([
             {"profil": "profil1", "strategie": "s", "jambes": [{"id": "P1", "raison": "Over à 1.6, buts attendus"},
-                                                             {"id": "P3", "raison": "r3"}]}])
+                                                             {"id": "P4", "raison": "r3"}]}])
         appel = mock.Mock(side_effect=[mauvaise, bonne])
         resultat = st.composer_coupons(POOL, PROFILS, appel=appel)
         self.assertEqual(appel.call_count, 2)
@@ -317,6 +320,56 @@ class TestDiversiteMemeCategorie(unittest.TestCase):
         # une exigence de variation "Total Corners" par-catégorie (un seul pari de cette
         # catégorie, rien à varier).
         self.assertFalse(any("Total Corners" in p and "varie" in p for p in problemes), problemes)
+
+
+class TestCategorieDominante(unittest.TestCase):
+    """Reproduit exactement le coupon réel envoyé le 30/09/2026 (5 jambes, 3 en "Double Chance"
+    — 2X, 2X, 1X) : _categories_peu_variees ne le voit pas (directions différentes = "déjà
+    varié" à ses yeux), alors que la CATÉGORIE domine le coupon. _categories_dominantes regarde
+    la répétition de la catégorie seule, peu importe la direction retenue à l'intérieur."""
+
+    def _pool_double_chance_dominant(self):
+        return {
+            "A vs B": [_sel("A vs B", "Double Chance", "2X", 1.33), _sel("A vs B", "Total", "Over", 1.9)],
+            "C vs D": [_sel("C vs D", "Double Chance", "2X", 1.37), _sel("C vs D", "BTTS", "Yes", 1.8)],
+            "E vs F": [_sel("E vs F", "Double Chance", "1X", 1.79), _sel("E vs F", "Total", "Under", 1.6)],
+            "G vs H": [_sel("G vs H", "Handicap Asiatique", "1", 1.62)],
+            "I vs J": [_sel("I vs J", "Total Équipe 2", "Under", 1.25)],
+        }
+
+    def test_double_chance_dominant_refuse_si_alternative_existe(self):
+        pool = self._pool_double_chance_dominant()
+        catalogue, _ = st.construire_catalogue(pool)
+        profil = {"cle": "coupon", "nom": "x", "cote_min": 0.0, "cote_max": 1000.0, "nb_jambes": 5, "nb_jambes_min": 1}
+        # P1 (A/2X), P3 (C/2X), P5 (E/1X), P7 (G/Handicap), P8 (I/Total Équipe 2) — 3/5 Double Chance
+        proposition = {"coupons": [{"profil": "coupon", "strategie": "s",
+                                    "jambes": [{"id": "P1"}, {"id": "P3"}, {"id": "P5"}, {"id": "P7"}, {"id": "P8"}]}]}
+
+        acceptes, problemes, _ = st.valider(proposition, catalogue, [profil])
+
+        self.assertEqual(acceptes, {})
+        self.assertTrue(any("Double Chance" in p and "dominant" in p for p in problemes), problemes)
+
+    def test_meme_repartition_acceptee_si_aucune_alternative(self):
+        # Mêmes 3 Double Chance, mais AUCUNE autre catégorie disponible sur ces 3 matchs :
+        # impossible de varier, donc pas d'erreur (seuls G/H et I/J ont une alternative, non
+        # concernés par la surreprésentation).
+        pool = {
+            "A vs B": [_sel("A vs B", "Double Chance", "2X", 1.33)],
+            "C vs D": [_sel("C vs D", "Double Chance", "2X", 1.37)],
+            "E vs F": [_sel("E vs F", "Double Chance", "1X", 1.79)],
+            "G vs H": [_sel("G vs H", "Handicap Asiatique", "1", 1.62)],
+            "I vs J": [_sel("I vs J", "Total Équipe 2", "Under", 1.25)],
+        }
+        catalogue, _ = st.construire_catalogue(pool)
+        profil = {"cle": "coupon", "nom": "x", "cote_min": 0.0, "cote_max": 1000.0, "nb_jambes": 5, "nb_jambes_min": 1}
+        proposition = {"coupons": [{"profil": "coupon", "strategie": "s",
+                                    "jambes": [{"id": "P1"}, {"id": "P2"}, {"id": "P3"}, {"id": "P4"}, {"id": "P5"}]}]}
+
+        acceptes, problemes, _ = st.valider(proposition, catalogue, [profil])
+
+        self.assertEqual(problemes, [])
+        self.assertIn("coupon", acceptes)
 
 
 class TestCoupEnvoi(unittest.TestCase):
