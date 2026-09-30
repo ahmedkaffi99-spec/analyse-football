@@ -533,6 +533,16 @@ def charger_teams_data_understat(ligue_understat):
     try:
         html = _telecharger_page_understat(ligue_understat, UNDERSTAT_SAISON)
         teams_data = _extraire_teams_data_understat(html)
+        if teams_data is None:
+            # La page a répondu (200 OK, sinon l'exception ci-dessous aurait été levée) mais
+            # le motif "var teamsData = JSON.parse(...)" attendu est introuvable dans le HTML
+            # reçu — page de blocage anti-robot, structure de page changée, ou saison/ligue
+            # invalide, plutôt qu'une vraie panne réseau (constaté le 29/09/2026 : aucune
+            # erreur affichée, mais 0% de correspondance pour de grands clubs qui devraient
+            # y être). Ce print rend le problème visible au lieu de le masquer en silence.
+            print(f"      ⚠️ Understat ({ligue_understat}) : page reçue mais aucune donnée "
+                  f"d'équipe extraite ({len(html)} caractères reçus) — page de blocage "
+                  f"probable ou structure de page changée.")
     except Exception as e:
         print(f"      ⚠️ Understat indisponible pour {ligue_understat} après retries : {e}")
         teams_data = None
@@ -582,27 +592,27 @@ def trouver_stats_understat(nom_equipe, nom_ligue_detectee=None):
     xg_moyen = round(xg_total / matchs_joues, 2)
     xga_moyen = round(xga_total / matchs_joues, 2)
 
-    # Forme récente (5 derniers matchs, demande explicite du 30/09/2026) — même esprit que
-    # trouver_stats_thesportsdb : la moyenne saison entière peut masquer un changement de
-    # forme récent (bonne/mauvaise série). "history" est dans l'ordre chronologique de
-    # disputes des matchs (ordre natif Understat), donc les 5 derniers éléments = les 5
-    # derniers matchs joués. Champ complémentaire, ne remplace pas la moyenne saison
-    # (déjà utilisée ailleurs par calculer_xg_depuis_understat).
-    cinq_derniers = historique[-5:]
-    xg_moyen_recent = round(sum(float(m.get("xG", 0)) for m in cinq_derniers) / len(cinq_derniers), 2)
-    xga_moyen_recent = round(sum(float(m.get("xGA", 0)) for m in cinq_derniers) / len(cinq_derniers), 2)
+    # Forme récente (10 derniers matchs, demande explicite du 30/09/2026, ajustée de 5 à 10) —
+    # même esprit que trouver_stats_thesportsdb : la moyenne saison entière peut masquer un
+    # changement de forme récent (bonne/mauvaise série). "history" est dans l'ordre
+    # chronologique de disputes des matchs (ordre natif Understat), donc les 10 derniers
+    # éléments = les 10 derniers matchs joués. Champ complémentaire, ne remplace pas la
+    # moyenne saison (déjà utilisée ailleurs par calculer_xg_depuis_understat).
+    dix_derniers = historique[-10:]
+    xg_moyen_recent = round(sum(float(m.get("xG", 0)) for m in dix_derniers) / len(dix_derniers), 2)
+    xga_moyen_recent = round(sum(float(m.get("xGA", 0)) for m in dix_derniers) / len(dix_derniers), 2)
 
     print(f"      ✓ {meilleure_equipe.get('title')} (Understat, score {meilleur_score:.0f}%) : "
-          f"xG {xg_moyen} / xGA {xga_moyen} par match sur {matchs_joues} matchs (5 derniers : "
-          f"xG {xg_moyen_recent} / xGA {xga_moyen_recent})")
+          f"xG {xg_moyen} / xGA {xga_moyen} par match sur {matchs_joues} matchs "
+          f"({len(dix_derniers)} derniers : xG {xg_moyen_recent} / xGA {xga_moyen_recent})")
 
     return {
         "source": "understat_xg",
         "matchs_joues": matchs_joues,
         "xg_moyen_par_match": xg_moyen,
         "xga_moyen_par_match": xga_moyen,
-        "xg_moyen_5_derniers": xg_moyen_recent,
-        "xga_moyen_5_derniers": xga_moyen_recent,
+        "xg_moyen_10_derniers": xg_moyen_recent,
+        "xga_moyen_10_derniers": xga_moyen_recent,
     }
 
 
@@ -626,17 +636,22 @@ _cache_clubelo = None
 SEUIL_MATCH_CLUBELO = 70
 
 
-@retry(stop=stop_after_attempt(2), wait=wait_fixed(5))
+@retry(stop=stop_after_attempt(1), wait=wait_fixed(0))
 def _telecharger_clubelo_du_jour():
-    # Timeout relevé de 15 à 25s le 2026-08-22 : un ReadTimeout à 15s peut aussi bien
-    # être un vrai blocage réseau qu'une réponse simplement lente côté serveur — laisser
-    # un peu plus de marge ne coûte rien (la SESSION retry déjà en place gère le reste).
+    # Constaté à plusieurs reprises (2026-09-29/30, runs GitHub Actions) : api.clubelo.com
+    # n'est PAS lent, il est injoignable depuis les IP GitHub Actions — chaque tentative
+    # épuise tout son timeout avant d'échouer. Avec l'ancien réglage (2 tentatives tenacity
+    # x 4 sous-tentatives urllib3 de SESSION x 2 URLs x 25s), un run perdait jusqu'à 5-6
+    # MINUTES rien que pour ce seul appel, systématiquement en échec. Comme retenter ne
+    # change rien à un serveur injoignable : 1 seule tentative, timeout court, et une
+    # requests.get() nue (pas SESSION) pour éviter que les retries réseau globaux de
+    # SESSION ne fassent gonfler ce délai en plus de celui de tenacity.
     date_du_jour = datetime.now().strftime("%Y-%m-%d")
     # HTTPS d'abord, HTTP en secours (constaté le 2026-09-26 sur GitHub Actions : échec en HTTP).
     derniere_erreur = None
     for url in (f"https://api.clubelo.com/{date_du_jour}", f"http://api.clubelo.com/{date_du_jour}"):
         try:
-            r = SESSION.get(url, timeout=25, headers={"User-Agent": "Mozilla/5.0 (analyse-football)"})
+            r = requests.get(url, timeout=8, headers={"User-Agent": "Mozilla/5.0 (analyse-football)"})
             r.raise_for_status()
             if r.text.startswith("Rank,Club"):
                 return r.text
