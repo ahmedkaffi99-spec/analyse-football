@@ -39,11 +39,9 @@ Chaque jour, le pipeline collecte les matchs et les cotes 1xBet, calcule des pro
 | Service | Donne | Clé | Limite connue |
 |---|---|---|---|
 | **OddsPapi** | liste des matchs + **toutes les cotes 1xBet** + scores finaux | `ODDSPAPI_KEY` | certificat intercepté (Fortinet) → `verify=False` sur ce seul domaine |
-| **API-Football** | identité des matchs, stats par équipe (buts dom./ext., forme) | `API_FOOTBALL_KEY` | plan gratuit : 10 req/min, **saisons ≤ 2024 seulement** |
+| **API-Football** | identité des matchs, stats par équipe (buts dom./ext., forme), classement, stats détaillées 10 derniers matchs (corners/cartons/fautes, 15 métriques) | `API_FOOTBALL_KEY` | plan gratuit : 10 req/min, **saisons ≤ 2024 seulement** — consolidé le 30/09/2026 : remplace football-data.org et TheSportsDB |
 | **Understat** | xG / xGA de la saison en cours (5 grands championnats) | aucune | scraping HTML, 1 requête par ligue |
 | **ClubElo** | rating Elo de tous les clubs | aucune | 1 requête par run |
-| **football-data.org** | classement, points, forme (5 grands championnats) | `FOOTBALL_DATA_API_KEY` | 10 req/min |
-| **TheSportsDB** | repli : forme récente (5 derniers matchs) | clé publique `3` (ou perso) | quota mondial partagé |
 | **Serper** | contexte web (blessures, avant-match) | `SERPER_API_KEY` | — |
 
 ### IA (LLM)

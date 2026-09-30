@@ -24,7 +24,7 @@ def reinitialiser_caches(cd, ae=None):
     données de la veille (Elo du jour, xG, classements) — on les vide avant chaque run."""
     cd._cache_clubelo = None
     cd._cache_understat_par_ligue.clear()
-    cd._cache_classement_football_data.clear()
+    cd._cache_classement_api_football.clear()
     cd._cache_stats_equipes.clear()
     cd.UNDERSTAT_SAISON = cd.saison_en_cours()
     if hasattr(ae, "reinitialiser_budget_ia"):

@@ -37,7 +37,7 @@ def test_cle(nom, valeur):
 
 
 ligne("1) Clés présentes dans envi.local ?")
-for nom in ["API_FOOTBALL_KEY", "ODDSPAPI_KEY", "SERPER_API_KEY", "FOOTBALL_DATA_API_KEY",
+for nom in ["API_FOOTBALL_KEY", "ODDSPAPI_KEY", "SERPER_API_KEY",
             "GROQ_API_KEY", "GEMINI_API_KEY", "OPENROUTER_API_KEY",
             "TELEGRAM_TOKEN", "TELEGRAM_CHAT_ID"]:
     test_cle(nom, os.getenv(nom))
@@ -51,10 +51,11 @@ try:
 except Exception as e:
     print(f"   ❌ ÉCHEC RÉSEAU : {type(e).__name__} : {e}")
 
-ligne("3) TheSportsDB (clé publique '3', aucune clé perso nécessaire)")
+ligne("3) API-Football (/leagues?team= — vérifie que le compte peut résoudre une équipe)")
 try:
-    r = requests.get("https://www.thesportsdb.com/api/v1/json/3/searchteams.php",
-                      params={"t": "Real Madrid"}, timeout=15)
+    r = requests.get("https://v3.football.api-sports.io/leagues",
+                      headers={"x-apisports-key": API_FOOTBALL_KEY or ""},
+                      params={"team": 541}, timeout=15)  # 541 = Real Madrid
     print(f"   status_code = {r.status_code}")
     print(f"   corps = {r.text[:500]}")
 except Exception as e:

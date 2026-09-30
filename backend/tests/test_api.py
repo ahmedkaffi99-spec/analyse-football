@@ -66,7 +66,7 @@ def _faux_pipeline(monkeypatch, collecte, profils, erreur=None):
             json.dump(collecte, f)
 
     cd = SimpleNamespace(SORTIE_JSON=None, collecter_donnees=collecter, _cache_clubelo=None,
-                         _cache_understat_par_ligue={}, _cache_classement_football_data={},
+                         _cache_understat_par_ligue={}, _cache_classement_api_football={},
                          _cache_stats_equipes={},
                          saison_en_cours=lambda: 2026, UNDERSTAT_SAISON=2025)
     ae = SimpleNamespace(

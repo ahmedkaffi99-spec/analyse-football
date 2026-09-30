@@ -27,8 +27,6 @@ jobs:
       ODDSPAPI_KEY: ${{ secrets.ODDSPAPI_KEY }}
       API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
       SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
-      FOOTBALL_DATA_API_KEY: ${{ secrets.FOOTBALL_DATA_API_KEY }}
-      THESPORTSDB_API_KEY: ${{ secrets.THESPORTSDB_API_KEY }}
       DATE_CIBLE_DEBUT: ${{ inputs.date_debut }}
       DATE_CIBLE_FIN: ${{ inputs.date_fin }}
     steps:

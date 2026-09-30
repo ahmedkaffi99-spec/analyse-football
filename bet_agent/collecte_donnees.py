@@ -74,8 +74,6 @@ def _respecter_rate_limit_api_football():
 API_FOOTBALL_KEY = os.getenv("API_FOOTBALL_KEY")
 ODDSPAPI_KEY = os.getenv("ODDSPAPI_KEY")
 SERPER_API_KEY = os.getenv("SERPER_API_KEY")
-FOOTBALL_DATA_API_KEY = os.getenv("FOOTBALL_DATA_API_KEY")  # clé gratuite (10 req/min) sur
-                                                              # https://www.football-data.org/client/register
 
 # ------------------------------------------------------------
 # SÉLECTION MANUELLE — active ce mode si tu as déjà vérifié toi-même quels matchs
@@ -102,8 +100,9 @@ MATCHS_MANUELS_DATE = "2026-10-13"
 #
 # Demande explicite du 29/09/2026 : matchs de Ligue des Champions choisis par l'utilisateur
 # à partir de captures d'écran 1xBet, 13-14 octobre 2026 (12 matchs, doublons retirés).
+# Limité à 10 le 30/09/2026 sur demande explicite ("entre 5 et 10 pas plus") — les 2 moins
+# prioritaires (Bodo/Glimt-Dortmund, Villarreal-Napoli) retirés.
 MATCHS_MANUELS = [
-    ("Bodo/Glimt", "Borussia Dortmund"),
     ("Aston Villa", "Fenerbahce"),
     ("Roma", "Real Madrid"),
     ("Real Betis", "Porto"),
@@ -111,7 +110,6 @@ MATCHS_MANUELS = [
     ("LASK Linz", "Liverpool"),
     ("Inter Milano", "Club Brugge"),
     ("Galatasaray", "Barcelona"),
-    ("Villarreal", "Napoli"),
     ("Viking", "Bayern Munich"),
     ("Atletico Madrid", "Manchester United"),
     ("Arsenal", "Lille OSC"),
@@ -531,113 +529,6 @@ def recuperer_stats_10_derniers_matchs(team_id, nom_affichage):
 
 
 # ============================================================
-# THESPORTSDB — repli n°2 (après API-Football) quand le quota est épuisé ou l'équipe
-# introuvable. Constaté en pratique le 2026-07-25 : couvre mieux les équipes obscures
-# qu'API-Football (Kisvárda, Rodina Moscou trouvées directement) et n'a pas de quota
-# quotidien serré comme API-Football (clé de test publique "3", gratuite).
-# ============================================================
-
-# Clé de test publique "3" par défaut (documentée par TheSportsDB, sans inscription) —
-# mais PARTAGÉE par tous les utilisateurs de cette clé dans le monde, pas seulement nous
-# (confirmé : 429/échecs reçus après une trentaine d'appels rapprochés, y compris le
-# 2026-08-22 où 0/30 équipes ont abouti alors qu'un appel isolé passait). Si tu obtiens un
-# jour une clé personnelle (Patreon TheSportsDB), mets-la dans envi.local sous
-# THESPORTSDB_API_KEY : elle sera utilisée automatiquement, sans toucher au code.
-THESPORTSDB_KEY = os.getenv("THESPORTSDB_API_KEY", "3")
-
-# Espacement fixe entre CHACUN de nos appels (recherche équipe + derniers matchs) pour
-# réduire le risque de tomber dans la fenêtre de quota partagée, sans prétendre l'éliminer
-# complètement (le quota reste mondial avec la clé "3", pas le nôtre). Relevé de 2.5 à 4s
-# le 2026-08-22 après un run à 0/30 réussites — plus prudent sur un quota très sollicité.
-DELAI_THESPORTSDB_SECONDES = 4.0
-_dernier_appel_thesportsdb = 0.0
-
-
-def _respecter_delai_thesportsdb():
-    global _dernier_appel_thesportsdb
-    attente = DELAI_THESPORTSDB_SECONDES - (time.monotonic() - _dernier_appel_thesportsdb)
-    if attente > 0:
-        time.sleep(attente)
-    _dernier_appel_thesportsdb = time.monotonic()
-
-
-NB_MATCHS_MIN_THESPORTSDB = 3  # sous ce seuil, la moyenne est trop bruitée (constaté : un
-                                # seul match 0-0 donnait "0 but marqué en moyenne", faux signal
-
-
-def _chercher_equipe_thesportsdb(nom_equipe):
-    try:
-        _respecter_delai_thesportsdb()
-        r = SESSION.get(f"https://www.thesportsdb.com/api/v1/json/{THESPORTSDB_KEY}/searchteams.php",
-                          params={"t": nom_equipe}, timeout=10)
-        equipes = r.json().get("teams") or []
-    except Exception as e:
-        print(f"      ⚠️ TheSportsDB recherche équipe échouée pour {nom_equipe} : {e}")
-        return None
-    # Même filtre anti-équipe-réserve/jeunes que côté API-Football/OddsPapi — constaté en
-    # pratique que "RCD Mallorca" renvoyait "Mallorca B" et "Deportivo La Coruna" renvoyait
-    # "Deportivo Fabril" (sa réserve) sans ce filtre.
-    equipes_principales = [e for e in equipes if not contient_indicateur_reserve(e.get("strTeam", ""))]
-    equipes = equipes_principales or equipes
-    if not equipes:
-        return None
-    return equipes[0]["idTeam"], equipes[0]["strTeam"]
-
-
-def trouver_stats_thesportsdb(nom_equipe):
-    """Repli n°2 : forme récente via TheSportsDB — moyenne des buts marqués/encaissés sur
-    les derniers matchs joués (eventslast.php, ~5 derniers matchs), PAS séparée domicile/
-    extérieur (l'API gratuite n'en donne pas assez pour bien séparer les deux). Utilisée
-    UNIQUEMENT quand API-Football n'a rien trouvé (quota épuisé ou équipe introuvable) —
-    reste une vraie donnée de forme récente, pas une invention, juste moins précise que la
-    séparation domicile/extérieur d'API-Football."""
-    trouve = _chercher_equipe_thesportsdb(nom_equipe)
-    if not trouve:
-        print(f"      ⚠️ {nom_equipe} introuvable sur TheSportsDB non plus")
-        return None
-    id_equipe, nom_officiel = trouve
-
-    try:
-        _respecter_delai_thesportsdb()
-        r = SESSION.get(f"https://www.thesportsdb.com/api/v1/json/{THESPORTSDB_KEY}/eventslast.php",
-                          params={"id": id_equipe}, timeout=10)
-        evenements = r.json().get("results") or []
-    except Exception as e:
-        print(f"      ⚠️ TheSportsDB derniers matchs échoué pour {nom_officiel} : {e}")
-        return None
-
-    buts_marques, buts_encaisses = [], []
-    for e in evenements:
-        home_score, away_score = e.get("intHomeScore"), e.get("intAwayScore")
-        if home_score is None or away_score is None:
-            continue
-        est_domicile = e.get("idHomeTeam") == id_equipe
-        buts_marques.append(int(home_score) if est_domicile else int(away_score))
-        buts_encaisses.append(int(away_score) if est_domicile else int(home_score))
-
-    if len(buts_marques) < NB_MATCHS_MIN_THESPORTSDB:
-        print(f"      ⚠️ Seulement {len(buts_marques)} match(s) récent(s) avec score pour {nom_officiel} "
-              f"sur TheSportsDB (minimum {NB_MATCHS_MIN_THESPORTSDB}) — échantillon trop faible, ignoré.")
-        return None
-
-    moyenne_marques = round(sum(buts_marques) / len(buts_marques), 2)
-    moyenne_encaisses = round(sum(buts_encaisses) / len(buts_encaisses), 2)
-    print(f"      ✓ {nom_officiel} (TheSportsDB, forme récente sur {len(buts_marques)} matchs) : "
-          f"{moyenne_marques} marqués / {moyenne_encaisses} encaissés en moyenne par match")
-    return {
-        "source": "thesportsdb_forme_recente",
-        "matchs_joues": len(buts_marques),
-        # Pas de séparation domicile/extérieur possible avec cette source — même moyenne
-        # utilisée pour les deux, moins précis qu'API-Football mais mieux que rien.
-        "buts_marques_domicile": moyenne_marques,
-        "buts_marques_exterieur": moyenne_marques,
-        "buts_encaisses_domicile": moyenne_encaisses,
-        "buts_encaisses_exterieur": moyenne_encaisses,
-        "forme": None,
-    }
-
-
-# ============================================================
 # UNDERSTAT — xG/xGA (buts attendus), source complémentaire pour les 5 grands
 # championnats UNIQUEMENT (Ligue 1, Premier League, Serie A, Bundesliga, La Liga —
 # Understat ne couvre pas les autres). Pas d'API officielle : les données sont
@@ -765,7 +656,7 @@ def trouver_stats_understat(nom_equipe, nom_ligue_detectee=None):
     xga_moyen = round(xga_total / matchs_joues, 2)
 
     # Forme récente (10 derniers matchs, demande explicite du 30/09/2026, ajustée de 5 à 10) —
-    # même esprit que trouver_stats_thesportsdb : la moyenne saison entière peut masquer un
+    # la moyenne saison entière peut masquer un
     # changement de forme récent (bonne/mauvaise série). "history" est dans l'ordre
     # chronologique de disputes des matchs (ordre natif Understat), donc les 10 derniers
     # éléments = les 10 derniers matchs joués. Champ complémentaire, ne remplace pas la
@@ -881,94 +772,70 @@ def trouver_elo(nom_equipe):
 
 
 # ============================================================
-# FOOTBALL-DATA.ORG — classement officiel (position, points, forme sur les 5
-# derniers matchs), 5 grands championnats uniquement. Nécessite une clé
-# gratuite (10 req/min) : https://www.football-data.org/client/register, à
-# mettre dans envi.local sous FOOTBALL_DATA_API_KEY. Sans clé, cette source est
-# silencieusement désactivée (comportement identique à Serper sans SERPER_API_KEY).
+# CLASSEMENT — via API-Football (/standings), demande explicite du 30/09/2026 : tout
+# consolidé sur API-Football (déjà payant pour les stats détaillées 15 métriques),
+# remplace football-data.org. Réutilise le league_id/season déjà résolus par
+# trouver_ligue_et_stats pour la même équipe — pas d'appel réseau supplémentaire pour
+# retrouver la compétition, juste /standings sur celle déjà connue.
 #
-# Une seule requête par ligue par run, mise en cache — max 5 requêtes au total,
-# largement sous le quota gratuit.
+# Une seule requête par (league_id, season) par run, mise en cache.
 # ============================================================
 
-FOOTBALL_DATA_CODE_PAR_LIGUE = {
-    "ligue 1": "FL1",
-    "premier league": "PL",
-    "serie a": "SA",
-    "bundesliga": "BL1",
-    "la liga": "PD",
-}
-
-_cache_classement_football_data = {}
+_cache_classement_api_football = {}
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_fixed(5))
-def _telecharger_classement_football_data(code_ligue):
-    r = SESSION.get(f"https://api.football-data.org/v4/competitions/{code_ligue}/standings",
-                      headers={"X-Auth-Token": FOOTBALL_DATA_API_KEY}, timeout=15)
-    if r.status_code == 429:
-        raise ValueError("429 rate limited (football-data.org : 10 req/min sur le plan gratuit)")
-    r.raise_for_status()
-    return r.json()
+@retry(stop=stop_after_attempt(2), wait=wait_fixed(2))
+def _appel_standings_api_football(league_id, season):
+    _respecter_rate_limit_api_football()
+    r = SESSION.get("https://v3.football.api-sports.io/standings",
+                      headers={"x-apisports-key": API_FOOTBALL_KEY},
+                      params={"league": league_id, "season": season}, timeout=15)
+    return r.json().get("response", [])
 
 
-def charger_classement_football_data(code_ligue):
-    if code_ligue in _cache_classement_football_data:
-        return _cache_classement_football_data[code_ligue]
-    if not FOOTBALL_DATA_API_KEY:
-        _cache_classement_football_data[code_ligue] = None
-        return None
+def charger_classement_api_football(league_id, season):
+    cle = (league_id, season)
+    if cle in _cache_classement_api_football:
+        return _cache_classement_api_football[cle]
     try:
-        data = _telecharger_classement_football_data(code_ligue)
-        table = data.get("standings", [{}])[0].get("table", [])
+        reponse = _appel_standings_api_football(league_id, season)
+        groupes = reponse[0]["league"]["standings"] if reponse else []
+        table = [ligne for groupe in groupes for ligne in groupe]
     except Exception as e:
-        print(f"      ⚠️ football-data.org indisponible pour {code_ligue} après retries : {e}")
+        print(f"      ⚠️ Classement API-Football indisponible pour ligue {league_id}/{season} après retries : {e}")
         table = None
-    _cache_classement_football_data[code_ligue] = table
+    _cache_classement_api_football[cle] = table
     return table
 
 
-def trouver_classement(nom_equipe, nom_ligue_detectee):
-    from rapidfuzz import fuzz
-
-    nom_ligue_normalise = (nom_ligue_detectee or "").lower()
-    code_ligue = next(
-        (code for mot_cle, code in FOOTBALL_DATA_CODE_PAR_LIGUE.items() if mot_cle in nom_ligue_normalise),
-        None,
-    )
-    if not code_ligue:
+def trouver_classement(team_id, league_id, season, nom_affichage):
+    # Pas de classement possible sans compétition résolue (ex : équipe sans stats
+    # trouvées par trouver_ligue_et_stats), ou pour une phase à élimination directe sans
+    # tableau de classement (ex : 8es de finale de Ligue des Champions).
+    if not league_id or not season:
         return None
-
-    table = charger_classement_football_data(code_ligue)
+    table = charger_classement_api_football(league_id, season)
     if not table:
         return None
 
-    cible = unidecode(nom_equipe).lower()
-    meilleur_score, meilleure_ligne = 0, None
-    for ligne in table:
-        nom_equipe_fd = ligne.get("team", {}).get("name", "")
-        score = fuzz.token_set_ratio(cible, unidecode(nom_equipe_fd).lower())
-        if score > meilleur_score:
-            meilleur_score, meilleure_ligne = score, ligne
-
-    if meilleur_score < SEUIL_MATCH_ACCEPTABLE or not meilleure_ligne:
-        print(f"      ⚠️ {nom_equipe} introuvable au classement football-data.org "
-              f"({code_ligue}, meilleur score {meilleur_score:.0f}%)")
+    ligne = next((l for l in table if l.get("team", {}).get("id") == team_id), None)
+    if not ligne:
+        print(f"      ⚠️ {nom_affichage} introuvable au classement API-Football (ligue {league_id}/{season})")
         return None
 
-    print(f"      ✓ {meilleure_ligne.get('team', {}).get('name')} (football-data.org, score "
-          f"{meilleur_score:.0f}%) : {meilleure_ligne.get('position')}e, {meilleure_ligne.get('points')} pts, "
-          f"forme {meilleure_ligne.get('form')}")
+    tous = ligne.get("all", {})
+    print(f"      ✓ {nom_affichage} (API-Football, classement) : {ligne.get('rank')}e, "
+          f"{ligne.get('points')} pts, forme {ligne.get('form')}")
 
     return {
-        "source": "football_data_classement",
-        "position": meilleure_ligne.get("position"),
-        "points": meilleure_ligne.get("points"),
-        "matchs_joues": meilleure_ligne.get("playedGames"),
-        "buts_marques": meilleure_ligne.get("goalsFor"),
-        "buts_encaisses": meilleure_ligne.get("goalsAgainst"),
-        "difference_buts": meilleure_ligne.get("goalDifference"),
-        "forme_recente": meilleure_ligne.get("form"),  # ex: "W,W,D,L,W" sur 5 derniers matchs
+        "source": "api_football_classement",
+        "position": ligne.get("rank"),
+        "points": ligne.get("points"),
+        "matchs_joues": tous.get("played"),
+        "buts_marques": tous.get("goals", {}).get("for"),
+        "buts_encaisses": tous.get("goals", {}).get("against"),
+        "difference_buts": ligne.get("goalsDiff"),
+        "forme_recente": ligne.get("form"),  # ex: "WWDLW" sur les derniers matchs
     }
 
 
@@ -1433,10 +1300,10 @@ def collecter_donnees():
         else:
             print(f"      ⚠️ Aucun contexte Serper disponible")
 
-        # --- Statistiques historiques : API-Football (saison, domicile/extérieur séparés)
-        # en premier choix, TheSportsDB (forme récente) en repli si API-Football n'a rien
-        # trouvé (quota épuisé ou équipe introuvable) — jamais l'estimation par les cotes
-        # tant qu'une vraie donnée d'équipe est disponible par l'une ou l'autre source.
+        # --- Statistiques historiques : API-Football (saison, domicile/extérieur séparés).
+        # Repli TheSportsDB retiré (demande explicite du 30/09/2026 : tout consolidé sur
+        # API-Football) — sans stats API-Football, le match repose sur l'estimation par
+        # les cotes plus loin dans le pipeline.
         nom_home_stats = donnees_af["home_name"] if donnees_af else home_demande
         nom_away_stats = donnees_af["away_name"] if donnees_af else away_demande
 
@@ -1445,19 +1312,11 @@ def collecter_donnees():
             print(f"      → Recherche stats historiques {nom_home_stats} (API-Football)...")
             stats_home = stats_equipe_en_cache(("api_football", donnees_af["home_id"]),
                                                lambda: trouver_ligue_et_stats(donnees_af["home_id"], nom_home_stats))
-        if stats_home is None:
-            print(f"      → Repli TheSportsDB pour {nom_home_stats}...")
-            stats_home = stats_equipe_en_cache(("thesportsdb", nom_home_stats),
-                                               lambda: trouver_stats_thesportsdb(nom_home_stats))
 
         if donnees_af and donnees_af.get("away_id"):
             print(f"      → Recherche stats historiques {nom_away_stats} (API-Football)...")
             stats_away = stats_equipe_en_cache(("api_football", donnees_af["away_id"]),
                                                lambda: trouver_ligue_et_stats(donnees_af["away_id"], nom_away_stats))
-        if stats_away is None:
-            print(f"      → Repli TheSportsDB pour {nom_away_stats}...")
-            stats_away = stats_equipe_en_cache(("thesportsdb", nom_away_stats),
-                                               lambda: trouver_stats_thesportsdb(nom_away_stats))
 
         # --- Stats détaillées (10 derniers matchs) : buts, corners, cartons, fautes, tirs,
         # possession, hors-jeux, passes, clean sheets, forme — 15 métriques, demande
@@ -1492,18 +1351,20 @@ def collecter_donnees():
         print(f"      → Recherche rating Elo {nom_away_stats} (ClubElo)...")
         elo_away = trouver_elo(nom_away_stats)
 
-        # --- football-data.org : classement officiel, 5 grands championnats
-        # uniquement, silencieusement désactivé si FOOTBALL_DATA_API_KEY absent. Celui-ci a
-        # réellement besoin de la ligue du MATCH (contrairement à Understat ci-dessus) : le
-        # classement n'existe que dans la compétition du jour, pas dans la ligue domestique
-        # d'une équipe si le match lui-même est une coupe (ex: Ligue des Champions).
-        nom_ligue_du_match = donnees_af["league_name"] if donnees_af else None
+        # --- Classement : API-Football (/standings), réutilise le league_id/season déjà
+        # résolus par trouver_ligue_et_stats ci-dessus — pas d'appel réseau supplémentaire
+        # pour retrouver la compétition. Renvoie None sans erreur si stats_home/away n'a
+        # rien trouvé, ou si la compétition n'a pas de tableau de classement (ex : phase à
+        # élimination directe de Ligue des Champions).
         classement_home, classement_away = None, None
-        if nom_ligue_du_match:
-            print(f"      → Recherche classement {nom_home_stats} (football-data.org)...")
-            classement_home = trouver_classement(nom_home_stats, nom_ligue_du_match)
-            print(f"      → Recherche classement {nom_away_stats} (football-data.org)...")
-            classement_away = trouver_classement(nom_away_stats, nom_ligue_du_match)
+        if donnees_af and donnees_af.get("home_id") and stats_home:
+            print(f"      → Recherche classement {nom_home_stats} (API-Football)...")
+            classement_home = trouver_classement(donnees_af["home_id"], stats_home.get("league_id"),
+                                                  stats_home.get("season"), nom_home_stats)
+        if donnees_af and donnees_af.get("away_id") and stats_away:
+            print(f"      → Recherche classement {nom_away_stats} (API-Football)...")
+            classement_away = trouver_classement(donnees_af["away_id"], stats_away.get("league_id"),
+                                                  stats_away.get("season"), nom_away_stats)
 
         resultats.append({
             "match_demande": {"home": home_demande, "away": away_demande},
@@ -1558,8 +1419,7 @@ def collecter_donnees():
           f"(5 grands championnats uniquement)")
     print(f"   ✓ {sortie['nb_equipes_avec_elo']}/{len(resultats) * 2} équipes avec rating ClubElo trouvées")
     print(f"   ✓ {sortie['nb_equipes_avec_classement']}/{len(resultats) * 2} équipes avec classement "
-          f"football-data.org trouvées"
-          f"{' (clé FOOTBALL_DATA_API_KEY absente)' if not FOOTBALL_DATA_API_KEY else ''}")
+          f"API-Football trouvées")
 
 
 if __name__ == "__main__":

@@ -54,8 +54,6 @@ Dépôt → **Settings** → **Secrets and variables** → **Actions** → **New
 | `TELEGRAM_CHAT_ID` | ✅ | |
 | `OPENROUTER_API_KEY` | ✅ | **seule IA utilisée** (rédaction des coupons) |
 | `SERPER_API_KEY` | recommandé | contexte web |
-| `FOOTBALL_DATA_API_KEY` | recommandé | classements |
-| `THESPORTSDB_API_KEY` | optionnel | sinon clé publique partagée |
 
 Les secrets ne sont jamais visibles, même dans les logs (GitHub les remplace par `***`).
 

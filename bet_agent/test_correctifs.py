@@ -459,7 +459,6 @@ class TestCollecteEfficace(unittest.TestCase):
                 mock.patch.object(cd, "recuperer_marches_pour_fixture",
                                   side_effect=lambda fid: marches if fid in ("f1", "f3", "f4") else None) as cotes, \
                 mock.patch.object(cd, "collecter_contexte_serper", return_value=None) as serper, \
-                mock.patch.object(cd, "trouver_stats_thesportsdb", return_value=None), \
                 mock.patch.object(cd, "trouver_stats_understat", return_value=None), \
                 mock.patch.object(cd, "trouver_elo", return_value=None):
             cd._cache_stats_equipes.clear()
@@ -783,6 +782,67 @@ class TestStatsDetaillees10Matchs(unittest.TestCase):
 
     def test_desactive_par_defaut(self):
         self.assertFalse(cd.STATS_DETAILLEES_ACTIVE)
+
+
+class TestClassementApiFootball(unittest.TestCase):
+    """trouver_classement — consolidation du 30/09/2026 : remplace football-data.org,
+    réutilise le league_id/season déjà résolus par trouver_ligue_et_stats."""
+
+    def setUp(self):
+        cd._cache_classement_api_football.clear()
+
+    def _standings_factices(self):
+        return [{
+            "league": {"standings": [[
+                {"rank": 3, "points": 45, "goalsDiff": 12, "form": "WWDLW",
+                 "team": {"id": 100, "name": "Équipe Test"},
+                 "all": {"played": 20, "goals": {"for": 35, "against": 23}}},
+                {"rank": 1, "points": 52, "goalsDiff": 20, "form": "WWWWW",
+                 "team": {"id": 200, "name": "Autre Équipe"},
+                 "all": {"played": 20, "goals": {"for": 40, "against": 20}}},
+            ]]}
+        }]
+
+    def test_classement_trouve_et_calcule_correctement(self):
+        with mock.patch.object(cd, "_appel_standings_api_football", return_value=self._standings_factices()):
+            resultat = cd.trouver_classement(100, 61, 2024, "Équipe Test")
+        self.assertIsNotNone(resultat)
+        self.assertEqual(resultat["position"], 3)
+        self.assertEqual(resultat["points"], 45)
+        self.assertEqual(resultat["matchs_joues"], 20)
+        self.assertEqual(resultat["buts_marques"], 35)
+        self.assertEqual(resultat["buts_encaisses"], 23)
+        self.assertEqual(resultat["difference_buts"], 12)
+        self.assertEqual(resultat["forme_recente"], "WWDLW")
+
+    def test_equipe_absente_du_tableau_renvoie_none(self):
+        with mock.patch.object(cd, "_appel_standings_api_football", return_value=self._standings_factices()):
+            resultat = cd.trouver_classement(999, 61, 2024, "Équipe Inconnue")
+        self.assertIsNone(resultat)
+
+    def test_sans_league_id_ou_season_renvoie_none_sans_appel_reseau(self):
+        with mock.patch.object(cd, "_appel_standings_api_football") as appel:
+            self.assertIsNone(cd.trouver_classement(100, None, 2024, "Équipe Test"))
+            self.assertIsNone(cd.trouver_classement(100, 61, None, "Équipe Test"))
+        appel.assert_not_called()
+
+    def test_competition_sans_classement_renvoie_none(self):
+        # Phase à élimination directe (ex : 8es de finale de Ligue des Champions) : l'API
+        # renvoie une liste "standings" vide.
+        with mock.patch.object(cd, "_appel_standings_api_football", return_value=[{"league": {"standings": []}}]):
+            resultat = cd.trouver_classement(100, 2, 2024, "Équipe Test")
+        self.assertIsNone(resultat)
+
+    def test_mis_en_cache_par_ligue_et_saison(self):
+        with mock.patch.object(cd, "_appel_standings_api_football",
+                                return_value=self._standings_factices()) as appel:
+            cd.trouver_classement(100, 61, 2024, "Équipe Test")
+            cd.trouver_classement(200, 61, 2024, "Autre Équipe")
+        appel.assert_called_once()
+
+    def test_thesportsdb_retire(self):
+        self.assertFalse(hasattr(cd, "trouver_stats_thesportsdb"))
+        self.assertFalse(hasattr(cd, "THESPORTSDB_KEY"))
 
 
 if __name__ == "__main__":

@@ -10,6 +10,3 @@ GROQ_API_KEY=
 GEMINI_API_KEY=
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
-FOOTBALL_DATA_API_KEY=
-# Optionnel : clé personnelle TheSportsDB (sinon clé publique partagée "3")
-THESPORTSDB_API_KEY=
