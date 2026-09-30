@@ -280,15 +280,15 @@ def _cause_reelle(e):
 
 MAX_TENTATIVES_SAISON = 3  # plafonne les appels /teams/statistics par équipe (quota API-Football limité)
 
-# Le plan gratuit API-Football rejette catégoriquement /teams/statistics pour les saisons
+# Le plan GRATUIT d'API-Football rejette catégoriquement /teams/statistics pour les saisons
 # hors de cette fenêtre (constaté le 2026-07-23 : erreur "Free plans do not have access to
-# this season, try from 2022 to 2024" sur 2025 ET 2026). Sans ce filtre, les 2 premières
-# tentatives de chaque équipe (saisons 2026/2025) sont systématiquement perdues avant
-# d'atteindre 2024 qui, lui, répond — ce qui épuise le quota par minute avant la fin de la
-# collecte (constaté : 9/16 équipes seulement, échecs concentrés en fin de liste de matchs).
-# Surchargeable via SAISON_MAX_PLAN_GRATUIT (plan Pro souscrit le 30/09/2026 : saisons
-# 2025/2026 accessibles, cette limite ne s'applique plus).
-SAISON_MAX_PLAN_GRATUIT = int(os.getenv("SAISON_MAX_PLAN_GRATUIT") or "2024")
+# this season, try from 2022 to 2024" sur 2025 ET 2026) — sans ce filtre, les 2 premières
+# tentatives de chaque équipe étaient systématiquement perdues avant d'atteindre une saison
+# qui répond, épuisant le quota par minute avant la fin de la collecte.
+# Compte passé sur un plan Pro le 30/09/2026 (saisons courantes accessibles) : aucune limite
+# par défaut (2100, jamais atteint en pratique). Un futur repli sur un plan gratuit se règle
+# avec la variable d'environnement SAISON_MAX_PLAN_GRATUIT=2024, pas un changement de code.
+SAISON_MAX_PLAN_GRATUIT = int(os.getenv("SAISON_MAX_PLAN_GRATUIT") or "2100")
 
 
 @retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
