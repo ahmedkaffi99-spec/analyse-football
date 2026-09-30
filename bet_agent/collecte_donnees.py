@@ -1149,6 +1149,7 @@ def recuperer_marches_pour_fixture(fixture_id):
                 tous_marches.append({
                     "marche_id": market_id,
                     "marche": nom_marche_brut,
+                    "type": marche_type,
                     "handicap": handicap,
                     "periode": periode,
                     "selections": selections,

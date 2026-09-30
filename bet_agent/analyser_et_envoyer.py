@@ -689,9 +689,20 @@ def _evaluer_marches_brut(marches, mu_home, mu_away, mu_corners=None, mu_cartons
             elif est_team2:
                 mu_cible = mu_away  # total de buts de l'équipe extérieure SEULE
                 categorie = "Total Équipe 2"
-            else:
+            elif nom.startswith("over under") or "goal" in nom:
+                # Marché de BUTS confirmé par son nom brut ("Over Under Full Time" sans
+                # préfixe de statistique, observé sur 1xbet/OddsPapi). Tout autre marché
+                # "Over/Under" SANS mot-clé reconnu (tirs, fautes, touches, hors-jeux, coups
+                # francs...) tombait ICI par défaut avant ce correctif, comparé à tort aux buts
+                # attendus du match — constaté le 30/09/2026 : une ligne totalement étrangère
+                # aux buts (ex: 10.5) donnait un "Under" à ~99% de confiance et polluait le
+                # catalogue transmis à l'IA de faux signaux répétés ("toujours Under, toujours
+                # les mêmes lignes"). Comme pour les corners/cartons par équipe : on n'invente
+                # pas ce chiffre, on ignore ce marché plutôt que de l'évaluer à tort.
                 mu_cible = mu_total_buts  # total de buts du match (les deux équipes)
                 categorie = "Total"
+            else:
+                continue
 
             proba_over_calc = proba_over(handicap, mu_cible)
             for s in selections:

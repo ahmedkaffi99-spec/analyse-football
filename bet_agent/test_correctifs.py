@@ -413,6 +413,23 @@ class TestMatchsVirtuelsEtMarches(unittest.TestCase):
         ]
         self.assertEqual(ae.evaluer_marches(marches, 1.5, 1.2, mu_corners=9.5), [])
 
+    def test_marche_over_under_non_reconnu_ignore_pas_confondu_avec_les_buts(self):
+        # Constaté le 30/09/2026 (signalé par l'utilisateur : toujours "Under", toujours les
+        # mêmes lignes comme 10.5) : un marché "Over/Under" sans mot-clé reconnu (ni buts, ni
+        # corner/carton/équipe — ex: tirs, fautes, touches) tombait par défaut dans la branche
+        # des BUTS et était comparé à tort à mu_total_buts (~2-3), rendant "Under" quasi certain
+        # sur une ligne totalement étrangère aux buts (ex: 10.5) — polluant le catalogue de faux
+        # signaux répétés. Un tel marché doit être ignoré, pas évalué comme des buts.
+        marches = [
+            {"marche": "Shots On Target - Over Under Full Time", "handicap": 10.5, "periode": "fulltime",
+             "selections": [{"selection": "Over", "cote": 1.9}, {"selection": "Under", "cote": 1.9}]},
+            {"marche": "Over Under Full Time", "handicap": 2.5, "periode": "fulltime",
+             "selections": [{"selection": "Over", "cote": 1.9}, {"selection": "Under", "cote": 1.9}]},
+        ]
+        candidats = ae.evaluer_marches_toutes(marches, 1.5, 1.2)
+        self.assertEqual({c["categorie"] for c in candidats}, {"Total"})
+        self.assertEqual({c["handicap"] for c in candidats}, {2.5})
+
     def test_echantillon_de_stats_trop_petit_ignore(self):
         petit = {"matchs_joues": 3, "buts_marques_domicile": 0.1, "buts_encaisses_domicile": 1,
                  "buts_marques_exterieur": 0.2, "buts_encaisses_exterieur": 1}
