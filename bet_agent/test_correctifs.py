@@ -697,3 +697,93 @@ class TestMelangeModeleMarche(unittest.TestCase):
             retenus = ae.evaluer_marches(marches, 1.2, 1.0, mu_cartons=3.0)
         self.assertFalse(any(c["cote"] < ae.COTE_MIN_JAMBE for c in retenus))
         self.assertFalse(any(c["categorie"] == "Total Cartons" for c in retenus))
+
+
+def _stats_fixture(team_id_local, corners=6, cartons_j=2, cartons_r=0, fautes=10, tirs_cadres=5,
+                    tirs_totaux=12, possession="55%", hors_jeu=1, passes_pct="80%",
+                    corners_adverse=4, fautes_adverse=8):
+    return [
+        {"team": {"id": team_id_local}, "statistics": [
+            {"type": "Corner Kicks", "value": corners},
+            {"type": "Yellow Cards", "value": cartons_j},
+            {"type": "Red Cards", "value": cartons_r},
+            {"type": "Fouls", "value": fautes},
+            {"type": "Shots on Goal", "value": tirs_cadres},
+            {"type": "Total Shots", "value": tirs_totaux},
+            {"type": "Ball Possession", "value": possession},
+            {"type": "Offsides", "value": hors_jeu},
+            {"type": "Passes %", "value": passes_pct},
+        ]},
+        {"team": {"id": 999}, "statistics": [
+            {"type": "Corner Kicks", "value": corners_adverse},
+            {"type": "Fouls", "value": fautes_adverse},
+        ]},
+    ]
+
+
+class TestStatsDetaillees10Matchs(unittest.TestCase):
+    """recuperer_stats_10_derniers_matchs — 15 métriques (buts, corners, cartons, fautes,
+    tirs, possession, hors-jeux, passes, clean sheets, forme) sur les 10 derniers matchs."""
+
+    def _fixtures_factices(self, team_id=100):
+        return [
+            {"fixture": {"id": 1}, "teams": {"home": {"id": team_id, "winner": True},
+                                              "away": {"id": 200, "winner": False}},
+             "goals": {"home": 2, "away": 1}},
+            {"fixture": {"id": 2}, "teams": {"home": {"id": 300, "winner": True},
+                                              "away": {"id": team_id, "winner": False}},
+             "goals": {"home": 1, "away": 0}},
+            {"fixture": {"id": 3}, "teams": {"home": {"id": team_id, "winner": True},
+                                              "away": {"id": 400, "winner": False}},
+             "goals": {"home": 3, "away": 0}},
+        ]
+
+    def test_15_metriques_calculees_correctement(self):
+        team_id = 100
+        with mock.patch.object(cd, "_appel_derniers_fixtures", return_value=self._fixtures_factices(team_id)), \
+                mock.patch.object(cd, "_appel_statistiques_fixture", return_value=_stats_fixture(team_id)):
+            resultat = cd.recuperer_stats_10_derniers_matchs(team_id, "Équipe Test")
+
+        self.assertIsNotNone(resultat)
+        self.assertEqual(resultat["matchs_avec_donnees"], 3)
+        self.assertEqual(resultat["buts_marques_moyenne"], round((2 + 0 + 3) / 3, 2))
+        self.assertEqual(resultat["buts_encaisses_moyenne"], round((1 + 1 + 0) / 3, 2))
+        self.assertEqual(resultat["clean_sheets_nombre"], 1)  # seul le match 3 (0 encaissé)
+        self.assertEqual(resultat["points_par_match_moyenne"], 2.0)  # (3+0+3)/3
+        self.assertEqual(resultat["corners_pour_moyenne"], 6.0)
+        self.assertEqual(resultat["corners_contre_moyenne"], 4.0)
+        self.assertEqual(resultat["cartons_jaunes_moyenne"], 2.0)
+        self.assertEqual(resultat["fautes_commises_moyenne"], 10.0)
+        self.assertEqual(resultat["fautes_subies_moyenne"], 8.0)
+        self.assertEqual(resultat["possession_moyenne_pct"], 55.0)  # "%" bien nettoyé
+        self.assertEqual(resultat["passes_reussies_pct_moyenne"], 80.0)
+        # 15 métriques exactement (hors champs de méta-données source/échantillon)
+        cles_metriques = {k for k in resultat if k not in ("source", "matchs_avec_donnees")}
+        self.assertEqual(len(cles_metriques), 15)
+
+    def test_echantillon_trop_faible_renvoie_none(self):
+        team_id = 100
+        with mock.patch.object(cd, "_appel_derniers_fixtures", return_value=self._fixtures_factices(team_id)[:2]), \
+                mock.patch.object(cd, "_appel_statistiques_fixture", return_value=_stats_fixture(team_id)):
+            resultat = cd.recuperer_stats_10_derniers_matchs(team_id, "Équipe Test")
+        self.assertIsNone(resultat)
+
+    def test_aucune_fixture_renvoie_none(self):
+        with mock.patch.object(cd, "_appel_derniers_fixtures", return_value=[]):
+            resultat = cd.recuperer_stats_10_derniers_matchs(100, "Équipe Test")
+        self.assertIsNone(resultat)
+
+    def test_valeur_stat_gere_pourcentage_et_none(self):
+        bloc = [{"type": "Ball Possession", "value": "62%"}, {"type": "Corner Kicks", "value": None},
+                {"type": "Fouls", "value": 7}]
+        self.assertEqual(cd._valeur_stat(bloc, "Ball Possession"), 62.0)
+        self.assertIsNone(cd._valeur_stat(bloc, "Corner Kicks"))
+        self.assertEqual(cd._valeur_stat(bloc, "Fouls"), 7.0)
+        self.assertIsNone(cd._valeur_stat(bloc, "Type Absent"))
+
+    def test_desactive_par_defaut(self):
+        self.assertFalse(cd.STATS_DETAILLEES_ACTIVE)
+
+
+if __name__ == "__main__":
+    unittest.main()
