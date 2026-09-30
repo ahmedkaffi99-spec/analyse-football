@@ -1,0 +1,79 @@
+# Diagnostics groupés (consolidation du 30/09/2026, demande explicite : nettoyer les workflows
+# inutiles et regrouper le reste en quelques essentiels) — remplace 4 workflows séparés
+# (Tester les IA, Tester stats détaillées API-Football, Vérifier l'état de la collecte,
+# Modèles gratuits OpenRouter) par un seul, à choix. Aucune de ces vérifications ne collecte de
+# vrais coupons ni n'appelle DeepSeek pour composer un ticket — diagnostic seulement.
+name: Diagnostics
+
+on:
+  workflow_dispatch:
+    inputs:
+      verification:
+        description: "Quel diagnostic lancer ?"
+        type: choice
+        options:
+          - marches-disponibles
+          - api-football-stats-detaillees
+          - ia
+          - modeles-openrouter-gratuits
+        default: marches-disponibles
+      date_debut:
+        description: "Date cible de début (AAAA-MM-JJ) — utilisé seulement par 'marches-disponibles'"
+        type: string
+        default: ""
+      date_fin:
+        description: "Date cible de fin (AAAA-MM-JJ) — utilisé seulement par 'marches-disponibles'"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONUNBUFFERED: "1"
+      ODDSPAPI_KEY: ${{ secrets.ODDSPAPI_KEY }}
+      API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+      API_FOOTBALL_QUOTA_PAR_MINUTE: ${{ secrets.API_FOOTBALL_QUOTA_PAR_MINUTE }}
+      STATS_DETAILLEES_ACTIVE: ${{ secrets.STATS_DETAILLEES_ACTIVE }}
+      SAISON_MAX_PLAN_GRATUIT: ${{ secrets.SAISON_MAX_PLAN_GRATUIT }}
+      SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      DATE_CIBLE_DEBUT: ${{ inputs.date_debut }}
+      DATE_CIBLE_FIN: ${{ inputs.date_fin }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            bet_agent/requirements.txt
+      - run: pip install -r backend/requirements.txt -r bet_agent/requirements.txt
+
+      - name: Marchés 1xBet actuellement disponibles
+        if: inputs.verification == 'marches-disponibles'
+        working-directory: bet_agent
+        run: python -c "import collecte_donnees; collecte_donnees.collecter_donnees()"
+
+      - name: API-Football — stats détaillées (15 métriques, 10 derniers matchs)
+        if: inputs.verification == 'api-football-stats-detaillees'
+        working-directory: bet_agent
+        run: python verifier_stats_detaillees.py
+
+      - name: IA (Groq, Gemini, OpenRouter)
+        if: inputs.verification == 'ia'
+        working-directory: backend
+        run: python -m app.taches tester-ia
+
+      - name: Modèles gratuits OpenRouter
+        if: inputs.verification == 'modeles-openrouter-gratuits'
+        working-directory: backend
+        run: python -m app.taches modeles-gratuits
