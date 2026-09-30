@@ -245,6 +245,41 @@ class TestListeManuellePerimee(unittest.TestCase):
         auto.assert_not_called()
 
 
+class TestMatchsManuelsEnv(unittest.TestCase):
+    """Champ "Matchs manuels" du workflow (demande explicite du 30/09/2026, pour ne plus
+    avoir à me donner la liste à modifier dans le code à chaque fois)."""
+
+    def test_parsing_format_attendu(self):
+        paires = cd._parser_matchs_manuels_env("Aston Villa - Fenerbahce, Roma - Real Madrid")
+        self.assertEqual(paires, [("Aston Villa", "Fenerbahce"), ("Roma", "Real Madrid")])
+
+    def test_parsing_ignore_blocs_mal_formes_et_vides(self):
+        paires = cd._parser_matchs_manuels_env("Aston Villa - Fenerbahce, , sans separateur, Roma - Real Madrid")
+        self.assertEqual(paires, [("Aston Villa", "Fenerbahce"), ("Roma", "Real Madrid")])
+
+    def test_parsing_vide_ou_absent(self):
+        self.assertEqual(cd._parser_matchs_manuels_env(""), [])
+        self.assertEqual(cd._parser_matchs_manuels_env(None), [])
+
+    def test_env_prioritaire_meme_si_liste_codee_perimee(self):
+        # Fournie exprès pour ce run : jamais jugée "périmée", même si MATCHS_MANUELS_DATES
+        # ne couvre pas la date du jour et SELECTION_MANUELLE_ACTIVE est désactivée.
+        with tempfile.TemporaryDirectory() as d:
+            sortie = os.path.join(d, "out.json")
+            with mock.patch.object(cd, "SORTIE_JSON", sortie), \
+                    mock.patch.object(cd, "SELECTION_MANUELLE_ACTIVE", False), \
+                    mock.patch.object(cd, "MATCHS_MANUELS_DATES", {"2000-01-01"}), \
+                    mock.patch.object(cd, "MATCHS_MANUELS", []), \
+                    mock.patch.object(cd, "MATCHS_MANUELS_ENV", "Aston Villa - Fenerbahce"), \
+                    mock.patch.object(cd, "verifier_quota_oddspapi", return_value=True), \
+                    mock.patch.object(cd, "_telecharger_fixtures_oddspapi", return_value=[]), \
+                    mock.patch.object(cd, "recuperer_fixtures_api_football", return_value=[]), \
+                    mock.patch.object(cd, "collecter_contexte_serper", return_value=None), \
+                    mock.patch.object(cd, "selectionner_matchs_du_jour", return_value=[]) as auto:
+                cd.collecter_donnees()
+        auto.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
 

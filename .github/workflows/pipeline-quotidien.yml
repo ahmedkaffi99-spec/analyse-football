@@ -39,6 +39,10 @@ on:
         description: "Date cible de fin (AAAA-MM-JJ) — vide = aujourd'hui+2j"
         type: string
         default: ""
+      matchs_manuels:
+        description: "Matchs manuels (optionnel) : \"Equipe A - Equipe B, Equipe C - Equipe D\" — ignore la sélection automatique pour ce run"
+        type: string
+        default: ""
 
 concurrency:
   group: pipeline-quotidien
@@ -77,6 +81,7 @@ jobs:
       DEPUIS_RUN: ${{ inputs.depuis_run }}
       DATE_CIBLE_DEBUT: ${{ inputs.date_debut }}
       DATE_CIBLE_FIN: ${{ inputs.date_fin }}
+      MATCHS_MANUELS: ${{ inputs.matchs_manuels }}
     steps:
       - uses: actions/checkout@v4
 

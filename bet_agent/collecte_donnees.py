@@ -122,6 +122,29 @@ MATCHS_MANUELS = [
     ("Arsenal", "Lille OSC"),
 ]
 
+# Sélection manuelle fournie au lancement du workflow (champ "Matchs manuels" du
+# workflow_dispatch), en plus de la liste codée en dur ci-dessus — demande explicite du
+# 30/09/2026 pour ne plus avoir à modifier le code à chaque fois. Format : une paire par
+# virgule, équipes séparées par " - " : "Equipe A - Equipe B, Equipe C - Equipe D".
+# Toujours considérée "du jour" (fournie exprès pour CE run) : aucun contrôle de date comme
+# MATCHS_MANUELS_DATES, qui ne s'applique qu'à la liste codée en dur. Prioritaire sur
+# MATCHS_MANUELS quand elle est non vide.
+MATCHS_MANUELS_ENV = os.getenv("MATCHS_MANUELS")
+
+
+def _parser_matchs_manuels_env(valeur):
+    paires = []
+    for bloc in (valeur or "").split(","):
+        bloc = bloc.strip()
+        if not bloc or " - " not in bloc:
+            continue
+        home, away = bloc.split(" - ", 1)
+        home, away = home.strip(), away.strip()
+        if home and away:
+            paires.append((home, away))
+    return paires
+
+
 # Grandes ligues européennes uniquement — MLS et Brasileirão volontairement exclus
 # (leçon du développement initial, voir MEMOIRE.md : matching moins fiable, moins de
 # marchés 1xbet dispo sur ces championnats). Ordre = ordre de priorité pour le tri.
@@ -1188,19 +1211,26 @@ def collecter_donnees():
     except Exception as e:
         print(f"   ⚠️ OddsPapi fixtures indisponible après retries : {_cause_reelle(e)}")
         fixtures_oddspapi = []
+    matchs_manuels_env = _parser_matchs_manuels_env(MATCHS_MANUELS_ENV)
     # Comparée à la date cible du run (DATE_CIBLE_DEBUT) quand elle est fournie, sinon à
     # aujourd'hui — sans ça, une sélection manuelle préparée pour une période future (ex: un
     # run lancé le 29/09 pour des matchs du 13/10) serait toujours jugée "périmée", puisque
     # "aujourd'hui" ne correspondrait jamais à la date de la liste avant le jour J lui-même.
     date_reference = DATE_CIBLE_DEBUT or datetime.now().strftime("%Y-%m-%d")
     liste_manuelle_du_jour = date_reference in MATCHS_MANUELS_DATES
-    if SELECTION_MANUELLE_ACTIVE and not liste_manuelle_du_jour:
+    if SELECTION_MANUELLE_ACTIVE and not liste_manuelle_du_jour and not matchs_manuels_env:
         print(f"   ⚠️ Sélection manuelle active mais MATCHS_MANUELS couvre {sorted(MATCHS_MANUELS_DATES)} "
               f"(périmée pour {date_reference}) — ignorée, bascule sur la sélection automatique.")
     # Mode manuel RÉELLEMENT utilisé ce jour-là : une liste périmée ne désactive pas les règles
     # de la sélection automatique (arrêt à NB_MATCHS_MAX, exclusion féminines / sans cotes).
-    mode_manuel = SELECTION_MANUELLE_ACTIVE and liste_manuelle_du_jour
-    if mode_manuel:
+    # La liste fournie via le workflow (champ "Matchs manuels") est prioritaire — donnée
+    # exprès pour ce run, jamais "périmée".
+    mode_manuel = bool(matchs_manuels_env) or (SELECTION_MANUELLE_ACTIVE and liste_manuelle_du_jour)
+    if matchs_manuels_env:
+        print(f"   🎯 Sélection manuelle fournie via le workflow — {len(matchs_manuels_env)} match(s), "
+              f"sélection automatique par ligue ignorée.")
+        matchs_a_traiter = matchs_manuels_env
+    elif mode_manuel:
         print(f"   🎯 Sélection manuelle active — {len(MATCHS_MANUELS)} match(s) fournis directement, "
               f"sélection automatique par ligue ignorée.")
         matchs_a_traiter = MATCHS_MANUELS
