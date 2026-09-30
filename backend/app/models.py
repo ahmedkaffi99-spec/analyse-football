@@ -52,7 +52,8 @@ class Match(Base):
     fixture_id_api_football: Mapped[int | None] = mapped_column(Integer)
     score_domicile: Mapped[int | None] = mapped_column(Integer)
     score_exterieur: Mapped[int | None] = mapped_column(Integer)
-    # Données d'équipe brutes : stats historiques, xG Understat, Elo, classement, contexte Serper
+    # Données d'équipe brutes : stats historiques, classement, confrontations directes,
+    # blessures, prédictions API-Football, contexte Serper
     donnees: Mapped[dict | None] = mapped_column(JSON)
 
     run: Mapped[Run] = relationship(back_populates="matchs")

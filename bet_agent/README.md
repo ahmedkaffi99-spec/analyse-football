@@ -39,9 +39,7 @@ Chaque jour, le pipeline collecte les matchs et les cotes 1xBet, calcule des pro
 | Service | Donne | Clé | Limite connue |
 |---|---|---|---|
 | **OddsPapi** | liste des matchs + **toutes les cotes 1xBet** + scores finaux | `ODDSPAPI_KEY` | certificat intercepté (Fortinet) → `verify=False` sur ce seul domaine |
-| **API-Football** | identité des matchs, stats par équipe (buts dom./ext., forme), classement, stats détaillées 10 derniers matchs (corners/cartons/fautes, 15 métriques), confrontations directes, blessures/suspensions déclarées, prédictions propriétaires (second avis) | `API_FOOTBALL_KEY` | plan Pro (30/09/2026) : 300 req/min, 7 500/jour — réglable via `API_FOOTBALL_QUOTA_PAR_MINUTE`/`SAISON_MAX_PLAN_GRATUIT` (secrets) si repli sur un plan inférieur — consolidé le 30/09/2026 : remplace football-data.org et TheSportsDB |
-| **Understat** | xG / xGA de la saison en cours (5 grands championnats) | aucune | scraping HTML, 1 requête par ligue |
-| **ClubElo** | rating Elo de tous les clubs | aucune | 1 requête par run |
+| **API-Football** | identité des matchs, stats par équipe (buts dom./ext., forme), classement, stats détaillées 10 derniers matchs (corners/cartons/fautes, 15 métriques, source des buts attendus — voir `calculer_xg_depuis_stats_detaillees`), confrontations directes, blessures/suspensions déclarées, prédictions propriétaires (second avis) | `API_FOOTBALL_KEY` | plan Pro (30/09/2026) : 300 req/min, 7 500/jour — réglable via `API_FOOTBALL_QUOTA_PAR_MINUTE`/`SAISON_MAX_PLAN_GRATUIT` (secrets) si repli sur un plan inférieur — consolidé le 30/09/2026 : remplace football-data.org, TheSportsDB, Understat et ClubElo (retirés du pipeline, demande explicite : ne garder qu'API-Football + OddsPapi + IA, hors Serper conservé pour son actualité fraîche) |
 | **Serper** | contexte web (blessures, avant-match) | `SERPER_API_KEY` | — |
 
 ### IA (LLM)
@@ -85,9 +83,9 @@ Le LLM **n'invente jamais un chiffre** : cotes, probabilités et edges sont calc
 | Agent | Fichier / fonction | Pilier | Ce qu'il fait |
 |---|---|---|---|
 | **1 — Matchs & cotes** | `collecte_donnees.py` | Données | sélectionne 8 à 15 matchs (5 grands championnats en priorité), récupère tous les marchés 1xBet sauf le 1X2 |
-| **2 — Stats & contexte** | `collecte_donnees.py` | Données | stats d'équipe (Understat → API-Football → TheSportsDB), Elo, classement, contexte web Serper |
-| **3 — Calcul** | `analyser_et_envoyer.py` · `agent3_calcul_pool_candidats` | Calcul | buts attendus → probabilités Poisson → edge sur chaque marché → pool de candidats → 3 combinés |
-| **3b — Stratège IA** | `agent_strategie.py` | IA | **analyse** chaque match (fiabilité, presse, Elo, écart modèle/marché), **planifie** une stratégie par profil et **choisit** les paris dans le catalogue de cotes réelles (par identifiant, jamais de cote inventée) ; Python **vérifie** (paris existants, 2 max par match, cote totale dans la cible) et renvoie ses calculs à l'IA qui corrige (3 allers-retours max) ; l'IA peut **s'abstenir** ; repli automatique (Monte Carlo) si elle échoue |
+| **2 — Stats & contexte** | `collecte_donnees.py` | Données | stats d'équipe (API-Football : 10 derniers matchs, classement, confrontations directes, blessures, prédictions), contexte web Serper |
+| **3 — Calcul** | `analyser_et_envoyer.py` · `agent3_calcul_pool_candidats` | Calcul | buts attendus (API-Football) → probabilités Poisson → edge sur chaque marché → pool de candidats → 3 combinés |
+| **3b — Stratège IA** | `agent_strategie.py` | IA | **analyse** chaque match (fiabilité, presse, confrontations directes, écart modèle/marché), **planifie** une stratégie par profil et **choisit** les paris dans le catalogue de cotes réelles (par identifiant, jamais de cote inventée) ; Python **vérifie** (paris existants, 2 max par match, cote totale dans la cible) et renvoie ses calculs à l'IA qui corrige (3 allers-retours max) ; l'IA peut **s'abstenir** ; repli automatique (Monte Carlo) si elle échoue |
 | **4 — Rédaction IA** | `analyser_et_envoyer.py` · `agent4_*` | IA | 3 tâches : analyse → pronostic + confiance → ticket pédagogique pour débutant |
 | **5 — Livraison** | `analyser_et_envoyer.py` · `agent5_*` | Livraison | envoi Telegram, sauvegarde `ticket_du_jour.json` |
 | **6 — Vérification** | `verifier_resultats.py` | Contrôle | attend la fin des matchs, récupère les scores, juge chaque jambe, envoie le bilan |
@@ -107,8 +105,8 @@ Le LLM **n'invente jamais un chiffre** : cotes, probabilités et edges sont calc
 
 ### Modèle mathématique
 - Buts attendus, par ordre de priorité :
-  1. **xG Understat de la saison en cours** (≥ 3 matchs par équipe) ;
-  2. stats API-Football (saison 2024, signalées comme anciennes) ;
+  1. **stats API-Football des 10 derniers matchs joués** (`calculer_xg_depuis_stats_detaillees`, nécessite `STATS_DETAILLEES_ACTIVE=true`) ;
+  2. stats API-Football de saison (`/teams/statistics`) ;
   3. estimation depuis les cotes (ligne Total et Handicap les plus équilibrées).
 - Probabilités de **Poisson** sur : Total (match, équipe 1, équipe 2), BTTS, Double Chance, Draw No Bet, Handicap asiatique, Pair/Impair, Clean Sheet, Win to Nil, corners/cartons.
 - Lignes quart (.25/.75) exclues des paris proposés.
@@ -179,7 +177,7 @@ En production, ces scripts ne sont plus lancés par cron : GitHub Actions exécu
 - [x] Backend API + base de données : voir [`../backend/`](../backend/README.md).
 - [x] Plus de Termux : GitHub Actions + Supabase ([`../DEPLOIEMENT.md`](../DEPLOIEMENT.md)).
 - [x] Certificat OddsPapi vérifié par défaut (`ODDSPAPI_SSL_NON_VERIFIE=true` seulement sur un réseau qui l'intercepte).
-- [x] `diagnostic.py` teste Understat sur la saison en cours.
+- [x] Understat et ClubElo retirés du pipeline (30/09/2026) : ne reste qu'API-Football, OddsPapi, Serper et les IA.
 
 ### ⏳ Prochaines étapes
 1. **Mise en production** : suivre [`../DEPLOIEMENT.md`](../DEPLOIEMENT.md) (secrets GitHub, `DATABASE_URL` Supabase, fusion dans `main`).
@@ -189,6 +187,6 @@ En production, ces scripts ne sont plus lancés par cron : GitHub Actions exécu
 
 ### 💡 Améliorations possibles
 - Normaliser les buts attendus par la moyenne de la ligue (modèle Dixon-Coles).
-- Utiliser l'Elo ClubElo et le classement dans le calcul (aujourd'hui collectés mais pas utilisés).
+- Utiliser le classement API-Football dans le calcul (aujourd'hui collecté mais pas utilisé).
 - Tableau de bord du taux de réussite par coupon à partir de l'historique des bilans.
 - Réduire la corrélation : interdire deux jambes contradictoires sur le même match.

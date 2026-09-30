@@ -6,8 +6,9 @@ vérifier l'état réel du compte API-Football (quota, plan, suspension) avant d
 STATS_DETAILLEES_ACTIVE en production.
 Usage : python verifier_stats_detaillees.py
 
-Nommé volontairement SANS le préfixe test_ (voir verifier_elo_understat.py) : ce n'est pas un
-test unitaire mais un script qui fait de VRAIS appels réseau à API-Football."""
+Nommé volontairement SANS le préfixe test_ : ce n'est pas un test unitaire (aucune classe
+unittest.TestCase) mais un script qui fait de VRAIS appels réseau — le préfixe test_ le
+ferait exécuter par erreur à l'import par `unittest discover`."""
 import collecte_donnees as cd
 
 # IDs API-Football (v3.football.api-sports.io), stables et documentés.

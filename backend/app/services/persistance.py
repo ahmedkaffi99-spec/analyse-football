@@ -41,7 +41,9 @@ def enregistrer_collecte(db, run, donnees):
             coup_envoi=parse_datetime(af.get("fixture_date")),
             fixture_id_oddspapi=op.get("fixture_id"),
             fixture_id_api_football=af.get("fixture_id_api_football"),
-            donnees={cle: m.get(cle) for cle in ("stats_historiques", "understat_xg", "clubelo", "classement", "serper")},
+            donnees={cle: m.get(cle) for cle in (
+                "stats_historiques", "stats_detaillees_10_matchs", "classement", "serper",
+                "head_to_head", "blessures", "predictions_api_football")},
         )
         for marche in op.get("tous_marches") or []:
             for s in marche.get("selections", []):

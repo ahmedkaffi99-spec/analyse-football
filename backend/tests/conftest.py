@@ -54,8 +54,9 @@ def collecte_exemple():
                  "selections": [{"selection": "Yes", "cote": 1.7}, {"selection": "No", "cote": 2.1}]},
             ]},
             "serper": None, "stats_historiques": {"home": None, "away": None},
-            "understat_xg": {"home": None, "away": None}, "clubelo": {"home": None, "away": None},
+            "stats_detaillees_10_matchs": {"home": None, "away": None},
             "classement": {"home": None, "away": None},
+            "head_to_head": None, "blessures": None, "predictions_api_football": None,
         }],
     }
 

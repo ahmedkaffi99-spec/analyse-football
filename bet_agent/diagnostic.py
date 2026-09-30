@@ -1,8 +1,7 @@
 """
 Diagnostic rapide : teste séparément chaque source de données utilisée par
-collecte_donnees.py / abdi.py, pour trouver précisément pourquoi API-Football,
-TheSportsDB et ClubElo sont revenus vides (0/30 équipes) lors de la dernière
-collecte, alors qu'OddsPapi fonctionnait.
+collecte_donnees.py (API-Football, OddsPapi) — Understat et ClubElo ont été retirés du
+pipeline le 30/09/2026 (demande explicite : ne garder qu'API-Football, OddsPapi, IA).
 
 Lance-le depuis le dossier bet_agent (là où se trouve envi.local) :
     python diagnostic.py
@@ -61,18 +60,7 @@ try:
 except Exception as e:
     print(f"   ❌ ÉCHEC RÉSEAU : {type(e).__name__} : {e}")
 
-ligne("4) ClubElo (endpoint public, HTTP, aucune clé)")
-try:
-    from datetime import datetime
-    d = datetime.now().strftime("%Y-%m-%d")
-    r = requests.get(f"http://api.clubelo.com/{d}", timeout=15)
-    print(f"   status_code = {r.status_code}")
-    print(f"   1ère ligne = {r.text.splitlines()[0] if r.text else '(vide)'}")
-    print(f"   nb lignes total = {len(r.text.splitlines())}")
-except Exception as e:
-    print(f"   ❌ ÉCHEC RÉSEAU : {type(e).__name__} : {e}")
-
-ligne("5) OddsPapi (certificat vérifié sauf si ODDSPAPI_SSL_NON_VERIFIE=true)")
+ligne("4) OddsPapi (certificat vérifié sauf si ODDSPAPI_SSL_NON_VERIFIE=true)")
 try:
     r = requests.get("https://api.oddspapi.io/v4/sports",
                       params={"apiKey": ODDSPAPI_KEY or ""}, timeout=15, verify=VERIFIER_SSL_ODDSPAPI)
@@ -81,17 +69,6 @@ try:
 except Exception as e:
     print(f"   ❌ ÉCHEC RÉSEAU : {type(e).__name__} : {e}")
 
-ligne("6) Understat (HTML, aucune clé)")
-try:
-    from datetime import datetime
-    maintenant = datetime.now()
-    saison = maintenant.year if maintenant.month >= 7 else maintenant.year - 1
-    r = requests.get(f"https://understat.com/league/Ligue_1/{saison}", timeout=15,
-                      headers={"User-Agent": "Mozilla/5.0"})
-    print(f"   status_code = {r.status_code}, taille corps = {len(r.text)} caractères")
-except Exception as e:
-    print(f"   ❌ ÉCHEC RÉSEAU : {type(e).__name__} : {e}")
-
 print("\n\nEnvoie-moi la sortie complète de ce script (copier-coller le terminal) —")
-print("ça me dira exactement laquelle des 4 sources échoue et pourquoi (clé, quota,")
+print("ça me dira exactement laquelle des sources échoue et pourquoi (clé, quota,")
 print("certificat SSL intercepté, ou blocage réseau pur).")

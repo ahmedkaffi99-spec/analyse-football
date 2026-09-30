@@ -1,8 +1,6 @@
 import os
 import json
 import time
-import csv
-import io
 import requests
 import urllib3
 from collections import deque
@@ -571,249 +569,6 @@ def recuperer_stats_10_derniers_matchs(team_id, nom_affichage):
           f"{resultat['cartons_jaunes_moyenne']} cartons jaunes, {resultat['fautes_commises_moyenne']} fautes "
           f"en moyenne")
     return resultat
-
-
-# ============================================================
-# UNDERSTAT — xG/xGA (buts attendus), source complémentaire pour les 5 grands
-# championnats UNIQUEMENT (Ligue 1, Premier League, Serie A, Bundesliga, La Liga —
-# Understat ne couvre pas les autres). Pas d'API officielle : les données sont
-# intégrées dans le HTML de la page ligue sous forme de chaîne JS échappée
-# (teamsData), décodée puis parsée en JSON. Une seule requête par LIGUE couvre
-# TOUTES ses équipes (mise en cache pour la durée du run) — donc au pire 5
-# requêtes au total, quota négligeable contrairement à API-Football.
-#
-# Le xG (expected goals) est le nombre de buts qu'une équipe "aurait dû" marquer
-# vu la qualité de ses occasions — plus stable dans le temps que les buts réels,
-# qui incluent la chance/malchance ponctuelle. C'est un signal complémentaire
-# aux moyennes de buts d'API-Football, pas un remplacement : les deux sont
-# conservés séparément dans la sortie JSON, à combiner dans l'analyse (Agent 4)
-# comme jugé pertinent.
-# ============================================================
-
-UNDERSTAT_LIGUE_PAR_NOM = {
-    "ligue 1": "Ligue_1",
-    "premier league": "EPL",
-    "serie a": "Serie_A",
-    "bundesliga": "Bundesliga",
-    "la liga": "La_liga",
-}
-
-# Understat identifie une saison par son année de DÉBUT (ex: saison 2025/2026 → 2025).
-# Calculée automatiquement : la saison européenne démarre en juillet/août, donc de juillet
-# à décembre c'est l'année en cours, de janvier à juin l'année précédente. (Auparavant
-# fixée à la main à 2025 et oubliée au changement de saison 2026/2027.)
-def saison_en_cours(date=None):
-    date = date or datetime.now()
-    return date.year if date.month >= 7 else date.year - 1
-
-
-UNDERSTAT_SAISON = saison_en_cours()
-
-_cache_understat_par_ligue = {}
-
-
-@retry(stop=stop_after_attempt(3), wait=wait_fixed(3))
-def _telecharger_page_understat(ligue_understat, saison):
-    url = f"https://understat.com/league/{ligue_understat}/{saison}"
-    r = SESSION.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
-    r.raise_for_status()
-    return r.text
-
-
-def _extraire_teams_data_understat(html):
-    """Le JSON teamsData est caché dans le HTML sous forme de chaîne JS échappée
-    (JSON.parse('\\x7b...')) — on extrait la chaîne, on la décode (échappement JS
-    \\xHH), puis on la parse comme du JSON normal."""
-    import re
-    match = re.search(r"var teamsData\s*=\s*JSON\.parse\('(.+?)'\)", html)
-    if not match:
-        return None
-    chaine_echappee = match.group(1)
-    decodee = chaine_echappee.encode("utf-8").decode("unicode_escape").encode("latin1").decode("utf-8")
-    return json.loads(decodee)
-
-
-def charger_teams_data_understat(ligue_understat):
-    """Une requête par ligue par run, mise en cache — jamais plus de 5 requêtes
-    Understat au total même si les 5 championnats sont tous traités."""
-    if ligue_understat in _cache_understat_par_ligue:
-        return _cache_understat_par_ligue[ligue_understat]
-    try:
-        html = _telecharger_page_understat(ligue_understat, UNDERSTAT_SAISON)
-        teams_data = _extraire_teams_data_understat(html)
-        if teams_data is None:
-            # La page a répondu (200 OK, sinon l'exception ci-dessous aurait été levée) mais
-            # le motif "var teamsData = JSON.parse(...)" attendu est introuvable dans le HTML
-            # reçu — page de blocage anti-robot, structure de page changée, ou saison/ligue
-            # invalide, plutôt qu'une vraie panne réseau (constaté le 29/09/2026 : aucune
-            # erreur affichée, mais 0% de correspondance pour de grands clubs qui devraient
-            # y être). Ce print rend le problème visible au lieu de le masquer en silence.
-            print(f"      ⚠️ Understat ({ligue_understat}) : page reçue mais aucune donnée "
-                  f"d'équipe extraite ({len(html)} caractères reçus) — page de blocage "
-                  f"probable ou structure de page changée.")
-    except Exception as e:
-        print(f"      ⚠️ Understat indisponible pour {ligue_understat} après retries : {e}")
-        teams_data = None
-    _cache_understat_par_ligue[ligue_understat] = teams_data
-    return teams_data
-
-
-def trouver_stats_understat(nom_equipe, nom_ligue_detectee=None):
-    """xG/xGA moyens par match sur la saison en cours. Cherche l'équipe dans les 5 grands
-    championnats domestiques couverts par Understat (Ligue 1, Premier League, Serie A,
-    Bundesliga, La Liga), quelle que soit la compétition du MATCH lui-même — demande
-    explicite de l'utilisateur (30/09/2026) : un match de Ligue des Champions (ou toute
-    autre coupe) oppose souvent deux équipes qui jouent chacune dans l'un de ces 5
-    championnats le week-end ; les exclure faute de correspondance sur le nom de la
-    compétition privait Understat de données pourtant disponibles (ex: Arsenal, Inter
-    Milan, Villarreal — tous des grands clubs des 5 ligues couvertes — en Ligue des
-    Champions). nom_ligue_detectee n'est plus utilisé (gardé pour compatibilité d'appel),
-    la recherche se fait désormais dans les 5 ligues à chaque fois (au pire 5 requêtes
-    Understat par run, déjà mises en cache — coût déjà annoncé comme le pire cas)."""
-    from rapidfuzz import fuzz
-
-    cible = unidecode(nom_equipe).lower()
-    meilleur_score, meilleure_equipe, ligue_trouvee = 0, None, None
-    for mot_cle, ligue_understat in UNDERSTAT_LIGUE_PAR_NOM.items():
-        teams_data = charger_teams_data_understat(ligue_understat)
-        if not teams_data:
-            continue
-        for equipe in teams_data.values():
-            titre = equipe.get("title", "")
-            score = fuzz.token_set_ratio(cible, unidecode(titre).lower())
-            if score > meilleur_score:
-                meilleur_score, meilleure_equipe, ligue_trouvee = score, equipe, ligue_understat
-
-    if meilleur_score < SEUIL_MATCH_ACCEPTABLE or not meilleure_equipe:
-        print(f"      ⚠️ {nom_equipe} introuvable sur Understat (5 grands championnats, "
-              f"meilleur score {meilleur_score:.0f}%)")
-        return None
-    ligue_understat = ligue_trouvee
-
-    historique = meilleure_equipe.get("history", [])
-    if not historique:
-        return None
-
-    matchs_joues = len(historique)
-    xg_total = sum(float(m.get("xG", 0)) for m in historique)
-    xga_total = sum(float(m.get("xGA", 0)) for m in historique)
-    xg_moyen = round(xg_total / matchs_joues, 2)
-    xga_moyen = round(xga_total / matchs_joues, 2)
-
-    # Forme récente (10 derniers matchs, demande explicite du 30/09/2026, ajustée de 5 à 10) —
-    # la moyenne saison entière peut masquer un
-    # changement de forme récent (bonne/mauvaise série). "history" est dans l'ordre
-    # chronologique de disputes des matchs (ordre natif Understat), donc les 10 derniers
-    # éléments = les 10 derniers matchs joués. Champ complémentaire, ne remplace pas la
-    # moyenne saison (déjà utilisée ailleurs par calculer_xg_depuis_understat).
-    dix_derniers = historique[-10:]
-    xg_moyen_recent = round(sum(float(m.get("xG", 0)) for m in dix_derniers) / len(dix_derniers), 2)
-    xga_moyen_recent = round(sum(float(m.get("xGA", 0)) for m in dix_derniers) / len(dix_derniers), 2)
-
-    print(f"      ✓ {meilleure_equipe.get('title')} (Understat, score {meilleur_score:.0f}%) : "
-          f"xG {xg_moyen} / xGA {xga_moyen} par match sur {matchs_joues} matchs "
-          f"({len(dix_derniers)} derniers : xG {xg_moyen_recent} / xGA {xga_moyen_recent})")
-
-    return {
-        "source": "understat_xg",
-        "matchs_joues": matchs_joues,
-        "xg_moyen_par_match": xg_moyen,
-        "xga_moyen_par_match": xga_moyen,
-        "xg_moyen_10_derniers": xg_moyen_recent,
-        "xga_moyen_10_derniers": xga_moyen_recent,
-    }
-
-
-# ============================================================
-# CLUBELO — rating Elo par équipe, TOUTES ligues confondues (pas limité aux 5
-# grandes, contrairement à Understat). Une seule requête pour TOUTE la journée
-# (Elo de tous les clubs au monde à la date du jour), mise en cache — donc 1
-# seul appel réseau total pour tout le run, quel que soit le nombre de matchs.
-# Endpoint public, gratuit, sans clé requise.
-#
-# Le rating Elo capture la force perçue d'une équipe sur le long terme (ajusté
-# match par match selon les résultats et l'adversaire) — signal indépendant des
-# buts/xG déjà collectés, utile pour recouper plutôt que remplacer.
-# ============================================================
-
-_cache_clubelo = None
-
-# Score de similarité plus permissif que SEUIL_MATCH_ACCEPTABLE (80) : ClubElo
-# utilise souvent des noms abrégés/fusionnés (ex: "ManCity", "Paris" pour PSG),
-# ce qui fait naturellement baisser le score même sur une bonne correspondance.
-SEUIL_MATCH_CLUBELO = 70
-
-
-@retry(stop=stop_after_attempt(1), wait=wait_fixed(0))
-def _telecharger_clubelo_du_jour():
-    # Constaté à plusieurs reprises (2026-09-29/30, runs GitHub Actions) : api.clubelo.com
-    # n'est PAS lent, il est injoignable depuis les IP GitHub Actions — chaque tentative
-    # épuise tout son timeout avant d'échouer. Avec l'ancien réglage (2 tentatives tenacity
-    # x 4 sous-tentatives urllib3 de SESSION x 2 URLs x 25s), un run perdait jusqu'à 5-6
-    # MINUTES rien que pour ce seul appel, systématiquement en échec. Comme retenter ne
-    # change rien à un serveur injoignable : 1 seule tentative, timeout court, et une
-    # requests.get() nue (pas SESSION) pour éviter que les retries réseau globaux de
-    # SESSION ne fassent gonfler ce délai en plus de celui de tenacity.
-    date_du_jour = datetime.now().strftime("%Y-%m-%d")
-    # HTTPS d'abord, HTTP en secours (constaté le 2026-09-26 sur GitHub Actions : échec en HTTP).
-    derniere_erreur = None
-    for url in (f"https://api.clubelo.com/{date_du_jour}", f"http://api.clubelo.com/{date_du_jour}"):
-        try:
-            r = requests.get(url, timeout=8, headers={"User-Agent": "Mozilla/5.0 (analyse-football)"})
-            r.raise_for_status()
-            if r.text.startswith("Rank,Club"):
-                return r.text
-            derniere_erreur = ValueError(f"réponse inattendue de {url} : {r.text[:80]!r}")
-        except Exception as e:
-            derniere_erreur = e
-    raise derniere_erreur
-
-
-def charger_clubelo():
-    """Une seule requête pour tout le run, mise en cache en mémoire."""
-    global _cache_clubelo
-    if _cache_clubelo is not None:
-        return _cache_clubelo
-    try:
-        texte_csv = _telecharger_clubelo_du_jour()
-        _cache_clubelo = list(csv.DictReader(io.StringIO(texte_csv)))
-        print(f"   ✓ ClubElo chargé : {len(_cache_clubelo)} clubs (classement Elo du jour)")
-    except Exception as e:
-        print(f"   ⚠️ ClubElo indisponible après retries : {e}")
-        _cache_clubelo = []
-    return _cache_clubelo
-
-
-def trouver_elo(nom_equipe):
-    from rapidfuzz import fuzz
-
-    clubs = charger_clubelo()
-    if not clubs:
-        return None
-
-    cible = unidecode(nom_equipe).lower()
-    meilleur_score, meilleur_club = 0, None
-    for club in clubs:
-        score = fuzz.token_set_ratio(cible, unidecode(club.get("Club", "")).lower())
-        if score > meilleur_score:
-            meilleur_score, meilleur_club = score, club
-
-    if meilleur_score < SEUIL_MATCH_CLUBELO or not meilleur_club:
-        print(f"      ⚠️ {nom_equipe} introuvable sur ClubElo (meilleur score {meilleur_score:.0f}%)")
-        return None
-
-    try:
-        elo = round(float(meilleur_club.get("Elo", 0)), 1)
-    except (TypeError, ValueError):
-        return None
-
-    print(f"      ✓ {meilleur_club.get('Club')} (ClubElo, score {meilleur_score:.0f}%) : Elo {elo}")
-    return {
-        "source": "clubelo",
-        "club_elo_nom": meilleur_club.get("Club"),
-        "elo": elo,
-        "pays": meilleur_club.get("Country"),
-    }
 
 
 # ============================================================
@@ -1554,23 +1309,6 @@ def collecter_donnees():
                 ("api_football_10_matchs", donnees_af["away_id"]),
                 lambda: recuperer_stats_10_derniers_matchs(donnees_af["away_id"], nom_away_stats))
 
-        # --- Understat : xG/xGA complémentaires, cherché dans les 5 grands championnats
-        # domestiques quel que soit la compétition du match (voir trouver_stats_understat) —
-        # ne dépend plus d'API-Football (donnees_af), dont le quota/compte peut être
-        # indisponible sans rapport avec la couverture réelle d'Understat. N'écrase jamais
-        # stats_home/stats_away, s'ajoute à côté dans la sortie JSON.
-        print(f"      → Recherche xG/xGA {nom_home_stats} (Understat)...")
-        understat_home = trouver_stats_understat(nom_home_stats)
-        print(f"      → Recherche xG/xGA {nom_away_stats} (Understat)...")
-        understat_away = trouver_stats_understat(nom_away_stats)
-
-        # --- ClubElo : rating de force, toutes ligues (1 seule requête pour tout
-        # le run, déjà en cache après le premier match traité).
-        print(f"      → Recherche rating Elo {nom_home_stats} (ClubElo)...")
-        elo_home = trouver_elo(nom_home_stats)
-        print(f"      → Recherche rating Elo {nom_away_stats} (ClubElo)...")
-        elo_away = trouver_elo(nom_away_stats)
-
         # --- Classement : API-Football (/standings), réutilise le league_id/season déjà
         # résolus par trouver_ligue_et_stats ci-dessus — pas d'appel réseau supplémentaire
         # pour retrouver la compétition. Renvoie None sans erreur si stats_home/away n'a
@@ -1613,8 +1351,6 @@ def collecter_donnees():
             "serper": contexte_web,
             "stats_historiques": {"home": stats_home, "away": stats_away},
             "stats_detaillees_10_matchs": {"home": stats_detaillees_home, "away": stats_detaillees_away},
-            "understat_xg": {"home": understat_home, "away": understat_away},
-            "clubelo": {"home": elo_home, "away": elo_away},
             "classement": {"home": classement_home, "away": classement_away},
             "head_to_head": head_to_head,
             "blessures": blessures,
@@ -1631,12 +1367,6 @@ def collecter_donnees():
         ),
         "nb_equipes_avec_stats_detaillees": sum(
             1 for r in resultats for cote in ("home", "away") if r["stats_detaillees_10_matchs"][cote]
-        ),
-        "nb_equipes_avec_xg": sum(
-            1 for r in resultats for cote in ("home", "away") if r["understat_xg"][cote]
-        ),
-        "nb_equipes_avec_elo": sum(
-            1 for r in resultats for cote in ("home", "away") if r["clubelo"][cote]
         ),
         "nb_equipes_avec_classement": sum(
             1 for r in resultats for cote in ("home", "away") if r["classement"][cote]
@@ -1657,9 +1387,6 @@ def collecter_donnees():
     if STATS_DETAILLEES_ACTIVE:
         print(f"   ✓ {sortie['nb_equipes_avec_stats_detaillees']}/{len(resultats) * 2} équipes avec stats "
               f"détaillées (10 derniers matchs, 15 métriques) trouvées")
-    print(f"   ✓ {sortie['nb_equipes_avec_xg']}/{len(resultats) * 2} équipes avec xG/xGA Understat trouvées "
-          f"(5 grands championnats uniquement)")
-    print(f"   ✓ {sortie['nb_equipes_avec_elo']}/{len(resultats) * 2} équipes avec rating ClubElo trouvées")
     print(f"   ✓ {sortie['nb_equipes_avec_classement']}/{len(resultats) * 2} équipes avec classement "
           f"API-Football trouvées")
     print(f"   ✓ {sortie['nb_matchs_avec_head_to_head']}/{len(resultats)} matchs avec confrontations directes trouvées")

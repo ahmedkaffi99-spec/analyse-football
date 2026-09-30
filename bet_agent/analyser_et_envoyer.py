@@ -226,32 +226,6 @@ def _contenu_reponse(fournisseur, r):
 # ============================================================
 
 # ------------------------------------------------------------
-# ELO (ClubElo) — ajuste la RÉPARTITION des buts attendus entre les deux équipes (qui marque),
-# jamais leur total. Utilisé seulement quand les buts attendus viennent des stats d'équipe :
-# une estimation tirée des cotes intègre déjà l'avis du marché.
-# ------------------------------------------------------------
-POIDS_ELO = 0.4               # part de l'Elo dans l'écart de buts final (60 % stats, 40 % Elo)
-AVANTAGE_DOMICILE_ELO = 65    # points Elo accordés à l'équipe qui reçoit (valeur usuelle ClubElo)
-BUTS_PAR_POINT_ESPERANCE = 4.8  # 75 % d'espérance de victoire Elo ≈ +1,2 but d'écart attendu
-
-
-def ajuster_xg_avec_elo(mu_home, mu_away, elo_home, elo_away):
-    """Renvoie (mu_home, mu_away, esperance_domicile_pct) ; inchangé si un Elo manque."""
-    if elo_home is None or elo_away is None:
-        return mu_home, mu_away, None
-    esperance = 1 / (1 + 10 ** (-((elo_home - elo_away) + AVANTAGE_DOMICILE_ELO) / 400))
-    total = mu_home + mu_away
-    ecart = (1 - POIDS_ELO) * (mu_home - mu_away) + POIDS_ELO * BUTS_PAR_POINT_ESPERANCE * (esperance - 0.5)
-    ecart = max(-0.9 * total, min(0.9 * total, ecart))
-    return round(max(0.15, (total + ecart) / 2), 2), round(max(0.15, (total - ecart) / 2), 2), round(esperance * 100, 1)
-
-
-def elo_du_match(m):
-    clubelo = m.get("clubelo") or {}
-    return tuple((clubelo.get(cote) or {}).get("elo") for cote in ("home", "away"))
-
-
-# ------------------------------------------------------------
 # CONTEXTE WEB (Serper) — extraits d'articles (blessures, forme, suspensions) transmis à l'IA
 # pour l'ANALYSE uniquement : ils n'entrent jamais dans les chiffres (cotes, probabilités).
 # ------------------------------------------------------------
@@ -318,27 +292,6 @@ def calculer_xg_depuis_stats_detaillees(sd_home, sd_away):
         mu_home = (float(sd_home["buts_marques_moyenne"]) + float(sd_away["buts_encaisses_moyenne"])) / 2
         mu_away = (float(sd_away["buts_marques_moyenne"]) + float(sd_home["buts_encaisses_moyenne"])) / 2
     except (TypeError, ValueError):
-        return None
-    return round(max(0.15, mu_home), 2), round(max(0.15, mu_away), 2)
-
-
-NB_MATCHS_MIN_UNDERSTAT = 3  # en début de saison, sous ce seuil la moyenne xG est trop bruitée
-
-
-def calculer_xg_depuis_understat(us_home, us_away):
-    """Buts attendus depuis les xG/xGA Understat de la SAISON EN COURS (5 grands championnats
-    uniquement). Prioritaire sur les stats API-Football, qui sur le plan gratuit ne donnent
-    que la saison 2024 (deux saisons de retard, et rien pour les promus). Même méthode que
-    calculer_xg_depuis_stats : mu_home = moyenne(xG de l'équipe domicile, xGA de l'équipe
-    extérieure), et symétriquement. Understat ne sépare pas domicile/extérieur."""
-    if not us_home or not us_away:
-        return None
-    if min(us_home.get("matchs_joues") or 0, us_away.get("matchs_joues") or 0) < NB_MATCHS_MIN_UNDERSTAT:
-        return None
-    try:
-        mu_home = (float(us_home["xg_moyen_par_match"]) + float(us_away["xga_moyen_par_match"])) / 2
-        mu_away = (float(us_away["xg_moyen_par_match"]) + float(us_home["xga_moyen_par_match"])) / 2
-    except (KeyError, TypeError, ValueError):
         return None
     return round(max(0.15, mu_home), 2), round(max(0.15, mu_away), 2)
 
@@ -1265,8 +1218,9 @@ def notifier_telegram(message):
 # ============================================================
 
 def _construire_contexte_prompt(selections_finales):
-    """Contexte par match (une seule fois par match) : buts attendus, Elo, extraits de presse.
-    Les extraits viennent du web : ils sont balisés comme données, jamais comme consignes."""
+    """Contexte par match (une seule fois par match) : buts attendus, confrontations directes,
+    blessures, prédictions, extraits de presse. Les extraits viennent du web : ils sont
+    balisés comme données, jamais comme consignes."""
     blocs, vus = [], set()
     for s in selections_finales:
         if s["match"] in vus:
@@ -1278,12 +1232,6 @@ def _construire_contexte_prompt(selections_finales):
         if buts.get("domicile") is not None:
             lignes.append(f"- Buts attendus (modèle) : {buts['domicile']} pour l'équipe domicile, "
                           f"{buts['exterieur']} pour l'équipe extérieure")
-        elo = ctx.get("elo") or {}
-        if elo.get("domicile") is not None and elo.get("exterieur") is not None:
-            ligne = f"- Rating Elo : {elo['domicile']:.0f} (domicile) contre {elo['exterieur']:.0f} (extérieur)"
-            if elo.get("esperance_domicile_pct") is not None:
-                ligne += f", espérance de victoire domicile {elo['esperance_domicile_pct']}%"
-            lignes.append(ligne)
         h2h = ctx.get("head_to_head") or {}
         if h2h.get("matchs_analyses"):
             lignes.append(f"- Confrontations directes (API-Football, {h2h['matchs_analyses']} matchs) : "
@@ -1355,7 +1303,8 @@ def _tache_analyse(donnees_prompt, nb_matchs):
         f":\n{donnees_prompt}\n"
         f"Pour CHAQUE match, écris 2-3 phrases d'analyse en langage simple expliquant pourquoi cette "
         f"sélection a un edge positif (utilise le chiffre d'edge et de probabilité donnés). Appuie-toi "
-        f"aussi sur le CONTEXTE PAR MATCH s'il est fourni : rapport de force Elo, et surtout les "
+        f"aussi sur le CONTEXTE PAR MATCH s'il est fourni : confrontations directes, blessures/"
+        f"suspensions déclarées, prédictions, et surtout les "
         f"informations de presse pertinentes (blessés, suspendus, forme récente, enjeu), en précisant "
         f"que ce sont des informations de presse. Si le contexte contredit la sélection, dis-le "
         f"honnêtement. N'invente aucune information absente du contexte. Reste factuel, pas de "
@@ -1421,8 +1370,9 @@ def _tache_redaction(donnees_prompt, pronostic_texte, nb_jambes_attendues):
         f"cette sélection précise — ne l'invente pas]\n"
         f"   🧠 Pourquoi : [reprends fidèlement le 'Raisonnement du stratège' de cette sélection ; s'il "
         f"n'y en a pas, OMETS cette ligne]\n"
-        f"   📰 À savoir : [UNE phrase courte tirée du CONTEXTE PAR MATCH — absence, forme, rapport de "
-        f"force Elo — utile pour ce pari ; si le contexte n'apporte rien de pertinent, OMETS cette ligne]'\n"
+        f"   📰 À savoir : [UNE phrase courte tirée du CONTEXTE PAR MATCH — absence, forme, confrontation "
+        f"directe, prédiction — utile pour ce pari ; si le contexte n'apporte rien de pertinent, OMETS "
+        f"cette ligne]'\n"
         f"Ligne vide entre chaque bloc match. Ne calcule et n'affiche AUCUNE cote totale ni probabilité "
         f"combinée — ces chiffres sont ajoutés séparément après ton texte, PAR CODE PYTHON, pas par toi. "
         f"AUCUN texte d'intro ni de conclusion en dehors de ce format."
@@ -1593,7 +1543,7 @@ def verifier_fraicheur_matchs(matchs_exploitables):
 
 
 def agent3_calcul_pool_candidats(donnees):
-    """AGENT 3 — variante 'pool' : calcule le contexte (buts attendus, Elo) et évalue TOUS les
+    """AGENT 3 — variante 'pool' : calcule le contexte (buts attendus) et évalue TOUS les
     marchés modélisables de chaque match (evaluer_marches_toutes, sans filtre edge/probabilité
     ni limite à 1 candidat par catégorie) — demande explicite de l'utilisateur (2026-09-26) :
     Python fournit les chiffres réels de chaque marché, l'IA (stratège, DeepSeek en priorité)
@@ -1616,17 +1566,12 @@ def agent3_calcul_pool_candidats(donnees):
 
         stats_hist = m.get("stats_historiques") or {}
         stats_detaillees = m.get("stats_detaillees_10_matchs") or {}
-        understat = m.get("understat_xg") or {}
         xg_detaillees = calculer_xg_depuis_stats_detaillees(stats_detaillees.get("home"), stats_detaillees.get("away"))
-        xg_understat = calculer_xg_depuis_understat(understat.get("home"), understat.get("away"))
         xg_stats = calculer_xg_depuis_stats(stats_hist.get("home"), stats_hist.get("away"))
         if xg_detaillees:
             home_xg, away_xg = xg_detaillees
             print(f"      ✓ Buts attendus depuis les VRAIES stats des 10 derniers matchs (API-Football) : "
                   f"{home_xg} / {away_xg}")
-        elif xg_understat:
-            home_xg, away_xg = xg_understat
-            print(f"      ✓ Buts attendus depuis les xG Understat de la saison en cours : {home_xg} / {away_xg}")
         elif xg_stats:
             home_xg, away_xg = xg_stats
             saisons = sorted({str(st.get("season")) for st in (stats_hist.get("home"), stats_hist.get("away"))
@@ -1639,16 +1584,8 @@ def agent3_calcul_pool_candidats(donnees):
             home_xg, away_xg, _, _, _ = estimer_expected_goals_depuis_marches(marches)
             print(f"      → Stats indisponibles, repli sur estimation depuis les cotes : {home_xg} / {away_xg}")
 
-        elo_home, elo_away = elo_du_match(m)
-        esperance_elo = None
-        if xg_detaillees or xg_understat or xg_stats:
-            home_xg, away_xg, esperance_elo = ajuster_xg_avec_elo(home_xg, away_xg, elo_home, elo_away)
-            if esperance_elo is not None:
-                print(f"      ✓ Ajusté avec l'Elo ({elo_home:.0f} vs {elo_away:.0f}, victoire domicile espérée "
-                      f"{esperance_elo}%) : {home_xg} / {away_xg}")
         contexte_match = {
             "contexte_web": extraire_contexte_web(m),
-            "elo": {"domicile": elo_home, "exterieur": elo_away, "esperance_domicile_pct": esperance_elo},
             "buts_attendus": {"domicile": home_xg, "exterieur": away_xg},
             "head_to_head": m.get("head_to_head"),
             "blessures": m.get("blessures"),
