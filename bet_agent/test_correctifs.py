@@ -208,7 +208,7 @@ class TestListeManuellePerimee(unittest.TestCase):
             sortie = os.path.join(d, "out.json")
             with mock.patch.object(cd, "SORTIE_JSON", sortie), \
                     mock.patch.object(cd, "SELECTION_MANUELLE_ACTIVE", True), \
-                    mock.patch.object(cd, "MATCHS_MANUELS_DATE", date_liste), \
+                    mock.patch.object(cd, "MATCHS_MANUELS_DATES", {date_liste}), \
                     mock.patch.object(cd, "MATCHS_MANUELS", []), \
                     mock.patch.object(cd, "verifier_quota_oddspapi", return_value=True), \
                     mock.patch.object(cd, "_telecharger_fixtures_oddspapi", return_value=[]), \
@@ -224,6 +224,24 @@ class TestListeManuellePerimee(unittest.TestCase):
 
     def test_liste_du_jour_utilisee(self):
         _, auto = self._collecter(datetime.now().strftime("%Y-%m-%d"))
+        auto.assert_not_called()
+
+    def test_liste_valable_sur_plusieurs_dates(self):
+        # Constaté le 30/09/2026 : une liste manuelle couvrant une journée de Ligue des
+        # Champions sur 2 soirs (13 et 14/10) n'était vérifiée que contre une SEULE date —
+        # lancer le run avec DATE_CIBLE_DEBUT=2026-10-14 la faisait passer à tort pour périmée.
+        with tempfile.TemporaryDirectory() as d:
+            sortie = os.path.join(d, "out.json")
+            with mock.patch.object(cd, "SORTIE_JSON", sortie), \
+                    mock.patch.object(cd, "SELECTION_MANUELLE_ACTIVE", True), \
+                    mock.patch.object(cd, "MATCHS_MANUELS_DATES", {"2026-10-13", "2026-10-14"}), \
+                    mock.patch.object(cd, "MATCHS_MANUELS", []), \
+                    mock.patch.object(cd, "DATE_CIBLE_DEBUT", "2026-10-14"), \
+                    mock.patch.object(cd, "verifier_quota_oddspapi", return_value=True), \
+                    mock.patch.object(cd, "_telecharger_fixtures_oddspapi", return_value=[]), \
+                    mock.patch.object(cd, "recuperer_fixtures_api_football", return_value=[]), \
+                    mock.patch.object(cd, "selectionner_matchs_du_jour", return_value=[]) as auto:
+                cd.collecter_donnees()
         auto.assert_not_called()
 
 
@@ -475,7 +493,7 @@ class TestCollecteEfficace(unittest.TestCase):
                 mock.patch.object(cd, "SORTIE_JSON", os.path.join(d, "out.json")), \
                 mock.patch.object(cd, "NB_MATCHS_MAX", 2), \
                 mock.patch.object(cd, "SELECTION_MANUELLE_ACTIVE", selection_manuelle), \
-                mock.patch.object(cd, "MATCHS_MANUELS_DATE", "2000-01-01"), \
+                mock.patch.object(cd, "MATCHS_MANUELS_DATES", {"2000-01-01"}), \
                 mock.patch.object(cd, "verifier_quota_oddspapi", return_value=True), \
                 mock.patch.object(cd, "_telecharger_fixtures_oddspapi", return_value=fixtures), \
                 mock.patch.object(cd, "recuperer_fixtures_api_football", return_value=[]), \

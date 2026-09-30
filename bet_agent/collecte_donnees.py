@@ -88,13 +88,16 @@ SERPER_API_KEY = os.getenv("SERPER_API_KEY")
 # ignorée — seule la liste MATCHS_MANUELS ci-dessous est utilisée, telle quelle.
 # Remets False pour revenir à la sélection automatique par ligue.
 #
-# MATCHS_MANUELS_DATE = le jour (AAAA-MM-JJ) pour lequel la liste a été vérifiée. Un autre
-# jour, la liste est périmée (constaté : le mode manuel resté actif aurait recherché les
-# matchs du 22/08 un mois plus tard) — elle est alors ignorée au profit de la sélection
-# automatique. Mets à jour la date EN MÊME TEMPS que la liste.
+# MATCHS_MANUELS_DATES = le ou les jours (AAAA-MM-JJ) pour lesquels la liste a été vérifiée.
+# Un autre jour, la liste est périmée (constaté : le mode manuel resté actif aurait recherché
+# les matchs du 22/08 un mois plus tard) — elle est alors ignorée au profit de la sélection
+# automatique. Mets à jour la liste de dates EN MÊME TEMPS que MATCHS_MANUELS — plusieurs
+# valeurs si les matchs s'étalent sur 2 soirs (ex: une journée de Ligue des Champions,
+# constaté le 30/09/2026 : liste réduite à UNE SEULE date alors que les matchs couvrent le
+# 13 ET le 14/10, ce qui aurait fait basculer à tort sur l'automatique le second soir).
 # ------------------------------------------------------------
 SELECTION_MANUELLE_ACTIVE = True
-MATCHS_MANUELS_DATE = "2026-10-13"
+MATCHS_MANUELS_DATES = {"2026-10-13", "2026-10-14"}
 
 # Si SELECTION_MANUELLE_ACTIVE=True : la liste EXACTE de matchs à collecter, dans
 # l'ordre. Si False : sert uniquement de filet de sécurité si la sélection
@@ -1190,10 +1193,10 @@ def collecter_donnees():
     # run lancé le 29/09 pour des matchs du 13/10) serait toujours jugée "périmée", puisque
     # "aujourd'hui" ne correspondrait jamais à la date de la liste avant le jour J lui-même.
     date_reference = DATE_CIBLE_DEBUT or datetime.now().strftime("%Y-%m-%d")
-    liste_manuelle_du_jour = MATCHS_MANUELS_DATE == date_reference
+    liste_manuelle_du_jour = date_reference in MATCHS_MANUELS_DATES
     if SELECTION_MANUELLE_ACTIVE and not liste_manuelle_du_jour:
-        print(f"   ⚠️ Sélection manuelle active mais MATCHS_MANUELS date du {MATCHS_MANUELS_DATE} "
-              f"(périmée) — ignorée, bascule sur la sélection automatique.")
+        print(f"   ⚠️ Sélection manuelle active mais MATCHS_MANUELS couvre {sorted(MATCHS_MANUELS_DATES)} "
+              f"(périmée pour {date_reference}) — ignorée, bascule sur la sélection automatique.")
     # Mode manuel RÉELLEMENT utilisé ce jour-là : une liste périmée ne désactive pas les règles
     # de la sélection automatique (arrêt à NB_MATCHS_MAX, exclusion féminines / sans cotes).
     mode_manuel = SELECTION_MANUELLE_ACTIVE and liste_manuelle_du_jour
