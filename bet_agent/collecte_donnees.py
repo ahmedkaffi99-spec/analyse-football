@@ -359,6 +359,178 @@ def trouver_ligue_et_stats(team_id, nom_affichage):
 
 
 # ============================================================
+# STATS DÉTAILLÉES SUR LES 10 DERNIERS MATCHS — buts, corners, cartons, fautes (et plus),
+# demande explicite de l'utilisateur (30/09/2026). Seule API-Football expose ces données
+# match par match (endpoint /fixtures/statistics) ; TheSportsDB/Understat/ClubElo ne
+# donnent au mieux que les buts. DÉSACTIVÉ PAR DÉFAUT (STATS_DETAILLEES_ACTIVE=False) :
+# ~11 appels API-Football par équipe (1 liste + jusqu'à 10 statistiques par match), donc
+# ~22 par match — beaucoup trop coûteux en quota pour tourner par défaut sur un plan
+# gratuit à 10 req/min. À activer explicitement une fois le compte API-Football en état
+# de supporter ce volume (plan payant, ou usage ponctuel plutôt qu'à chaque run).
+# ============================================================
+
+STATS_DETAILLEES_ACTIVE = False
+NB_DERNIERS_MATCHS_DETAILLES = 10
+NB_MATCHS_MIN_STATS_DETAILLEES = 3  # sous ce seuil, la moyenne est trop bruitée pour être fiable
+
+
+@retry(stop=stop_after_attempt(2), wait=wait_fixed(2))
+def _appel_derniers_fixtures(team_id, n):
+    _respecter_rate_limit_api_football()
+    r = SESSION.get("https://v3.football.api-sports.io/fixtures",
+                      headers={"x-apisports-key": API_FOOTBALL_KEY},
+                      params={"team": team_id, "last": n, "status": "FT"}, timeout=15)
+    return r.json().get("response", [])
+
+
+@retry(stop=stop_after_attempt(2), wait=wait_fixed(2))
+def _appel_statistiques_fixture(fixture_id):
+    _respecter_rate_limit_api_football()
+    r = SESSION.get("https://v3.football.api-sports.io/fixtures/statistics",
+                      headers={"x-apisports-key": API_FOOTBALL_KEY},
+                      params={"fixture": fixture_id}, timeout=15)
+    return r.json().get("response", [])
+
+
+def _valeur_stat(bloc_stats, type_cherche):
+    """bloc_stats = liste [{'type': 'Corner Kicks', 'value': 5}, ...] pour UNE équipe d'un
+    match. API-Football renvoie parfois value=None (stat non suivie pour ce match/cette
+    ligue) ou une chaîne avec '%' (Ball Possession, Passes %) — on nettoie dans les deux cas."""
+    for item in bloc_stats or []:
+        if item.get("type") == type_cherche:
+            valeur = item.get("value")
+            if valeur is None:
+                return None
+            if isinstance(valeur, str):
+                valeur = valeur.replace("%", "").strip()
+                if not valeur:
+                    return None
+            try:
+                return float(valeur)
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
+def recuperer_stats_10_derniers_matchs(team_id, nom_affichage):
+    """15 métriques moyennées sur les NB_DERNIERS_MATCHS_DETAILLES (10) derniers matchs
+    JOUÉS de l'équipe, toutes compétitions confondues (contrairement à trouver_ligue_et_
+    stats, limité à UNE ligue/saison) : buts, corners, cartons, fautes, tirs, possession,
+    hors-jeux, passes, clean sheets et forme (points par match). Renvoie None si moins de
+    NB_MATCHS_MIN_STATS_DETAILLEES matchs ont des statistiques exploitables (échantillon
+    trop faible, ou statistiques non suivies pour cette compétition/ce plan)."""
+    try:
+        fixtures = _appel_derniers_fixtures(team_id, NB_DERNIERS_MATCHS_DETAILLES)
+    except Exception as e:
+        print(f"      ⚠️ Derniers matchs introuvables pour {nom_affichage} (ID {team_id}) après retries : {e}")
+        return None
+    if not fixtures:
+        return None
+
+    buts_marques, buts_encaisses = [], []
+    corners_pour, corners_contre = [], []
+    cartons_jaunes, cartons_rouges = [], []
+    fautes_commises, fautes_subies = [], []
+    tirs_cadres, tirs_totaux = [], []
+    possession, hors_jeux, passes_pct = [], [], []
+    clean_sheets, points = 0, []
+
+    for fx in fixtures:
+        fixture_id = fx.get("fixture", {}).get("id")
+        equipes = fx.get("teams", {})
+        est_domicile = equipes.get("home", {}).get("id") == team_id
+        buts = fx.get("goals", {})
+        bp = buts.get("home") if est_domicile else buts.get("away")
+        bc = buts.get("away") if est_domicile else buts.get("home")
+        if bp is None or bc is None:
+            continue
+        buts_marques.append(bp)
+        buts_encaisses.append(bc)
+        if bc == 0:
+            clean_sheets += 1
+        gagnant = equipes.get("home", {}).get("winner") if est_domicile else equipes.get("away", {}).get("winner")
+        points.append(3 if gagnant is True else (1 if gagnant is None else 0))
+
+        try:
+            stats_match = _appel_statistiques_fixture(fixture_id)
+        except Exception:
+            continue
+        bloc = next((s.get("statistics") for s in stats_match if s.get("team", {}).get("id") == team_id), None)
+        if not bloc:
+            continue
+        c = _valeur_stat(bloc, "Corner Kicks")
+        if c is not None:
+            corners_pour.append(c)
+        cj = _valeur_stat(bloc, "Yellow Cards")
+        if cj is not None:
+            cartons_jaunes.append(cj)
+        cr = _valeur_stat(bloc, "Red Cards")
+        if cr is not None:
+            cartons_rouges.append(cr)
+        f = _valeur_stat(bloc, "Fouls")
+        if f is not None:
+            fautes_commises.append(f)
+        tc = _valeur_stat(bloc, "Shots on Goal")
+        if tc is not None:
+            tirs_cadres.append(tc)
+        tt = _valeur_stat(bloc, "Total Shots")
+        if tt is not None:
+            tirs_totaux.append(tt)
+        pos = _valeur_stat(bloc, "Ball Possession")
+        if pos is not None:
+            possession.append(pos)
+        hj = _valeur_stat(bloc, "Offsides")
+        if hj is not None:
+            hors_jeux.append(hj)
+        pp = _valeur_stat(bloc, "Passes %")
+        if pp is not None:
+            passes_pct.append(pp)
+
+        # Corners/fautes/cartons SUBIS (ou concédés) = ceux de l'adversaire sur ce match.
+        bloc_adverse = next((s.get("statistics") for s in stats_match if s.get("team", {}).get("id") != team_id), None)
+        if bloc_adverse:
+            cc = _valeur_stat(bloc_adverse, "Corner Kicks")
+            if cc is not None:
+                corners_contre.append(cc)
+            fs = _valeur_stat(bloc_adverse, "Fouls")
+            if fs is not None:
+                fautes_subies.append(fs)
+
+    if len(buts_marques) < NB_MATCHS_MIN_STATS_DETAILLEES:
+        print(f"      ⚠️ {nom_affichage} : seulement {len(buts_marques)} match(s) exploitable(s) sur "
+              f"{NB_DERNIERS_MATCHS_DETAILLES} demandés (minimum {NB_MATCHS_MIN_STATS_DETAILLEES}) — ignoré.")
+        return None
+
+    def moyenne(liste):
+        return round(sum(liste) / len(liste), 2) if liste else None
+
+    resultat = {
+        "source": "api_football_10_derniers_matchs",
+        "matchs_avec_donnees": len(buts_marques),
+        "buts_marques_moyenne": moyenne(buts_marques),
+        "buts_encaisses_moyenne": moyenne(buts_encaisses),
+        "corners_pour_moyenne": moyenne(corners_pour),
+        "corners_contre_moyenne": moyenne(corners_contre),
+        "cartons_jaunes_moyenne": moyenne(cartons_jaunes),
+        "cartons_rouges_moyenne": moyenne(cartons_rouges),
+        "fautes_commises_moyenne": moyenne(fautes_commises),
+        "fautes_subies_moyenne": moyenne(fautes_subies),
+        "tirs_cadres_moyenne": moyenne(tirs_cadres),
+        "tirs_totaux_moyenne": moyenne(tirs_totaux),
+        "possession_moyenne_pct": moyenne(possession),
+        "hors_jeux_moyenne": moyenne(hors_jeux),
+        "passes_reussies_pct_moyenne": moyenne(passes_pct),
+        "clean_sheets_nombre": clean_sheets,
+        "points_par_match_moyenne": moyenne(points),
+    }
+    print(f"      ✓ {nom_affichage} (API-Football, {len(buts_marques)}/{NB_DERNIERS_MATCHS_DETAILLES} derniers "
+          f"matchs) : {resultat['buts_marques_moyenne']} buts marqués, {resultat['corners_pour_moyenne']} corners, "
+          f"{resultat['cartons_jaunes_moyenne']} cartons jaunes, {resultat['fautes_commises_moyenne']} fautes "
+          f"en moyenne")
+    return resultat
+
+
+# ============================================================
 # THESPORTSDB — repli n°2 (après API-Football) quand le quota est épuisé ou l'équipe
 # introuvable. Constaté en pratique le 2026-07-25 : couvre mieux les équipes obscures
 # qu'API-Football (Kisvárda, Rodina Moscou trouvées directement) et n'a pas de quota
@@ -1287,6 +1459,22 @@ def collecter_donnees():
             stats_away = stats_equipe_en_cache(("thesportsdb", nom_away_stats),
                                                lambda: trouver_stats_thesportsdb(nom_away_stats))
 
+        # --- Stats détaillées (10 derniers matchs) : buts, corners, cartons, fautes, tirs,
+        # possession, hors-jeux, passes, clean sheets, forme — 15 métriques, demande
+        # explicite du 30/09/2026. Désactivé par défaut (STATS_DETAILLEES_ACTIVE, coût en
+        # quota API-Football élevé) — voir recuperer_stats_10_derniers_matchs.
+        stats_detaillees_home, stats_detaillees_away = None, None
+        if STATS_DETAILLEES_ACTIVE and donnees_af and donnees_af.get("home_id"):
+            print(f"      → Recherche stats détaillées {nom_home_stats} (10 derniers matchs, API-Football)...")
+            stats_detaillees_home = stats_equipe_en_cache(
+                ("api_football_10_matchs", donnees_af["home_id"]),
+                lambda: recuperer_stats_10_derniers_matchs(donnees_af["home_id"], nom_home_stats))
+        if STATS_DETAILLEES_ACTIVE and donnees_af and donnees_af.get("away_id"):
+            print(f"      → Recherche stats détaillées {nom_away_stats} (10 derniers matchs, API-Football)...")
+            stats_detaillees_away = stats_equipe_en_cache(
+                ("api_football_10_matchs", donnees_af["away_id"]),
+                lambda: recuperer_stats_10_derniers_matchs(donnees_af["away_id"], nom_away_stats))
+
         # --- Understat : xG/xGA complémentaires, cherché dans les 5 grands championnats
         # domestiques quel que soit la compétition du match (voir trouver_stats_understat) —
         # ne dépend plus d'API-Football (donnees_af), dont le quota/compte peut être
@@ -1327,6 +1515,7 @@ def collecter_donnees():
             },
             "serper": contexte_web,
             "stats_historiques": {"home": stats_home, "away": stats_away},
+            "stats_detaillees_10_matchs": {"home": stats_detaillees_home, "away": stats_detaillees_away},
             "understat_xg": {"home": understat_home, "away": understat_away},
             "clubelo": {"home": elo_home, "away": elo_away},
             "classement": {"home": classement_home, "away": classement_away},
@@ -1339,6 +1528,9 @@ def collecter_donnees():
         "nb_marches_total": sum(len(r["oddspapi"]["tous_marches"] or []) for r in resultats),
         "nb_equipes_avec_stats": sum(
             1 for r in resultats for cote in ("home", "away") if r["stats_historiques"][cote]
+        ),
+        "nb_equipes_avec_stats_detaillees": sum(
+            1 for r in resultats for cote in ("home", "away") if r["stats_detaillees_10_matchs"][cote]
         ),
         "nb_equipes_avec_xg": sum(
             1 for r in resultats for cote in ("home", "away") if r["understat_xg"][cote]
@@ -1359,6 +1551,9 @@ def collecter_donnees():
     print(f"   ✓ {sortie['nb_matchs_avec_marches']}/{sortie['nb_matchs_demandes']} matchs avec marchés 1xbet collectés")
     print(f"   ✓ {sortie['nb_marches_total']} marchés au total (1X2 exclu, tout le reste en détail)")
     print(f"   ✓ {sortie['nb_equipes_avec_stats']}/{len(resultats) * 2} équipes avec stats historiques trouvées")
+    if STATS_DETAILLEES_ACTIVE:
+        print(f"   ✓ {sortie['nb_equipes_avec_stats_detaillees']}/{len(resultats) * 2} équipes avec stats "
+              f"détaillées (10 derniers matchs, 15 métriques) trouvées")
     print(f"   ✓ {sortie['nb_equipes_avec_xg']}/{len(resultats) * 2} équipes avec xG/xGA Understat trouvées "
           f"(5 grands championnats uniquement)")
     print(f"   ✓ {sortie['nb_equipes_avec_elo']}/{len(resultats) * 2} équipes avec rating ClubElo trouvées")
