@@ -281,6 +281,7 @@ def score_paire_equipes(home_cherche, away_cherche, home_candidat, away_candidat
 SORTIE_JSON = "donnees_collectees.json"
 
 MARKET_NAMES_CACHE = {}
+_COMPTE_DIAGNOSTIC_EXCLUS = {"n": 0}  # diagnostic temporaire (01/10/2026) — voir plus bas
 
 
 # ============================================================
@@ -1128,6 +1129,17 @@ def recuperer_marches_pour_fixture(fixture_id):
 
             # On exclut uniquement le 1X2 — tout le reste est gardé, en détail
             if marche_type == "1x2" or info_marche.get("name") == "Full Time Result":
+                # Diagnostic temporaire (01/10/2026) : l'utilisateur signale plusieurs fois
+                # qu'un marché nommé juste "Handicap" (distinct d'Asian/European Handicap)
+                # existe sur 1xBet et ne devrait jamais être écarté — ce print confirme si ce
+                # filtre ("type" OddsPapi == "1x2") en est la cause en listant ce qu'il exclut
+                # vraiment (limité à quelques occurrences pour ne pas noyer les logs), à
+                # retirer une fois la cause confirmée ou infirmée.
+                nom_exclu = info_marche.get("name")
+                if nom_exclu != "Full Time Result" and _COMPTE_DIAGNOSTIC_EXCLUS["n"] < 20:
+                    _COMPTE_DIAGNOSTIC_EXCLUS["n"] += 1
+                    print(f"      🔍 [diagnostic] marché exclu (type=1x2) : nom=\"{nom_exclu}\" "
+                          f"handicap={info_marche.get('handicap')}")
                 continue
 
             nom_marche_brut = info_marche.get("name", f"Marché {market_id}")
