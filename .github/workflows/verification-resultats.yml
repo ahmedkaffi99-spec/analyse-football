@@ -56,4 +56,11 @@ jobs:
 
       - name: Juger les paris et envoyer le bilan
         working-directory: backend
-        run: python -m app.taches verifier ${{ github.event.inputs.telegram == 'false' && '' || '--telegram' }}
+        env:
+          TELEGRAM_MANUEL: ${{ inputs.telegram }}
+        run: |
+          if [ "$TELEGRAM_MANUEL" = "false" ]; then
+            python -m app.taches verifier
+          else
+            python -m app.taches verifier --telegram
+          fi
