@@ -11,6 +11,20 @@ PROFILS = [
     {"cle": "profil2", "nom": "⚖️ COUPON 2", "cote_min": 4.0, "cote_max": 12.0, "nb_jambes": 4},
 ]
 
+# La plupart des tests de ce module utilisent des pools factices à cotes volontairement
+# petites (1.2-2.0) pour isoler UNE règle précise (diversité, doublon...), sans rapport avec
+# le plancher ABSOLU de cote totale ajouté le 01/10/2026 (demande explicite : "interdit les
+# cote total moins de 5" — voir st.COTE_TOTALE_MIN). Désactivé par défaut pour tout ce
+# fichier ; TestCoteTotaleMinimale le réactive explicitement pour le tester.
+def setUpModule():
+    global _PATCHEUR_COTE_MIN
+    _PATCHEUR_COTE_MIN = mock.patch.object(st, "COTE_TOTALE_MIN", 0.0)
+    _PATCHEUR_COTE_MIN.start()
+
+
+def tearDownModule():
+    _PATCHEUR_COTE_MIN.stop()
+
 
 def _sel(match, categorie, selection, cote):
     return {"match": match, "home_nom": match.split(" vs ")[0], "away_nom": match.split(" vs ")[1],
@@ -562,6 +576,39 @@ class TestDiversiteEtDoublonsEntreProfils(unittest.TestCase):
         self.assertIn("p1", acceptes)
         self.assertNotIn("p2", acceptes)
         self.assertTrue(any("déjà choisi dans un autre profil" in p for p in problemes), problemes)
+
+
+class TestCoteTotaleMinimale(unittest.TestCase):
+    """Demande explicite du 01/10/2026 : "interdit les cote total moins de 5" — plancher
+    ABSOLU (st.COTE_TOTALE_MIN), quel que soit le profil (cote_min/cote_max du profil restent
+    purement indicatifs par ailleurs, voir TestDiversiteEtDoublonsEntreProfils). Pas de
+    plafond haut en contrepartie."""
+
+    def test_cote_sous_le_plancher_rejetee(self):
+        pool = {"A vs B": [_sel("A vs B", "Total", "Over", 1.5)]}
+        catalogue, _ = st.construire_catalogue(pool)
+        profil = {"cle": "p1", "nom": "x", "cote_min": 0.0, "cote_max": 1000.0, "nb_jambes": 1, "nb_jambes_min": 1}
+        with mock.patch.object(st, "COTE_TOTALE_MIN", 5.0):
+            proposition = {"coupons": [{"profil": "p1", "strategie": "s", "jambes": [{"id": "P1"}]}]}
+            acceptes, problemes, calculs = st.valider(proposition, catalogue, [profil])
+        self.assertNotIn("p1", acceptes)
+        self.assertTrue(any("trop basse (minimum 5)" in p for p in problemes), problemes)
+        self.assertTrue(any("cote totale 1.50" in c for c in calculs), calculs)
+
+    def test_cote_au_dessus_du_plancher_acceptee_sans_plafond_haut(self):
+        pool = {
+            "A vs B": [_sel("A vs B", "Total", "Over", 3.0)],
+            "C vs D": [_sel("C vs D", "Total", "Over", 2.0)],
+        }
+        catalogue, _ = st.construire_catalogue(pool)
+        # cote totale 3.0*2.0 = 6.0 : au-dessus du plancher, acceptée même si cote_max du
+        # profil (4.0) est largement dépassée — aucun plafond haut n'est vérifié.
+        profil = {"cle": "p1", "nom": "x", "cote_min": 0.0, "cote_max": 4.0, "nb_jambes": 2, "nb_jambes_min": 2}
+        with mock.patch.object(st, "COTE_TOTALE_MIN", 5.0):
+            proposition = {"coupons": [{"profil": "p1", "strategie": "s", "jambes": [{"id": "P1"}, {"id": "P2"}]}]}
+            acceptes, problemes, _ = st.valider(proposition, catalogue, [profil])
+        self.assertEqual(problemes, [])
+        self.assertIn("p1", acceptes)
 
 
 class TestCoupEnvoi(unittest.TestCase):

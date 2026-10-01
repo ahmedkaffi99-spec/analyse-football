@@ -32,8 +32,11 @@ du début à la fin, en autonomie, avec tes outils. Réponds et écris en franç
 MISSION : produire {n} coupons combinés du jour, un par PROFIL de risque ({noms} — nombre de jambes \
 cible différent pour chacun, voir voir_catalogue pour les bornes exactes), chacun de matchs DIFFÉRENTS (un \
 seul pari par match), choisis dans le MÊME catalogue de paris réels. LA COTE TOTALE N'EST PAS UNE CONTRAINTE \
-— seul le NOMBRE DE JAMBES différencie les profils ; la cote totale qui en résulte (produit des cotes \
-choisies) est acceptée telle quelle, jamais à forcer vers une fourchette. Tu composes les {n} coupons L'UN \
+DE FOURCHETTE — seul le NOMBRE DE JAMBES différencie les profils ; la cote totale qui en résulte (produit des \
+cotes choisies) est acceptée telle quelle, jamais à forcer vers une fourchette précise. SEULE EXCEPTION : la \
+cote totale doit toujours rester AU MOINS 5 (Python refuse en dessous, quel que soit le profil) — si tes \
+favoris à cote basse ne suffisent pas à l'atteindre avec le nombre de jambes minimum, ajoute une jambe de plus \
+(même en dehors du minimum) plutôt que de soumettre un coupon sous ce seuil. Tu composes les {n} coupons L'UN \
 APRÈS L'AUTRE (jamais en parallèle). Tu peux réutiliser un MATCH déjà pris dans un profil précédent, mais \
 jamais le MÊME pari exact (même marché, même sélection) — Python le refuse. Diversifie aussi les CATÉGORIES \
 à l'échelle des {n} profils, pas seulement à l'intérieur d'un seul coupon (ex: si un profil précédent a pris \
@@ -69,10 +72,12 @@ catalogue ne te donne qu'une cote brute, pas une probabilité toute faite).
 - Qualité avant quantité : écarte les matchs aux données faibles ou risqués (absences clés, rotation, enjeu \
 faible).
 - PRIORITÉ ABSOLUE À LA PROBABILITÉ RÉELLE DE GAIN, JAMAIS À UNE COTE À ATTEINDRE : la cote totale n'est PAS \
-une cible, elle n'est même PAS vérifiée par Python — n'ajoute JAMAIS un pari seulement pour faire monter ou \
-descendre la cote totale. Le nombre de jambes, lui, doit rester dans la fourchette du profil en cours (voir \
-voir_catalogue), mais même ça : si tu ne trouves pas assez de paris VRAIMENT défendables pour atteindre le \
-minimum de jambes d'un profil, abstiens-toi sur ce profil plutôt que de forcer des paris moyens.
+une cible précise à viser — n'ajoute JAMAIS un pari seulement pour faire monter ou descendre la cote totale \
+vers une fourchette. SEULE VÉRIFICATION PYTHON SUR LA COTE : un plancher ABSOLU de 5 (cote totale >= 5, \
+toujours, quel que soit le profil) — en dessous, Python refuse. Le nombre de jambes, lui, doit rester dans la \
+fourchette du profil en cours (voir voir_catalogue), mais même ça : si tu ne trouves pas assez de paris \
+VRAIMENT défendables pour atteindre le minimum de jambes d'un profil, abstiens-toi sur ce profil plutôt que de \
+forcer des paris moyens.
 - N'EMPILE PAS PLUSIEURS JAMBES FRAGILES DANS LE MÊME COUPON : une jambe est fragile si au moins un de ces \
 signaux est présent — ligne de quart (.25/.75), probabilité de gain que TU estimes inférieure à 60%, ou \
 données faibles sur ce match précis (pas/peu de stats, forme incertaine, enjeu flou). Un coupon combiné \
@@ -129,8 +134,9 @@ def construire_outils_schemas(profils):
         {"type": "function", "function": {
             "name": "proposer_coupon",
             "description": "Soumet le coupon du PROFIL EN COURS à Python, qui vérifie (identifiants, un pari par match, "
-                           "nombre de paris dans la fourchette du profil — PAS la cote totale, jamais vérifiée) et te "
-                           "renvoie ses calculs (dont la cote totale résultante, à titre indicatif). Si valide, le coupon "
+                           "nombre de paris dans la fourchette du profil, cote totale >= 5 — AUCUNE fourchette précise "
+                           "de cote vérifiée au-delà de ce plancher) et te renvoie ses calculs (dont la cote totale "
+                           "résultante). Si valide, le coupon "
                            "est automatiquement rédigé et enregistré, et tu passes au profil suivant (voir_catalogue te le "
                            "confirmera). Renvoie valide=true ou la liste des problèmes à corriger. jambes vide = abstention "
                            "SUR CE PROFIL uniquement (les autres restent à composer).",

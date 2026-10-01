@@ -39,6 +39,11 @@ NB_TOURS_MAX = 3
 # ae.MAX_JAMBES_PAR_MATCH.
 NB_JAMBES_MIN_DEFAUT = 2
 
+# Plancher ABSOLU de cote totale (demande explicite du 01/10/2026 : "interdit les cote total
+# moins de 5") — s'applique à TOUS les profils, quel que soit nb_jambes/cote_min/cote_max du
+# profil ; aucun plafond haut en contrepartie (voir le commentaire plus bas dans valider()).
+COTE_TOTALE_MIN = 5.0
+
 
 def construire_catalogue(pool):
     """Renvoie ({id: sélection}, texte du catalogue groupé par match). Cotes brutes UNIQUEMENT
@@ -389,11 +394,17 @@ def valider(proposition, catalogue, profils, signatures_existantes=(), selection
         # brut (produit des cotes réelles), reste vérifiable par Python sans jugement de valeur.
         # Cote totale INDICATIVE UNIQUEMENT depuis le 01/10/2026 (demande explicite : "ne
         # oblige pas l'IA à atteindre le 50+ et 15-50, mon but c'est tout cote individuel et
-        # total qui a la chance de réussite élevée") — Python ne rejette PLUS un coupon qui en
-        # sort, seul le nombre de jambes (nb_jambes_min/nb_jambes) différencie encore les
-        # profils. Affichée pour information, jamais pour bloquer.
+        # total qui a la chance de réussite élevée") — Python ne rejette PLUS un coupon pour
+        # viser une fourchette précise, seul le nombre de jambes (nb_jambes_min/nb_jambes)
+        # différencie encore les profils. MAIS un PLANCHER ABSOLU reste vérifié (demande
+        # explicite, même jour : "interdit les cote total moins de 5") — un coupon dont la
+        # cote totale tombe sous COTE_TOTALE_MIN, quel que soit le profil, est rejeté comme les
+        # autres règles ci-dessus ; pas de plafond haut, seulement ce plancher.
         cote = ae._produit_cotes(selections) if selections else 0
         calculs.append(f"{cle} : {len(selections)} paris, cote totale {cote:.2f}")
+        if selections and cote < COTE_TOTALE_MIN:
+            erreurs.append(f"cote totale {cote:.2f} trop basse (minimum {COTE_TOTALE_MIN:g}) — "
+                           "ajoute un pari ou remplace par des cotes plus hautes")
         empreinte = signature(selections)
         if empreinte and empreinte in signatures:
             erreurs.append("identique à un autre coupon")

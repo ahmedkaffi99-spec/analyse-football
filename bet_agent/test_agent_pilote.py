@@ -10,6 +10,19 @@ import analyser_et_envoyer as ae
 import agent_strategie as st
 
 
+# Pools factices à cotes volontairement petites (1.6-2.0), sans rapport avec le plancher
+# ABSOLU de cote totale ajouté le 01/10/2026 (demande explicite "interdit les cote total moins
+# de 5" — voir agent_strategie.COTE_TOTALE_MIN) : désactivé pour tout ce fichier.
+def setUpModule():
+    global _PATCHEUR_COTE_MIN
+    _PATCHEUR_COTE_MIN = mock.patch.object(st, "COTE_TOTALE_MIN", 0.0)
+    _PATCHEUR_COTE_MIN.start()
+
+
+def tearDownModule():
+    _PATCHEUR_COTE_MIN.stop()
+
+
 DONNEES_FACTICES = {"nb_matchs_demandes": 2, "nb_matchs_avec_marches": 2, "nb_marches_total": 6}
 
 POOL_FACTICE = {
