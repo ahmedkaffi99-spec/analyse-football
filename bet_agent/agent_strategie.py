@@ -67,10 +67,10 @@ def construire_prompt(pool, profils, catalogue_texte):
     n = len(profils)
     un_seul = n == 1
     description_profils = "\n".join(
-        f"- {p['cle']} = {p['nom']} : cote totale entre {p['cote_min']} et {p['cote_max']}, "
-        f"entre {p.get('nb_jambes_min', NB_JAMBES_MIN_DEFAUT)} et {p['nb_jambes']} paris — choisis TOI-MÊME, dans "
-        "cette fourchette, le nombre de paris et la cote totale les plus défendables selon la qualité des données "
-        "du jour (pas d'obligation d'atteindre le maximum)" for p in profils)
+        f"- {p['cle']} = {p['nom']} : entre {p.get('nb_jambes_min', NB_JAMBES_MIN_DEFAUT)} et {p['nb_jambes']} "
+        "paris — choisis TOI-MÊME, dans cette fourchette, les paris les plus défendables selon la qualité des "
+        "données du jour (pas d'obligation d'atteindre le maximum). La cote totale qui en résulte n'est PAS une "
+        "contrainte : ne force jamais un pari seulement pour la faire monter ou descendre" for p in profils)
     exemple_coupons = ", ".join(
         '{"profil": "%s", "strategie": "1-2 phrases", "jambes": [{"id": "P3", "raison": "1 phrase"}]}' % p["cle"]
         for p in profils)
@@ -342,14 +342,6 @@ def valider(proposition, catalogue, profils, signatures_existantes=(), selection
                                f"sur {selection['match']} déjà choisi dans un autre profil ce run — choisis un "
                                "autre pari ou un autre match pour ce profil")
                 continue
-            if selection["pick"]["selection"] == ae.SELECTION_INTERDITE:
-                # Garde-fou en profondeur : SELECTION_INTERDITE ("12") est censée être déjà
-                # absente du catalogue (voir completer_avec_marches_bruts, corrigé le
-                # 01/10/2026), mais c'est une interdiction ABSOLUE — jamais acceptée ici même
-                # si elle réapparaissait un jour par un autre chemin (ex: un nouveau marché brut
-                # avec une sélection "12" qui ne serait pas du Double Chance).
-                erreurs.append(f"{cid} : sélection « 12 » interdite — choisis un autre pari")
-                continue
             probleme = incoherence_raison(selection["raison_ia"], selection["pick"])
             if probleme:
                 erreurs.append(f"{cid} : {probleme} — réécris la raison de CE pari")
@@ -386,13 +378,13 @@ def valider(proposition, catalogue, profils, signatures_existantes=(), selection
         # Plus de "probabilité combinée" affichée ici : Python ne calcule plus de probabilité
         # par pari (30/09/2026, cotes brutes données à l'IA) — seule la cote totale, un fait
         # brut (produit des cotes réelles), reste vérifiable par Python sans jugement de valeur.
+        # Cote totale INDICATIVE UNIQUEMENT depuis le 01/10/2026 (demande explicite : "ne
+        # oblige pas l'IA à atteindre le 50+ et 15-50, mon but c'est tout cote individuel et
+        # total qui a la chance de réussite élevée") — Python ne rejette PLUS un coupon qui en
+        # sort, seul le nombre de jambes (nb_jambes_min/nb_jambes) différencie encore les
+        # profils. Affichée pour information, jamais pour bloquer.
         cote = ae._produit_cotes(selections) if selections else 0
-        calculs.append(f"{cle} : {len(selections)} paris, cote totale {cote:.2f} "
-                       f"(cible {profil['cote_min']}-{profil['cote_max']})")
-        if selections and not profil["cote_min"] <= cote <= profil["cote_max"]:
-            sens = "trop basse : ajoute un pari ou remplace par des cotes plus hautes" if cote < profil["cote_min"] \
-                else "trop haute : retire un pari ou remplace par des cotes plus basses"
-            erreurs.append(f"cote totale {cote:.2f} {sens}")
+        calculs.append(f"{cle} : {len(selections)} paris, cote totale {cote:.2f}")
         empreinte = signature(selections)
         if empreinte and empreinte in signatures:
             erreurs.append("identique à un autre coupon")

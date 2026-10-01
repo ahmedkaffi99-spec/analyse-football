@@ -431,20 +431,27 @@ class TestRedactionSansEdgeNone(unittest.TestCase):
 
 class TestUnSeulCouponDixAQuinzeMatchs(unittest.TestCase):
     """Verrouille le réglage explicite du 26/09/2026 (un seul coupon combiné, un seul pari par
-    match, pas de cible de cote totale précise) et celui du 30/09/2026 : plus de plancher/
-    plafond imposé par Python au nombre de jambes — l'IA stratège choisit elle-même, jusqu'au
-    plafond mécanique NB_MATCHS_MAX (un seul pari par match possible)."""
+    match) et celui du 01/10/2026 : la cote totale n'est PLUS une contrainte ("ne oblige pas
+    l'IA à atteindre le 50+ et 15-50, mon but c'est tout cote individuel et total qui a la
+    chance de réussite élevée") — seul le NOMBRE DE JAMBES différencie désormais les 3 profils
+    (peu/moyen/beaucoup), sans chevauchement, jusqu'au plafond mécanique NB_MATCHS_MAX (un seul
+    pari par match possible)."""
 
     def test_reglages_du_coupon_du_jour(self):
-        # Repassé à 3 profils le 30/09/2026 (demande explicite : "3 trois type de coupon sur
-        # un seule run") — un seul distingo entre eux : la cible de cote totale.
         self.assertEqual(ae.MAX_JAMBES_PAR_MATCH, 1)
         self.assertEqual(len(ae.PROFILS_COUPON), 3)
         cles = {p["cle"] for p in ae.PROFILS_COUPON}
         self.assertEqual(cles, {"sur", "equilibre", "audacieux"})
+        par_cle = {p["cle"]: p for p in ae.PROFILS_COUPON}
+        self.assertEqual((par_cle["sur"]["nb_jambes_min"], par_cle["sur"]["nb_jambes"]), (1, 5))
+        self.assertEqual((par_cle["equilibre"]["nb_jambes_min"], par_cle["equilibre"]["nb_jambes"]), (6, 9))
+        self.assertEqual((par_cle["audacieux"]["nb_jambes_min"], par_cle["audacieux"]["nb_jambes"]),
+                         (10, cd.NB_MATCHS_MAX))
+        # Cote totale : indicative uniquement, plus jamais une contrainte vérifiée (seules des
+        # bornes très larges, finies — jamais 0/infini, casserait selectionner_combo_cote_cible).
         for profil in ae.PROFILS_COUPON:
-            self.assertEqual(profil["nb_jambes_min"], 1)
-            self.assertEqual(profil["nb_jambes"], cd.NB_MATCHS_MAX)
+            self.assertEqual(profil["cote_min"], 1.01)
+            self.assertEqual(profil["cote_max"], 1000000.0)
 
     def test_deux_paris_sur_le_meme_match_refuses_par_l_ia(self):
         pool = {"A vs B": [_selection("A vs B", "Total", "Over", 1.5), _selection("A vs B", "BTTS", "Yes", 1.6)]}
@@ -664,21 +671,20 @@ class TestCompleterAvecMarchesBruts(unittest.TestCase):
         complets = ae.completer_avec_marches_bruts([], marches)
         self.assertIsNone(complets[0]["guide"])
 
-    def test_selection_12_interdite_jamais_reintroduite_en_brut(self):
-        # Bug réel constaté le 01/10/2026 (run à 6 profils) : "Double Chance Full Time : 12 @
-        # 1.194" envoyé sur Telegram, malgré l'interdiction absolue de longue date (README,
-        # SELECTION_INTERDITE). Cause : _evaluer_marches_brut (branche Double Chance) ignore
-        # "12" (jamais ajoutée à candidats_modelises), mais ne la signale pas comme "déjà vue"
-        # — completer_avec_marches_bruts la réintroduisait donc en marché brut, sans filtre.
+    def test_selection_12_modelisee_comme_les_autres_double_chance(self):
+        # Interdiction retirée le 01/10/2026 (demande explicite : "il peut sélectionner 12 et
+        # n'importe quelle cote si le taux de réussite est élevé") — "12" (ni nul) est
+        # désormais modélisée en Poisson comme "1X"/"2X" (proba = 1 - proba de nul), pas
+        # seulement laissée en marché brut sans calcul.
         marches = [{"marche": "Double Chance Full Time", "handicap": 0.0, "periode": "fulltime",
                     "selections": [{"selection": "1X", "cote": 1.3}, {"selection": "12", "cote": 1.25},
                                    {"selection": "2X", "cote": 1.9}]}]
         modelises = ae.evaluer_marches_toutes(marches, 1.3, 1.2)
-        self.assertNotIn("12", {c["selection"] for c in modelises})
+        self.assertIn("12", {c["selection"] for c in modelises})
+        c12 = next(c for c in modelises if c["selection"] == "12")
+        self.assertIsNotNone(c12["proba_modele_pct"])
         complets = ae.completer_avec_marches_bruts(modelises, marches)
-        self.assertNotIn("12", {c["selection"] for c in complets})
-        # 1X et 2X restent bien présents (seule "12" est bannie).
-        self.assertEqual({c["selection"] for c in complets}, {"1X", "2X"})
+        self.assertEqual({c["selection"] for c in complets}, {"1X", "2X", "12"})
 
     def test_integration_pool_contient_les_marches_bruts(self):
         donnees = {"matchs": [{
@@ -951,6 +957,23 @@ class TestLigneZeroSansObjetMasquee(unittest.TestCase):
                     "selections": [{"selection": "Over", "cote": 1.9}]}]
         complets = ae.completer_avec_marches_bruts([], marches)
         self.assertEqual(complets[0]["marche"], "Over Under Full Time (2.5)")
+
+    def test_marche_sans_ligne_reste_modelisable_malgre_le_masquage(self):
+        # Régression réelle découverte le 01/10/2026 : probabilites_sans_marge() construisait
+        # encore sa clé avec une parenthèse systématique ("Double Chance Full Time (0.0)"),
+        # alors que _candidat()/completer_avec_marches_bruts() la masquent désormais pour les
+        # marchés sans ligne réelle (voir _nom_avec_ligne) — "Double Chance Full Time" (sans
+        # parenthèse). Les deux clés ne correspondaient plus : evaluer_marches_toutes() cherchait
+        # p_marche sous l'ancienne clé, ne la trouvait jamais (p_marche=None), et EXCLUAIT
+        # SILENCIEUSEMENT tout le marché du pool — pas seulement Double Chance, n'importe quel
+        # marché sans ligne réelle (BTTS, Correct Score...) avec handicap=0 explicite.
+        marches = [{"marche": "Double Chance Full Time", "handicap": 0.0, "periode": "fulltime",
+                    "selections": [{"selection": "1X", "cote": 1.3}, {"selection": "12", "cote": 1.25},
+                                   {"selection": "2X", "cote": 1.9}]}]
+        modelises = ae.evaluer_marches_toutes(marches, 1.3, 1.2)
+        self.assertEqual({c["selection"] for c in modelises}, {"1X", "12", "2X"})
+        for c in modelises:
+            self.assertIsNotNone(c["proba_modele_pct"])
 
 
 class TestCollecteEfficace(unittest.TestCase):

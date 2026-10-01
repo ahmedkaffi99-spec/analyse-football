@@ -62,8 +62,8 @@ class TestStratege(unittest.TestCase):
 
     def test_erreurs_renvoyees_a_l_ia_qui_corrige(self):
         mauvaise = _reponse([
-            {"profil": "profil1", "strategie": "s", "jambes": [{"id": "P1"}, {"id": "P99"}]},        # id inventé
-            {"profil": "profil2", "strategie": "s", "jambes": [{"id": "P1"}, {"id": "P2"}]},         # cote 2.88 < 4
+            {"profil": "profil1", "strategie": "s", "jambes": [{"id": "P1"}, {"id": "P99"}]},  # id inventé
+            {"profil": "profil2", "strategie": "s", "jambes": [{"id": "P1"}, {"id": "P2"}]},    # 2 paris sur A vs B
         ])
         bonne = _reponse([
             {"profil": "profil1", "strategie": "s", "jambes": [{"id": "P1"}, {"id": "P4"}]},
@@ -74,7 +74,10 @@ class TestStratege(unittest.TestCase):
         self.assertEqual(appel.call_count, 2)
         second_prompt = appel.call_args_list[1].args[0]
         self.assertIn("identifiant inconnu « P99 »", second_prompt)
-        self.assertIn("cote totale 2.88 trop basse", second_prompt)
+        self.assertIn("2 paris sur A vs B (maximum 1)", second_prompt)
+        # Cote totale : plus jamais une erreur depuis le 01/10/2026 (indicative uniquement).
+        self.assertNotIn("trop basse", second_prompt)
+        self.assertNotIn("trop haute", second_prompt)
         self.assertEqual(set(resultat["coupons"]), {"profil1", "profil2"})
 
     def test_regles_python_imposees(self):
@@ -87,10 +90,10 @@ class TestStratege(unittest.TestCase):
         self.assertEqual(acceptes, {})
         self.assertTrue(any("P1 choisi deux fois" in p for p in problemes))
 
-    def test_selection_12_toujours_refusee_meme_presente_dans_le_catalogue(self):
-        # Garde-fou en profondeur (01/10/2026, suite au bug réel du run à 6 profils où "12"
-        # avait fuité dans le catalogue via le marché brut) : valider() refuse la sélection
-        # "12" même si elle apparaît dans le catalogue par un chemin imprévu — jamais acceptée.
+    def test_selection_12_acceptee_comme_n_importe_quel_autre_marche(self):
+        # Interdiction retirée le 01/10/2026 (demande explicite : "il peut sélectionner 12 et
+        # n'importe quelle cote si le taux de réussite est élevé") — "12" n'a plus de traitement
+        # spécial, acceptée comme n'importe quelle autre sélection valide du catalogue.
         pool_avec_12 = dict(POOL, **{
             "C vs D": [_sel("C vs D", "Double Chance", "12", 1.25)],
         })
@@ -100,8 +103,26 @@ class TestStratege(unittest.TestCase):
             {"profil": "profil1", "strategie": "s", "jambes": [{"id": cid_12}, {"id": "P4"}]},
         ]}
         acceptes, problemes, _ = st.valider(proposition, catalogue, PROFILS)
-        self.assertNotIn("profil1", acceptes)
-        self.assertTrue(any("interdite" in p for p in problemes), problemes)
+        self.assertFalse(any("interdite" in p or "12" in p for p in problemes), problemes)
+        self.assertIn("profil1", acceptes)
+
+    def test_cote_totale_hors_fourchette_n_est_plus_une_erreur(self):
+        # Demande explicite du 01/10/2026 : "ne oblige pas l'IA à atteindre le 50+ et 15-50,
+        # mon but c'est tout cote individuel et total qui a la chance de réussite élevée" — la
+        # cote totale est désormais purement indicative, jamais une cause de rejet, même très
+        # loin de la fourchette du profil (profil1 vise 2.0-4.0, on lui donne un coupon à 1.6).
+        catalogue, _ = st.construire_catalogue(POOL)
+        proposition = {"coupons": [
+            # P2*P3*P6 = 1.8*1.5*2.0 = 5.4, un match et une catégorie différents chacun,
+            # largement hors 2.0-4.0.
+            {"profil": "profil1", "strategie": "s",
+             "jambes": [{"id": "P2"}, {"id": "P3"}, {"id": "P6"}]},
+        ]}
+        acceptes, problemes, calculs = st.valider(proposition, catalogue, [PROFILS[0]])
+        self.assertEqual(problemes, [])
+        self.assertIn("profil1", acceptes)
+        self.assertTrue(any("cote totale 5.40" in c for c in calculs), calculs)
+        self.assertFalse(any("trop basse" in c or "trop haute" in c for c in calculs), calculs)
 
     def test_abstention_acceptee(self):
         reponse = _reponse([

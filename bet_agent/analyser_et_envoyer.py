@@ -7,8 +7,9 @@ OpenRouter), puis envoie sur Telegram.
 Ne retraite QUE les matchs pour lesquels collecte_donnees.py a trouvé des marchés
 (les matchs déjà live/sans marché sont ignorés).
 
-INTERDICTION : toute sélection "12" (double chance domicile-ou-extérieur) est bannie,
-comme convenu. Le marché 1X2 n'existe de toute façon plus dans les données collectées.
+La sélection "12" (double chance domicile-ou-extérieur) n'est PLUS bannie (demande explicite
+du 01/10/2026 : "il peut sélectionner 12 et n'importe quelle cote si le taux de réussite est
+élevé") — traitée comme n'importe quel autre marché, choisie ou non selon l'analyse de l'IA.
 """
 
 import os
@@ -86,23 +87,28 @@ PROBA_MIN_FALLBACK_AUTO = 30.0
 # Choix du 26/09/2026 (demande explicite) : coupon(s) combinant des matchs DIFFÉRENTS (un
 # seul pari par match, voir MAX_JAMBES_PAR_MATCH).
 # Choix du 30/09/2026 (demande explicite : "je laisse le choix à l'IA de choisir combien elle
-# veut") : plus de fourchette de nombre de jambes imposée par Python — nb_jambes_min=1 et
-# nb_jambes=NB_MATCHS_MAX (plafond mécanique = nombre de matchs collectés, un seul pari par
-# match) pour chaque profil. L'IA stratège choisit elle-même combien de paris inclure dans
-# CHAQUE coupon, sans plancher ni plafond arbitraire au-delà de ce qui est physiquement
-# disponible ce jour-là — seule la cible de cote totale distingue les 3 profils.
+# veut") : nb_jambes_min=1/nb_jambes=NB_MATCHS_MAX pour chaque profil, cote totale cible comme
+# seul vrai différenciateur. INVERSÉ le 01/10/2026 (demande explicite : "ne oblige pas l'IA à
+# atteindre le 50+ et 15-50, mon but c'est tout cote individuel et total qui a la chance de
+# réussite élevée") : la cote totale n'est plus une contrainte (agent_strategie.valider() ne la
+# vérifie plus, affichée à titre indicatif uniquement) — c'est maintenant le NOMBRE DE JAMBES
+# qui différencie les 3 profils (peu/moyen/beaucoup), la cote totale résultant naturellement
+# des favoris choisis par l'IA plutôt que d'être imposée.
 # Repassé à 3 profils le 30/09/2026 (demande explicite : "3 trois type de coupon sur un
 # seule run") — un seul pool/catalogue calculé une fois (agent3_calcul_pool_candidats),
 # 3 compositions différentes en aval, 3 messages Telegram séparés (agent5_envoyer_coupons).
 PROFILS_COUPON = [
-    {"cle": "sur", "nom": "🛡️ COUPON SÛR (cote 5-15)", "cote_min": 5.0,
-     "cote_max": 15.0, "nb_jambes_min": 1, "nb_jambes": cd.NB_MATCHS_MAX},
-    {"cle": "equilibre", "nom": "⚖️ COUPON ÉQUILIBRÉ (cote 15-50)", "cote_min": 15.0,
-     "cote_max": 50.0, "nb_jambes_min": 1, "nb_jambes": cd.NB_MATCHS_MAX},
-    {"cle": "audacieux", "nom": "🔥 COUPON AUDACIEUX (cote 50+)", "cote_min": 50.0,
-     "cote_max": 100000.0, "nb_jambes_min": 1, "nb_jambes": cd.NB_MATCHS_MAX},
+    # cote_min/cote_max : volontairement très larges (non 0/infini — casserait le calcul de
+    # pondération du repli Monte Carlo, 0 * infini = NaN) — gardent un sens pour
+    # selectionner_combo_cote_cible (repli 100% Python sans IA, qui a besoin d'une cible pour
+    # pondérer son tirage), mais ne bloquent plus jamais la validation de l'IA stratège.
+    {"cle": "sur", "nom": "🛡️ COUPON SÛR (1-5 jambes)", "cote_min": 1.01,
+     "cote_max": 1000000.0, "nb_jambes_min": 1, "nb_jambes": 5},
+    {"cle": "equilibre", "nom": "⚖️ COUPON ÉQUILIBRÉ (6-9 jambes)", "cote_min": 1.01,
+     "cote_max": 1000000.0, "nb_jambes_min": 6, "nb_jambes": 9},
+    {"cle": "audacieux", "nom": "🔥 COUPON AUDACIEUX (10-15 jambes)", "cote_min": 1.01,
+     "cote_max": 1000000.0, "nb_jambes_min": 10, "nb_jambes": cd.NB_MATCHS_MAX},
 ]
-SELECTION_INTERDITE = "12"  # double chance domicile-ou-extérieur, bannie par consigne
 
 # IA : Groq + Gemini + OpenRouter (2026-09-26). Listes modifiables sans toucher au code via
 # GROQ_MODELES, GEMINI_MODELES et OPENROUTER_MODELES="modele1,modele2".
@@ -653,7 +659,13 @@ def probabilites_sans_marge(marches):
             continue
         nom = m.get("marche") or ""
         handicap = m.get("handicap")
-        cle_marche = f"{nom} ({handicap})" if handicap is not None else nom
+        # _nom_avec_ligne (pas une simple parenthèse systématique) : doit rester EXACTEMENT
+        # cohérent avec le "marche" produit par _candidat/completer_avec_marches_bruts, sinon
+        # le lookup marche_sans_marge.get((c["marche"], ...)) dans evaluer_marches_toutes
+        # échoue silencieusement (clé absente, p_marche=None) et le marché entier disparaît du
+        # pool — régression réelle constatée le 01/10/2026 avec Double Chance (handicap=0.0,
+        # masqué par _nom_avec_ligne mais pas ici avant ce correctif).
+        cle_marche = _nom_avec_ligne(nom, handicap)
         somme_cible = 2.0 if "double chance" in nom.lower() else 1.0
         total = sum(1 / c for _, c in cotes)
         for selection, cote in cotes:
@@ -754,15 +766,6 @@ def completer_avec_marches_bruts(candidats_modelises, marches):
         for s in marche.get("selections", []):
             cote = s.get("cote")
             if not cote or cote <= 1:
-                continue
-            # SELECTION_INTERDITE ("12", double chance domicile-ou-extérieur) : interdiction
-            # absolue, de longue date (voir README/docstring du module) — déjà exclue du côté
-            # modélisé (_evaluer_marches_brut, branche Double Chance), mais ce filtre-ci ne
-            # l'ajoutait pas non plus à deja_vus, laissant completer_avec_marches_bruts la
-            # réintroduire en brut (constaté le 01/10/2026, run à 6 profils : "Double Chance
-            # Full Time : 12 @ 1.194" envoyé sur Telegram, malgré l'interdiction). Exclue ici
-            # explicitement, qu'importe la casse du nom de marché.
-            if "double chance" in nom_bas and s["selection"] == SELECTION_INTERDITE:
                 continue
             cle = (nom_avec_ligne, s["selection"])
             if cle in deja_vus:
@@ -898,17 +901,20 @@ def _evaluer_marches_brut(marches, mu_home, mu_away, mu_corners=None, mu_cartons
                     if _edge_calculable(edge, 1 - p_yes):
                         candidats.append(_candidat(marche["marche"], handicap, s, 1 - p_yes, edge, "BTTS"))
 
-        # --- Double Chance (12 banni) ---
+        # --- Double Chance ---
+        # "12" (ni nul) n'est plus banni (demande explicite du 01/10/2026 : "il peut
+        # sélectionner 12 [...] si le taux de réussite est élevé") — modélisé comme les deux
+        # autres combinaisons, avec sa propre probabilité Poisson (1 - proba de nul).
         elif "double chance" in nom:
             for s in selections:
                 sel_brut = s["selection"]
                 sel_norm = re.sub(r"[^a-z0-9]", "", sel_brut.lower())
-                if sel_norm in ("12",):
-                    continue  # INTERDIT — jamais cette sélection, quel que soit l'edge
                 if sel_norm in ("1x",):
                     proba = p_home + p_draw
                 elif sel_norm in ("x2", "2x"):
                     proba = p_draw + p_away
+                elif sel_norm in ("12",):
+                    proba = p_home + p_away
                 else:
                     continue
                 edge = calc_edge(proba, s["cote"])
@@ -1429,12 +1435,6 @@ def appel_llm_petites_taches(prompt, max_tokens=300):
     return appel_ia(prompt, max_tokens, json_attendu=False, prioriser_deepseek=False)
 
 
-def verifier_pas_de_12(texte):
-    if re.search(r"(?<![\d.])12(?![\d.\w])", texte):
-        return False
-    return True
-
-
 # ============================================================
 # TELEGRAM
 # ============================================================
@@ -1541,7 +1541,6 @@ def _construire_donnees_prompt(selections_finales):
 CONSIGNES_COMMUNES_IA = (
     "RÈGLES ABSOLUES, valables pour toute la suite : n'invente et ne modifie JAMAIS un chiffre "
     "(cote, probabilité, edge, ligne) — recopie-les exactement tels que donnés. "
-    "INTERDICTION ABSOLUE de la sélection '12' (double chance domicile-ou-extérieur). "
     "GARDE le nom du marché EXACTEMENT tel que donné, Y COMPRIS la ligne entre parenthèses "
     "(ex: 'Total (2)', 'Handicap Asiatique (0.75)') — c'est ce qui permet de retrouver la bonne "
     "case sur 1xbet, ne la retire ni ne la déplace jamais. Fais bien la différence entre un marché "
@@ -1612,8 +1611,8 @@ def _reponse_ticket_valide(texte, nb_jambes_attendues):
 
 
 def _tache_redaction(donnees_prompt, pronostic_texte, nb_jambes_attendues):
-    """Tâche IA 3/3 — rédige le ticket pédagogique final, avec retry anti-'12' et
-    anti-réponse-vide/hors-sujet (voir _reponse_ticket_valide)."""
+    """Tâche IA 3/3 — rédige le ticket pédagogique final, avec retry anti-réponse-vide/hors-sujet
+    (voir _reponse_ticket_valide)."""
     prompt = (
         f"System: Tu es un rédacteur qui explique les paris sportifs à un DÉBUTANT complet sur 1xbet. "
         f"Réponds UNIQUEMENT en français.\n"
@@ -1652,10 +1651,7 @@ def _tache_redaction(donnees_prompt, pronostic_texte, nb_jambes_attendues):
                   f"{candidat[:80] if candidat else '(vide)'!r} — nouvel essai...")
             pause_ia(5)
             continue
-        if verifier_pas_de_12(candidat):
-            return candidat
-        print(f"      ⚠️ Tentative {tentative + 1}/3 : sélection '12' détectée, nouvel essai...")
-        pause_ia(5)
+        return candidat
     return None
 
 

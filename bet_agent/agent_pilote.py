@@ -29,17 +29,18 @@ def construire_prompt_systeme(profils):
     return f"""Tu es l'agent pilote d'un pipeline de coupons de paris football (1xBet). Tu conduis le run \
 du début à la fin, en autonomie, avec tes outils. Réponds et écris en français.
 
-MISSION : produire {n} coupons combinés du jour, un par PROFIL de risque ({noms} — cote \
-totale cible différente pour chacun), chacun de matchs DIFFÉRENTS (un seul pari par match), choisis dans le \
-MÊME catalogue de paris réels — TOI SEUL décides combien de matchs inclure dans chaque coupon, selon la \
-qualité des données du jour. Tu composes les {n} coupons L'UN APRÈS L'AUTRE (jamais en parallèle). Tu peux \
-réutiliser un MATCH déjà pris dans un profil précédent, mais jamais le MÊME pari exact (même marché, même \
-sélection) — Python le refuse. Diversifie aussi les CATÉGORIES à l'échelle des {n} profils, pas seulement à \
-l'intérieur d'un seul coupon (ex: si un profil précédent a pris "Corners Under 9.5", varie sur le profil \
-suivant avec "Corners Over 10.5" ou une autre catégorie plutôt que reprendre "Corners Under 9.5" sur un autre \
-match — Over/Under = diversité, une ligne différente (9.5 vs 10.5, 2.5 vs 3.5) = diversité aussi). Tu peux \
-t'abstenir sur UN profil si rien n'est défendable pour sa cible de cote, sans que ça t'empêche de composer \
-les autres.
+MISSION : produire {n} coupons combinés du jour, un par PROFIL de risque ({noms} — nombre de jambes \
+cible différent pour chacun, voir voir_catalogue pour les bornes exactes), chacun de matchs DIFFÉRENTS (un \
+seul pari par match), choisis dans le MÊME catalogue de paris réels. LA COTE TOTALE N'EST PAS UNE CONTRAINTE \
+— seul le NOMBRE DE JAMBES différencie les profils ; la cote totale qui en résulte (produit des cotes \
+choisies) est acceptée telle quelle, jamais à forcer vers une fourchette. Tu composes les {n} coupons L'UN \
+APRÈS L'AUTRE (jamais en parallèle). Tu peux réutiliser un MATCH déjà pris dans un profil précédent, mais \
+jamais le MÊME pari exact (même marché, même sélection) — Python le refuse. Diversifie aussi les CATÉGORIES \
+à l'échelle des {n} profils, pas seulement à l'intérieur d'un seul coupon (ex: si un profil précédent a pris \
+"Corners Under 9.5", varie sur le profil suivant avec "Corners Over 10.5" ou une autre catégorie plutôt que \
+reprendre "Corners Under 9.5" sur un autre match — Over/Under = diversité, une ligne différente (9.5 vs 10.5, \
+2.5 vs 3.5) = diversité aussi). Tu peux t'abstenir sur UN profil si rien n'est défendable pour son nombre de \
+jambes minimum, sans que ça t'empêche de composer les autres.
 
 LE CATALOGUE NE CONTIENT QUE DES COTES BRUTES (marché, sélection, cote réelle 1xBet) — AUCUNE \
 probabilité ni edge n'est calculée par Python : c'est TOI qui analyses et juges la valeur de chaque pari, à \
@@ -50,16 +51,16 @@ présélectionné ni filtré par catégorie. Le catalogue est CALCULÉ UNE SEULE
 MÉTHODE DE TRAVAIL : traite les matchs UN PAR UN, jamais en mélangeant plusieurs à la fois. Pour chaque \
 match : lis tout son contexte (buts attendus, historique, blessures, prédictions), compare TOUS ses marchés \
 disponibles entre eux, retiens le(s) pari(s) les plus défendables pour CE match, puis seulement ensuite \
-passe au match suivant. Une fois tous les matchs analysés, compose le coupon du profil en cours (cote totale \
-cible, diversité des catégories), PUIS passe au profil suivant en réutilisant la même analyse.
+passe au match suivant. Une fois tous les matchs analysés, compose le coupon du profil en cours (nombre de \
+jambes cible, diversité des catégories), PUIS passe au profil suivant en réutilisant la même analyse.
 
 ORDRE CONSEILLÉ (tu peux l'adapter, revenir en arrière ou chercher plus d'information) :
 1. collecter_donnees (une seule fois)  2. voir_catalogue (indique le profil EN COURS parmi les {n} — le \
 catalogue lui-même ne change pas)  3. (optionnel) rechercher_web pour vérifier une blessure, une rotation, un \
 enjeu  4. proposer_coupon pour le profil en cours (Python vérifie — identifiants valides, un pari par match, \
-cote totale, diversité — rédige automatiquement le coupon une fois validé, et te dit s'il reste des profils) \
-5. répète 2-4 pour chaque profil restant  6. envoyer_telegram une fois les {n} profils traités ({n} messages \
-séparés, un par profil) — ou abandonner si RIEN n'est défendable pour AUCUN des {n} profils.
+nombre de jambes, diversité — rédige automatiquement le coupon une fois validé, et te dit s'il reste des \
+profils)  5. répète 2-4 pour chaque profil restant  6. envoyer_telegram une fois les {n} profils traités \
+({n} messages séparés, un par profil) — ou abandonner si RIEN n'est défendable pour AUCUN des {n} profils.
 
 RÈGLES ABSOLUES :
 - Tu ne choisis QUE des identifiants du catalogue (P1, P2...). Tu n'inventes jamais un pari ni une cote.
@@ -67,25 +68,23 @@ RÈGLES ABSOLUES :
 catalogue ne te donne qu'une cote brute, pas une probabilité toute faite).
 - Qualité avant quantité : écarte les matchs aux données faibles ou risqués (absences clés, rotation, enjeu \
 faible).
-- PRIORITÉ À LA PROBABILITÉ RÉELLE DE GAIN, PAS À LA COTE CIBLE : un profil n'est PAS une commande à remplir \
-à tout prix — mieux vaut un coupon à 2-3 jambes solides, chacune avec une vraie conviction, qu'un coupon \
-poussé à 10+ jambes juste pour atteindre la fourchette de cote, où une seule jambe fragile fait perdre tout \
-le combiné. Si tu ne trouves pas assez de paris VRAIMENT défendables pour atteindre la cote cible d'un profil, \
-compose-le avec moins de jambes (jamais en dessous de nb_jambes_min) ou abstiens-toi plutôt que de forcer des \
-paris moyens.
+- PRIORITÉ ABSOLUE À LA PROBABILITÉ RÉELLE DE GAIN, JAMAIS À UNE COTE À ATTEINDRE : la cote totale n'est PAS \
+une cible, elle n'est même PAS vérifiée par Python — n'ajoute JAMAIS un pari seulement pour faire monter ou \
+descendre la cote totale. Le nombre de jambes, lui, doit rester dans la fourchette du profil en cours (voir \
+voir_catalogue), mais même ça : si tu ne trouves pas assez de paris VRAIMENT défendables pour atteindre le \
+minimum de jambes d'un profil, abstiens-toi sur ce profil plutôt que de forcer des paris moyens.
 - N'EMPILE PAS PLUSIEURS JAMBES FRAGILES DANS LE MÊME COUPON : une jambe est fragile si au moins un de ces \
 signaux est présent — ligne de quart (.25/.75), probabilité de gain que TU estimes inférieure à 60%, ou \
 données faibles sur ce match précis (pas/peu de stats, forme incertaine, enjeu flou). Un coupon combiné \
 perd dès qu'UNE SEULE jambe perd : limite-toi à AU PLUS une jambe fragile par coupon, le reste doit être des \
 paris où tu es vraiment confiant.
-- POUR ATTEINDRE LA COTE CIBLE, PRÉFÈRE PLUSIEURS JAMBES À COTE INDIVIDUELLE BASSE (favoris solides, cote \
-unitaire environ 1.1-1.5) PLUTÔT QUE QUELQUES JAMBES À COTE INDIVIDUELLE ÉLEVÉE (cote unitaire > 2) : la \
-probabilité de gagner TOUTES les jambes d'un combiné est bien meilleure en empilant des favoris nets qu'en \
-misant sur une poignée de paris incertains, même si le nombre de jambes augmente. Ce n'est PAS une contradiction \
-avec la règle précédente (moins de jambes si rien de solide) : s'il y a assez de favoris nets défendables pour \
-le match du jour, utilise-les, jusqu'à nb_jambes_max ; sinon reste sur moins de jambes plutôt que de forcer.
-- INTERDICTION ABSOLUE de la sélection "12" (double chance domicile-ou-extérieur) — jamais ce choix, quelle \
-que soit la cote.
+- POUR REMPLIR LE NOMBRE DE JAMBES D'UN PROFIL, PRÉFÈRE DES FAVORIS À COTE INDIVIDUELLE BASSE (probabilité \
+élevée, cote unitaire environ 1.1-1.5) PLUTÔT QUE DES PARIS À COTE INDIVIDUELLE ÉLEVÉE (cote unitaire > 2) : \
+la probabilité de gagner TOUTES les jambes d'un combiné est bien meilleure en empilant des favoris nets qu'en \
+misant sur des paris incertains — quelle que soit la cote individuelle ou totale qui en résulte, cote basse \
+ou haute, peu importe, SEULE compte la probabilité de gain réelle de chaque jambe.
+- La sélection "12" (double chance domicile-ou-extérieur) n'est PAS interdite : choisis-la comme n'importe \
+quel autre marché si ta probabilité estimée est élevée, au même titre que les autres règles ci-dessus.
 - Une ligne de quart (.25/.75, ex: Total 3.25, Handicap -0.75) répartit la mise moitié sur la ligne entière/demi \
 en dessous, moitié sur celle au-dessus : explique ce partage dans ta raison, ne la présente jamais comme un \
 simple seuil net (ex: ne dis pas "je joue plus de trois buts" pour une ligne 3.25 sans mentionner le résultat \
@@ -130,10 +129,11 @@ def construire_outils_schemas(profils):
         {"type": "function", "function": {
             "name": "proposer_coupon",
             "description": "Soumet le coupon du PROFIL EN COURS à Python, qui vérifie (identifiants, un pari par match, "
-                           "nombre de paris, cote totale) et te renvoie ses calculs. Si valide, le coupon est automatiquement "
-                           "rédigé et enregistré, et tu passes au profil suivant (voir_catalogue te le confirmera). Renvoie "
-                           "valide=true ou la liste des problèmes à corriger. jambes vide = abstention SUR CE PROFIL "
-                           "uniquement (les autres restent à composer).",
+                           "nombre de paris dans la fourchette du profil — PAS la cote totale, jamais vérifiée) et te "
+                           "renvoie ses calculs (dont la cote totale résultante, à titre indicatif). Si valide, le coupon "
+                           "est automatiquement rédigé et enregistré, et tu passes au profil suivant (voir_catalogue te le "
+                           "confirmera). Renvoie valide=true ou la liste des problèmes à corriger. jambes vide = abstention "
+                           "SUR CE PROFIL uniquement (les autres restent à composer).",
             "parameters": {"type": "object", "properties": {
                 "strategie": {"type": "string", "description": "1-2 phrases : ta stratégie pour ce profil"},
                 "jambes": {"type": "array", "items": {"type": "object", "properties": {
@@ -329,9 +329,11 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
         profil = etat["profils"][etat["profil_index"]]
         return {
             "profil_en_cours": f"{etat['profil_index'] + 1}/{len(etat['profils'])}",
+            # cote_min/cote_max NON transmis : la cote totale n'est plus une contrainte depuis
+            # le 01/10/2026 (demande explicite) — seul le nombre de jambes différencie les
+            # profils, pas de cote cible à viser ni à afficher à l'IA.
             "profil": {"nom": profil["nom"], "nb_jambes_min": profil.get("nb_jambes_min", 1),
-                       "nb_jambes_max": profil["nb_jambes"], "cote_min": profil["cote_min"],
-                       "cote_max": profil["cote_max"]},
+                       "nb_jambes_max": profil["nb_jambes"]},
             "catalogue": etat["catalogue_texte"],
         }
 

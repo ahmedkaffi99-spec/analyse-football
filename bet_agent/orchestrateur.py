@@ -9,7 +9,8 @@ Les seuils par profil de risque (sûr/équilibré/audacieux) sont FIXES et calcu
 Python (PROFILS_COUPON dans analyser_et_envoyer.py) — le LLM ne les choisit jamais lui-même,
 il décide seulement QUAND appeler chaque outil et QUAND abandonner. Aucun chiffre (cote,
 edge, probabilité) n'est jamais inventé par le LLM : uniquement calculés en pur Python
-(Agent 3). La sélection interdite "12" reste bannie (déjà appliqué dans evaluer_marches).
+(Agent 3). La sélection "12" n'est plus interdite (retiré le 01/10/2026, demande explicite) —
+traitée comme n'importe quel autre marché dans evaluer_marches.
 """
 
 import os
