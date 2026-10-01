@@ -46,6 +46,12 @@ TICKET_JSON = "ticket_du_jour.json"
 # ces jambes ne peuvent pas être vérifiées automatiquement, jamais inventées.
 CATEGORIES_NON_VERIFIABLES = ("Total Corners", "Total Cartons", "Handicap Corners", "Handicap Cartons")
 
+# Suivi EN DIRECT (demande explicite du 01/10/2026, pendant un match réel suivi manuellement
+# par l'utilisateur : "on trouve pas un endpoint sur api football en match live") — statuts
+# API-Football (fixture.status.short) considérés comme un match EN COURS, ni pas commencé
+# ("NS") ni terminé ("FT"/"AET"/"PEN"/"PST"/"CANC"/"ABD"/"AWD"/"WO"/"TBD").
+STATUTS_EN_DIRECT = ("1H", "HT", "2H", "ET", "BT", "P", "INT", "LIVE")
+
 
 def recuperer_fixtures_du_jour():
     """Fenêtre large (-1 à +2 jours) pour ne jamais rater un match à cheval sur minuit UTC,
@@ -131,6 +137,33 @@ def trouver_score_api_football(home_nom, away_nom, fixtures_af, cd):
     if buts.get("home") is None or buts.get("away") is None:
         return None
     return buts["home"], buts["away"]
+
+
+def trouver_etat_live_api_football(home_nom, away_nom, fixtures_af, cd):
+    """Comme trouver_score_api_football, mais pour un match EN COURS (ni pas commencé, ni
+    terminé) : renvoie (but_domicile, but_exterieur, minute_ecoulee, statut_court) si le match
+    est trouvé ET en direct (voir STATUTS_EN_DIRECT), sinon None. minute_ecoulee peut être None
+    (mi-temps, interruption...) — ne JUGE RIEN de définitif : un appelant peut évaluer "si ça
+    finissait maintenant" (grader_pick) à titre INFORMATIF, jamais persisté comme résultat
+    final tant que le match n'est pas réellement terminé."""
+    meilleur, meilleur_score = None, 0
+    for fx in fixtures_af:
+        equipes = fx.get("teams") or {}
+        score = cd.score_paire_equipes(home_nom, away_nom,
+                                        (equipes.get("home") or {}).get("name"),
+                                        (equipes.get("away") or {}).get("name"))
+        if score > meilleur_score:
+            meilleur, meilleur_score = fx, score
+    if not meilleur or meilleur_score < cd.SEUIL_MATCH_ACCEPTABLE:
+        return None
+    statut = (meilleur.get("fixture") or {}).get("status") or {}
+    court = statut.get("short")
+    if court not in STATUTS_EN_DIRECT:
+        return None
+    buts = meilleur.get("goals") or {}
+    if buts.get("home") is None or buts.get("away") is None:
+        return None
+    return buts["home"], buts["away"], statut.get("elapsed"), court
 
 
 # ============================================================

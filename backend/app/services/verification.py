@@ -81,3 +81,43 @@ def verifier_coupons_en_attente(db, run_id=None):
     if run_id is not None:
         requete = requete.where(Coupon.run_id == run_id)
     return verifier_jambes(db, list(db.scalars(requete)))
+
+
+def etat_live_jambes(db, run_id=None):
+    """Pour chaque jambe encore en_attente dont le match est EN COURS côté API-Football
+    (STATUTS_EN_DIRECT), calcule ce que serait son verdict SI le match se terminait sur le
+    score actuel — PUREMENT INFORMATIF, jamais écrit en base (jambe.resultat reste en_attente
+    tant que le match n'est pas réellement terminé, jugé comme d'habitude par
+    verifier_coupons_en_attente). Demande explicite de l'utilisateur (01/10/2026), suivant un
+    pari en direct manuellement match par match : "on trouve pas un endpoint sur api football
+    en match live" — un seul appel API-Football (quota séparé d'OddsPapi) pour TOUTES les
+    jambes en attente d'un coup, pas un par match suivi manuellement."""
+    cd, _, vr = pipeline.modules()
+    requete = select(Jambe).join(Coupon).where(Jambe.resultat == "en_attente")
+    if run_id is not None:
+        requete = requete.where(Coupon.run_id == run_id)
+    jambes = list(db.scalars(requete))
+    if not jambes:
+        return []
+
+    fixtures_af = vr.recuperer_fixtures_api_football_du_jour()
+    etats_par_match = {}
+    resultats = []
+    for jambe in jambes:
+        domicile = jambe.domicile or jambe.libelle_match.split(" vs ")[0]
+        exterieur = jambe.libelle_match.split(" vs ")[-1]
+        cle = (domicile, exterieur)
+        if cle not in etats_par_match:
+            etats_par_match[cle] = vr.trouver_etat_live_api_football(domicile, exterieur, fixtures_af, cd)
+        etat = etats_par_match[cle]
+        if etat is None:
+            continue
+        but_dom, but_ext, minute, statut = etat
+        pick = {"categorie": jambe.categorie, "selection": jambe.selection, "handicap": jambe.handicap}
+        resultats.append({
+            "coupon": jambe.coupon.nom, "match": jambe.libelle_match, "marche": jambe.marche,
+            "selection": jambe.selection, "cote": jambe.cote, "score_actuel": f"{but_dom}-{but_ext}",
+            "minute": minute, "statut": statut,
+            "verdict_si_ca_finissait_maintenant": vr.grader_pick(pick, but_dom, but_ext) or "non_verifiable",
+        })
+    return resultats

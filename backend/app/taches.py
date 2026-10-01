@@ -3,6 +3,7 @@
     python -m app.taches run [--telegram] [--moteur agent|deterministe] [--sans-redaction] \
 [--si-aucun-ticket-aujourdhui] [--profils-json JSON] [--ignorer-diversite-croisee]
     python -m app.taches verifier [--telegram]
+    python -m app.taches live [--telegram] [--run-id N]
     python -m app.taches envoyer [--run-id N] [--forcer]
     python -m app.taches tester-api
 
@@ -21,7 +22,7 @@ from app.models import Run
 from app.services import pipeline
 from app.services.bilan import envoyer_bilans
 from app.services.runs import cloturer_runs_interrompus, executer_run
-from app.services.verification import verifier_coupons_en_attente
+from app.services.verification import etat_live_jambes, verifier_coupons_en_attente
 
 
 def ticket_deja_produit_aujourdhui(db):
@@ -71,6 +72,35 @@ def tache_verifier(args):
         if args.telegram:
             _, ae, _ = pipeline.modules()
             print(f"📤 Bilan(s) Telegram envoyé(s) : {envoyer_bilans(db, ae.notifier_telegram)}")
+    return 0
+
+
+VERDICT_EMOJI = {"gagne": "✅", "perdu": "❌", "push": "➖", "non_verifiable": "❔"}
+
+
+def _formater_rapport_live(etats):
+    if not etats:
+        return "ℹ️ Aucun pari en attente sur un match actuellement en direct (API-Football)."
+    lignes = ["📡 *Suivi en direct* (si le match se terminait MAINTENANT — pas un résultat final) :"]
+    for e in etats:
+        minute = f"{e['minute']}'" if e["minute"] is not None else e["statut"]
+        emoji = VERDICT_EMOJI.get(e["verdict_si_ca_finissait_maintenant"], "❔")
+        lignes.append(
+            f"\n{e['coupon']}\n⚽ {e['match']} — {e['score_actuel']} ({minute})\n"
+            f"   🎯 {e['marche']} : {e['selection']} @ {e['cote']}\n"
+            f"   {emoji} {e['verdict_si_ca_finissait_maintenant']}"
+        )
+    return "\n".join(lignes)
+
+
+def tache_live(args):
+    with SessionLocal() as db:
+        etats = etat_live_jambes(db, run_id=args.run_id)
+    rapport = _formater_rapport_live(etats)
+    print(rapport)
+    if args.telegram and etats:
+        _, ae, _ = pipeline.modules()
+        ae.notifier_telegram(rapport)
     return 0
 
 
@@ -385,6 +415,9 @@ def main(argv=None):
                             "dans tous les cas. Moteur agent uniquement.")
     p_verif = sous.add_parser("verifier", help="juge les jambes dont le match est terminé")
     p_verif.add_argument("--telegram", action="store_true", help="envoie le bilan quand tout est jugé")
+    p_live = sous.add_parser("live", help="suivi en direct (API-Football) des jambes en attente, informatif")
+    p_live.add_argument("--telegram", action="store_true", help="envoie le rapport en direct sur Telegram")
+    p_live.add_argument("--run-id", type=int, help="limite au run (défaut : tous les runs en attente)")
     p_envoi = sous.add_parser("envoyer", help="envoie sur Telegram les coupons déjà calculés d'un run")
     p_envoi.add_argument("--run-id", type=int, help="numéro du run (défaut : dernier run terminé)")
     p_envoi.add_argument("--forcer", action="store_true", help="renvoie même si déjà envoyé")
@@ -400,7 +433,7 @@ def main(argv=None):
     init_db()
     with SessionLocal() as db:
         cloturer_runs_interrompus(db)
-    taches = {"run": tache_run, "verifier": tache_verifier, "envoyer": tache_envoyer,
+    taches = {"run": tache_run, "verifier": tache_verifier, "live": tache_live, "envoyer": tache_envoyer,
               "tester-api": tache_tester_api}
     return taches[args.tache](args)
 
