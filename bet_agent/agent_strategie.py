@@ -145,10 +145,19 @@ _CONTRAIRES = (("over", "under"), ("yes", "no"))
 def incoherence_raison(raison, pick):
     """La raison doit parler du pari CHOISI : une cote citée (« à 1.65 », « @ 1.65 ») différente
     de la vraie, ou le sens opposé (Under pour un Over, No pour un Yes), trahit une raison
-    écrite pour un autre pari (constaté au run 11 : « Under 2 à 1.65 » pour un Over @ 3.16)."""
+    écrite pour un autre pari (constaté au run 11 : « Under 2 à 1.65 » pour un Over @ 3.16).
+
+    La partie décimale est OBLIGATOIRE dans le nombre capturé (pas juste optionnelle) : un
+    entier nu après "à"/"@" est presque toujours un COMPTE (buts, cartons...), jamais une cote
+    (toujours affichée avec décimale dans le catalogue, ex. "1.43", jamais "1"). Bug réel
+    constaté le 01/10/2026 (run à 9 jambes) : "l'équipe marque à 2 buts" et "plus de 3+ buts"
+    faisaient croire à tort que la raison citait une cote 2.0/3.0 (le pari réel était à 1.43/
+    3.14) — deux cycles de validation perdus pour rien, l'IA ayant dû deviner et réécrire sa
+    phrase pour éviter tout entier nu après "à"/"@", alors que rien n'était faux dans son
+    raisonnement."""
     texte = (raison or "").lower()
     cotes_citees = [float(c.replace(",", "."))
-                    for c in re.findall(r"(?:\bà|@)\s*(\d+(?:[.,]\d+)?)(?!\d|[.,]\d|\s*%)", texte)]
+                    for c in re.findall(r"(?:\bà|@)\s*(\d+[.,]\d+)(?!\d|\s*%)", texte)]
     if cotes_citees and all(abs(c - float(pick["cote"])) > 0.011 for c in cotes_citees):
         return f"ta raison cite la cote {cotes_citees[0]} alors que ce pari est à {pick['cote']}"
     selection = str(pick.get("selection", "")).lower()

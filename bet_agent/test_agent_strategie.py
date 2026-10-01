@@ -177,6 +177,24 @@ class TestCoherenceDesRaisons(unittest.TestCase):
                              ("Double Chance 2X à 1.491", {"cote": 1.491, "selection": "2X"})]:
             self.assertIsNone(st.incoherence_raison(raison, pick), raison)
 
+    def test_un_compte_de_buts_n_est_jamais_lu_comme_une_cote(self):
+        # Bug réel constaté le 01/10/2026 (run à 9 jambes) : "l'équipe marque à 2 buts" et
+        # "plus de 3+ buts" déclenchaient à tort "ta raison cite la cote 2.0/3.0" alors que le
+        # pari réel était à 1.43/3.14 — deux cycles de validation perdus pour une raison
+        # correcte. Un entier NU (sans décimale) après "à"/"@" est un compte, jamais une cote
+        # (toujours affichée avec décimale dans le catalogue).
+        for raison, pick in [("l'équipe est favorite et marque à 2 buts d'écart habituellement",
+                              {"cote": 1.43, "selection": "Over"}),
+                             ("plus de 3+ buts au total (3.5 buts de moyenne sur les confrontations)",
+                              {"cote": 3.14, "selection": "Over"}),
+                             ("Total Équipe 2 : over 1.5 soutenu par la forme récente",
+                              {"cote": 1.631, "selection": "Over"})]:
+            self.assertIsNone(st.incoherence_raison(raison, pick), raison)
+        # Un VRAI nombre décimal après "à"/"@" reste détecté (comportement inchangé).
+        self.assertIn("cite la cote 2.0",
+                      st.incoherence_raison("l'équipe marque à 2.0 buts en moyenne",
+                                             {"cote": 1.43, "selection": "Over"}))
+
     def test_la_raison_incoherente_est_corrigee_au_tour_suivant(self):
         mauvaise = _reponse([
             {"profil": "profil1", "strategie": "s", "jambes": [{"id": "P1", "raison": "Under à 1.5"},
