@@ -359,6 +359,31 @@ def _est_ligne_quart(x):
     return abs(r - round(r)) < 1e-6 and (round(r) % 2 != 0)
 
 
+def _note_ligne_quart(handicap):
+    """Explique le mécanisme d'une ligne de quart (.25/.75) : une demi-mise sur chacune des deux
+    lignes ENTIÈRES/DEMI adjacentes (ex: 3.25 = moitié sur 3.0, moitié sur 3.5) — un résultat
+    PARTIEL (demi-remboursement + demi-perte, ou demi-remboursement + demi-gain, selon le sens du
+    pari) est possible pile sur l'une des deux lignes, jamais un simple seuil net comme sur une
+    ligne entière/demi classique. Signalé par l'utilisateur le 01/10/2026 : un pari "Over 3.25"
+    rédigé par l'IA ("je joue plus de trois buts") ignorait ce mécanisme, laissant croire à un
+    seuil simple sans cette nuance. Volontairement SANS préciser laquelle des deux lignes
+    déclenche le résultat partiel (ça dépend du sens Over/Under ou du camp Domicile/Extérieur,
+    que cette fonction ne connaît pas) — juste l'avertissement que ce n'est jamais net à 100%.
+    Renvoie None si handicap n'est pas une ligne de quart (aucune note nécessaire) — ne dépend
+    d'aucune probabilité/catégorie, seulement du chiffre, donc s'applique aussi bien aux lignes
+    de quart Total/Corners/Cartons (toujours en marché brut, jamais modélisées) qu'au handicap
+    principal."""
+    if handicap is None or not _est_ligne_quart(handicap):
+        return None
+    bas, haut = handicap - 0.25, handicap + 0.25
+
+    def _fmt(v):
+        return f"{v:g}"
+    return (f"ligne de quart : moitié de la mise sur la ligne {_fmt(bas)}, moitié sur {_fmt(haut)} — "
+            "un résultat PARTIEL (remboursement + gain/perte partiel) est possible pile sur l'une "
+            "des deux, jamais un résultat net à 100% comme sur une ligne entière/demi classique")
+
+
 def estimer_ligne_equilibree(marches, mots_cles_categorie, exclure_team=True, equipe=None):
     """Cherche, parmi les marchés Total correspondant à une catégorie donnée (buts/corners/
     cartons — identifiée par mots-clés dans le nom du marché), la ligne dont les cotes
@@ -742,8 +767,8 @@ def completer_avec_marches_bruts(candidats_modelises, marches):
             resultat.append({
                 "categorie": categorie, "marche": nom_avec_ligne, "handicap": handicap,
                 "selection": s["selection"], "cote": cote,
-                "proba_modele_pct": None, "edge_pct": None, "guide": None, "onglet": None,
-                "proba_poisson_pct": None, "proba_marche_pct": None,
+                "proba_modele_pct": None, "edge_pct": None, "guide": _note_ligne_quart(handicap),
+                "onglet": None, "proba_poisson_pct": None, "proba_marche_pct": None,
             })
     return resultat
 
@@ -1626,20 +1651,31 @@ def rediger_ticket_sans_ia(selections_finales):
     perdant des matchs entiers (constaté sur le run du 26/09/2026). Un résumé tient en UN
     seul message Telegram, sans jamais avoir besoin de le découper.
 
-    Si l'IA a fourni une raison pour ce pari (raison_ia, agent pilote/stratège), on l'affiche
-    telle quelle : c'est la vraie justification de son choix depuis que le catalogue ne
-    contient plus de probabilité/edge calculée (30/09/2026). Sinon (repli 100% Python sans
-    IA, selectionner_combo_cote_cible), le niveau de confiance (Faible/Moyen/Élevé, calculé
-    depuis l'edge, jamais estimé par l'IA — demande du 27/09/2026) reste affiché : c'est alors
-    la SEULE justification du choix. Ne jamais afficher "edge None%" (constaté le 30/09/2026,
-    run 59 : une jambe sur un marché brut sans edge calculé affichait "edge None% · Faible"
-    dans le vrai message Telegram envoyé)."""
+    Si l'IA a fourni une raison pour ce pari (raison_ia, agent pilote/stratège), on l'affiche :
+    c'est la vraie justification de son choix depuis que le catalogue ne contient plus de
+    probabilité/edge calculée (30/09/2026). Quand Python a AUSSI un guide précis pour ce pari
+    (p["guide"] : explication du handicap calculée par expliquer_marche, ou note sur une ligne
+    de quart — _note_ligne_quart, 01/10/2026), il est ajouté à la suite, jamais à la place : la
+    rédaction libre de l'IA peut être ambiguë ou incomplète sur un mécanisme précis (constaté le
+    01/10/2026, signalé par l'utilisateur — un "Over 3.25" rédigé "je joue plus de trois buts"
+    sans mentionner le résultat partiel possible pile sur la ligne) ; le guide Python, toujours
+    exact, comble ce qui manque sans jamais remplacer l'analyse propre de l'IA. Sinon (repli
+    100% Python sans IA, selectionner_combo_cote_cible), le niveau de confiance (Faible/Moyen/
+    Élevé, calculé depuis l'edge, jamais estimé par l'IA — demande du 27/09/2026) reste affiché :
+    c'est alors la SEULE justification du choix. Ne jamais afficher "edge None%" (constaté le
+    30/09/2026, run 59 : une jambe sur un marché brut sans edge calculé affichait "edge None% ·
+    Faible" dans le vrai message Telegram envoyé)."""
     blocs = []
     for s in selections_finales:
         p = s["pick"]
         raison = (s.get("raison_ia") or "").strip()
-        if raison:
+        guide = (p.get("guide") or "").strip()
+        if raison and guide:
+            detail = f"{raison} — {guide}"
+        elif raison:
             detail = raison
+        elif guide:
+            detail = guide
         elif p.get("edge_pct") is not None:
             detail = f"edge {p['edge_pct']}% · {niveau_confiance(p['edge_pct'])}"
         else:

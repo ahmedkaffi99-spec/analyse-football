@@ -373,11 +373,11 @@ class TestSelectionTreveInternationale(unittest.TestCase):
         self.assertFalse(cd.est_equipe_feminine_api_football("Wolves"))
 
 
-def _selection(match, categorie, selection, cote, edge=8.0):
+def _selection(match, categorie, selection, cote, edge=8.0, guide=None):
     return {"match": match, "home_nom": match.split(" vs ")[0], "away_nom": match.split(" vs ")[1],
             "fixture_id_oddspapi": match,
             "pick": {"categorie": categorie, "marche": f"{categorie} (2.5)", "handicap": 2.5, "selection": selection,
-                     "cote": cote, "proba_modele_pct": 70.0, "edge_pct": edge, "guide": "guide", "onglet": "onglet"}}
+                     "cote": cote, "proba_modele_pct": 70.0, "edge_pct": edge, "guide": guide, "onglet": "onglet"}}
 
 
 class TestRedactionSansEdgeNone(unittest.TestCase):
@@ -408,6 +408,25 @@ class TestRedactionSansEdgeNone(unittest.TestCase):
         s = _selection("A vs B", "Total", "Over", 1.9, edge=12.3)
         texte = ae.rediger_ticket_sans_ia([s])
         self.assertIn("edge 12.3% · Moyen", texte)
+
+    def test_guide_ajoute_a_la_suite_de_la_raison_ia_jamais_a_la_place(self):
+        # Signalé par l'utilisateur le 01/10/2026 : la raison libre de l'IA peut être ambiguë
+        # sur un mécanisme précis (ex: "Allemagne doit gagner nettement, handicap de moins un
+        # but et demi pour elle" pour un Asian Handicap -1.5) — le guide Python, toujours exact,
+        # doit compléter plutôt que jamais apparaître (comportement d'avant ce correctif).
+        s = _selection("Germany vs Serbia", "Handicap Asiatique", "1", 1.679,
+                       guide="l'équipe domicile part avec un désavantage fictif de 1.5 but(s)")
+        s["raison_ia"] = "l'Allemagne doit gagner nettement, handicap de moins un but et demi pour elle"
+        texte = ae.rediger_ticket_sans_ia([s])
+        self.assertIn("l'Allemagne doit gagner nettement", texte)
+        self.assertIn("désavantage fictif de 1.5 but(s)", texte)
+
+    def test_guide_seul_affiche_si_aucune_raison_ia(self):
+        s = _selection("A vs B", "Handicap Asiatique", "1", 1.5,
+                       guide="l'équipe domicile part avec un avantage fictif de 1.0 but(s)")
+        texte = ae.rediger_ticket_sans_ia([s])
+        self.assertIn("avantage fictif de 1.0 but(s)", texte)
+        self.assertNotIn("edge", texte)
 
 
 class TestUnSeulCouponDixAQuinzeMatchs(unittest.TestCase):
@@ -623,6 +642,27 @@ class TestCompleterAvecMarchesBruts(unittest.TestCase):
         modelises = ae.evaluer_marches_toutes(marches, 1.3, 1.2)
         complets = ae.completer_avec_marches_bruts(modelises, marches)
         self.assertEqual(len(complets), len(modelises))  # rien ajouté, déjà tout couvert
+
+    def test_ligne_de_quart_en_brut_recoit_une_note_explicative(self):
+        # Signalé par l'utilisateur le 01/10/2026 : "Over Under Full Time (3.25) : Over @ 2.318
+        # (je joue plus de trois buts)" — la ligne 3.25 est une ligne de QUART (jamais modélisée,
+        # toujours en brut), et la raison de l'IA ignorait le résultat partiel possible pile sur
+        # l'une des deux lignes adjacentes. completer_avec_marches_bruts calcule désormais un
+        # guide pour toute ligne de quart (Total, Corners, Cartons...), pas seulement Handicap.
+        marches = [{"marche": "Over Under Full Time", "handicap": 3.25, "periode": "fulltime",
+                    "selections": [{"selection": "Over", "cote": 2.318}, {"selection": "Under", "cote": 1.6}]}]
+        complets = ae.completer_avec_marches_bruts([], marches)
+        self.assertEqual(len(complets), 2)
+        for c in complets:
+            self.assertIsNotNone(c["guide"])
+            self.assertIn("ligne de quart", c["guide"])
+            self.assertIn("3", c["guide"])  # mentionne les lignes adjacentes 3.0/3.5
+
+    def test_ligne_entiere_en_brut_n_a_pas_de_note_de_quart(self):
+        marches = [{"marche": "Correct Score", "handicap": None, "periode": "fulltime",
+                    "selections": [{"selection": "2:1", "cote": 8.5}]}]
+        complets = ae.completer_avec_marches_bruts([], marches)
+        self.assertIsNone(complets[0]["guide"])
 
     def test_selection_12_interdite_jamais_reintroduite_en_brut(self):
         # Bug réel constaté le 01/10/2026 (run à 6 profils) : "Double Chance Full Time : 12 @
