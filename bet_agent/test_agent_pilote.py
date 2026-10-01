@@ -375,5 +375,61 @@ class TestProfilsPersonnalisesEtDiversiteIgnoree(unittest.TestCase):
         self.assertEqual(resultat["resultats_profils"][0]["profil"]["cle"], "coupon")
 
 
+class TestContexteSupplementaireEtRegleDeProbabiliteReelle(unittest.TestCase):
+    """Demande explicite du 01/10/2026 ("augmente les chances de gagner [...] l'IA doit se
+    souvenir du contexte") : le prompt système insiste sur la probabilité réelle plutôt que la
+    cote cible à tout prix, et executer() peut prépendre un bilan réel (contexte_supplementaire,
+    typiquement backend.app.services.statistiques.resume_pour_ia) à la mission par défaut."""
+
+    def setUp(self):
+        patcher = mock.patch.dict("os.environ", {"DEEPSEEK_API_KEY": "cle-test"})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_prompt_systeme_insiste_sur_la_probabilite_reelle(self):
+        prompt = pilote.construire_prompt_systeme([PROFIL])
+        self.assertIn("PROBABILITÉ RÉELLE DE GAIN", prompt)
+        self.assertIn("N'EMPILE PAS PLUSIEURS JAMBES FRAGILES", prompt)
+        self.assertIn("BILAN RÉEL DES COUPONS PRÉCÉDENTS", prompt)
+
+    def test_contexte_supplementaire_prepende_a_la_mission_par_defaut(self):
+        with mock.patch.object(cd, "collecter_donnees", return_value=None), \
+                mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(DONNEES_FACTICES))), \
+                mock.patch.object(ae, "PROFILS_COUPON", [PROFIL]), \
+                mock.patch.object(pilote, "piloter", return_value={
+                    "termine": True, "etapes": 0, "arret": "test", "tokens": 0}) as faux_piloter:
+            pilote.executer(telegram=False, profils=[PROFIL],
+                           contexte_supplementaire="BILAN RÉEL DES COUPONS PRÉCÉDENTS : 1/2 gagnés.")
+
+        mission_envoyee = faux_piloter.call_args.args[3]
+        self.assertTrue(mission_envoyee.startswith("BILAN RÉEL DES COUPONS PRÉCÉDENTS : 1/2 gagnés."))
+        self.assertIn("Compose les 1 coupons combinés du jour.", mission_envoyee)
+
+    def test_sans_contexte_supplementaire_mission_par_defaut_inchangee(self):
+        with mock.patch.object(cd, "collecter_donnees", return_value=None), \
+                mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(DONNEES_FACTICES))), \
+                mock.patch.object(ae, "PROFILS_COUPON", [PROFIL]), \
+                mock.patch.object(pilote, "piloter", return_value={
+                    "termine": True, "etapes": 0, "arret": "test", "tokens": 0}) as faux_piloter:
+            pilote.executer(telegram=False, profils=[PROFIL])
+
+        mission_envoyee = faux_piloter.call_args.args[3]
+        self.assertEqual(mission_envoyee, "Compose les 1 coupons combinés du jour.")
+
+    def test_mission_explicite_ignore_le_contexte_supplementaire(self):
+        # Si l'appelant fournit mission explicitement, c'est lui qui compose le texte complet —
+        # contexte_supplementaire n'est utilisé que pour construire la mission PAR DÉFAUT.
+        with mock.patch.object(cd, "collecter_donnees", return_value=None), \
+                mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(DONNEES_FACTICES))), \
+                mock.patch.object(ae, "PROFILS_COUPON", [PROFIL]), \
+                mock.patch.object(pilote, "piloter", return_value={
+                    "termine": True, "etapes": 0, "arret": "test", "tokens": 0}) as faux_piloter:
+            pilote.executer(mission="mission explicite", telegram=False, profils=[PROFIL],
+                           contexte_supplementaire="ignoré")
+
+        mission_envoyee = faux_piloter.call_args.args[3]
+        self.assertEqual(mission_envoyee, "mission explicite")
+
+
 if __name__ == "__main__":
     unittest.main()

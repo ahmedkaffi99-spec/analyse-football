@@ -53,3 +53,33 @@ def calculer(db):
         for cat, v in sorted(par_categorie.items())
     ]
     return {"profils": profils, "categories": categories}
+
+
+def resume_pour_ia(db, min_jugees=3, max_categories_faibles=6):
+    """Résumé textuel court du bilan réel (coupons + catégories), injecté dans la mission de
+    l'agent pilote (bet_agent/agent_pilote.py) — demande explicite de l'utilisateur (01/10/2026)
+    : "l'IA doit se souvenir du contexte" (des runs précédents, pas seulement du catalogue du
+    jour) pour augmenter les chances de gain, pas seulement composer pour atteindre une cote
+    cible. Renvoie None si aucun coupon n'est encore clos (rien à résumer)."""
+    bilan = calculer(db)
+    clos_total = sum(p["clos"] for p in bilan["profils"])
+    if not clos_total:
+        return None
+    gagnes_total = sum(p["gagnes"] for p in bilan["profils"])
+    lignes = [f"BILAN RÉEL DES COUPONS PRÉCÉDENTS (à prendre en compte pour mieux choisir aujourd'hui) : "
+              f"{gagnes_total}/{clos_total} coupon(s) combiné(s) gagné(s) au total."]
+    # Catégories avec un échantillon suffisant (min_jugees) ET un taux de réussite faible
+    # (<50%) — celles que l'IA doit éviter d'empiler sans une raison solide aujourd'hui.
+    faibles = sorted((c for c in bilan["categories"] if c["jugees"] >= min_jugees and c["taux_reussite_pct"] < 50),
+                     key=lambda c: c["taux_reussite_pct"])[:max_categories_faibles]
+    if faibles:
+        detail = ", ".join(f"{c['categorie']} ({c['gagnees']}/{c['jugees']})" for c in faibles)
+        lignes.append(f"Catégories de marché avec un taux de réussite réel FAIBLE jusqu'ici : {detail} — "
+                      "méfie-toi d'en empiler plusieurs dans un même coupon aujourd'hui, sauf analyse solide "
+                      "propre à CE match qui justifie de le reprendre.")
+    forts = sorted((c for c in bilan["categories"] if c["jugees"] >= min_jugees and c["taux_reussite_pct"] >= 70),
+                   key=lambda c: -c["taux_reussite_pct"])[:max_categories_faibles]
+    if forts:
+        detail = ", ".join(f"{c['categorie']} ({c['gagnees']}/{c['jugees']})" for c in forts)
+        lignes.append(f"Catégories avec un taux de réussite réel SOLIDE jusqu'ici : {detail}.")
+    return "\n".join(lignes)

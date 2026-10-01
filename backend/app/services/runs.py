@@ -14,6 +14,7 @@ from app.models import Run
 from app.services import pipeline
 from app.services.archives import archiver_run, telecharger_collecte
 from app.services.persistance import enregistrer_collecte, enregistrer_coupons
+from app.services.statistiques import resume_pour_ia
 
 
 def cloturer_runs_interrompus(db, maintenant=None):
@@ -74,8 +75,14 @@ def executer_run(run_id, envoyer_telegram=False, rediger=True, depuis_run=None, 
             agent_pilote = pipeline.charger_agent_pilote()
             DOSSIER_DONNEES.mkdir(parents=True, exist_ok=True)
             cd.SORTIE_JSON = str(DOSSIER_DONNEES / f"collecte_run_{run_id}.json")
+            # Bilan réel des coupons/catégories déjà jugés (demande explicite du 01/10/2026 :
+            # "l'IA doit se souvenir du contexte") — prépendu à la mission par défaut de l'agent
+            # pilote pour qu'il pèse ses choix du jour à la lumière des résultats réels passés,
+            # pas seulement du catalogue du jour. None tant qu'aucun coupon n'est encore clos.
+            bilan = resume_pour_ia(db)
             resultat_agent = agent_pilote.executer(telegram=envoyer_telegram, profils=profils_personnalises,
-                                                   ignorer_diversite_croisee=ignorer_diversite_croisee)
+                                                   ignorer_diversite_croisee=ignorer_diversite_croisee,
+                                                   contexte_supplementaire=bilan)
             donnees = resultat_agent.get("donnees")
             index = enregistrer_collecte(db, run, donnees) if donnees is not None else {}
             if donnees is not None:

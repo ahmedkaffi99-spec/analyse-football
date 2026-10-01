@@ -16,9 +16,11 @@ def _profil_unique():
 
 
 def _faux_agent_pilote(monkeypatch, resultat, appels=None):
-    def fausse_executer(mission=None, telegram=True, profils=None, ignorer_diversite_croisee=False):
+    def fausse_executer(mission=None, telegram=True, profils=None, ignorer_diversite_croisee=False,
+                        contexte_supplementaire=None):
         if appels is not None:
-            appels.append({"profils": profils, "ignorer_diversite_croisee": ignorer_diversite_croisee})
+            appels.append({"profils": profils, "ignorer_diversite_croisee": ignorer_diversite_croisee,
+                           "contexte_supplementaire": contexte_supplementaire})
         return resultat
 
     faux_module = SimpleNamespace(executer=fausse_executer)
