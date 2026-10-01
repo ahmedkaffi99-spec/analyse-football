@@ -45,11 +45,17 @@ reprendre "Corners Under 9.5" sur un autre match — Over/Under = diversité, un
 2.5 vs 3.5) = diversité aussi). Tu peux t'abstenir sur UN profil si rien n'est défendable pour son nombre de \
 jambes minimum, sans que ça t'empêche de composer les autres.
 
-LE CATALOGUE NE CONTIENT QUE DES COTES BRUTES (marché, sélection, cote réelle 1xBet) — AUCUNE \
-probabilité ni edge n'est calculée par Python : c'est TOI qui analyses et juges la valeur de chaque pari, à \
-partir des cotes et du contexte fourni (buts attendus, confrontations directes, blessures, prédictions \
-API-Football, presse). Chaque match a typiquement 200 à 300 marchés — tu les vois TOUS, rien n'est \
-présélectionné ni filtré par catégorie. Le catalogue est CALCULÉ UNE SEULE FOIS et partagé par les {n} profils.
+LE CATALOGUE CONTIENT, POUR CHAQUE PARI MODÉLISABLE (buts, BTTS, Handicap, Total, Double Chance, \
+Pair/Impair, Corners, Cartons...), LA PROBABILITÉ ET L'EDGE CALCULÉS PAR PYTHON (modèle Poisson à partir des \
+vrais buts attendus) — demande explicite du 01/10/2026 : "il faut que Python calcule tout, ne donne pas à l'IA \
+à calculer". C'EST CETTE PROBABILITÉ, PAS UNE ESTIMATION PERSONNELLE, QUI EST TA BASE PRINCIPALE DE DÉCISION : \
+préfère systématiquement les paris à probabilité Python élevée. Seuls les marchés BRUTS (sans source de \
+données indépendante — tirs, fautes, touches, corners/cartons sans stats détaillées...) n'ont pas de \
+probabilité calculée (signalés "marché brut, AUCUN calcul Python") : pour CEUX-LÀ UNIQUEMENT, appuie-toi sur le \
+contexte fourni (buts attendus, confrontations directes, blessures, prédictions API-Football, presse), avec \
+prudence accrue — jamais comme base principale d'un coupon. Chaque match a typiquement 200 à 300 marchés — tu \
+les vois TOUS, rien n'est présélectionné ni filtré par catégorie. Le catalogue est CALCULÉ UNE SEULE FOIS et \
+partagé par les {n} profils.
 
 MÉTHODE DE TRAVAIL : traite les matchs UN PAR UN, jamais en mélangeant plusieurs à la fois. Pour chaque \
 match : lis tout son contexte (buts attendus, historique, blessures, prédictions), compare TOUS ses marchés \
@@ -67,29 +73,31 @@ profils)  5. répète 2-4 pour chaque profil restant  6. envoyer_telegram une fo
 
 RÈGLES ABSOLUES :
 - Tu ne choisis QUE des identifiants du catalogue (P1, P2...). Tu n'inventes jamais un pari ni une cote.
-- La raison d'un pari parle de CE pari (même sens, même cote que dans le catalogue) et de TON analyse (le \
-catalogue ne te donne qu'une cote brute, pas une probabilité toute faite).
+- La raison d'un pari parle de CE pari (même sens, même cote que dans le catalogue) et CITE la probabilité \
+Python du catalogue quand elle existe (ta propre analyse vient en complément, jamais à la place).
 - Qualité avant quantité : écarte les matchs aux données faibles ou risqués (absences clés, rotation, enjeu \
 faible).
-- PRIORITÉ ABSOLUE À LA PROBABILITÉ RÉELLE DE GAIN, JAMAIS À UNE COTE À ATTEINDRE : la cote totale n'est PAS \
-une cible précise à viser — n'ajoute JAMAIS un pari seulement pour faire monter ou descendre la cote totale \
-vers une fourchette. SEULE VÉRIFICATION PYTHON SUR LA COTE : un plancher ABSOLU de 5 (cote totale >= 5, \
-toujours, quel que soit le profil) — en dessous, Python refuse. Le nombre de jambes, lui, doit rester dans la \
-fourchette du profil en cours (voir voir_catalogue), mais même ça : si tu ne trouves pas assez de paris \
-VRAIMENT défendables pour atteindre le minimum de jambes d'un profil, abstiens-toi sur ce profil plutôt que de \
-forcer des paris moyens.
+- PRIORITÉ ABSOLUE À LA PROBABILITÉ PYTHON DU CATALOGUE, JAMAIS À UNE COTE À ATTEINDRE : la cote totale n'est \
+PAS une cible précise à viser — n'ajoute JAMAIS un pari seulement pour faire monter ou descendre la cote totale \
+vers une fourchette. Pour un marché modélisé, ta décision se base sur la probabilité CALCULÉE PAR PYTHON \
+(catalogue), pas sur une estimation que tu inventes toi-même. SEULE VÉRIFICATION PYTHON SUR LA COTE : un \
+plancher ABSOLU de 5 (cote totale >= 5, toujours, quel que soit le profil) — en dessous, Python refuse. Le \
+nombre de jambes, lui, doit rester dans la fourchette du profil en cours (voir voir_catalogue), mais même ça : \
+si tu ne trouves pas assez de paris VRAIMENT défendables pour atteindre le minimum de jambes d'un profil, \
+abstiens-toi sur ce profil plutôt que de forcer des paris moyens.
 - N'EMPILE PAS PLUSIEURS JAMBES FRAGILES DANS LE MÊME COUPON : une jambe est fragile si au moins un de ces \
-signaux est présent — ligne de quart (.25/.75), probabilité de gain que TU estimes inférieure à 60%, ou \
-données faibles sur ce match précis (pas/peu de stats, forme incertaine, enjeu flou). Un coupon combiné \
-perd dès qu'UNE SEULE jambe perd : limite-toi à AU PLUS une jambe fragile par coupon, le reste doit être des \
-paris où tu es vraiment confiant.
-- POUR REMPLIR LE NOMBRE DE JAMBES D'UN PROFIL, PRÉFÈRE DES FAVORIS À COTE INDIVIDUELLE BASSE (probabilité \
-élevée, cote unitaire environ 1.1-1.5) PLUTÔT QUE DES PARIS À COTE INDIVIDUELLE ÉLEVÉE (cote unitaire > 2) : \
-la probabilité de gagner TOUTES les jambes d'un combiné est bien meilleure en empilant des favoris nets qu'en \
-misant sur des paris incertains — quelle que soit la cote individuelle ou totale qui en résulte, cote basse \
-ou haute, peu importe, SEULE compte la probabilité de gain réelle de chaque jambe.
+signaux est présent — ligne de quart (.25/.75), probabilité Python du catalogue inférieure à 60% (ou, pour un \
+marché brut sans calcul, ton estimation du contexte inférieure à 60%), ou données faibles sur ce match précis \
+(pas/peu de stats, forme incertaine, enjeu flou). Un coupon combiné perd dès qu'UNE SEULE jambe perd : \
+limite-toi à AU PLUS une jambe fragile par coupon, le reste doit être des paris où la probabilité Python est \
+vraiment élevée.
+- POUR REMPLIR LE NOMBRE DE JAMBES D'UN PROFIL, PRÉFÈRE LES PARIS À PROBABILITÉ PYTHON ÉLEVÉE (typiquement une \
+cote individuelle basse, environ 1.1-1.5) PLUTÔT QUE DES PARIS À PROBABILITÉ PYTHON FAIBLE (cote unitaire > 2) \
+: la probabilité de gagner TOUTES les jambes d'un combiné est bien meilleure en empilant des favoris nets \
+(probabilité Python élevée) qu'en misant sur des paris incertains — quelle que soit la cote individuelle ou \
+totale qui en résulte, cote basse ou haute, peu importe, SEULE compte la probabilité Python de chaque jambe.
 - La sélection "12" (double chance domicile-ou-extérieur) n'est PAS interdite : choisis-la comme n'importe \
-quel autre marché si ta probabilité estimée est élevée, au même titre que les autres règles ci-dessus.
+quel autre marché si sa probabilité Python est élevée, au même titre que les autres règles ci-dessus.
 - Une ligne de quart (.25/.75, ex: Total 3.25, Handicap -0.75) répartit la mise moitié sur la ligne entière/demi \
 en dessous, moitié sur celle au-dessus : explique ce partage dans ta raison, ne la présente jamais comme un \
 simple seuil net (ex: ne dis pas "je joue plus de trois buts" pour une ligne 3.25 sans mentionner le résultat \
@@ -123,8 +131,10 @@ def construire_outils_schemas(profils):
             "name": "voir_catalogue",
             "description": f"Renvoie le profil EN COURS (parmi les {n} — {noms}, indique sa position "
                            f"\"2/{n}\" par ex.) avec ses contraintes de cote, et le CATALOGUE de paris réels (identifiants "
-                           "P1, P2..., marché, sélection, cote brute — AUCUNE probabilité ni edge calculée, c'est à toi de "
-                           f"juger), identique pour les {n} profils. Nécessite la collecte.",
+                           "P1, P2..., marché, sélection, cote brute, ET la probabilité/edge calculés par Python "
+                           "(Poisson) quand le marché est modélisable — base ta décision sur CES chiffres ; seuls les "
+                           "marchés bruts signalés sans calcul demandent ton propre jugement), identique pour les "
+                           f"{n} profils. Nécessite la collecte.",
             "parameters": {"type": "object", "properties": {}}}},
         {"type": "function", "function": {
             "name": "rechercher_web",

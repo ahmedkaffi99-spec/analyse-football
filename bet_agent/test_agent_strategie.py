@@ -53,10 +53,19 @@ class TestStratege(unittest.TestCase):
         catalogue, texte = st.construire_catalogue(POOL)
         self.assertEqual(list(catalogue), ["P1", "P2", "P3", "P4", "P5", "P6"])
         self.assertIn("P5 : Total (2.5) → Over @ 2.0", texte)
-        # Depuis le 30/09/2026 : cotes brutes uniquement, aucune probabilité/edge affichée à
-        # l'IA (demande explicite "ne calcule pas les odds pour l'IA").
-        self.assertNotIn("probabilité", texte)
-        self.assertNotIn("edge", texte)
+        # Depuis le 01/10/2026 : Python affiche sa probabilité/edge calculés à l'IA (demande
+        # explicite "il faut que Python calcule tout, ne donne pas à l'IA à calculer").
+        self.assertIn("probabilité Python 60.0%, edge 6.0%", texte)
+
+    def test_catalogue_marche_brut_signale_sans_calcul(self):
+        pool_brut = {"A vs B": [{
+            "match": "A vs B", "home_nom": "A", "away_nom": "B", "fixture_id_oddspapi": "A vs B",
+            "pick": {"categorie": "Corners", "marche": "Corners (9.5)", "handicap": 9.5, "selection": "Over",
+                     "cote": 1.9, "proba_modele_pct": None, "edge_pct": None, "guide": "g", "onglet": "o"},
+            "contexte": {},
+        }]}
+        _, texte = st.construire_catalogue(pool_brut)
+        self.assertIn("marché brut, AUCUN calcul Python", texte)
 
     def test_choix_valide_des_le_premier_tour(self):
         # P1 (Total) + P4 (BTTS) : catégories différentes, pas de souci de dominance (règle du

@@ -401,13 +401,16 @@ class TestContexteSupplementaireEtRegleDeProbabiliteReelle(unittest.TestCase):
 
     def test_prompt_systeme_insiste_sur_la_probabilite_reelle(self):
         prompt = pilote.construire_prompt_systeme([PROFIL])
-        self.assertIn("PROBABILITÉ RÉELLE DE GAIN", prompt)
+        # Depuis le 01/10/2026 ("il faut que Python calcule tout, ne donne pas à l'IA à
+        # calculer") : la base de décision est la probabilité CALCULÉE PAR PYTHON, pas une
+        # estimation de l'IA.
+        self.assertIn("PROBABILITÉ PYTHON DU CATALOGUE", prompt)
         self.assertIn("N'EMPILE PAS PLUSIEURS JAMBES FRAGILES", prompt)
         self.assertIn("BILAN RÉEL DES COUPONS PRÉCÉDENTS", prompt)
         # Demande explicite du 01/10/2026 : "au lieu de 4 jambes avec cote +1.5, mieux 9 jambes
         # avec cote -1.5" (clarifié : la cote unitaire décimale, pas la ligne de handicap) —
         # préférer empiler des favoris à cote basse plutôt que peu de jambes à cote élevée.
-        self.assertIn("COTE INDIVIDUELLE BASSE", prompt)
+        self.assertIn("PROBABILITÉ PYTHON ÉLEVÉE", prompt)
         self.assertIn("1.1-1.5", prompt)
 
     def test_contexte_supplementaire_prepende_a_la_mission_par_defaut(self):
