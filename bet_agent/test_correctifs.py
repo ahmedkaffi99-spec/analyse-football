@@ -696,6 +696,25 @@ class TestAsianHandicapVsEuropeanHandicapMarchesDistincts(unittest.TestCase):
         categories = {c["categorie"] for c in complets}
         self.assertEqual(categories, {"Handicap Asiatique", "European Handicap"})
 
+    def test_ligne_de_quart_en_brut_garde_la_meme_categorie_que_la_ligne_entiere(self):
+        # Signalé par l'utilisateur le 01/10/2026 ("erreur de rédaction du 3 marché handicap",
+        # Asian vs European encore confondus) : vérifié en base, le marché "Asian Handicap"
+        # produisait categorie="Handicap Asiatique" (français) pour les lignes entières/demi
+        # (modélisées) mais categorie="Asian Handicap" (anglais, nom brut OddsPapi non traduit)
+        # pour les lignes de quart (toujours en brut) — un même marché réel sous 2 catégories
+        # différentes selon la ligne, donnant l'impression trompeuse d'un 3e type de handicap.
+        # Les deux doivent désormais porter la MÊME categorie ("Handicap Asiatique"), même si
+        # le texte affiché ("marche") reste "Asian Handicap (-0.75)" (nom brut, inchangé).
+        marches = [{"marche": "Asian Handicap", "handicap": -0.75, "periode": "fulltime",
+                    "selections": [{"selection": "1", "cote": 3.9}, {"selection": "2", "cote": 1.222}]}]
+        modelises = ae.evaluer_marches_toutes(marches, 1.6, 1.1)
+        self.assertEqual(modelises, [])  # ligne de quart : jamais modélisée, toujours en brut
+        complets = ae.completer_avec_marches_bruts(modelises, marches)
+        self.assertEqual(len(complets), 2)
+        for c in complets:
+            self.assertEqual(c["categorie"], "Handicap Asiatique")
+            self.assertTrue(c["marche"].startswith("Asian Handicap ("))
+
 
 class TestHandicapCornersEtCartonsModelisesEnPoisson(unittest.TestCase):
     """Demande explicite du 01/10/2026 : "carton et corner faut calcule en poisson [le

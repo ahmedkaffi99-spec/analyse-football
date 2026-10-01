@@ -709,6 +709,19 @@ def completer_avec_marches_bruts(candidats_modelises, marches):
         nom_marche = marche.get("marche") or "Marché"
         handicap = marche.get("handicap")
         nom_avec_ligne = f"{nom_marche} ({handicap})" if handicap is not None else nom_marche
+        # Normalisation de categorie (pas de "marche", qui garde le nom brut OddsPapi pour
+        # l'affichage — déjà correct) : le marché "Asian Handicap" (lignes de quart .25/.75,
+        # jamais modélisées, donc toujours en brut ici) doit porter la MÊME categorie que ses
+        # lignes entières/demi modélisées ("Handicap Asiatique") — sinon un même marché réel
+        # apparaît sous 2 catégories différentes selon la ligne, donnant l'impression trompeuse
+        # de 3 types de handicap (constaté le 01/10/2026, signalé par l'utilisateur : "erreur de
+        # rédaction du 3 marché handicap" — Handicap Asiatique / Asian Handicap / European
+        # Handicap alors qu'il n'y a que 2 marchés réels distincts, Asian et European Handicap).
+        nom_bas = nom_marche.lower()
+        if nom_bas == "asian handicap":
+            categorie = "Handicap Asiatique"
+        else:
+            categorie = nom_marche
         for s in marche.get("selections", []):
             cote = s.get("cote")
             if not cote or cote <= 1:
@@ -718,7 +731,7 @@ def completer_avec_marches_bruts(candidats_modelises, marches):
                 continue
             deja_vus.add(cle)
             resultat.append({
-                "categorie": nom_marche, "marche": nom_avec_ligne, "handicap": handicap,
+                "categorie": categorie, "marche": nom_avec_ligne, "handicap": handicap,
                 "selection": s["selection"], "cote": cote,
                 "proba_modele_pct": None, "edge_pct": None, "guide": None, "onglet": None,
                 "proba_poisson_pct": None, "proba_marche_pct": None,
