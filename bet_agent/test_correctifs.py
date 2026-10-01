@@ -140,6 +140,37 @@ class TestMuCornersEtCartonsStatsDetaillees(unittest.TestCase):
         self.assertIn("Total Corners", categories)
         self.assertIn("Total Cartons", categories)
 
+    def test_forme_points_et_clean_sheets_transmis_en_contexte(self):
+        # Demande explicite (01/10/2026) : points_par_match_moyenne/clean_sheets_nombre étaient
+        # collectés (15 métriques API-Football) mais jamais montrés à l'IA — pas un marché à
+        # parier, juste un signal de forme en plus des buts attendus.
+        donnees = {"matchs": [{
+            "match_demande": {"home": "A", "away": "B"}, "api_football": None,
+            "oddspapi": {"fixture_id": "f1", "tous_marches": [
+                {"marche": "Over Under Full Time", "handicap": 2.5, "periode": "fulltime",
+                 "selections": [{"selection": "Over", "cote": 1.9}, {"selection": "Under", "cote": 1.9}]},
+            ]},
+            "serper": None, "stats_historiques": {"home": None, "away": None},
+            "stats_detaillees_10_matchs": {
+                "home": {"buts_marques_moyenne": 2.0, "buts_encaisses_moyenne": 1.0,
+                         "points_par_match_moyenne": 2.1, "clean_sheets_nombre": 4},
+                "away": {"buts_marques_moyenne": 1.2, "buts_encaisses_moyenne": 1.6,
+                         "points_par_match_moyenne": 0.9, "clean_sheets_nombre": 1},
+            },
+            "classement": {"home": None, "away": None},
+            "head_to_head": None, "blessures": None, "predictions_api_football": None,
+        }]}
+        with mock.patch.object(ae, "verifier_fraicheur_matchs", side_effect=lambda ms: ms):
+            pool = ae.agent3_calcul_pool_candidats(donnees)
+        forme = pool["A vs B"][0]["contexte"]["forme"]
+        self.assertEqual(forme["domicile"], {"points_par_match": 2.1, "clean_sheets_sur_10": 4})
+        self.assertEqual(forme["exterieur"], {"points_par_match": 0.9, "clean_sheets_sur_10": 1})
+
+        texte = ae._construire_contexte_prompt([{"match": "A vs B", "contexte": pool["A vs B"][0]["contexte"]}])
+        self.assertIn("Forme récente (équipe domicile, 10 derniers matchs) : 2.1 point(s)/match, "
+                      "4 clean sheet(s) sur 10", texte)
+        self.assertIn("Forme récente (équipe exterieur", texte)
+
 
 class TestMuFautesTirsHorsJeuxStatsDetaillees(unittest.TestCase):
     """Demande explicite du 01/10/2026 ("utilise toutes les données collectées") : fautes,

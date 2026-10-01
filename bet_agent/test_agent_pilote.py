@@ -125,6 +125,36 @@ class TestExecuterAgentPilote(unittest.TestCase):
         contenus_outils = [m["content"] for m in dernier_appel_messages if m.get("role") == "tool"]
         self.assertTrue(any("erreur" in c for c in contenus_outils))
 
+    def test_voir_catalogue_transmet_le_contexte_par_match(self):
+        # Correctif réel (01/10/2026) : voir_catalogue ne renvoyait QUE les lignes de paris,
+        # jamais le contexte par match (buts attendus, forme...) alors que le prompt système
+        # demande explicitement à l'IA de s'en servir — st._contexte(pool) existait déjà pour
+        # le moteur déterministe mais n'était jamais appelé ici.
+        pool_avec_contexte = {"A vs B": [{
+            "match": "A vs B", "pick": {"categorie": "Total", "marche": "Total (2.5)", "selection": "Over",
+                                        "cote": 1.8, "proba_modele_pct": 62.0, "edge_pct": 8.0},
+            "contexte": {"buts_attendus": {"domicile": 1.8, "exterieur": 1.1},
+                         "forme": {"domicile": {"points_par_match": 2.1, "clean_sheets_sur_10": 4}}},
+        }]}
+        reponses = [
+            _msg_outil("collecter_donnees", {}),
+            _msg_outil("voir_catalogue", {}),
+            _msg_outil("abandonner", {"raison": "test"}),
+        ]
+        with mock.patch.object(cd, "collecter_donnees", return_value=None), \
+                mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(DONNEES_FACTICES))), \
+                mock.patch.object(ae, "PROFILS_COUPON", [PROFIL]), \
+                mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=pool_avec_contexte), \
+                mock.patch.object(pilote, "_appel_api", side_effect=[(r, 65536) for r in reponses]) as appel:
+            pilote.executer(mission="test", telegram=False)
+        dernier_appel_messages = appel.call_args_list[-1].args[1]
+        contenus_outils = [m["content"] for m in dernier_appel_messages if m.get("role") == "tool"]
+        texte_catalogue = next(c for c in contenus_outils if "contexte_par_match" in c)
+        self.assertIn("Buts attendus (modèle) : 1.8", texte_catalogue)
+        self.assertIn("Forme récente (équipe domicile", texte_catalogue)
+        self.assertIn("2.1 point(s)/match", texte_catalogue)
+        self.assertIn("4 clean sheet(s) sur 10", texte_catalogue)
+
 
 PROFIL_1 = {"cle": "sur", "nom": "🛡️ SÛR", "cote_min": 0.0, "cote_max": 1000.0, "nb_jambes_min": 1, "nb_jambes": 2}
 PROFIL_2 = {"cle": "equilibre", "nom": "⚖️ ÉQUILIBRÉ", "cote_min": 0.0, "cote_max": 1000.0, "nb_jambes_min": 1, "nb_jambes": 2}

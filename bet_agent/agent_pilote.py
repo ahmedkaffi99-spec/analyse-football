@@ -130,10 +130,12 @@ def construire_outils_schemas(profils):
         {"type": "function", "function": {
             "name": "voir_catalogue",
             "description": f"Renvoie le profil EN COURS (parmi les {n} — {noms}, indique sa position "
-                           f"\"2/{n}\" par ex.) avec ses contraintes de cote, et le CATALOGUE de paris réels (identifiants "
+                           f"\"2/{n}\" par ex.) avec ses contraintes de cote, le CATALOGUE de paris réels (identifiants "
                            "P1, P2..., marché, sélection, cote brute, ET la probabilité/edge calculés par Python "
                            "(Poisson) quand le marché est modélisable — base ta décision sur CES chiffres ; seuls les "
-                           "marchés bruts signalés sans calcul demandent ton propre jugement), identique pour les "
+                           "marchés bruts signalés sans calcul demandent ton propre jugement), ET le CONTEXTE par "
+                           "match (buts attendus, confrontations directes, blessures, prédictions API-Football, "
+                           "forme récente, extraits de presse) — identique pour les "
                            f"{n} profils. Nécessite la collecte.",
             "parameters": {"type": "object", "properties": {}}}},
         {"type": "function", "function": {
@@ -311,7 +313,7 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
     # rédigé automatiquement, plus besoin d'un outil rediger_coupon séparé).
     profils = list(profils) if profils is not None else list(ae.PROFILS_COUPON)
     etat = {
-        "donnees": None, "pool": None, "catalogue": None, "catalogue_texte": None,
+        "donnees": None, "pool": None, "catalogue": None, "catalogue_texte": None, "contexte_texte": None,
         "profils": profils, "profil_index": 0, "textes": [], "resultats_profils": [],
         "nb_recherches": 0, "termine": False, "envoye": False, "raison_abandon": None,
     }
@@ -337,6 +339,12 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
         if etat["catalogue"] is None:
             etat["pool"] = ae.agent3_calcul_pool_candidats(etat["donnees"])
             etat["catalogue"], etat["catalogue_texte"] = st.construire_catalogue(etat["pool"])
+            # contexte_texte (01/10/2026, correctif réel) : voir_catalogue ne renvoyait QUE les
+            # lignes de paris, jamais le contexte par match (buts attendus, confrontations
+            # directes, blessures, prédictions, forme, presse) alors que le prompt système
+            # demande explicitement à l'IA de s'en servir — st._contexte(pool) le construisait
+            # déjà pour le moteur déterministe (construire_prompt), jamais branché ici.
+            etat["contexte_texte"] = st._contexte(etat["pool"])
         if not etat["catalogue"]:
             return {"erreur": "aucun candidat exploitable — pas assez de matchs avec marchés 1xBet collectés"}
         if etat["profil_index"] >= len(etat["profils"]):
@@ -351,6 +359,7 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
             "profil": {"nom": profil["nom"], "nb_jambes_min": profil.get("nb_jambes_min", 1),
                        "nb_jambes_max": profil["nb_jambes"]},
             "catalogue": etat["catalogue_texte"],
+            "contexte_par_match": etat["contexte_texte"],
         }
 
     def rechercher_web_outil(requete):

@@ -1600,6 +1600,18 @@ def _construire_contexte_prompt(selections_finales):
         if buts.get("domicile") is not None:
             lignes.append(f"- Buts attendus (modèle) : {buts['domicile']} pour l'équipe domicile, "
                           f"{buts['exterieur']} pour l'équipe extérieure")
+        forme = ctx.get("forme") or {}
+        for cote in ("domicile", "exterieur"):
+            f = forme.get(cote)
+            if not f:
+                continue
+            details = []
+            if f.get("points_par_match") is not None:
+                details.append(f"{f['points_par_match']} point(s)/match")
+            if f.get("clean_sheets_sur_10") is not None:
+                details.append(f"{f['clean_sheets_sur_10']} clean sheet(s) sur 10")
+            if details:
+                lignes.append(f"- Forme récente (équipe {cote}, 10 derniers matchs) : {', '.join(details)}")
         h2h = ctx.get("head_to_head") or {}
         if h2h.get("matchs_analyses"):
             lignes.append(f"- Confrontations directes (API-Football, {h2h['matchs_analyses']} matchs) : "
@@ -1981,12 +1993,24 @@ def agent3_calcul_pool_candidats(donnees):
             home_xg, away_xg, _, _, _ = estimer_expected_goals_depuis_marches(marches)
             print(f"      → Stats indisponibles, repli sur estimation depuis les cotes : {home_xg} / {away_xg}")
 
+        # forme (01/10/2026, demande explicite) : points_par_match_moyenne/clean_sheets_nombre
+        # étaient collectés (stats_detaillees_10_matchs, 15 métriques API-Football) mais jamais
+        # montrés à l'IA — pas un marché à parier (aucune cote 1xBet dessus), juste un signal de
+        # FORME récente en plus des buts attendus (ex: une équipe en méforme malgré un bon xG).
+        forme = {
+            cote: {"points_par_match": sd.get("points_par_match_moyenne"),
+                   "clean_sheets_sur_10": sd.get("clean_sheets_nombre")}
+            for cote, sd in (("domicile", stats_detaillees.get("home") or {}),
+                              ("exterieur", stats_detaillees.get("away") or {}))
+            if sd.get("points_par_match_moyenne") is not None or sd.get("clean_sheets_nombre") is not None
+        }
         contexte_match = {
             "contexte_web": extraire_contexte_web(m),
             "buts_attendus": {"domicile": home_xg, "exterieur": away_xg},
             "head_to_head": m.get("head_to_head"),
             "blessures": m.get("blessures"),
             "predictions_api_football": m.get("predictions_api_football"),
+            "forme": forme or None,
         }
 
         # Réactivé le 30/09/2026 (compte API-Football passé Pro, "on est pro, on ne limite
