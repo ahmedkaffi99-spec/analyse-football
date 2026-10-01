@@ -360,6 +360,60 @@ def calculer_mu_cartons_depuis_stats_detaillees(sd_home, sd_away):
         return None
 
 
+def calculer_mu_fautes_depuis_stats_detaillees(sd_home, sd_away):
+    """Fautes commises attendues, domicile et extérieur SÉPARÉMENT, depuis les VRAIES stats des
+    10 derniers matchs (API-Football) — demande explicite du 01/10/2026 ("utilise toutes les
+    données collectées") : fautes_commises_moyenne/fautes_subies_moyenne (15 métriques déjà
+    collectées par recuperer_stats_10_derniers_matchs) étaient calculées mais jamais utilisées
+    pour modéliser un marché. Même méthode que les corners (attaque de l'une, "fautes subies"
+    de l'autre = tendance de l'adversaire à provoquer/concéder des fautes)."""
+    if not sd_home or not sd_away:
+        return None
+    champs = (sd_home.get("fautes_commises_moyenne"), sd_home.get("fautes_subies_moyenne"),
+              sd_away.get("fautes_commises_moyenne"), sd_away.get("fautes_subies_moyenne"))
+    if None in champs:
+        return None
+    try:
+        mu_home = (float(sd_home["fautes_commises_moyenne"]) + float(sd_away["fautes_subies_moyenne"])) / 2
+        mu_away = (float(sd_away["fautes_commises_moyenne"]) + float(sd_home["fautes_subies_moyenne"])) / 2
+    except (TypeError, ValueError):
+        return None
+    return round(max(0.15, mu_home), 2), round(max(0.15, mu_away), 2)
+
+
+def calculer_mu_tirs_depuis_stats_detaillees(sd_home, sd_away, cadres=False):
+    """Tirs attendus (cadrés si cadres=True, sinon totaux), domicile et extérieur, depuis les
+    VRAIES stats des 10 derniers matchs — demande explicite du 01/10/2026. Pas de notion
+    d'attaque/défense comme pour les corners : aucune statistique "tirs subis/concédés" n'est
+    collectée (seulement le volume de tirs PRODUITS par chaque équipe), donc le mu de chaque
+    équipe est directement sa propre moyenne — même principe que les cartons."""
+    if not sd_home or not sd_away:
+        return None
+    champ = "tirs_cadres_moyenne" if cadres else "tirs_totaux_moyenne"
+    t_home, t_away = sd_home.get(champ), sd_away.get(champ)
+    if t_home is None or t_away is None:
+        return None
+    try:
+        return round(max(0.15, float(t_home)), 2), round(max(0.15, float(t_away)), 2)
+    except (TypeError, ValueError):
+        return None
+
+
+def calculer_mu_hors_jeux_depuis_stats_detaillees(sd_home, sd_away):
+    """Hors-jeux attendus, domicile et extérieur, depuis les VRAIES stats des 10 derniers
+    matchs — demande explicite du 01/10/2026. Comme les tirs : aucune statistique "hors-jeux
+    subis" n'est collectée, le mu de chaque équipe est directement sa propre moyenne."""
+    if not sd_home or not sd_away:
+        return None
+    h_home, h_away = sd_home.get("hors_jeux_moyenne"), sd_away.get("hors_jeux_moyenne")
+    if h_home is None or h_away is None:
+        return None
+    try:
+        return round(max(0.15, float(h_home)), 2), round(max(0.15, float(h_away)), 2)
+    except (TypeError, ValueError):
+        return None
+
+
 def _est_ligne_quart(x):
     r = x * 4
     return abs(r - round(r)) < 1e-6 and (round(r) % 2 != 0)
@@ -674,7 +728,8 @@ def probabilites_sans_marge(marches):
 
 
 def evaluer_marches(marches, mu_home, mu_away, mu_corners=None, mu_cartons=None,
-                     mu_corners_equipes=None, mu_cartons_equipes=None):
+                     mu_corners_equipes=None, mu_cartons_equipes=None, mu_fautes_equipes=None,
+                     mu_tirs_equipes=None, mu_tirs_cadres_equipes=None, mu_hors_jeux_equipes=None):
     """Évalue tous les marchés (modèle Poisson), mélange chaque probabilité avec celle du
     marché sans marge, puis ne garde que les paris valables (edge plausible, probabilité
     suffisante, cote >= COTE_MIN_JAMBE). Un pari sans probabilité de marché calculable
@@ -682,7 +737,8 @@ def evaluer_marches(marches, mu_home, mu_away, mu_corners=None, mu_cartons=None,
     marche_sans_marge = probabilites_sans_marge(marches)
     retenus = []
     for c in _evaluer_marches_brut(marches, mu_home, mu_away, mu_corners, mu_cartons,
-                                    mu_corners_equipes, mu_cartons_equipes):
+                                    mu_corners_equipes, mu_cartons_equipes, mu_fautes_equipes,
+                                    mu_tirs_equipes, mu_tirs_cadres_equipes, mu_hors_jeux_equipes):
         if c["categorie"] in CATEGORIES_EXCLUES or c["cote"] < COTE_MIN_JAMBE:
             continue
         p_marche = marche_sans_marge.get((c["marche"], c["selection"]))
@@ -700,7 +756,8 @@ def evaluer_marches(marches, mu_home, mu_away, mu_corners=None, mu_cartons=None,
 
 
 def evaluer_marches_toutes(marches, mu_home, mu_away, mu_corners=None, mu_cartons=None,
-                            mu_corners_equipes=None, mu_cartons_equipes=None):
+                            mu_corners_equipes=None, mu_cartons_equipes=None, mu_fautes_equipes=None,
+                            mu_tirs_equipes=None, mu_tirs_cadres_equipes=None, mu_hors_jeux_equipes=None):
     """Comme evaluer_marches, mais SANS le filtre edge/probabilité (candidat_valide) : renvoie
     TOUS les marchés modélisables (edge et probabilité calculés pour chacun, y compris edge
     négatif ou faible), au lieu d'une short-list déjà triée par un seuil Python. Demande
@@ -711,7 +768,8 @@ def evaluer_marches_toutes(marches, mu_home, mu_away, mu_corners=None, mu_carton
     marche_sans_marge = probabilites_sans_marge(marches)
     retenus = []
     for c in _evaluer_marches_brut(marches, mu_home, mu_away, mu_corners, mu_cartons,
-                                    mu_corners_equipes, mu_cartons_equipes):
+                                    mu_corners_equipes, mu_cartons_equipes, mu_fautes_equipes,
+                                    mu_tirs_equipes, mu_tirs_cadres_equipes, mu_hors_jeux_equipes):
         if c["categorie"] in CATEGORIES_EXCLUES or c["cote"] < COTE_MIN_JAMBE:
             continue
         p_marche = marche_sans_marge.get((c["marche"], c["selection"]))
@@ -794,15 +852,20 @@ def est_marche_match_entier(marche):
 
 
 def _evaluer_marches_brut(marches, mu_home, mu_away, mu_corners=None, mu_cartons=None,
-                           mu_corners_equipes=None, mu_cartons_equipes=None):
+                           mu_corners_equipes=None, mu_cartons_equipes=None, mu_fautes_equipes=None,
+                           mu_tirs_equipes=None, mu_tirs_cadres_equipes=None, mu_hors_jeux_equipes=None):
     """Parcourt tous les marchés bruts collectés et calcule un edge réel pour ceux
-    qu'on sait modéliser (Total buts/corners/cartons, BTTS, Handicap Asiatique,
-    Handicap Corners/Cartons, Double Chance, Draw No Bet). mu_corners/mu_cartons sont
-    optionnels — si absents, les marchés Total Corners/Cartons sont simplement ignorés (pas
-    de donnée = pas de pari). mu_corners_equipes/mu_cartons_equipes (01/10/2026, demande
-    explicite "carton et corner faut calcule en poisson [le handicap]") : tuple (mu_home,
-    mu_away) optionnel, pour modéliser Corners - Handicap / Bookings - Handicap avec
-    proba_handicap_couvert — absent, ces marchés restent en brut sans calcul (comme avant).
+    qu'on sait modéliser (Total buts/corners/cartons/fautes/tirs/hors-jeux, BTTS, Handicap
+    Asiatique, Handicap Corners/Cartons/Fautes/Tirs/Hors-jeux, Double Chance, Draw No Bet).
+    mu_corners/mu_cartons sont optionnels — si absents, les marchés Total Corners/Cartons sont
+    simplement ignorés (pas de donnée = pas de pari). mu_corners_equipes/mu_cartons_equipes
+    (01/10/2026, demande explicite "carton et corner faut calcule en poisson [le handicap]") :
+    tuple (mu_home, mu_away) optionnel, pour modéliser Corners - Handicap / Bookings - Handicap
+    avec proba_handicap_couvert — absent, ces marchés restent en brut sans calcul (comme avant).
+    mu_fautes_equipes/mu_tirs_equipes/mu_tirs_cadres_equipes/mu_hors_jeux_equipes (01/10/2026,
+    demande explicite "utilise toutes les données collectées") : même principe pour Fautes,
+    Tirs (totaux et cadrés distincts) et Hors-jeux — ces 4 statistiques étaient déjà collectées
+    par recuperer_stats_10_derniers_matchs mais jamais utilisées pour calculer une probabilité.
 
     Les lignes 'quart' (.25/.75) sont exclues de la sélection finale : vérifié en pratique
     que ces lignes n'existent pas toujours comme option cliquable réelle sur 1xbet, même
@@ -836,13 +899,18 @@ def _evaluer_marches_brut(marches, mu_home, mu_away, mu_corners=None, mu_cartons
             est_team2 = "team 2" in nom or "team2" in nom
             est_corner = "corner" in nom
             est_carton = "card" in nom or "booking" in nom
+            est_faute = "foul" in nom
+            est_tir_cadre = "shot" in nom and ("on target" in nom or "on goal" in nom)
+            est_tir = "shot" in nom and not est_tir_cadre
+            est_hors_jeu = "offside" in nom
 
-            if (est_corner or est_carton) and (est_team1 or est_team2):
-                # Marché "Total Corners/Cards Team 1/2" : seule la ligne globale du
-                # match est estimée (mu_corners/mu_cartons), aucun mu par équipe
-                # n'est calculé — on n'invente pas ce chiffre, on ignore ce marché
-                # plutôt que de l'évaluer à tort contre le total du match entier
-                # (c'est exactement la confusion Team1/Team2-vs-total interdite).
+            if (est_corner or est_carton or est_faute or est_tir or est_tir_cadre or est_hors_jeu) \
+                    and (est_team1 or est_team2):
+                # Marché "Total Corners/Cards/Fouls/Shots/Offsides Team 1/2" : seule la ligne
+                # globale du match est estimée ici, aucun mu PAR ÉQUIPE pour CE marché précis
+                # n'est câblé jusqu'ici — on n'invente pas ce chiffre, on ignore ce marché
+                # plutôt que de l'évaluer à tort contre le total du match entier (c'est
+                # exactement la confusion Team1/Team2-vs-total interdite).
                 continue
             elif est_corner:
                 if mu_corners is None:
@@ -854,6 +922,26 @@ def _evaluer_marches_brut(marches, mu_home, mu_away, mu_corners=None, mu_cartons
                     continue
                 mu_cible = mu_cartons
                 categorie = "Total Cartons"
+            elif est_faute:
+                if mu_fautes_equipes is None:
+                    continue
+                mu_cible = sum(mu_fautes_equipes)
+                categorie = "Total Fautes"
+            elif est_tir_cadre:
+                if mu_tirs_cadres_equipes is None:
+                    continue
+                mu_cible = sum(mu_tirs_cadres_equipes)
+                categorie = "Total Tirs Cadrés"
+            elif est_tir:
+                if mu_tirs_equipes is None:
+                    continue
+                mu_cible = sum(mu_tirs_equipes)
+                categorie = "Total Tirs"
+            elif est_hors_jeu:
+                if mu_hors_jeux_equipes is None:
+                    continue
+                mu_cible = sum(mu_hors_jeux_equipes)
+                categorie = "Total Hors-jeux"
             elif est_team1:
                 mu_cible = mu_home  # total de buts de l'équipe domicile SEULE
                 categorie = "Total Équipe 1"
@@ -977,9 +1065,20 @@ def _evaluer_marches_brut(marches, mu_home, mu_away, mu_corners=None, mu_cartons
         # aucun rapport. Absent (pas de stats détaillées, et pour les corners aucun repli
         # marché n'est tenté — "jamais fiable", même choix que pour Total Corners), le marché
         # reste non modélisé, géré uniquement en brut par completer_avec_marches_bruts.
-        elif "handicap" in nom and ("corner" in nom or "card" in nom or "booking" in nom):
-            mu_equipes = mu_corners_equipes if "corner" in nom else mu_cartons_equipes
-            categorie = "Handicap Corners" if "corner" in nom else "Handicap Cartons"
+        elif "handicap" in nom and ("corner" in nom or "card" in nom or "booking" in nom
+                                     or "foul" in nom or "shot" in nom or "offside" in nom):
+            if "corner" in nom:
+                mu_equipes, categorie = mu_corners_equipes, "Handicap Corners"
+            elif "card" in nom or "booking" in nom:
+                mu_equipes, categorie = mu_cartons_equipes, "Handicap Cartons"
+            elif "foul" in nom:
+                mu_equipes, categorie = mu_fautes_equipes, "Handicap Fautes"
+            elif "offside" in nom:
+                mu_equipes, categorie = mu_hors_jeux_equipes, "Handicap Hors-jeux"
+            elif "on target" in nom or "on goal" in nom:
+                mu_equipes, categorie = mu_tirs_cadres_equipes, "Handicap Tirs Cadrés"
+            else:
+                mu_equipes, categorie = mu_tirs_equipes, "Handicap Tirs"
             if handicap is None or mu_equipes is None:
                 continue
             mu_h, mu_a = mu_equipes
@@ -1065,7 +1164,8 @@ def expliquer_marche(categorie, selection_brute, handicap):
     (une seule équipe) — c'est la confusion que le LLM faisait en improvisant ce texte lui-même."""
     sel = (selection_brute or "").lower()
 
-    if categorie in ("Total", "Total Équipe 1", "Total Équipe 2", "Total Corners", "Total Cartons"):
+    if categorie in ("Total", "Total Équipe 1", "Total Équipe 2", "Total Corners", "Total Cartons",
+                      "Total Fautes", "Total Tirs", "Total Tirs Cadrés", "Total Hors-jeux"):
         sens = "inférieur" if "under" in sel else "supérieur"
         objet_par_categorie = {
             "Total": ("le nombre total de buts du match", "onglet Total (buts du match entier)"),
@@ -1075,6 +1175,10 @@ def expliquer_marche(categorie, selection_brute, handicap):
                                 "onglet Total équipe 2 / Total buts équipe extérieure"),
             "Total Corners": ("le nombre total de corners du match", "onglet Corners / Total corners"),
             "Total Cartons": ("le nombre total de cartons (jaunes + rouges) du match", "onglet Cartons / Total cartons"),
+            "Total Fautes": ("le nombre total de fautes commises du match", "onglet Fautes / Total fautes"),
+            "Total Tirs": ("le nombre total de tirs (cadrés + non cadrés) du match", "onglet Tirs / Total tirs"),
+            "Total Tirs Cadrés": ("le nombre total de tirs CADRÉS du match", "onglet Tirs cadrés / Shots on target"),
+            "Total Hors-jeux": ("le nombre total de hors-jeux du match", "onglet Hors-jeux / Offsides"),
         }
         objet, onglet = objet_par_categorie[categorie]
         return f"{objet} doit être {sens} à {handicap}", onglet
@@ -1144,8 +1248,13 @@ def expliquer_marche(categorie, selection_brute, handicap):
             guide = f"l'équipe {cote_txt} part avec un désavantage fictif de {abs(h_effectif)} but(s)"
         return guide, f"onglet {onglet_nom}"
 
-    if categorie in ("Handicap Corners", "Handicap Cartons"):
-        unite = "corner(s)" if categorie == "Handicap Corners" else "carton(s) jaune(s)"
+    if categorie in ("Handicap Corners", "Handicap Cartons", "Handicap Fautes", "Handicap Tirs",
+                      "Handicap Tirs Cadrés", "Handicap Hors-jeux"):
+        unite = {
+            "Handicap Corners": "corner(s)", "Handicap Cartons": "carton(s) jaune(s)",
+            "Handicap Fautes": "faute(s)", "Handicap Tirs": "tir(s)",
+            "Handicap Tirs Cadrés": "tir(s) cadré(s)", "Handicap Hors-jeux": "hors-jeu(x)",
+        }[categorie]
         if sel in ("home", "1"):
             cote_txt, h_effectif = "domicile", handicap
         elif sel in ("away", "2"):
@@ -1908,9 +2017,25 @@ def agent3_calcul_pool_candidats(donnees):
             a = estimer_ligne_equilibree(marches, ["card", "booking"], equipe=2)
             cartons_equipes = (h, a) if h is not None and a is not None else None
 
+        # fautes_equipes/tirs_equipes/tirs_cadres_equipes/hors_jeux_equipes (01/10/2026,
+        # demande explicite "utilise toutes les données collectées") : mêmes 10 derniers
+        # matchs API-Football déjà appelés ci-dessus pour corners/cartons/xG, aucun appel
+        # réseau supplémentaire — None si les stats détaillées manquent (pas de repli marché
+        # tenté, contrairement aux cartons : ces 3 statistiques n'ont pas de ligne 1xBet
+        # "équilibrée" assez fiable par match pour servir de repli).
+        fautes_equipes = calculer_mu_fautes_depuis_stats_detaillees(stats_detaillees.get("home"), stats_detaillees.get("away"))
+        tirs_equipes = calculer_mu_tirs_depuis_stats_detaillees(stats_detaillees.get("home"), stats_detaillees.get("away"))
+        tirs_cadres_equipes = calculer_mu_tirs_depuis_stats_detaillees(
+            stats_detaillees.get("home"), stats_detaillees.get("away"), cadres=True)
+        hors_jeux_equipes = calculer_mu_hors_jeux_depuis_stats_detaillees(stats_detaillees.get("home"), stats_detaillees.get("away"))
+
         candidats_modelises = evaluer_marches_toutes(marches, home_xg, away_xg, mu_corners, mu_cartons,
                                                       mu_corners_equipes=corners_equipes,
-                                                      mu_cartons_equipes=cartons_equipes)
+                                                      mu_cartons_equipes=cartons_equipes,
+                                                      mu_fautes_equipes=fautes_equipes,
+                                                      mu_tirs_equipes=tirs_equipes,
+                                                      mu_tirs_cadres_equipes=tirs_cadres_equipes,
+                                                      mu_hors_jeux_equipes=hors_jeux_equipes)
         candidats = completer_avec_marches_bruts(candidats_modelises, marches)
         print(f"      → {len(marches)} marchés bruts scannés, {len(candidats_modelises)} modélisé(s) par "
               f"Poisson + {len(candidats) - len(candidats_modelises)} brut(s) sans calcul — {len(candidats)} "

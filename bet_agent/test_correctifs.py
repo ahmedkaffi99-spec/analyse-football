@@ -141,6 +141,86 @@ class TestMuCornersEtCartonsStatsDetaillees(unittest.TestCase):
         self.assertIn("Total Cartons", categories)
 
 
+class TestMuFautesTirsHorsJeuxStatsDetaillees(unittest.TestCase):
+    """Demande explicite du 01/10/2026 ("utilise toutes les données collectées") : fautes,
+    tirs (cadrés et totaux) et hors-jeux étaient déjà collectés par recuperer_stats_10_
+    derniers_matchs (15 métriques API-Football) mais jamais utilisés pour modéliser un marché
+    — ils tombaient en "marché brut, aucun calcul Python". Même traitement Poisson que les
+    corners/cartons."""
+
+    def test_calcul_fautes(self):
+        home = {"fautes_commises_moyenne": 12.0, "fautes_subies_moyenne": 10.0}
+        away = {"fautes_commises_moyenne": 14.0, "fautes_subies_moyenne": 11.0}
+        # mu_home = (12.0 + 11.0)/2 = 11.5 ; mu_away = (14.0 + 10.0)/2 = 12.0 — même principe
+        # attaque/défense que les corners (fautes_subies = fautes provoquées par l'adversaire).
+        self.assertEqual(ae.calculer_mu_fautes_depuis_stats_detaillees(home, away), (11.5, 12.0))
+
+    def test_fautes_champ_manquant_renvoie_none(self):
+        self.assertIsNone(ae.calculer_mu_fautes_depuis_stats_detaillees(
+            {"fautes_commises_moyenne": 12.0, "fautes_subies_moyenne": None},
+            {"fautes_commises_moyenne": 14.0, "fautes_subies_moyenne": 11.0}))
+
+    def test_calcul_tirs_totaux_et_cadres(self):
+        home = {"tirs_totaux_moyenne": 13.0, "tirs_cadres_moyenne": 5.0}
+        away = {"tirs_totaux_moyenne": 9.0, "tirs_cadres_moyenne": 3.0}
+        # Pas de split attaque/défense (aucune statistique "tirs subis" collectée) : le mu de
+        # chaque équipe est directement sa propre moyenne, comme pour les cartons.
+        self.assertEqual(ae.calculer_mu_tirs_depuis_stats_detaillees(home, away), (13.0, 9.0))
+        self.assertEqual(ae.calculer_mu_tirs_depuis_stats_detaillees(home, away, cadres=True), (5.0, 3.0))
+
+    def test_tirs_champ_manquant_renvoie_none(self):
+        self.assertIsNone(ae.calculer_mu_tirs_depuis_stats_detaillees({"tirs_totaux_moyenne": 13.0}, {}))
+
+    def test_calcul_hors_jeux(self):
+        home, away = {"hors_jeux_moyenne": 2.5}, {"hors_jeux_moyenne": 1.5}
+        self.assertEqual(ae.calculer_mu_hors_jeux_depuis_stats_detaillees(home, away), (2.5, 1.5))
+
+    def test_hors_jeux_absent_renvoie_none(self):
+        self.assertIsNone(ae.calculer_mu_hors_jeux_depuis_stats_detaillees(None, {"hors_jeux_moyenne": 1.5}))
+
+    def test_total_fautes_tirs_hors_jeux_modelises_avec_edge(self):
+        marches = [
+            {"marche": "Fouls - Over Under Full Time", "handicap": 23.5, "periode": "fulltime",
+             "selections": [{"selection": "Over", "cote": 1.9}, {"selection": "Under", "cote": 1.9}]},
+            {"marche": "Shots - Over Under Full Time", "handicap": 21.5, "periode": "fulltime",
+             "selections": [{"selection": "Over", "cote": 1.9}, {"selection": "Under", "cote": 1.9}]},
+            {"marche": "Shots On Target - Over Under Full Time", "handicap": 8.5, "periode": "fulltime",
+             "selections": [{"selection": "Over", "cote": 1.9}, {"selection": "Under", "cote": 1.9}]},
+            {"marche": "Offsides - Over Under Full Time", "handicap": 3.5, "periode": "fulltime",
+             "selections": [{"selection": "Over", "cote": 1.9}, {"selection": "Under", "cote": 1.9}]},
+        ]
+        candidats = ae.evaluer_marches_toutes(
+            marches, 1.5, 1.2,
+            mu_fautes_equipes=(11.5, 12.0), mu_tirs_equipes=(13.0, 9.0),
+            mu_tirs_cadres_equipes=(5.0, 3.0), mu_hors_jeux_equipes=(2.5, 1.5))
+        categories = {c["categorie"] for c in candidats}
+        self.assertEqual(categories, {"Total Fautes", "Total Tirs", "Total Tirs Cadrés", "Total Hors-jeux"})
+        for c in candidats:
+            self.assertIsNotNone(c["proba_modele_pct"])
+            self.assertIsNotNone(c["edge_pct"])
+
+    def test_handicap_fautes_tirs_hors_jeux_modelises(self):
+        marches = [
+            {"marche": "Fouls - Handicap", "handicap": -1.5, "periode": "fulltime",
+             "selections": [{"selection": "Home", "cote": 1.9}, {"selection": "Away", "cote": 1.9}]},
+            {"marche": "Offsides - Handicap", "handicap": 0.5, "periode": "fulltime",
+             "selections": [{"selection": "Home", "cote": 1.9}, {"selection": "Away", "cote": 1.9}]},
+        ]
+        candidats = ae._evaluer_marches_brut(
+            marches, 1.5, 1.2, mu_fautes_equipes=(11.5, 12.0), mu_hors_jeux_equipes=(2.5, 1.5))
+        categories = {c["categorie"] for c in candidats}
+        self.assertEqual(categories, {"Handicap Fautes", "Handicap Hors-jeux"})
+
+    def test_sans_donnee_reste_marche_brut_sans_calcul(self):
+        marches = [{"marche": "Fouls - Over Under Full Time", "handicap": 23.5, "periode": "fulltime",
+                     "selections": [{"selection": "Over", "cote": 1.9}, {"selection": "Under", "cote": 1.9}]}]
+        candidats_modelises = ae.evaluer_marches_toutes(marches, 1.5, 1.2)  # mu_fautes_equipes absent
+        self.assertEqual(candidats_modelises, [])
+        candidats = ae.completer_avec_marches_bruts(candidats_modelises, marches)
+        self.assertEqual(len(candidats), 2)  # Over et Under, toutes deux sans calcul
+        self.assertTrue(all(c["proba_modele_pct"] is None for c in candidats))
+
+
 class TestTelegram(unittest.TestCase):
     def test_repli_texte_brut_si_markdown_casse(self):
         erreur = mock.Mock(status_code=400, text='{"description":"Bad Request: can\'t parse entities"}')
