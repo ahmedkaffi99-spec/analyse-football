@@ -1242,12 +1242,38 @@ def collecter_donnees():
         if not matchs_a_traiter and liste_manuelle_du_jour:
             matchs_a_traiter = MATCHS_MANUELS
 
+    # Complément automatique de la sélection manuelle (demande explicite du 01/10/2026 : "si
+    # les coupon total est faible ajoute sélection automatique pour augmenter le nombre de
+    # match et cote total") — constaté en pratique (run 72, 9 matchs manuels) : seulement 7/9
+    # exploitables (1 trop proche du coup d'envoi, 1 sans marché 1xBet), coupons à cote très
+    # faible (1.74-5.08) faute d'assez de jambes disponibles. Les matchs manuels restent TOUS
+    # traités en premier, sans aucune restriction (comportement inchangé) ; des candidats
+    # AUTOMATIQUES (mêmes règles que la sélection du jour : exclusion féminines, arrêt dès
+    # NB_MATCHS_MAX matchs AVEC marchés atteint) sont ajoutés À LA SUITE, uniquement pour
+    # combler si la liste manuelle ne suffit pas — jamais pour remplacer ou raccourcir les
+    # matchs demandés explicitement.
+    nb_manuels = len(matchs_a_traiter)
+    if mode_manuel:
+        candidats_auto = selectionner_matchs_du_jour(fixtures_oddspapi)
+        deja_demandes = list(matchs_a_traiter)
+
+        def _deja_couvert(home, away):
+            return any(score_paire_equipes(home, away, h2, a2) >= SEUIL_MATCH_ACCEPTABLE
+                       for h2, a2 in deja_demandes)
+
+        supplement = [(h, a) for h, a in candidats_auto if not _deja_couvert(h, a)]
+        if supplement:
+            print(f"   ➕ {len(supplement)} match(s) automatique(s) ajouté(s) à la suite des {nb_manuels} "
+                  "manuel(s), au cas où ils ne suffiraient pas à eux seuls (jamais à la place).")
+            matchs_a_traiter = matchs_a_traiter + supplement
+
     tous_fixtures_af = recuperer_fixtures_api_football()
 
     resultats = []
 
-    for home_demande, away_demande in matchs_a_traiter:
-        if not mode_manuel and sum(1 for r in resultats if r["oddspapi"]["tous_marches"]) >= NB_MATCHS_MAX:
+    for indice, (home_demande, away_demande) in enumerate(matchs_a_traiter):
+        est_manuel = mode_manuel and indice < nb_manuels
+        if not est_manuel and sum(1 for r in resultats if r["oddspapi"]["tous_marches"]) >= NB_MATCHS_MAX:
             print(f"   ✓ {NB_MATCHS_MAX} matchs avec marchés trouvés — sondage des candidats restants arrêté.")
             break
         print(f"   → Collecte : {home_demande} vs {away_demande}")
@@ -1272,7 +1298,7 @@ def collecter_donnees():
         else:
             print(f"      ⚠️ Aucune correspondance API-Football (meilleur score : {score_af:.0f}%)")
 
-        if not mode_manuel and donnees_af and (
+        if not est_manuel and donnees_af and (
                 est_equipe_feminine_api_football(donnees_af["home_name"])
                 or est_equipe_feminine_api_football(donnees_af["away_name"])):
             print(f"      ⏭️ Match féminin ({donnees_af['home_name']} vs {donnees_af['away_name']}) — ignoré.")
@@ -1294,7 +1320,7 @@ def collecter_donnees():
         else:
             print(f"      ⚠️ Aucune correspondance OddsPapi (meilleur score : {score_op:.0f}%)")
 
-        if not tous_marches and not mode_manuel:
+        if not tous_marches and not est_manuel:
             print("      ⏭️ Aucun marché exploitable — match écarté sans autre appel (stats, Elo, presse).")
             continue
 

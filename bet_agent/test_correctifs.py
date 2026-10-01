@@ -284,8 +284,11 @@ class TestListeManuellePerimee(unittest.TestCase):
         auto.assert_called_once()
 
     def test_liste_du_jour_utilisee(self):
+        # selectionner_matchs_du_jour EST appelée (complément automatique du 01/10/2026, voir
+        # TestComplementAutomatiqueListeManuelle) mais son résultat ([] ici) n'affecte pas la
+        # liste manuelle elle-même, utilisée telle quelle.
         _, auto = self._collecter(datetime.now().strftime("%Y-%m-%d"))
-        auto.assert_not_called()
+        auto.assert_called_once()
 
     def test_liste_valable_sur_plusieurs_dates(self):
         # Constaté le 30/09/2026 : une liste manuelle couvrant une journée de Ligue des
@@ -303,7 +306,7 @@ class TestListeManuellePerimee(unittest.TestCase):
                     mock.patch.object(cd, "recuperer_fixtures_api_football", return_value=[]), \
                     mock.patch.object(cd, "selectionner_matchs_du_jour", return_value=[]) as auto:
                 cd.collecter_donnees()
-        auto.assert_not_called()
+        auto.assert_called_once()  # complément automatique (01/10/2026) — résultat vide ici
 
 
 class TestMatchsManuelsEnv(unittest.TestCase):
@@ -338,7 +341,7 @@ class TestMatchsManuelsEnv(unittest.TestCase):
                     mock.patch.object(cd, "collecter_contexte_serper", return_value=None), \
                     mock.patch.object(cd, "selectionner_matchs_du_jour", return_value=[]) as auto:
                 cd.collecter_donnees()
-        auto.assert_not_called()
+        auto.assert_called_once()  # complément automatique (01/10/2026) — résultat vide ici
 
 
 if __name__ == "__main__":
@@ -1015,6 +1018,90 @@ class TestCollecteEfficace(unittest.TestCase):
         self.assertEqual([m["oddspapi"]["fixture_id"] for m in sortie["matchs"]], ["f1", "f3"])
         self.assertEqual(serper.call_count, 2)
         self.assertEqual(cotes.call_count, 4)  # f0, f1, f2, f3 sondés — pas f4 ni f5
+
+
+def _fixture_op(fid, p1, p2):
+    return {"fixtureId": fid, "participant1Name": p1, "participant2Name": p2,
+            "hasOdds": True, "statusName": "Pre-Game", "startTime": "2099-01-01T15:00:00Z"}
+
+
+class TestComplementAutomatiqueListeManuelle(unittest.TestCase):
+    """Demande explicite du 01/10/2026 : "si les coupon total est faible ajoute sélection
+    automatique pour augmenter le nombre de match et cote total" — constaté en pratique (run
+    72, 9 matchs manuels, seulement 7 exploitables, coupons à cote très faible). En mode
+    manuel, des candidats automatiques (selectionner_matchs_du_jour, mêmes règles que la
+    sélection du jour) sont ajoutés À LA SUITE des matchs manuels — jamais à la place, et
+    jamais en double emploi avec un match déjà demandé manuellement."""
+
+    MARCHES = [{"marche": "Over Under Full Time", "handicap": 2.5, "periode": "fulltime",
+               "selections": [{"selection": "Over", "cote": 1.9}]}]
+
+    def test_complement_ajoute_apres_les_manuels_sans_doublon(self):
+        fixtures = [_fixture_op("fA", "Lyon", "Monaco"), _fixture_op("fC", "Lille", "Nantes")]
+        with tempfile.TemporaryDirectory() as d, \
+                mock.patch.object(cd, "SORTIE_JSON", os.path.join(d, "out.json")), \
+                mock.patch.object(cd, "NB_MATCHS_MAX", 5), \
+                mock.patch.object(cd, "MATCHS_MANUELS_ENV", "Lyon - Monaco"), \
+                mock.patch.object(cd, "verifier_quota_oddspapi", return_value=True), \
+                mock.patch.object(cd, "_telecharger_fixtures_oddspapi", return_value=fixtures), \
+                mock.patch.object(cd, "recuperer_fixtures_api_football", return_value=[]), \
+                mock.patch.object(cd, "recuperer_marches_pour_fixture", return_value=self.MARCHES), \
+                mock.patch.object(cd, "collecter_contexte_serper", return_value=None), \
+                mock.patch.object(cd, "selectionner_matchs_du_jour",
+                                  # "Lyon - Monaco" est un DOUBLON du match manuel — ne
+                                  # doit jamais être recollecté une 2e fois.
+                                  return_value=[("Lyon", "Monaco"), ("Lille", "Nantes")]) as auto:
+            cd._cache_stats_equipes.clear()
+            cd.collecter_donnees()
+            with open(os.path.join(d, "out.json"), encoding="utf-8") as f:
+                sortie = json.load(f)
+        auto.assert_called_once()
+        noms = [(m["match_demande"]["home"], m["match_demande"]["away"]) for m in sortie["matchs"]]
+        self.assertEqual(noms, [("Lyon", "Monaco"), ("Lille", "Nantes")])
+
+    def test_aucun_complement_si_rien_de_nouveau(self):
+        fixtures = [_fixture_op("fA", "Lyon", "Monaco")]
+        with tempfile.TemporaryDirectory() as d, \
+                mock.patch.object(cd, "SORTIE_JSON", os.path.join(d, "out.json")), \
+                mock.patch.object(cd, "NB_MATCHS_MAX", 5), \
+                mock.patch.object(cd, "MATCHS_MANUELS_ENV", "Lyon - Monaco"), \
+                mock.patch.object(cd, "verifier_quota_oddspapi", return_value=True), \
+                mock.patch.object(cd, "_telecharger_fixtures_oddspapi", return_value=fixtures), \
+                mock.patch.object(cd, "recuperer_fixtures_api_football", return_value=[]), \
+                mock.patch.object(cd, "recuperer_marches_pour_fixture", return_value=self.MARCHES), \
+                mock.patch.object(cd, "collecter_contexte_serper", return_value=None), \
+                mock.patch.object(cd, "selectionner_matchs_du_jour",
+                                  return_value=[("Lyon", "Monaco")]) as auto:
+            cd._cache_stats_equipes.clear()
+            cd.collecter_donnees()
+            with open(os.path.join(d, "out.json"), encoding="utf-8") as f:
+                sortie = json.load(f)
+        auto.assert_called_once()
+        self.assertEqual(len(sortie["matchs"]), 1)
+
+    def test_matchs_manuels_jamais_coupes_meme_au_dela_de_nb_matchs_max(self):
+        # NB_MATCHS_MAX=1 ne doit JAMAIS raccourcir la liste manuelle elle-même (comportement
+        # déjà garanti avant ce correctif) — seul le COMPLÉMENT automatique respecte ce plafond.
+        fixtures = [_fixture_op("fA", "Lyon", "Monaco"), _fixture_op("fC", "Lille", "Nantes"),
+                   _fixture_op("fE", "Brest", "Reims")]
+        with tempfile.TemporaryDirectory() as d, \
+                mock.patch.object(cd, "SORTIE_JSON", os.path.join(d, "out.json")), \
+                mock.patch.object(cd, "NB_MATCHS_MAX", 1), \
+                mock.patch.object(cd, "MATCHS_MANUELS_ENV", "Lyon - Monaco, Lille - Nantes"), \
+                mock.patch.object(cd, "verifier_quota_oddspapi", return_value=True), \
+                mock.patch.object(cd, "_telecharger_fixtures_oddspapi", return_value=fixtures), \
+                mock.patch.object(cd, "recuperer_fixtures_api_football", return_value=[]), \
+                mock.patch.object(cd, "recuperer_marches_pour_fixture", return_value=self.MARCHES), \
+                mock.patch.object(cd, "collecter_contexte_serper", return_value=None), \
+                mock.patch.object(cd, "selectionner_matchs_du_jour", return_value=[("Brest", "Reims")]):
+            cd._cache_stats_equipes.clear()
+            cd.collecter_donnees()
+            with open(os.path.join(d, "out.json"), encoding="utf-8") as f:
+                sortie = json.load(f)
+        noms = [(m["match_demande"]["home"], m["match_demande"]["away"]) for m in sortie["matchs"]]
+        # Les 2 manuels sont présents malgré NB_MATCHS_MAX=1 ; le complément (Brest-F)
+        # n'est PAS ajouté puisque le plafond est déjà dépassé par les manuels seuls.
+        self.assertEqual(noms, [("Lyon", "Monaco"), ("Lille", "Nantes")])
 
 
 class TestOpenRouterSeulement(unittest.TestCase):

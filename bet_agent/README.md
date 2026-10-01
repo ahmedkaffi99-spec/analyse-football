@@ -99,6 +99,7 @@ Le LLM **n'invente jamais un chiffre** : cotes, probabilités et edges sont calc
 ### Collecte
 - Sélection automatique des matchs du jour avec cotes réelles, filtrée sur Ligue 1, Premier League, Serie A, Bundesliga, Liga (`FILTRE_LIGUES_UNIQUES`).
 - Sélection manuelle possible (`MATCHS_MANUELS`), **ignorée automatiquement si sa date n'est pas celle du jour**.
+- En mode manuel, un **complément automatique** (`selectionner_matchs_du_jour`, mêmes règles que la sélection du jour) est ajouté à la suite des matchs manuels depuis le 01/10/2026 (demande explicite : "si les coupons ont une cote totale faible, ajoute une sélection automatique pour augmenter le nombre de matchs") — jamais à la place des matchs manuels (tous traités en premier, sans restriction), jamais en double emploi (déduplication par similarité de noms d'équipe, seuil 80 %).
 - Rejet des équipes réserves/jeunes (II, U21, B team…).
 - Correspondance des matchs **équipe par équipe** entre sources (seuil 80 %).
 - Dédoublonnage des matchs, limitation de débit par API, retry réseau.
