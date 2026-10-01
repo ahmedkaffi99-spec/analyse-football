@@ -865,6 +865,35 @@ class TestContexteWeb(unittest.TestCase):
         self.assertIn("Confrontations directes", prompt)
 
 
+class TestLe1X2NEstPlusExclu(unittest.TestCase):
+    """Demande explicite de l'utilisateur (01/10/2026) : "même 1x2 ne exclu pas du tout" —
+    recuperer_marches_pour_fixture excluait jusqu'ici tout marché de type "1x2" ou nommé
+    "Full Time Result" (seule exclusion par catégorie restante à la collecte). Retiré : aucune
+    exclusion par catégorie nulle part, cohérent avec le principe déjà appliqué ailleurs."""
+
+    def test_full_time_result_desormais_inclus(self):
+        cd.MARKET_NAMES_CACHE.clear()
+        cd.MARKET_NAMES_CACHE["1"] = {"name": "Full Time Result", "type": "1x2", "handicap": None,
+                                      "period": "fulltime", "outcomes": {"1": "1", "2": "X", "3": "2"}}
+        cd.MARKET_NAMES_CACHE["2"] = {"name": "Over Under Full Time", "type": "over_under",
+                                      "handicap": 2.5, "period": "fulltime", "outcomes": {"1": "Over", "2": "Under"}}
+        donnees_brutes = [{"bookmakerOdds": {"1xbet": {"markets": {
+            "1": {"outcomes": {"1": {"players": {"0": {"price": 1.9}}},
+                               "2": {"players": {"0": {"price": 3.4}}},
+                               "3": {"players": {"0": {"price": 4.1}}}}},
+            "2": {"outcomes": {"1": {"players": {"0": {"price": 1.85}}},
+                               "2": {"players": {"0": {"price": 1.95}}}}},
+        }}}}]
+        with mock.patch.object(cd, "get_market_names", return_value=cd.MARKET_NAMES_CACHE), \
+                mock.patch.object(cd, "_telecharger_odds_oddspapi", return_value=donnees_brutes):
+            marches = cd.recuperer_marches_pour_fixture("f1")
+        noms = {m["marche"] for m in marches}
+        self.assertIn("Full Time Result", noms)
+        self.assertIn("Over Under Full Time", noms)
+        ftr = next(m for m in marches if m["marche"] == "Full Time Result")
+        self.assertEqual({s["selection"] for s in ftr["selections"]}, {"1", "X", "2"})
+
+
 class TestCollecteEfficace(unittest.TestCase):
     def test_match_trop_proche_du_coup_envoi_exclu(self):
         maintenant = datetime(2026, 9, 26, 12, 0, tzinfo=cd.timezone.utc)

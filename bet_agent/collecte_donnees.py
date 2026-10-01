@@ -281,7 +281,6 @@ def score_paire_equipes(home_cherche, away_cherche, home_candidat, away_candidat
 SORTIE_JSON = "donnees_collectees.json"
 
 MARKET_NAMES_CACHE = {}
-_COMPTE_DIAGNOSTIC_EXCLUS = {"n": 0}  # diagnostic temporaire (01/10/2026) — voir plus bas
 
 
 # ============================================================
@@ -1108,8 +1107,13 @@ def _telecharger_odds_oddspapi(fixture_id):
 
 
 def recuperer_marches_pour_fixture(fixture_id):
-    """Récupère TOUS les marchés 1xbet SAUF le 1X2, avec le vocabulaire brut
-    (noms de marché et de sélection tels que fournis par OddsPapi, sans simplification)."""
+    """Récupère TOUS les marchés 1xbet, y compris le 1X2 (Full Time Result) — demande
+    explicite de l'utilisateur (01/10/2026) : "même 1x2 ne exclu pas du tout" — plus aucune
+    exclusion par catégorie à la collecte, cohérent avec le principe déjà appliqué partout
+    ailleurs depuis le 30/09/2026 ("ne filtre pas les odds, donne brut à l'IA, laisse-la
+    juger"). Avant ce jour, le 1X2 était le seul marché encore filtré ici (motif jamais
+    documenté) ; le vocabulaire reste brut (noms de marché et de sélection tels que fournis
+    par OddsPapi, sans simplification)."""
     try:
         data = _telecharger_odds_oddspapi(fixture_id)
     except Exception as e:
@@ -1125,24 +1129,9 @@ def recuperer_marches_pour_fixture(fixture_id):
         markets = bookmaker_odds.get("markets", {})
         for market_id, market_data in markets.items():
             info_marche = noms_marches.get(str(market_id), {})
-            marche_type = info_marche.get("type", "")
-
-            # On exclut uniquement le 1X2 — tout le reste est gardé, en détail
-            if marche_type == "1x2" or info_marche.get("name") == "Full Time Result":
-                # Diagnostic temporaire (01/10/2026) : l'utilisateur signale plusieurs fois
-                # qu'un marché nommé juste "Handicap" (distinct d'Asian/European Handicap)
-                # existe sur 1xBet et ne devrait jamais être écarté — ce print confirme si ce
-                # filtre ("type" OddsPapi == "1x2") en est la cause en listant ce qu'il exclut
-                # vraiment (limité à quelques occurrences pour ne pas noyer les logs), à
-                # retirer une fois la cause confirmée ou infirmée.
-                nom_exclu = info_marche.get("name")
-                if nom_exclu != "Full Time Result" and _COMPTE_DIAGNOSTIC_EXCLUS["n"] < 20:
-                    _COMPTE_DIAGNOSTIC_EXCLUS["n"] += 1
-                    print(f"      🔍 [diagnostic] marché exclu (type=1x2) : nom=\"{nom_exclu}\" "
-                          f"handicap={info_marche.get('handicap')}")
-                continue
 
             nom_marche_brut = info_marche.get("name", f"Marché {market_id}")
+            marche_type = info_marche.get("type", "")
             handicap = info_marche.get("handicap")
             periode = info_marche.get("period")
             outcomes_noms = info_marche.get("outcomes", {})
@@ -1428,7 +1417,7 @@ def collecter_donnees():
 
     print(f"\n💾 Données sauvegardées dans {SORTIE_JSON}")
     print(f"   ✓ {sortie['nb_matchs_avec_marches']}/{sortie['nb_matchs_demandes']} matchs avec marchés 1xbet collectés")
-    print(f"   ✓ {sortie['nb_marches_total']} marchés au total (1X2 exclu, tout le reste en détail)")
+    print(f"   ✓ {sortie['nb_marches_total']} marchés au total (aucune exclusion, 1X2 inclus)")
     print(f"   ✓ {sortie['nb_equipes_avec_stats']}/{len(resultats) * 2} équipes avec stats historiques trouvées")
     if STATS_DETAILLEES_ACTIVE:
         print(f"   ✓ {sortie['nb_equipes_avec_stats_detaillees']}/{len(resultats) * 2} équipes avec stats "
