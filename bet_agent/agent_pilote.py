@@ -78,6 +78,12 @@ signaux est présent — ligne de quart (.25/.75), probabilité de gain que TU e
 données faibles sur ce match précis (pas/peu de stats, forme incertaine, enjeu flou). Un coupon combiné \
 perd dès qu'UNE SEULE jambe perd : limite-toi à AU PLUS une jambe fragile par coupon, le reste doit être des \
 paris où tu es vraiment confiant.
+- POUR ATTEINDRE LA COTE CIBLE, PRÉFÈRE PLUSIEURS JAMBES À COTE INDIVIDUELLE BASSE (favoris solides, cote \
+unitaire environ 1.1-1.5) PLUTÔT QUE QUELQUES JAMBES À COTE INDIVIDUELLE ÉLEVÉE (cote unitaire > 2) : la \
+probabilité de gagner TOUTES les jambes d'un combiné est bien meilleure en empilant des favoris nets qu'en \
+misant sur une poignée de paris incertains, même si le nombre de jambes augmente. Ce n'est PAS une contradiction \
+avec la règle précédente (moins de jambes si rien de solide) : s'il y a assez de favoris nets défendables pour \
+le match du jour, utilise-les, jusqu'à nb_jambes_max ; sinon reste sur moins de jambes plutôt que de forcer.
 - INTERDICTION ABSOLUE de la sélection "12" (double chance domicile-ou-extérieur) — jamais ce choix, quelle \
 que soit la cote.
 - Une ligne de quart (.25/.75, ex: Total 3.25, Handicap -0.75) répartit la mise moitié sur la ligne entière/demi \

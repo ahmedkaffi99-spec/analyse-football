@@ -391,6 +391,11 @@ class TestContexteSupplementaireEtRegleDeProbabiliteReelle(unittest.TestCase):
         self.assertIn("PROBABILITÉ RÉELLE DE GAIN", prompt)
         self.assertIn("N'EMPILE PAS PLUSIEURS JAMBES FRAGILES", prompt)
         self.assertIn("BILAN RÉEL DES COUPONS PRÉCÉDENTS", prompt)
+        # Demande explicite du 01/10/2026 : "au lieu de 4 jambes avec cote +1.5, mieux 9 jambes
+        # avec cote -1.5" (clarifié : la cote unitaire décimale, pas la ligne de handicap) —
+        # préférer empiler des favoris à cote basse plutôt que peu de jambes à cote élevée.
+        self.assertIn("COTE INDIVIDUELLE BASSE", prompt)
+        self.assertIn("1.1-1.5", prompt)
 
     def test_contexte_supplementaire_prepende_a_la_mission_par_defaut(self):
         with mock.patch.object(cd, "collecter_donnees", return_value=None), \
