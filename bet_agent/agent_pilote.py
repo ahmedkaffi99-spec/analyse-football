@@ -45,17 +45,17 @@ reprendre "Corners Under 9.5" sur un autre match — Over/Under = diversité, un
 2.5 vs 3.5) = diversité aussi). Tu peux t'abstenir sur UN profil si rien n'est défendable pour son nombre de \
 jambes minimum, sans que ça t'empêche de composer les autres.
 
-LE CATALOGUE CONTIENT, POUR CHAQUE PARI MODÉLISABLE (buts, BTTS, Handicap, Total, Double Chance, \
-Pair/Impair, Corners, Cartons...), LA PROBABILITÉ ET L'EDGE CALCULÉS PAR PYTHON (modèle Poisson à partir des \
-vrais buts attendus) — demande explicite du 01/10/2026 : "il faut que Python calcule tout, ne donne pas à l'IA \
-à calculer". C'EST CETTE PROBABILITÉ, PAS UNE ESTIMATION PERSONNELLE, QUI EST TA BASE PRINCIPALE DE DÉCISION : \
-préfère systématiquement les paris à probabilité Python élevée. Seuls les marchés BRUTS (sans source de \
-données indépendante — tirs, fautes, touches, corners/cartons sans stats détaillées...) n'ont pas de \
-probabilité calculée (signalés "marché brut, AUCUN calcul Python") : pour CEUX-LÀ UNIQUEMENT, appuie-toi sur le \
-contexte fourni (buts attendus, confrontations directes, blessures, prédictions API-Football, presse), avec \
-prudence accrue — jamais comme base principale d'un coupon. Chaque match a typiquement 200 à 300 marchés — tu \
-les vois TOUS, rien n'est présélectionné ni filtré par catégorie. Le catalogue est CALCULÉ UNE SEULE FOIS et \
-partagé par les {n} profils.
+LE CATALOGUE EST DÉJÀ FILTRÉ ET TRIÉ PAR PYTHON (demande explicite du 01/10/2026 : "réduire les tâches de \
+l'IA, augmenter les tâches de Python") : il ne contient PLUS les 200-300 marchés bruts d'un match, seulement \
+les paris MODÉLISABLES (buts, BTTS, Handicap, Total, Double Chance, Pair/Impair, Corners, Cartons, Fautes, \
+Tirs, Hors-jeux...) dont la PROBABILITÉ calculée par Python (modèle Poisson à partir des vrais buts attendus) \
+dépasse un seuil (60%), du plus probable au moins probable. Un match qui n'apparaît PAS dans le catalogue, \
+c'est que Python n'y a trouvé AUCUN pari assez solide — ne cherche pas à en inventer un, passe au suivant. \
+TOUT pari du catalogue a déjà une probabilité et un edge calculés : ta décision se base sur CES chiffres, pas \
+sur une estimation personnelle — ton rôle est de choisir PARMI une liste déjà vérifiée par Python, d'appliquer \
+la diversité entre matchs/catégories, et de justifier chaque choix avec le contexte (buts attendus, \
+confrontations directes, blessures, prédictions API-Football, forme récente, presse). Le catalogue est \
+CALCULÉ UNE SEULE FOIS et partagé par les {n} profils.
 
 MÉTHODE DE TRAVAIL : traite les matchs UN PAR UN, jamais en mélangeant plusieurs à la fois. Pour chaque \
 match : lis tout son contexte (buts attendus, historique, blessures, prédictions), compare TOUS ses marchés \
@@ -85,12 +85,12 @@ plancher ABSOLU de 5 (cote totale >= 5, toujours, quel que soit le profil) — e
 nombre de jambes, lui, doit rester dans la fourchette du profil en cours (voir voir_catalogue), mais même ça : \
 si tu ne trouves pas assez de paris VRAIMENT défendables pour atteindre le minimum de jambes d'un profil, \
 abstiens-toi sur ce profil plutôt que de forcer des paris moyens.
-- N'EMPILE PAS PLUSIEURS JAMBES FRAGILES DANS LE MÊME COUPON : une jambe est fragile si au moins un de ces \
-signaux est présent — ligne de quart (.25/.75), probabilité Python du catalogue inférieure à 60% (ou, pour un \
-marché brut sans calcul, ton estimation du contexte inférieure à 60%), ou données faibles sur ce match précis \
-(pas/peu de stats, forme incertaine, enjeu flou). Un coupon combiné perd dès qu'UNE SEULE jambe perd : \
-limite-toi à AU PLUS une jambe fragile par coupon, le reste doit être des paris où la probabilité Python est \
-vraiment élevée.
+- N'EMPILE PAS PLUSIEURS JAMBES FRAGILES DANS LE MÊME COUPON : même si Python a déjà filtré le catalogue \
+(toutes les probabilités montrées dépassent 60%), une jambe reste fragile si au moins un de ces signaux est \
+présent — ligne de quart (.25/.75), probabilité proche du seuil (60-65%) plutôt que nettement au-dessus, ou \
+données faibles sur ce match précis (peu de stats, forme incertaine, enjeu flou). Un coupon combiné perd dès \
+qu'UNE SEULE jambe perd : limite-toi à AU PLUS une jambe fragile par coupon, le reste doit être des paris où \
+la probabilité Python est nettement au-dessus du seuil.
 - POUR REMPLIR LE NOMBRE DE JAMBES D'UN PROFIL, PRÉFÈRE LES PARIS À PROBABILITÉ PYTHON ÉLEVÉE (typiquement une \
 cote individuelle basse, environ 1.1-1.5) PLUTÔT QUE DES PARIS À PROBABILITÉ PYTHON FAIBLE (cote unitaire > 2) \
 : la probabilité de gagner TOUTES les jambes d'un combiné est bien meilleure en empilant des favoris nets \
@@ -130,12 +130,12 @@ def construire_outils_schemas(profils):
         {"type": "function", "function": {
             "name": "voir_catalogue",
             "description": f"Renvoie le profil EN COURS (parmi les {n} — {noms}, indique sa position "
-                           f"\"2/{n}\" par ex.) avec ses contraintes de cote, le CATALOGUE de paris réels (identifiants "
-                           "P1, P2..., marché, sélection, cote brute, ET la probabilité/edge calculés par Python "
-                           "(Poisson) quand le marché est modélisable — base ta décision sur CES chiffres ; seuls les "
-                           "marchés bruts signalés sans calcul demandent ton propre jugement), ET le CONTEXTE par "
-                           "match (buts attendus, confrontations directes, blessures, prédictions API-Football, "
-                           "forme récente, extraits de presse) — identique pour les "
+                           f"\"2/{n}\" par ex.) avec ses contraintes de cote, le CATALOGUE déjà FILTRÉ ET TRIÉ par "
+                           "Python (seuls les paris modélisables avec probabilité calculée >= 60%, du plus probable "
+                           "au moins probable ; identifiants P1, P2..., marché, sélection, cote, probabilité, edge "
+                           "— un match absent du catalogue veut dire que Python n'y a rien trouvé d'assez solide), "
+                           "ET le CONTEXTE par match (buts attendus, confrontations directes, blessures, "
+                           "prédictions API-Football, forme récente, extraits de presse) — identique pour les "
                            f"{n} profils. Nécessite la collecte.",
             "parameters": {"type": "object", "properties": {}}}},
         {"type": "function", "function": {

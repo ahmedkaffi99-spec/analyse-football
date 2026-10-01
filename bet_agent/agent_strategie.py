@@ -4,24 +4,23 @@ une stratégie et CHOISIT elle-même les paris du coupon (choix du 26/09/2026 : 
 combiné "smart" par défaut — PROFILS_COUPON peut toujours définir plusieurs profils, le code
 ci-dessous reste générique à leur nombre).
 
-Répartition des rôles (principe inversé le 01/10/2026, demande explicite : « il faut que
-Python calcule tout, ne pas donner à l'IA le calcul » — constaté sur les runs précédents que
-laisser l'IA estimer sa propre probabilité produisait des coupons perdants même quand la
-majorité des jambes gagnaient, un signe d'estimations non fiables) :
-- Python prépare un CATALOGUE de TOUS les paris réels du jour (cotes 1xBet brutes, marché,
-  sélection) ET, pour chaque pari modélisable (buts, BTTS, Handicap, Total, Double Chance,
-  Pair/Impair, Corners, Cartons...), la PROBABILITÉ et l'EDGE calculés par Python (modèle
-  Poisson à partir des buts attendus réels) — identifiés P1, P2… L'IA ne peut choisir QUE dans
-  ce catalogue, jamais inventer une cote ni une probabilité ; sa probabilité de référence est
-  CELLE DE PYTHON quand elle existe, pas une estimation personnelle. Seuls les marchés bruts
-  sans source de données indépendante (tirs, fautes, touches, corners/cartons sans stats
-  détaillées...) n'ont pas de probabilité calculée (None) : pour ceux-là seulement, l'IA peut
-  s'appuyer sur le contexte (buts attendus, confrontations directes, blessures, prédictions
-  API-Football) — mais avec prudence accrue, jamais comme base principale du coupon.
-- L'IA raisonne sur le contexte ET sur la probabilité/edge Python de CHAQUE match, un match à
-  la fois : termine l'analyse complète d'un match (compare tous ses marchés, en priorité ceux
-  à probabilité Python la plus élevée) avant de passer au suivant, choisit son pari par match,
-  décide de sa stratégie globale, et peut s'ABSTENIR sur un profil si rien n'est défendable.
+Répartition des rôles (inversée le 01/10/2026 : « Python calcule tout, pas l'IA » — constaté
+sur les runs précédents que laisser l'IA estimer sa propre probabilité produisait des coupons
+perdants même quand la majorité des jambes gagnaient ; puis resserrée le même jour, demande
+explicite : « réduire les tâches de l'IA, augmenter celles de Python ») :
+- Python prépare un CATALOGUE déjà FILTRÉ (pas les 200-300 marchés bruts d'un match) : seuls
+  les paris MODÉLISABLES (buts, BTTS, Handicap, Total, Double Chance, Pair/Impair, Corners,
+  Cartons, Fautes, Tirs, Hors-jeux...) dont la PROBABILITÉ calculée par Python (modèle Poisson)
+  dépasse SEUIL_PROBA_CATALOGUE sont montrés, triés par probabilité décroissante — identifiés
+  P1, P2… Un match sans aucun pari au-dessus du seuil n'apparaît PAS DU TOUT dans le catalogue
+  (Python a jugé qu'il n'y avait rien d'assez fiable à y proposer). Les marchés bruts (sans
+  source de données indépendante) ne sont plus montrés à l'IA : Python ne peut pas les vérifier,
+  donc il ne les propose plus comme matière à décision.
+- L'IA choisit QUE dans ce catalogue déjà vérifié, jamais inventer une cote ni une probabilité ;
+  son rôle se limite à choisir parmi des paris déjà jugés solides par Python, à appliquer la
+  diversité entre matchs/catégories, et à écrire une justification pour chaque choix (contexte :
+  buts attendus, confrontations directes, blessures, prédictions API-Football, forme, presse).
+  Elle peut s'ABSTENIR sur un profil si le catalogue filtré est trop pauvre pour lui.
 - Python contrôle chaque proposition (paris existants, pas de doublon, 2 paris max par match,
   cote totale dans la cible) et RENVOIE ses calculs à l'IA, qui corrige (NB_TOURS_MAX allers-retours).
 - Si l'IA échoue, l'ancienne composition automatique (Monte Carlo) prend le relais pour ce profil.
@@ -47,29 +46,39 @@ NB_JAMBES_MIN_DEFAUT = 2
 # profil ; aucun plafond haut en contrepartie (voir le commentaire plus bas dans valider()).
 COTE_TOTALE_MIN = 5.0
 
+# Seuil de probabilité Python en-dessous duquel un pari n'est même plus MONTRÉ à l'IA (demande
+# explicite du 01/10/2026 : "réduire les tâches de l'IA, augmenter les tâches de Python") —
+# reprend ae.PROBA_MIN_FORTE, déjà la définition du code pour "un marché solide" (utilisée par
+# ailleurs dans evaluer_marches/candidat_valide), plutôt que d'inventer un second seuil distinct
+# pour la même notion. Un marché brut (proba_modele_pct=None, non calculable) est TOUJOURS
+# exclu : Python ne peut pas juger s'il dépasse le seuil, donc il ne le propose plus du tout.
+SEUIL_PROBA_CATALOGUE = ae.PROBA_MIN_FORTE
 
-def construire_catalogue(pool):
-    """Renvoie ({id: sélection}, texte du catalogue groupé par match). Affiche la probabilité
-    et l'edge CALCULÉS PAR PYTHON (modèle Poisson) quand ils existent — demande explicite du
-    01/10/2026 ("Python doit tout calculer, pas l'IA") : l'IA doit juger à partir de CES
-    chiffres, pas d'une estimation personnelle. Les marchés bruts (sans source de données
-    indépendante) n'ont pas de probabilité calculée (None) : signalés comme tels, à utiliser
-    avec prudence. Le nombre de marchés par match peut être élevé (200-300, aucun filtre) —
-    l'IA compare TOUT avant de choisir, match par match."""
+
+def construire_catalogue(pool, seuil_proba=SEUIL_PROBA_CATALOGUE):
+    """Renvoie ({id: sélection}, texte du catalogue groupé par match) — FILTRÉ et TRIÉ par
+    Python (demande explicite du 01/10/2026 : "réduire les tâches de l'IA, augmenter Python") :
+    seuls les paris dont la probabilité calculée (Poisson) dépasse seuil_proba sont montrés,
+    du plus probable au moins probable. Un match sans aucun pari au-dessus du seuil n'apparaît
+    PAS dans le catalogue — Python a jugé qu'il n'y avait rien d'assez solide à y proposer.
+    Les marchés bruts (proba_modele_pct=None, aucun calcul possible) ne sont jamais montrés :
+    on ne demande plus à l'IA de juger ce que Python ne peut pas vérifier lui-même."""
     catalogue, lignes, numero = {}, [], 0
     for match, candidats in pool.items():
-        lignes.append(f"\n## {match} ({len(candidats)} marchés)")
-        for c in candidats:
+        retenus = sorted(
+            (c for c in candidats if c["pick"].get("proba_modele_pct") is not None
+             and c["pick"]["proba_modele_pct"] >= seuil_proba),
+            key=lambda c: c["pick"]["proba_modele_pct"], reverse=True)
+        if not retenus:
+            continue
+        lignes.append(f"\n## {match} ({len(retenus)} pari(s) retenu(s) par Python, proba >= {seuil_proba:g}%)")
+        for c in retenus:
             numero += 1
             cid = f"P{numero}"
             catalogue[cid] = c
             p = c["pick"]
-            ligne = f"- {cid} : {p['marche']} → {p['selection']} @ {p['cote']}"
-            if p.get("proba_modele_pct") is not None:
-                ligne += f" — probabilité Python {p['proba_modele_pct']}%, edge {p['edge_pct']}%"
-            else:
-                ligne += " — marché brut, AUCUN calcul Python (prudence)"
-            lignes.append(ligne)
+            lignes.append(f"- {cid} : {p['marche']} → {p['selection']} @ {p['cote']} — "
+                          f"probabilité Python {p['proba_modele_pct']}%, edge {p['edge_pct']}%")
     return catalogue, "\n".join(lignes)
 
 
@@ -112,14 +121,13 @@ def construire_prompt(pool, profils, catalogue_texte):
         "3. La cote totale (produit des cotes) doit tomber dans la cible du profil. Python la calcule et te la "
         "renverra : vise juste, sans calculer au centime.\n"
         "4. Qualité avant quantité : écarte les matchs aux données faibles ou dont la presse signale un risque "
-        "(absences clés, rotation, enjeu faible). Le CATALOGUE affiche, pour chaque pari modélisable, la "
-        "PROBABILITÉ et l'EDGE calculés par Python (Poisson, à partir des vrais buts attendus) — c'est TA BASE "
-        "PRINCIPALE de décision, pas une estimation personnelle : préfère les paris à probabilité Python élevée. "
-        "Seuls les marchés bruts (sans calcul, signalés comme tels) demandent ton propre jugement à partir du "
-        "contexte (buts attendus, confrontations directes, blessures, prédictions) — utilise-les avec prudence, "
-        "jamais comme base principale du coupon. Traite les matchs UN PAR UN : analyse et compare TOUS les "
-        "marchés d'un match (200-300 possibles, rien n'est présélectionné) avant de choisir son pari, puis "
-        "seulement ensuite passe au match "
+        "(absences clés, rotation, enjeu faible). Le CATALOGUE est déjà FILTRÉ ET TRIÉ par Python : il ne "
+        "contient plus les 200-300 marchés bruts d'un match, seulement les paris dont la PROBABILITÉ calculée "
+        "(Poisson, à partir des vrais buts attendus) dépasse 60%, du plus probable au moins probable — un match "
+        "absent du catalogue veut dire que Python n'y a rien trouvé d'assez solide, ne cherche pas à en inventer "
+        "un. C'est CETTE PROBABILITÉ (affichée avec l'edge) qui est TA BASE PRINCIPALE de décision, pas une "
+        "estimation personnelle. Traite les matchs UN PAR UN : analyse et compare les paris déjà retenus d'un "
+        "match avant de choisir le tien, puis seulement ensuite passe au match "
         f"suivant. {regle_distinction}Si aucun ensemble de paris n'est défendable, "
         "abstiens-toi : \"jambes\": [] et explique pourquoi dans \"strategie\".\n"
         "5. DIVERSIFIE les marchés — à deux niveaux : (a) ENTRE catégories : quand un match propose PLUSIEURS "

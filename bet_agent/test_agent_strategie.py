@@ -57,15 +57,39 @@ class TestStratege(unittest.TestCase):
         # explicite "il faut que Python calcule tout, ne donne pas à l'IA à calculer").
         self.assertIn("probabilité Python 60.0%, edge 6.0%", texte)
 
-    def test_catalogue_marche_brut_signale_sans_calcul(self):
+    def test_catalogue_exclut_les_marches_bruts_sans_calcul(self):
+        # Depuis le 01/10/2026 ("réduire les tâches de l'IA, augmenter Python") : un marché
+        # brut (aucune probabilité calculable) n'est PLUS montré du tout à l'IA — Python ne
+        # peut pas le vérifier, donc il ne le propose plus comme matière à décision.
         pool_brut = {"A vs B": [{
             "match": "A vs B", "home_nom": "A", "away_nom": "B", "fixture_id_oddspapi": "A vs B",
             "pick": {"categorie": "Corners", "marche": "Corners (9.5)", "handicap": 9.5, "selection": "Over",
                      "cote": 1.9, "proba_modele_pct": None, "edge_pct": None, "guide": "g", "onglet": "o"},
             "contexte": {},
         }]}
-        _, texte = st.construire_catalogue(pool_brut)
-        self.assertIn("marché brut, AUCUN calcul Python", texte)
+        catalogue, texte = st.construire_catalogue(pool_brut)
+        self.assertEqual(catalogue, {})
+        self.assertEqual(texte, "")
+
+    def test_catalogue_exclut_les_probabilites_sous_le_seuil(self):
+        pool_faible = {"A vs B": [{
+            "match": "A vs B", "pick": {"categorie": "Total", "marche": "Total (2.5)", "selection": "Over",
+                                        "cote": 1.9, "proba_modele_pct": 52.0, "edge_pct": 3.0},
+        }]}
+        catalogue, texte = st.construire_catalogue(pool_faible)
+        self.assertEqual(catalogue, {})
+        self.assertEqual(texte, "")
+
+    def test_catalogue_trie_par_probabilite_decroissante(self):
+        pool = {"A vs B": [
+            {"match": "A vs B", "pick": {"categorie": "Total", "marche": "Total (2.5)", "selection": "Over",
+                                         "cote": 1.6, "proba_modele_pct": 65.0, "edge_pct": 4.0}},
+            {"match": "A vs B", "pick": {"categorie": "BTTS", "marche": "BTTS", "selection": "Yes",
+                                         "cote": 1.7, "proba_modele_pct": 80.0, "edge_pct": 5.0}},
+        ]}
+        _, texte = st.construire_catalogue(pool)
+        # BTTS (80%) doit apparaître AVANT Total (65%), même si listé en second dans le pool.
+        self.assertLess(texte.index("BTTS"), texte.index("Total (2.5)"))
 
     def test_choix_valide_des_le_premier_tour(self):
         # P1 (Total) + P4 (BTTS) : catégories différentes, pas de souci de dominance (règle du

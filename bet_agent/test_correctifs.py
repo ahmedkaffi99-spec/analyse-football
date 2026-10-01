@@ -51,6 +51,28 @@ class TestXgStatsDetaillees(unittest.TestCase):
         away = {"buts_marques_moyenne": 1.2, "buts_encaisses_moyenne": 1.6}
         self.assertIsNone(ae.calculer_xg_depuis_stats_detaillees(home, away))
 
+    def test_petit_echantillon_lisse_vers_le_prior(self):
+        # Demande explicite du 01/10/2026 ("améliore les calculs de Python et le modèle") :
+        # une moyenne sur seulement 3 matchs (le minimum accepté, NB_MATCHS_MIN_STATS_
+        # DETAILLEES) doit compter MOINS qu'une moyenne sur 10 — avant ce correctif, les deux
+        # étaient traitées avec exactement la même confiance.
+        home_peu_fiable = {"buts_marques_moyenne": 3.0, "buts_encaisses_moyenne": 0.2, "matchs_avec_donnees": 3}
+        home_fiable = {"buts_marques_moyenne": 3.0, "buts_encaisses_moyenne": 0.2, "matchs_avec_donnees": 10}
+        away = {"buts_marques_moyenne": 1.2, "buts_encaisses_moyenne": 1.6, "matchs_avec_donnees": 10}
+        mu_home_peu_fiable, _ = ae.calculer_xg_depuis_stats_detaillees(home_peu_fiable, away)
+        mu_home_fiable, _ = ae.calculer_xg_depuis_stats_detaillees(home_fiable, away)
+        # Les deux xG bruts sont identiques (3.0/0.2), mais le petit échantillon (3 matchs) est
+        # tiré vers BUTS_PRIOR (1.3, plus proche de la moyenne normale) : son xG final doit
+        # rester STRICTEMENT plus modéré (plus proche de 1.3) que celui sur 10 matchs.
+        self.assertLess(abs(mu_home_peu_fiable - ae.BUTS_PRIOR), abs(mu_home_fiable - ae.BUTS_PRIOR))
+
+    def test_sans_matchs_avec_donnees_comportement_inchange(self):
+        # Rétrocompatibilité : si matchs_avec_donnees est absent (vieux format), aucun lissage
+        # n'est appliqué — comportement identique à avant ce correctif.
+        home = {"buts_marques_moyenne": 2.0, "buts_encaisses_moyenne": 1.0}
+        away = {"buts_marques_moyenne": 1.2, "buts_encaisses_moyenne": 1.6}
+        self.assertEqual(ae.calculer_xg_depuis_stats_detaillees(home, away), (1.8, 1.1))
+
     def test_prioritaire_sur_stats_historiques_de_saison_dans_le_pool(self):
         # Les deux sources sont disponibles : stats_detaillees_10_matchs (forme récente) doit
         # l'emporter sur stats_historiques (moyenne de saison, potentiellement périmée).

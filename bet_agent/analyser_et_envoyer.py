@@ -284,6 +284,37 @@ def calculer_xg_depuis_stats(stats_home, stats_away):
     return round(max(0.15, mu_home), 2), round(max(0.15, mu_away), 2)
 
 
+# Lissage bayésien (shrinkage) d'une moyenne mesurée sur peu de matchs vers un prior neutre —
+# demande explicite du 01/10/2026 ("améliore les calculs de Python et le modèle"). Jusqu'ici,
+# une moyenne calculée sur SEULEMENT 3 matchs (NB_MATCHS_MIN_STATS_DETAILLEES, collecte_
+# donnees.py — le minimum accepté) était utilisée avec EXACTEMENT la même confiance qu'une
+# moyenne sur 10 : une équipe à 2 clean sheets sur ses 3 seuls matchs connus donnait un xG
+# adverse artificiellement proche de 0, alors que l'échantillon est trop petit pour l'affirmer.
+# Le commentaire de collecte_donnees.py le disait déjà ("sous ce seuil, la moyenne est trop
+# bruitée pour être fiable") sans jamais agir dessus au-delà du rejet pur sous 3 matchs.
+NB_MATCHS_PLEINE_CONFIANCE = 10  # = NB_DERNIERS_MATCHS_DETAILLES (collecte_donnees.py)
+
+# Priors neutres (moyennes raisonnables, toutes ligues confondues) — un point de départ quand
+# l'échantillon réel est trop petit pour parler fort, jamais une vérité universelle.
+BUTS_PRIOR = 1.3
+CORNERS_PRIOR = 5.0
+CARTONS_PRIOR = 2.0
+FAUTES_PRIOR = 11.0
+TIRS_PRIOR = 12.0
+TIRS_CADRES_PRIOR = 4.0
+HORS_JEUX_PRIOR = 2.0
+
+
+def _lisser_vers_prior(valeur, nb_matchs, prior, nb_matchs_pleine_confiance=NB_MATCHS_PLEINE_CONFIANCE):
+    """poids_donnee = min(nb_matchs, plein)/plein : à 10 matchs (ou plus), la moyenne réelle
+    compte quasi à 100% ; à 3 matchs (le minimum accepté), elle ne compte plus que pour 30%, le
+    reste tiré vers le prior. Réduit le bruit des petits échantillons sans jamais les rejeter."""
+    if valeur is None or nb_matchs is None:
+        return valeur
+    poids_donnee = min(nb_matchs, nb_matchs_pleine_confiance) / nb_matchs_pleine_confiance
+    return poids_donnee * valeur + (1 - poids_donnee) * prior
+
+
 def calculer_xg_depuis_stats_detaillees(sd_home, sd_away):
     """Buts attendus depuis les VRAIES stats des 10 DERNIERS matchs joués (API-Football,
     recuperer_stats_10_derniers_matchs) — demande explicite de l'utilisateur (30/09/2026) :
@@ -294,7 +325,8 @@ def calculer_xg_depuis_stats_detaillees(sd_home, sd_away):
     défense de l'autre), mais sur la FORME RÉCENTE (10 derniers matchs, toutes compétitions)
     plutôt que la moyenne de saison domicile/extérieur — prioritaire dans la chaîne de calcul
     car mesuré sur des matchs réellement joués récemment, jamais périmé par un plan API
-    limité à une vieille saison (contrairement à calculer_xg_depuis_stats)."""
+    limité à une vieille saison (contrairement à calculer_xg_depuis_stats). Chaque moyenne est
+    LISSÉE vers BUTS_PRIOR selon matchs_avec_donnees (voir _lisser_vers_prior)."""
     if not sd_home or not sd_away:
         return None
     champs = (sd_home.get("buts_marques_moyenne"), sd_home.get("buts_encaisses_moyenne"),
@@ -302,8 +334,13 @@ def calculer_xg_depuis_stats_detaillees(sd_home, sd_away):
     if None in champs:
         return None
     try:
-        mu_home = (float(sd_home["buts_marques_moyenne"]) + float(sd_away["buts_encaisses_moyenne"])) / 2
-        mu_away = (float(sd_away["buts_marques_moyenne"]) + float(sd_home["buts_encaisses_moyenne"])) / 2
+        n_home, n_away = sd_home.get("matchs_avec_donnees"), sd_away.get("matchs_avec_donnees")
+        marques_home = _lisser_vers_prior(float(sd_home["buts_marques_moyenne"]), n_home, BUTS_PRIOR)
+        encaisses_home = _lisser_vers_prior(float(sd_home["buts_encaisses_moyenne"]), n_home, BUTS_PRIOR)
+        marques_away = _lisser_vers_prior(float(sd_away["buts_marques_moyenne"]), n_away, BUTS_PRIOR)
+        encaisses_away = _lisser_vers_prior(float(sd_away["buts_encaisses_moyenne"]), n_away, BUTS_PRIOR)
+        mu_home = (marques_home + encaisses_away) / 2
+        mu_away = (marques_away + encaisses_home) / 2
     except (TypeError, ValueError):
         return None
     return round(max(0.15, mu_home), 2), round(max(0.15, mu_away), 2)
@@ -318,7 +355,8 @@ def calculer_mu_corners_depuis_stats_detaillees(sd_home, sd_away):
     prédictive. Cette donnée (corners_pour_moyenne/corners_contre_moyenne, 15 métriques
     API-Football) existe depuis le 30/09/2026 (compte passé Pro, capacité de la collecter
     systématiquement) : même méthode que les buts (calculer_xg_depuis_stats_detaillees),
-    moyenne de l'attaque de l'une et de la défense de l'autre pour chaque camp.
+    moyenne de l'attaque de l'une et de la défense de l'autre pour chaque camp, lissée vers
+    CORNERS_PRIOR selon matchs_avec_donnees.
 
     Renvoie (mu_home, mu_away) — demande explicite du 01/10/2026 ("carton et corner faut
     calcule en poisson [le handicap]") : le split par équipe, déjà calculé ici en interne
@@ -331,8 +369,13 @@ def calculer_mu_corners_depuis_stats_detaillees(sd_home, sd_away):
     if None in champs:
         return None
     try:
-        mu_home = (float(sd_home["corners_pour_moyenne"]) + float(sd_away["corners_contre_moyenne"])) / 2
-        mu_away = (float(sd_away["corners_pour_moyenne"]) + float(sd_home["corners_contre_moyenne"])) / 2
+        n_home, n_away = sd_home.get("matchs_avec_donnees"), sd_away.get("matchs_avec_donnees")
+        pour_home = _lisser_vers_prior(float(sd_home["corners_pour_moyenne"]), n_home, CORNERS_PRIOR)
+        contre_home = _lisser_vers_prior(float(sd_home["corners_contre_moyenne"]), n_home, CORNERS_PRIOR)
+        pour_away = _lisser_vers_prior(float(sd_away["corners_pour_moyenne"]), n_away, CORNERS_PRIOR)
+        contre_away = _lisser_vers_prior(float(sd_away["corners_contre_moyenne"]), n_away, CORNERS_PRIOR)
+        mu_home = (pour_home + contre_away) / 2
+        mu_away = (pour_away + contre_home) / 2
     except (TypeError, ValueError):
         return None
     return round(max(0.15, mu_home), 2), round(max(0.15, mu_away), 2)
@@ -345,7 +388,8 @@ def calculer_mu_cartons_depuis_stats_detaillees(sd_home, sd_away):
     corners avant leur désactivation). Cartons rouges exclus (trop rares sur 10 matchs pour un
     signal fiable) ; pas de notion d'attaque/défense comme pour les buts ou les corners — un
     carton est reçu par une équipe pour son propre comportement, pas "concédé" par l'adversaire,
-    donc cartons_jaunes_moyenne de chaque équipe EST déjà le mu par équipe, sans transformation.
+    donc cartons_jaunes_moyenne de chaque équipe EST déjà le mu par équipe (après lissage vers
+    CARTONS_PRIOR), sans autre transformation.
 
     Renvoie (mu_home, mu_away) — voir calculer_mu_corners_depuis_stats_detaillees pour le
     contexte du 01/10/2026 (modélisation de Bookings - Handicap)."""
@@ -355,7 +399,9 @@ def calculer_mu_cartons_depuis_stats_detaillees(sd_home, sd_away):
     if cj_home is None or cj_away is None:
         return None
     try:
-        return round(max(0.15, float(cj_home)), 2), round(max(0.15, float(cj_away)), 2)
+        mu_home = _lisser_vers_prior(float(cj_home), sd_home.get("matchs_avec_donnees"), CARTONS_PRIOR)
+        mu_away = _lisser_vers_prior(float(cj_away), sd_away.get("matchs_avec_donnees"), CARTONS_PRIOR)
+        return round(max(0.15, mu_home), 2), round(max(0.15, mu_away), 2)
     except (TypeError, ValueError):
         return None
 
@@ -366,7 +412,8 @@ def calculer_mu_fautes_depuis_stats_detaillees(sd_home, sd_away):
     données collectées") : fautes_commises_moyenne/fautes_subies_moyenne (15 métriques déjà
     collectées par recuperer_stats_10_derniers_matchs) étaient calculées mais jamais utilisées
     pour modéliser un marché. Même méthode que les corners (attaque de l'une, "fautes subies"
-    de l'autre = tendance de l'adversaire à provoquer/concéder des fautes)."""
+    de l'autre = tendance de l'adversaire à provoquer/concéder des fautes), lissée vers
+    FAUTES_PRIOR selon matchs_avec_donnees."""
     if not sd_home or not sd_away:
         return None
     champs = (sd_home.get("fautes_commises_moyenne"), sd_home.get("fautes_subies_moyenne"),
@@ -374,8 +421,13 @@ def calculer_mu_fautes_depuis_stats_detaillees(sd_home, sd_away):
     if None in champs:
         return None
     try:
-        mu_home = (float(sd_home["fautes_commises_moyenne"]) + float(sd_away["fautes_subies_moyenne"])) / 2
-        mu_away = (float(sd_away["fautes_commises_moyenne"]) + float(sd_home["fautes_subies_moyenne"])) / 2
+        n_home, n_away = sd_home.get("matchs_avec_donnees"), sd_away.get("matchs_avec_donnees")
+        commises_home = _lisser_vers_prior(float(sd_home["fautes_commises_moyenne"]), n_home, FAUTES_PRIOR)
+        subies_home = _lisser_vers_prior(float(sd_home["fautes_subies_moyenne"]), n_home, FAUTES_PRIOR)
+        commises_away = _lisser_vers_prior(float(sd_away["fautes_commises_moyenne"]), n_away, FAUTES_PRIOR)
+        subies_away = _lisser_vers_prior(float(sd_away["fautes_subies_moyenne"]), n_away, FAUTES_PRIOR)
+        mu_home = (commises_home + subies_away) / 2
+        mu_away = (commises_away + subies_home) / 2
     except (TypeError, ValueError):
         return None
     return round(max(0.15, mu_home), 2), round(max(0.15, mu_away), 2)
@@ -386,15 +438,19 @@ def calculer_mu_tirs_depuis_stats_detaillees(sd_home, sd_away, cadres=False):
     VRAIES stats des 10 derniers matchs — demande explicite du 01/10/2026. Pas de notion
     d'attaque/défense comme pour les corners : aucune statistique "tirs subis/concédés" n'est
     collectée (seulement le volume de tirs PRODUITS par chaque équipe), donc le mu de chaque
-    équipe est directement sa propre moyenne — même principe que les cartons."""
+    équipe est directement sa propre moyenne (après lissage vers TIRS_PRIOR/TIRS_CADRES_PRIOR
+    selon matchs_avec_donnees) — même principe que les cartons."""
     if not sd_home or not sd_away:
         return None
     champ = "tirs_cadres_moyenne" if cadres else "tirs_totaux_moyenne"
+    prior = TIRS_CADRES_PRIOR if cadres else TIRS_PRIOR
     t_home, t_away = sd_home.get(champ), sd_away.get(champ)
     if t_home is None or t_away is None:
         return None
     try:
-        return round(max(0.15, float(t_home)), 2), round(max(0.15, float(t_away)), 2)
+        mu_home = _lisser_vers_prior(float(t_home), sd_home.get("matchs_avec_donnees"), prior)
+        mu_away = _lisser_vers_prior(float(t_away), sd_away.get("matchs_avec_donnees"), prior)
+        return round(max(0.15, mu_home), 2), round(max(0.15, mu_away), 2)
     except (TypeError, ValueError):
         return None
 
@@ -402,14 +458,17 @@ def calculer_mu_tirs_depuis_stats_detaillees(sd_home, sd_away, cadres=False):
 def calculer_mu_hors_jeux_depuis_stats_detaillees(sd_home, sd_away):
     """Hors-jeux attendus, domicile et extérieur, depuis les VRAIES stats des 10 derniers
     matchs — demande explicite du 01/10/2026. Comme les tirs : aucune statistique "hors-jeux
-    subis" n'est collectée, le mu de chaque équipe est directement sa propre moyenne."""
+    subis" n'est collectée, le mu de chaque équipe est directement sa propre moyenne (après
+    lissage vers HORS_JEUX_PRIOR selon matchs_avec_donnees)."""
     if not sd_home or not sd_away:
         return None
     h_home, h_away = sd_home.get("hors_jeux_moyenne"), sd_away.get("hors_jeux_moyenne")
     if h_home is None or h_away is None:
         return None
     try:
-        return round(max(0.15, float(h_home)), 2), round(max(0.15, float(h_away)), 2)
+        mu_home = _lisser_vers_prior(float(h_home), sd_home.get("matchs_avec_donnees"), HORS_JEUX_PRIOR)
+        mu_away = _lisser_vers_prior(float(h_away), sd_away.get("matchs_avec_donnees"), HORS_JEUX_PRIOR)
+        return round(max(0.15, mu_home), 2), round(max(0.15, mu_away), 2)
     except (TypeError, ValueError):
         return None
 

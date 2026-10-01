@@ -161,9 +161,14 @@ PROFIL_2 = {"cle": "equilibre", "nom": "⚖️ ÉQUILIBRÉ", "cote_min": 0.0, "c
 PROFIL_3 = {"cle": "audacieux", "nom": "🔥 AUDACIEUX", "cote_min": 0.0, "cote_max": 1000.0, "nb_jambes_min": 1, "nb_jambes": 2}
 
 
-def _pick(categorie, marche, selection, cote):
+def _pick(categorie, marche, selection, cote, proba_modele_pct=65.0):
+    # proba_modele_pct >= SEUIL_PROBA_CATALOGUE (60%) par défaut : depuis le 01/10/2026,
+    # construire_catalogue EXCLUT les paris sans probabilité calculée ou en dessous du seuil
+    # (demande explicite "réduire les tâches de l'IA, augmenter Python") — ces fixtures
+    # simulent des paris déjà modélisés par Python, pas des marchés bruts.
     return {"categorie": categorie, "marche": marche, "handicap": 2.5, "selection": selection, "cote": cote,
-            "proba_modele_pct": None, "edge_pct": None, "proba_poisson_pct": None, "proba_marche_pct": None}
+            "proba_modele_pct": proba_modele_pct, "edge_pct": 8.0,
+            "proba_poisson_pct": proba_modele_pct, "proba_marche_pct": proba_modele_pct}
 
 
 # 6 matchs, un pick chacun (P1..P6) : assez pour que 3 profils de 2 jambes composent chacun
