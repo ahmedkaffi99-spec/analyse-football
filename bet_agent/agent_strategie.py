@@ -35,9 +35,9 @@ import analyser_et_envoyer as ae
 NB_TOURS_MAX = 3
 # Plancher de jambes PAR DÉFAUT si un profil ne précise pas "nb_jambes_min" (les tests
 # génériques ci-dessous, avec de petits pools, s'appuient sur ce défaut bas). Le profil réel
-# (PROFILS_COUPON) fixe le sien à 1 : demande explicite du 30/09/2026, l'IA stratège choisit
-# elle-même combien de matchs inclure, jusqu'à NB_MATCHS_MAX collectés ce jour-là — aucune
-# fourchette imposée par Python au-delà de ce plafond mécanique. Un seul pari par match : voir
+# (PROFILS_COUPON) fixe le sien à 2 (voir le commentaire au-dessus de PROFILS_COUPON, 01/10/2026
+# : jusqu'à 5 coupons indépendants à 2-3 jambes, format qui maximise la probabilité de gagner
+# le combiné en entier plutôt qu'un étagement à 10-15 jambes). Un seul pari par match : voir
 # ae.MAX_JAMBES_PAR_MATCH.
 NB_JAMBES_MIN_DEFAUT = 2
 

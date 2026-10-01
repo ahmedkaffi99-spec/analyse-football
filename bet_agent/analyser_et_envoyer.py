@@ -94,20 +94,27 @@ PROBA_MIN_FALLBACK_AUTO = 30.0
 # vérifie plus, affichée à titre indicatif uniquement) — c'est maintenant le NOMBRE DE JAMBES
 # qui différencie les 3 profils (peu/moyen/beaucoup), la cote totale résultant naturellement
 # des favoris choisis par l'IA plutôt que d'être imposée.
-# Repassé à 3 profils le 30/09/2026 (demande explicite : "3 trois type de coupon sur un
-# seule run") — un seul pool/catalogue calculé une fois (agent3_calcul_pool_candidats),
-# 3 compositions différentes en aval, 3 messages Telegram séparés (agent5_envoyer_coupons).
+# Passé à 5 coupons INDÉPENDANTS, tous à 2-3 jambes (01/10/2026, demande explicite : "jusqu'à
+# 5 coupon combiné pour qu'on dépende pas d'un seul coupon par jour") — remplace l'ancien
+# étagement sûr(1-5)/équilibré(6-9)/audacieux(10-15). Constat de cette même conversation,
+# chiffré sur les runs réels (53-73) : la quasi-totalité des coupons perdus n'avaient qu'UNE
+# SEULE jambe perdante parmi plusieurs gagnantes — empiler 6 à 15 jambes dans un seul combiné
+# rend sa survie quasi impossible (0.6^9 ≈ 1%) MÊME quand chaque jambe prise seule est un bon
+# pari (60%+ de probabilité réelle). La seule façon mathématiquement saine de viser un combiné
+# gagnant est d'en limiter le nombre de jambes — donc TOUS les profils visent maintenant le
+# format qui a fait ses preuves (voir le run "coupon gagnant" du 01/10/2026), et la
+# diversification du risque vient du NOMBRE DE COUPONS INDÉPENDANTS (jusqu'à 5, chacun sur des
+# matchs différents autant que possible), pas du nombre de jambes à l'intérieur d'un seul.
+# Un profil s'abstient (jambes=[]) si moins de 2 paris vraiment défendables existent pour lui —
+# jusqu'à 5 coupons n'est donc pas un minimum imposé, seulement un plafond.
 PROFILS_COUPON = [
     # cote_min/cote_max : volontairement très larges (non 0/infini — casserait le calcul de
     # pondération du repli Monte Carlo, 0 * infini = NaN) — gardent un sens pour
     # selectionner_combo_cote_cible (repli 100% Python sans IA, qui a besoin d'une cible pour
     # pondérer son tirage), mais ne bloquent plus jamais la validation de l'IA stratège.
-    {"cle": "sur", "nom": "🛡️ COUPON SÛR (1-5 jambes)", "cote_min": 1.01,
-     "cote_max": 1000000.0, "nb_jambes_min": 1, "nb_jambes": 5},
-    {"cle": "equilibre", "nom": "⚖️ COUPON ÉQUILIBRÉ (6-9 jambes)", "cote_min": 1.01,
-     "cote_max": 1000000.0, "nb_jambes_min": 6, "nb_jambes": 9},
-    {"cle": "audacieux", "nom": "🔥 COUPON AUDACIEUX (10-15 jambes)", "cote_min": 1.01,
-     "cote_max": 1000000.0, "nb_jambes_min": 10, "nb_jambes": cd.NB_MATCHS_MAX},
+    {"cle": f"coupon{i}", "nom": f"🏆 COUPON {i} (2-3 jambes, probabilité maximale)",
+     "cote_min": 1.01, "cote_max": 1000000.0, "nb_jambes_min": 2, "nb_jambes": 3}
+    for i in range(1, 6)
 ]
 
 # IA : Groq + Gemini + OpenRouter (2026-09-26). Listes modifiables sans toucher au code via

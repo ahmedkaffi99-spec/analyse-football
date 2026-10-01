@@ -565,27 +565,27 @@ class TestRedactionSansEdgeNone(unittest.TestCase):
         self.assertNotIn("edge", texte)
 
 
-class TestUnSeulCouponDixAQuinzeMatchs(unittest.TestCase):
-    """Verrouille le réglage explicite du 26/09/2026 (un seul coupon combiné, un seul pari par
-    match) et celui du 01/10/2026 : la cote totale n'est PLUS une contrainte ("ne oblige pas
-    l'IA à atteindre le 50+ et 15-50, mon but c'est tout cote individuel et total qui a la
-    chance de réussite élevée") — seul le NOMBRE DE JAMBES différencie désormais les 3 profils
-    (peu/moyen/beaucoup), sans chevauchement, jusqu'au plafond mécanique NB_MATCHS_MAX (un seul
-    pari par match possible)."""
+class TestCinqCouponsIndependantsDeuxATroisJambes(unittest.TestCase):
+    """Verrouille le réglage explicite du 26/09/2026 (un seul pari par match) et celui du
+    01/10/2026 : jusqu'à 5 coupons INDÉPENDANTS, tous à 2-3 jambes (remplace l'ancien
+    étagement sûr(1-5)/équilibré(6-9)/audacieux(10-15)) — demande explicite "si on a besoin
+    chaque jour jusqu'à 5 coupon combiné pour qu'on dépende pas d'un seul coupon par jour".
+    Constat chiffré sur les runs réels (53-73) : empiler 6-15 jambes rend un combiné presque
+    impossible à gagner en entier (0.6^9 ≈ 1%) même avec de bons paris individuels — la seule
+    façon saine de viser un combiné gagnant est de limiter son nombre de jambes, la
+    diversification du risque venant du NOMBRE DE COUPONS indépendants, pas de jambes en plus
+    dans un seul. La cote totale n'est plus une contrainte depuis le 01/10/2026 non plus."""
 
     def test_reglages_du_coupon_du_jour(self):
         self.assertEqual(ae.MAX_JAMBES_PAR_MATCH, 1)
-        self.assertEqual(len(ae.PROFILS_COUPON), 3)
+        self.assertEqual(len(ae.PROFILS_COUPON), 5)
         cles = {p["cle"] for p in ae.PROFILS_COUPON}
-        self.assertEqual(cles, {"sur", "equilibre", "audacieux"})
-        par_cle = {p["cle"]: p for p in ae.PROFILS_COUPON}
-        self.assertEqual((par_cle["sur"]["nb_jambes_min"], par_cle["sur"]["nb_jambes"]), (1, 5))
-        self.assertEqual((par_cle["equilibre"]["nb_jambes_min"], par_cle["equilibre"]["nb_jambes"]), (6, 9))
-        self.assertEqual((par_cle["audacieux"]["nb_jambes_min"], par_cle["audacieux"]["nb_jambes"]),
-                         (10, cd.NB_MATCHS_MAX))
-        # Cote totale : indicative uniquement, plus jamais une contrainte vérifiée (seules des
-        # bornes très larges, finies — jamais 0/infini, casserait selectionner_combo_cote_cible).
+        self.assertEqual(cles, {f"coupon{i}" for i in range(1, 6)})
         for profil in ae.PROFILS_COUPON:
+            self.assertEqual((profil["nb_jambes_min"], profil["nb_jambes"]), (2, 3))
+            # Cote totale : indicative uniquement, plus jamais une contrainte vérifiée (seules
+            # des bornes très larges, finies — jamais 0/infini, casserait
+            # selectionner_combo_cote_cible).
             self.assertEqual(profil["cote_min"], 1.01)
             self.assertEqual(profil["cote_max"], 1000000.0)
 
