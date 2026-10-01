@@ -567,25 +567,34 @@ class TestRedactionSansEdgeNone(unittest.TestCase):
 
 class TestCinqCouponsIndependantsDeuxATroisJambes(unittest.TestCase):
     """Verrouille le réglage explicite du 26/09/2026 (un seul pari par match) et celui du
-    01/10/2026 : jusqu'à 5 coupons INDÉPENDANTS, tous à 2-3 jambes (remplace l'ancien
-    étagement sûr(1-5)/équilibré(6-9)/audacieux(10-15)) — demande explicite "si on a besoin
-    chaque jour jusqu'à 5 coupon combiné pour qu'on dépende pas d'un seul coupon par jour".
-    Constat chiffré sur les runs réels (53-73) : empiler 6-15 jambes rend un combiné presque
-    impossible à gagner en entier (0.6^9 ≈ 1%) même avec de bons paris individuels — la seule
-    façon saine de viser un combiné gagnant est de limiter son nombre de jambes, la
-    diversification du risque venant du NOMBRE DE COUPONS indépendants, pas de jambes en plus
-    dans un seul. La cote totale n'est plus une contrainte depuis le 01/10/2026 non plus."""
+    01/10/2026 : jusqu'à 5 coupons INDÉPENDANTS (remplace l'ancien étagement sûr(1-5)/
+    équilibré(6-9)/audacieux(10-15)) — demande explicite "si on a besoin chaque jour jusqu'à 5
+    coupon combiné pour qu'on dépende pas d'un seul coupon par jour". Constat chiffré sur les
+    runs réels (53-73) : empiler des jambes réduit la survie du combiné de façon multiplicative
+    (0.6^9 ≈ 1%) même avec de bons paris individuels — la seule façon saine de viser un combiné
+    gagnant est de limiter son nombre de jambes, la diversification du risque venant du NOMBRE
+    DE COUPONS indépendants, pas de jambes en plus dans un seul.
+
+    4 des 5 coupons restent au format qui maximise la probabilité de gagner (2-3 jambes). Le
+    5e, "risqué intentionnel" (Option B, demande explicite du 01/10/2026 "si on veut prendre
+    risque sur 1 ou 2 coupon sur 5, fait de façon intentionnel"), accepte délibérément plus de
+    jambes (4-5) — un choix de risque ASSUMÉ et borné, jamais 10-15 comme l'ancien
+    "audacieux". La cote totale n'est plus une contrainte depuis le 01/10/2026 non plus."""
 
     def test_reglages_du_coupon_du_jour(self):
         self.assertEqual(ae.MAX_JAMBES_PAR_MATCH, 1)
         self.assertEqual(len(ae.PROFILS_COUPON), 5)
         cles = {p["cle"] for p in ae.PROFILS_COUPON}
-        self.assertEqual(cles, {f"coupon{i}" for i in range(1, 6)})
+        self.assertEqual(cles, {"coupon1", "coupon2", "coupon3", "coupon4", "risque"})
+        par_cle = {p["cle"]: p for p in ae.PROFILS_COUPON}
+        for cle in ("coupon1", "coupon2", "coupon3", "coupon4"):
+            self.assertEqual((par_cle[cle]["nb_jambes_min"], par_cle[cle]["nb_jambes"]), (2, 3))
+        self.assertEqual((par_cle["risque"]["nb_jambes_min"], par_cle["risque"]["nb_jambes"]), (4, 5))
+        # Cote totale : indicative uniquement, plus jamais une contrainte vérifiée (seules des
+        # bornes très larges, finies — jamais 0/infini, casserait selectionner_combo_cote_cible)
+        # — y compris pour le profil risqué : le risque vient du nombre de jambes, pas d'une
+        # cible de cote différente.
         for profil in ae.PROFILS_COUPON:
-            self.assertEqual((profil["nb_jambes_min"], profil["nb_jambes"]), (2, 3))
-            # Cote totale : indicative uniquement, plus jamais une contrainte vérifiée (seules
-            # des bornes très larges, finies — jamais 0/infini, casserait
-            # selectionner_combo_cote_cible).
             self.assertEqual(profil["cote_min"], 1.01)
             self.assertEqual(profil["cote_max"], 1000000.0)
 

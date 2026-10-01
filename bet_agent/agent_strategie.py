@@ -36,9 +36,9 @@ NB_TOURS_MAX = 3
 # Plancher de jambes PAR DÉFAUT si un profil ne précise pas "nb_jambes_min" (les tests
 # génériques ci-dessous, avec de petits pools, s'appuient sur ce défaut bas). Le profil réel
 # (PROFILS_COUPON) fixe le sien à 2 (voir le commentaire au-dessus de PROFILS_COUPON, 01/10/2026
-# : jusqu'à 5 coupons indépendants à 2-3 jambes, format qui maximise la probabilité de gagner
-# le combiné en entier plutôt qu'un étagement à 10-15 jambes). Un seul pari par match : voir
-# ae.MAX_JAMBES_PAR_MATCH.
+# : 4 coupons indépendants à 2-3 jambes, format qui maximise la probabilité de gagner le
+# combiné en entier, + 1 coupon "risqué intentionnel" à 4-5 jambes, assumé). Un seul pari par
+# match : voir ae.MAX_JAMBES_PAR_MATCH.
 NB_JAMBES_MIN_DEFAUT = 2
 
 # Plancher ABSOLU de cote totale (demande explicite du 01/10/2026 : "interdit les cote total

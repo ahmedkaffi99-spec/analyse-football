@@ -94,27 +94,37 @@ PROBA_MIN_FALLBACK_AUTO = 30.0
 # vérifie plus, affichée à titre indicatif uniquement) — c'est maintenant le NOMBRE DE JAMBES
 # qui différencie les 3 profils (peu/moyen/beaucoup), la cote totale résultant naturellement
 # des favoris choisis par l'IA plutôt que d'être imposée.
-# Passé à 5 coupons INDÉPENDANTS, tous à 2-3 jambes (01/10/2026, demande explicite : "jusqu'à
-# 5 coupon combiné pour qu'on dépende pas d'un seul coupon par jour") — remplace l'ancien
-# étagement sûr(1-5)/équilibré(6-9)/audacieux(10-15). Constat de cette même conversation,
-# chiffré sur les runs réels (53-73) : la quasi-totalité des coupons perdus n'avaient qu'UNE
-# SEULE jambe perdante parmi plusieurs gagnantes — empiler 6 à 15 jambes dans un seul combiné
-# rend sa survie quasi impossible (0.6^9 ≈ 1%) MÊME quand chaque jambe prise seule est un bon
-# pari (60%+ de probabilité réelle). La seule façon mathématiquement saine de viser un combiné
-# gagnant est d'en limiter le nombre de jambes — donc TOUS les profils visent maintenant le
-# format qui a fait ses preuves (voir le run "coupon gagnant" du 01/10/2026), et la
-# diversification du risque vient du NOMBRE DE COUPONS INDÉPENDANTS (jusqu'à 5, chacun sur des
-# matchs différents autant que possible), pas du nombre de jambes à l'intérieur d'un seul.
-# Un profil s'abstient (jambes=[]) si moins de 2 paris vraiment défendables existent pour lui —
-# jusqu'à 5 coupons n'est donc pas un minimum imposé, seulement un plafond.
+# Passé à 5 coupons INDÉPENDANTS (01/10/2026, demande explicite : "jusqu'à 5 coupon combiné
+# pour qu'on dépende pas d'un seul coupon par jour") — remplace l'ancien étagement sûr(1-5)/
+# équilibré(6-9)/audacieux(10-15). Constat de cette même conversation, chiffré sur les runs
+# réels (53-73) : la quasi-totalité des coupons perdus n'avaient qu'UNE SEULE jambe perdante
+# parmi plusieurs gagnantes — empiler des jambes dans un seul combiné réduit sa survie de façon
+# MULTIPLICATIVE (0.6^9 ≈ 1%) MÊME quand chaque jambe prise seule est un bon pari (60%+ de
+# probabilité réelle). La diversification du risque vient donc du NOMBRE DE COUPONS
+# INDÉPENDANTS (jusqu'à 5, chacun sur des matchs différents autant que possible), pas du
+# nombre de jambes empilées dans un seul coupon.
+#
+# 4 des 5 coupons restent au format qui maximise la probabilité de gagner le combiné en entier
+# (2-3 jambes, voir le run "coupon gagnant" du 01/10/2026). Le 5e, "RISQUÉ INTENTIONNEL",
+# accepte délibérément plus de jambes (4-5) — demande explicite du 01/10/2026 (Option B : "si
+# on veut prendre risque sur 1 ou 2 coupon sur 5, fait de façon intentionnel") : CE choix de
+# risque est assumé et borné (4-5, jamais 10-15 comme l'ancien "audacieux" — même à ce format,
+# une telle pile reste statistiquement perdante plus souvent que gagnante). Chaque jambe de ce
+# profil passe quand même par le même filtre Python (probabilité >= 60%, voir agent_strategie.
+# SEUIL_PROBA_CATALOGUE) : le risque vient du NOMBRE de jambes empilées, jamais d'un calcul
+# moins rigoureux ou d'un seuil de probabilité abaissé.
+# Un profil s'abstient (jambes=[]) si pas assez de paris vraiment défendables existent pour
+# lui — jusqu'à 5 coupons n'est donc pas un minimum imposé, seulement un plafond.
 PROFILS_COUPON = [
     # cote_min/cote_max : volontairement très larges (non 0/infini — casserait le calcul de
     # pondération du repli Monte Carlo, 0 * infini = NaN) — gardent un sens pour
     # selectionner_combo_cote_cible (repli 100% Python sans IA, qui a besoin d'une cible pour
     # pondérer son tirage), mais ne bloquent plus jamais la validation de l'IA stratège.
-    {"cle": f"coupon{i}", "nom": f"🏆 COUPON {i} (2-3 jambes, probabilité maximale)",
-     "cote_min": 1.01, "cote_max": 1000000.0, "nb_jambes_min": 2, "nb_jambes": 3}
-    for i in range(1, 6)
+    *[{"cle": f"coupon{i}", "nom": f"🏆 COUPON {i} (2-3 jambes, probabilité maximale)",
+       "cote_min": 1.01, "cote_max": 1000000.0, "nb_jambes_min": 2, "nb_jambes": 3}
+      for i in range(1, 5)],
+    {"cle": "risque", "nom": "🎲 COUPON RISQUÉ INTENTIONNEL (4-5 jambes, assumé)",
+     "cote_min": 1.01, "cote_max": 1000000.0, "nb_jambes_min": 4, "nb_jambes": 5},
 ]
 
 # IA : Groq + Gemini + OpenRouter (2026-09-26). Listes modifiables sans toucher au code via

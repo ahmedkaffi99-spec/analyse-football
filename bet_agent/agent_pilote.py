@@ -174,10 +174,11 @@ def construire_outils_schemas(profils):
     ]
 
 
-# Profils standards (5 coupons indépendants à 2-3 jambes), utilisés par piloter() quand
-# executer() ne lui fournit pas explicitement prompt_systeme/outils_schemas (cas direct/tests
-# uniquement : executer() les reconstruit toujours lui-même à partir des profils réels du run).
-_PROFILS_PAR_DEFAUT = [{"nom": f"🏆 COUPON {i}"} for i in range(1, 6)]
+# Profils standards (4 coupons indépendants à 2-3 jambes + 1 "risqué intentionnel" à 4-5),
+# utilisés par piloter() quand executer() ne lui fournit pas explicitement prompt_systeme/
+# outils_schemas (cas direct/tests uniquement : executer() les reconstruit toujours lui-même
+# à partir des profils réels du run).
+_PROFILS_PAR_DEFAUT = [{"nom": f"🏆 COUPON {i}"} for i in range(1, 5)] + [{"nom": "🎲 COUPON RISQUÉ INTENTIONNEL"}]
 PROMPT_SYSTEME = construire_prompt_systeme(_PROFILS_PAR_DEFAUT)
 OUTILS_SCHEMAS = construire_outils_schemas(_PROFILS_PAR_DEFAUT)
 
@@ -286,9 +287,10 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
 
     profils (01/10/2026, demande explicite d'un run ponctuel à 6 profils personnalisés) :
     None (défaut, cas standard du pipeline quotidien) = ae.PROFILS_COUPON (jusqu'à 5 coupons
-    indépendants, tous à 2-3 jambes — voir le commentaire au-dessus de PROFILS_COUPON) ; sinon
-    la liste de profils fournie remplace entièrement PROFILS_COUPON pour CE run uniquement —
-    n'affecte jamais la config par défaut. ignorer_diversite_croisee :
+    indépendants : 4 à 2-3 jambes + 1 "risqué intentionnel" à 4-5 jambes — voir le commentaire
+    au-dessus de PROFILS_COUPON) ; sinon la liste de profils fournie remplace entièrement
+    PROFILS_COUPON pour CE run uniquement — n'affecte jamais la config par défaut.
+    ignorer_diversite_croisee :
     True désactive la règle de diversité de CATÉGORIE à l'échelle du run (traite chaque profil
     comme si c'était le premier, "oublie" les profils précédents pour cette règle précise) ; le
     refus d'un pari EXACTEMENT identique à un profil précédent reste actif dans tous les cas
