@@ -15,8 +15,10 @@ def _profil_unique():
     return profils_exemple()[0]["profil"]
 
 
-def _faux_agent_pilote(monkeypatch, resultat):
-    def fausse_executer(mission=None, telegram=True):
+def _faux_agent_pilote(monkeypatch, resultat, appels=None):
+    def fausse_executer(mission=None, telegram=True, profils=None, ignorer_diversite_croisee=False):
+        if appels is not None:
+            appels.append({"profils": profils, "ignorer_diversite_croisee": ignorer_diversite_croisee})
         return resultat
 
     faux_module = SimpleNamespace(executer=fausse_executer)
@@ -45,6 +47,31 @@ def test_moteur_agent_termine_et_persiste_le_coupon(monkeypatch):
         assert coupon.profil == profil["cle"]
         assert coupon.texte == "ticket rédigé par l'agent"
         assert len(coupon.jambes) == len(selections)
+
+
+def test_moteur_agent_profils_json_et_ignorer_diversite_transmis_a_l_agent(monkeypatch):
+    # Run PONCTUEL (01/10/2026, demande explicite : "6 coupon [...] oublie la diversité") —
+    # --profils-json et --ignorer-diversite-croisee doivent atteindre agent_pilote.executer()
+    # tels quels, sans jamais toucher au comportement par défaut (voir test juste au-dessus,
+    # qui n'utilise ni l'un ni l'autre et reste inchangé).
+    import json as json_module
+    profil = _profil_unique()
+    appels = []
+    _faux_agent_pilote(monkeypatch, {
+        "donnees": collecte_exemple(), "resultats_profils": [], "textes": None,
+        "envoye": False, "raison_abandon": "test",
+    }, appels=appels)
+
+    profils_6 = [{"cle": f"p{i}", "nom": f"Profil {i}", "cote_min": 100.0, "cote_max": 100000.0,
+                 "nb_jambes_min": 10, "nb_jambes": 15} for i in range(1, 7)]
+
+    assert taches.main(["run", "--telegram", "--moteur", "agent",
+                        "--profils-json", json_module.dumps(profils_6),
+                        "--ignorer-diversite-croisee"]) == 0
+
+    assert len(appels) == 1
+    assert appels[0]["profils"] == profils_6
+    assert appels[0]["ignorer_diversite_croisee"] is True
 
 
 def test_moteur_agent_persiste_les_3_profils_separement(monkeypatch):

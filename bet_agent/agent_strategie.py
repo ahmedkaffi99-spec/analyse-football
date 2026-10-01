@@ -285,7 +285,8 @@ def _categories_dominantes(selections, catalogue, deja_presents=()):
     return erreurs
 
 
-def valider(proposition, catalogue, profils, signatures_existantes=(), selections_precedentes=()):
+def valider(proposition, catalogue, profils, signatures_existantes=(), selections_precedentes=(),
+            ignorer_diversite_croisee=False):
     """Contrôle la proposition de l'IA profil par profil. Renvoie
     (acceptes {cle: {"selections"|"abstention", "strategie"}}, problemes [str], calculs [str]).
 
@@ -297,7 +298,14 @@ def valider(proposition, catalogue, profils, signatures_existantes=(), selection
     utilisé ailleurs (même match, même marché, même sélection) est refusé pour un profil
     suivant — chaque profil doit proposer des paris différents ; (2) la diversité de catégorie
     (_categories_peu_variees/_categories_dominantes) se mesure sur le run ENTIER, pas profil
-    par profil isolément."""
+    par profil isolément.
+
+    ignorer_diversite_croisee (01/10/2026, demande explicite d'un run ponctuel : "je veux que tu
+    oublies les profils et leur diversité, travaille comme si c'était le premier profil") : True
+    retire l'effet (2) ci-dessus — chaque profil est jugé pour la diversité de catégorie comme
+    s'il était seul (deja_presents=() au lieu de l'historique accumulé) — mais PAS l'effet (1) :
+    le refus d'un pari EXACTEMENT identique (même match+marché+sélection) à un profil précédent
+    reste actif dans tous les cas, jamais désactivable."""
     acceptes, problemes, calculs, signatures = {}, [], [], list(signatures_existantes)
     toutes_selections_verrouillees = list(selections_precedentes)
     par_profil = {c.get("profil"): c for c in (proposition.get("coupons") or []) if isinstance(c, dict)}
@@ -359,8 +367,9 @@ def valider(proposition, catalogue, profils, signatures_existantes=(), selection
                     f"{', '.join(matchs_a_varier)} — remplace au moins un pari Under/No par une alternative sur "
                     "l'un de ces matchs")
 
-        erreurs.extend(_categories_peu_variees(selections, catalogue, deja_presents=toutes_selections_verrouillees))
-        erreurs.extend(_categories_dominantes(selections, catalogue, deja_presents=toutes_selections_verrouillees))
+        deja_presents_categorie = () if ignorer_diversite_croisee else toutes_selections_verrouillees
+        erreurs.extend(_categories_peu_variees(selections, catalogue, deja_presents=deja_presents_categorie))
+        erreurs.extend(_categories_dominantes(selections, catalogue, deja_presents=deja_presents_categorie))
 
         nb_jambes_min = profil.get("nb_jambes_min", NB_JAMBES_MIN_DEFAUT)
         if not nb_jambes_min <= len(selections) <= profil["nb_jambes"]:

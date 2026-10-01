@@ -296,5 +296,84 @@ class TestTroisProfilsMemeRun(unittest.TestCase):
         self.assertTrue(any("sans coupon" in c for c in contenus_outils))
 
 
+class TestProfilsPersonnalisesEtDiversiteIgnoree(unittest.TestCase):
+    """Demande explicite du 01/10/2026 (run ponctuel) : "je veux 6 coupon [...] je veux que tu
+    oublies les profils et leur diversité, travaille comme si c'était le premier profil" —
+    executer() accepte un paramètre profils (remplace ae.PROFILS_COUPON pour CE run seulement)
+    et ignorer_diversite_croisee (désactive la diversité de catégorie entre profils, jamais
+    l'anti-doublon exact)."""
+
+    def setUp(self):
+        patcher = mock.patch.dict("os.environ", {"DEEPSEEK_API_KEY": "cle-test"})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    PROFILS_6 = [
+        {"cle": f"p{i}", "nom": f"Profil {i}", "cote_min": 0.0, "cote_max": 1000.0,
+         "nb_jambes_min": 1, "nb_jambes": 1}
+        for i in range(1, 7)
+    ]
+
+    def test_executer_avec_profils_personnalises_ignore_ae_profils_coupon(self):
+        # POOL_SIX_MATCHS n'a qu'un seul candidat par match (P1..P6) : chaque profil (1 jambe
+        # max) consomme exactement un match différent, sans jamais réutiliser le même pari.
+        reponses = [_msg_outil("collecter_donnees", {})]
+        for i in range(6):
+            reponses.append(_msg_outil("voir_catalogue", {}))
+            reponses.append(_msg_outil("proposer_coupon", {"strategie": f"s{i}", "jambes": [
+                {"id": f"P{i + 1}", "raison": "r1"}]}))
+        reponses.append(_msg_outil("envoyer_telegram", {}))
+
+        with mock.patch.object(cd, "collecter_donnees", return_value=None), \
+                mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(DONNEES_FACTICES))), \
+                mock.patch.object(ae, "PROFILS_COUPON", [PROFIL_1]), \
+                mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=POOL_SIX_MATCHS), \
+                mock.patch.object(ae, "agent5_envoyer_coupons", return_value=True) as envoi, \
+                mock.patch.object(pilote, "_appel_api", side_effect=[(r, 65536) for r in reponses]):
+            resultat = pilote.executer(mission="test", telegram=True,
+                                       profils=self.PROFILS_6, ignorer_diversite_croisee=True)
+
+        self.assertTrue(resultat["termine"])
+        self.assertTrue(resultat["envoye"])
+        # 6 profils composés, PAS 1 (ae.PROFILS_COUPON, mocké à un seul profil, est bien ignoré).
+        self.assertEqual(len(resultat["resultats_profils"]), 6)
+        self.assertEqual([r["profil"]["cle"] for r in resultat["resultats_profils"]],
+                         [f"p{i}" for i in range(1, 7)])
+        textes_envoyes = envoi.call_args.args[0]
+        self.assertEqual(len(textes_envoyes), 6)
+
+    def test_prompt_et_schemas_mentionnent_le_bon_nombre_de_profils(self):
+        prompt = pilote.construire_prompt_systeme(self.PROFILS_6)
+        self.assertIn("6 coupons", prompt)
+        self.assertIn("Profil 1", prompt)
+        schemas = pilote.construire_outils_schemas(self.PROFILS_6)
+        voir_catalogue = next(s for s in schemas if s["function"]["name"] == "voir_catalogue")
+        self.assertIn("parmi les 6", voir_catalogue["function"]["description"])
+        envoyer = next(s for s in schemas if s["function"]["name"] == "envoyer_telegram")
+        self.assertIn("6 coupons", envoyer["function"]["description"])
+
+    def test_sans_parametre_profils_executer_garde_le_comportement_par_defaut(self):
+        # Compatibilité : profils=None (défaut) continue d'utiliser ae.PROFILS_COUPON tel quel,
+        # exactement comme avant l'ajout de ce paramètre.
+        reponses = [
+            _msg_outil("collecter_donnees", {}),
+            _msg_outil("voir_catalogue", {}),
+            _msg_outil("proposer_coupon", {"strategie": "s", "jambes": [
+                {"id": "P1", "raison": "r1"}, {"id": "P2", "raison": "r2"}]}),
+            _msg_outil("envoyer_telegram", {}),
+        ]
+        with mock.patch.object(cd, "collecter_donnees", return_value=None), \
+                mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(DONNEES_FACTICES))), \
+                mock.patch.object(ae, "PROFILS_COUPON", [PROFIL]), \
+                mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=POOL_FACTICE), \
+                mock.patch.object(ae, "agent5_envoyer_coupons", return_value=True), \
+                mock.patch.object(pilote, "_appel_api", side_effect=[(r, 65536) for r in reponses]):
+            resultat = pilote.executer(mission="test", telegram=True)
+
+        self.assertTrue(resultat["termine"])
+        self.assertEqual(len(resultat["resultats_profils"]), 1)
+        self.assertEqual(resultat["resultats_profils"][0]["profil"]["cle"], "coupon")
+
+
 if __name__ == "__main__":
     unittest.main()

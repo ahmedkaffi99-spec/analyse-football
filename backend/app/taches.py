@@ -1,7 +1,7 @@
 """Tâches planifiées, lancées par GitHub Actions (ou à la main) — sans serveur :
 
     python -m app.taches run [--telegram] [--moteur agent|deterministe] [--sans-redaction] \
-[--si-aucun-ticket-aujourdhui]
+[--si-aucun-ticket-aujourdhui] [--profils-json JSON] [--ignorer-diversite-croisee]
     python -m app.taches verifier [--telegram]
     python -m app.taches envoyer [--run-id N] [--forcer]
     python -m app.taches tester-api
@@ -9,6 +9,7 @@
 Code de sortie 1 si le run finit en erreur : le workflow GitHub apparaît alors en rouge."""
 
 import argparse
+import json
 import os
 import sys
 from datetime import datetime, time, timezone
@@ -43,9 +44,17 @@ def tache_run(args):
         db.commit()
         run_id = run.id
 
-    print(f"🚀 Run {run_id} — Telegram : {'oui' if args.telegram else 'non'} — moteur : {args.moteur}")
+    profils_personnalises = None
+    profils_json = getattr(args, "profils_json", "") or ""
+    if profils_json.strip():
+        profils_personnalises = json.loads(profils_json)
+    ignorer_diversite_croisee = getattr(args, "ignorer_diversite_croisee", False)
+
+    suffixe = f" — {len(profils_personnalises)} profil(s) personnalisé(s)" if profils_personnalises else ""
+    print(f"🚀 Run {run_id} — Telegram : {'oui' if args.telegram else 'non'} — moteur : {args.moteur}{suffixe}")
     executer_run(run_id, envoyer_telegram=args.telegram, rediger=not args.sans_redaction,
-                 depuis_run=getattr(args, "depuis_run", None), moteur=args.moteur)
+                 depuis_run=getattr(args, "depuis_run", None), moteur=args.moteur,
+                 profils_personnalises=profils_personnalises, ignorer_diversite_croisee=ignorer_diversite_croisee)
 
     with SessionLocal() as db:
         run = db.get(Run, run_id)
@@ -366,6 +375,14 @@ def main(argv=None):
     p_run.add_argument("--moteur", choices=["agent", "deterministe"], default="agent",
                        help="agent = agent pilote DeepSeek autonome, officiel par défaut (30/09/2026) ; "
                             "deterministe = ancien enchaînement fixe collecte->calcul->IA ratifie")
+    p_run.add_argument("--profils-json", type=str, default="",
+                       help="JSON d'une liste de profils personnalisés (run PONCTUEL, 01/10/2026) qui "
+                            "remplace ae.PROFILS_COUPON pour CE run uniquement ; vide = comportement par "
+                            "défaut (3 profils sûr/équilibré/audacieux) inchangé. Moteur agent uniquement.")
+    p_run.add_argument("--ignorer-diversite-croisee", action="store_true",
+                       help="désactive la diversité de CATÉGORIE entre profils du même run (traite chaque "
+                            "profil comme le premier) ; le refus du pari EXACTEMENT identique reste actif "
+                            "dans tous les cas. Moteur agent uniquement.")
     p_verif = sous.add_parser("verifier", help="juge les jambes dont le match est terminé")
     p_verif.add_argument("--telegram", action="store_true", help="envoie le bilan quand tout est jugé")
     p_envoi = sous.add_parser("envoyer", help="envoie sur Telegram les coupons déjà calculés d'un run")

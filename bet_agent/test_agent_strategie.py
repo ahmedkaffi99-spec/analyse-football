@@ -464,6 +464,50 @@ class TestDiversiteEtDoublonsEntreProfils(unittest.TestCase):
         self.assertEqual(st._categories_peu_variees(selections, catalogue), [])
         self.assertEqual(st._categories_dominantes(selections, catalogue), [])
 
+    def test_ignorer_diversite_croisee_traite_chaque_profil_comme_le_premier(self):
+        # Demande explicite du 01/10/2026 (run ponctuel à 6 profils) : "je veux que tu oublies
+        # les profils et leur diversité, travaille comme si c'était le premier profil" — même
+        # scénario que test_categorie_dominante_a_l_echelle_du_run_entier (2e Double Chance
+        # rejeté à l'échelle du run), mais ignorer_diversite_croisee=True doit l'accepter : la
+        # diversité de catégorie n'est plus mesurée au-delà du profil en cours.
+        pool = {
+            "A vs B": [_sel("A vs B", "Double Chance", "2X", 1.33), _sel("A vs B", "Total", "Over", 1.9)],
+            "C vs D": [_sel("C vs D", "Double Chance", "1X", 1.37), _sel("C vs D", "BTTS", "Yes", 1.8)],
+            "E vs F": [_sel("E vs F", "Double Chance", "2X", 1.6), _sel("E vs F", "Total", "Under", 1.5)],
+        }
+        catalogue, _ = st.construire_catalogue(pool)
+        profils = [{"cle": "p1", "nom": "x", "cote_min": 0.0, "cote_max": 1000.0, "nb_jambes": 2, "nb_jambes_min": 2},
+                   {"cle": "p2", "nom": "y", "cote_min": 0.0, "cote_max": 1000.0, "nb_jambes": 1, "nb_jambes_min": 1}]
+        proposition = {"coupons": [
+            {"profil": "p1", "strategie": "s", "jambes": [{"id": "P1"}, {"id": "P4"}]},  # A/2X, C/BTTS
+            {"profil": "p2", "strategie": "s", "jambes": [{"id": "P5"}]},  # E/2X — accepté cette fois
+        ]}
+
+        acceptes, problemes, _ = st.valider(proposition, catalogue, profils, ignorer_diversite_croisee=True)
+
+        self.assertEqual(problemes, [])
+        self.assertIn("p1", acceptes)
+        self.assertIn("p2", acceptes)
+
+    def test_ignorer_diversite_croisee_garde_quand_meme_le_refus_du_doublon_exact(self):
+        # Le refus du pari EXACTEMENT identique entre profils n'est JAMAIS désactivable, même
+        # avec ignorer_diversite_croisee=True (demande explicite : seule la diversité de
+        # catégorie doit sauter, pas l'anti-doublon pur et simple).
+        pool = self._pool_six_matchs()
+        catalogue, _ = st.construire_catalogue(pool)
+        profils = [{"cle": "p1", "nom": "x", "cote_min": 0.0, "cote_max": 1000.0, "nb_jambes": 2, "nb_jambes_min": 2},
+                   {"cle": "p2", "nom": "y", "cote_min": 0.0, "cote_max": 1000.0, "nb_jambes": 2, "nb_jambes_min": 2}]
+        proposition = {"coupons": [
+            {"profil": "p1", "strategie": "s", "jambes": [{"id": "P1"}, {"id": "P2"}]},
+            {"profil": "p2", "strategie": "s", "jambes": [{"id": "P1"}, {"id": "P3"}]},  # P1 réutilisé à l'identique
+        ]}
+
+        acceptes, problemes, _ = st.valider(proposition, catalogue, profils, ignorer_diversite_croisee=True)
+
+        self.assertIn("p1", acceptes)
+        self.assertNotIn("p2", acceptes)
+        self.assertTrue(any("déjà choisi dans un autre profil" in p for p in problemes), problemes)
+
 
 class TestCoupEnvoi(unittest.TestCase):
     def test_match_qui_commence_bientot_ecarte_a_la_reprise(self):
