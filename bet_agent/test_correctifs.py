@@ -911,6 +911,48 @@ class TestLe1X2NEstPlusExclu(unittest.TestCase):
         self.assertEqual({s["selection"] for s in ftr["selections"]}, {"1", "X", "2"})
 
 
+class TestLigneZeroSansObjetMasquee(unittest.TestCase):
+    """Signalé par l'utilisateur le 01/10/2026 : "Full Time Result (0.0)" affiché dans un
+    ticket — incompréhensible, car ce marché (1X2) n'a structurellement aucune ligne. Vérifié
+    en base : handicap=0 est la valeur TOUJOURS renvoyée par OddsPapi (jamais une autre) pour
+    tous les marchés sans ligne (Full Time Result, BTTS, Correct Score, Clean Sheet, Win to
+    Nil, Odd/Even, Double Chance, Winning Margin...) — un simple défaut de l'API, pas une
+    vraie ligne. Seuls les marchés "Handicap" utilisent 0 comme ligne réellement tradée
+    (pick 'em / draw no bet). _nom_avec_ligne masque donc la ligne "(0)"/"(0.0)" sauf pour les
+    marchés Handicap ; toute AUTRE valeur de ligne (jamais 0) reste affichée normalement."""
+
+    def test_full_time_result_sans_parenthese_ligne(self):
+        marches = [{"marche": "Full Time Result", "handicap": 0, "periode": "fulltime",
+                    "selections": [{"selection": "1", "cote": 1.455}, {"selection": "X", "cote": 4.815},
+                                   {"selection": "2", "cote": 6.45}]}]
+        complets = ae.completer_avec_marches_bruts([], marches)
+        self.assertTrue(all(c["marche"] == "Full Time Result" for c in complets))
+
+    def test_btts_et_double_chance_sans_parenthese_ligne(self):
+        marches = [
+            {"marche": "Both Teams To Score", "handicap": 0, "periode": "fulltime",
+             "selections": [{"selection": "Yes", "cote": 1.9}]},
+            {"marche": "Double Chance Full Time", "handicap": 0, "periode": "fulltime",
+             "selections": [{"selection": "1X", "cote": 1.2}]},
+        ]
+        complets = ae.completer_avec_marches_bruts([], marches)
+        noms = {c["marche"] for c in complets}
+        self.assertEqual(noms, {"Both Teams To Score", "Double Chance Full Time"})
+
+    def test_handicap_a_ligne_zero_garde_sa_parenthese(self):
+        # Asian Handicap à 0 EST une vraie ligne tradée (pick 'em) — jamais masquée.
+        marches = [{"marche": "Asian Handicap", "handicap": 0, "periode": "fulltime",
+                    "selections": [{"selection": "1", "cote": 2.0}, {"selection": "2", "cote": 1.8}]}]
+        complets = ae.completer_avec_marches_bruts([], marches)
+        self.assertTrue(all(c["marche"] == "Asian Handicap (0)" for c in complets))
+
+    def test_ligne_non_nulle_jamais_masquee(self):
+        marches = [{"marche": "Over Under Full Time", "handicap": 2.5, "periode": "fulltime",
+                    "selections": [{"selection": "Over", "cote": 1.9}]}]
+        complets = ae.completer_avec_marches_bruts([], marches)
+        self.assertEqual(complets[0]["marche"], "Over Under Full Time (2.5)")
+
+
 class TestCollecteEfficace(unittest.TestCase):
     def test_match_trop_proche_du_coup_envoi_exclu(self):
         maintenant = datetime(2026, 9, 26, 12, 0, tzinfo=cd.timezone.utc)

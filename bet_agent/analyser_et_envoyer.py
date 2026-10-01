@@ -733,7 +733,7 @@ def completer_avec_marches_bruts(candidats_modelises, marches):
             continue
         nom_marche = marche.get("marche") or "Marché"
         handicap = marche.get("handicap")
-        nom_avec_ligne = f"{nom_marche} ({handicap})" if handicap is not None else nom_marche
+        nom_avec_ligne = _nom_avec_ligne(nom_marche, handicap)
         # Normalisation de categorie (pas de "marche", qui garde le nom brut OddsPapi pour
         # l'affichage — déjà correct). Le marché OddsPapi "Asian Handicap" est UN SEUL marché
         # qui couvre à la fois les lignes de quart (.25/.75, jamais modélisées, donc toujours
@@ -1155,10 +1155,27 @@ def expliquer_marche(categorie, selection_brute, handicap):
     return None, None
 
 
-def _candidat(nom_marche, handicap, selection, proba, edge, categorie):
+def _nom_avec_ligne(nom_marche, handicap):
     # La ligne (handicap) est intégrée AU NOM du marché — pas laissée comme détail séparé
-    # que le LLM pourrait oublier de reprendre dans le ticket final.
-    nom_avec_ligne = f"{nom_marche} ({handicap})" if handicap is not None else nom_marche
+    # que le LLM pourrait oublier de reprendre dans le ticket final. MAIS : OddsPapi renvoie
+    # handicap=0 comme valeur par défaut/sans objet pour TOUS les marchés qui n'ont structurel-
+    # lement aucune ligne (Full Time Result, BTTS, Correct Score, Clean Sheet, Win to Nil, Odd/
+    # Even, Double Chance, Winning Margin, etc. — vérifié en base le 01/10/2026 : ces marchés
+    # ont TOUJOURS handicap=0, jamais une autre valeur) — pas une vraie ligne 0 comme le "pick
+    # 'em"/draw-no-bet d'un marché Handicap. Signalé par l'utilisateur : "Full Time Result (0.0)"
+    # affiché dans un ticket, incompréhensible pour un marché qui n'a pas de ligne. Seuls les
+    # marchés dont le nom contient "handicap" utilisent 0 comme une vraie ligne tradée (ex:
+    # Asian Handicap à 0, équivalent d'un pari sans marge de but) — pour tous les autres, 0 est
+    # ignoré et le nom brut est affiché seul, comme s'il n'y avait pas de ligne.
+    if handicap is None:
+        return nom_marche
+    if handicap == 0 and "handicap" not in nom_marche.lower():
+        return nom_marche
+    return f"{nom_marche} ({handicap})"
+
+
+def _candidat(nom_marche, handicap, selection, proba, edge, categorie):
+    nom_avec_ligne = _nom_avec_ligne(nom_marche, handicap)
     guide, onglet = expliquer_marche(categorie, selection["selection"], handicap)
     return {
         "categorie": categorie,
