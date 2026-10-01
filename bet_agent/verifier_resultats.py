@@ -234,9 +234,11 @@ def grader_pick(pick, home_g, away_g):
         return juger_double_chance(selection, home_g, away_g)
     if categorie == "Draw No Bet":
         return juger_draw_no_bet(selection, home_g, away_g)
-    if categorie in ("Handicap Européen", "Handicap Asiatique"):
-        # "Handicap Asiatique" : compatibilité avec les tickets persistés avant le renommage
-        # du 01/10/2026 (voir analyser_et_envoyer.expliquer_marche) — même logique de jugement.
+    if categorie in ("Handicap", "Handicap Européen", "Handicap Asiatique"):
+        # "Handicap" : lignes entières/demi du marché OddsPapi "Asian Handicap" (onglet
+        # "Handicap" sur 1xBet, voir analyser_et_envoyer._evaluer_marches_brut, 01/10/2026).
+        # "Handicap Asiatique"/"Handicap Européen" : compatibilité avec les tickets persistés
+        # avant ce renommage — même logique de jugement dans tous les cas.
         return juger_handicap(handicap, selection, home_g, away_g) if handicap is not None else None
     if categorie == "Pair/Impair":
         return juger_pair_impair(selection, home_g, away_g)

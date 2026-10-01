@@ -109,8 +109,8 @@ Le LLM **n'invente jamais un chiffre** : cotes, probabilités et edges sont calc
   2. stats API-Football de saison (`/teams/statistics`) ;
   3. estimation depuis les cotes (ligne Total et Handicap les plus équilibrées).
 - Probabilités de **Poisson** sur : Total (match, équipe 1, équipe 2), BTTS, Double Chance, Draw No Bet, Handicap asiatique, Pair/Impair, Clean Sheet, Win to Nil, corners/cartons.
-- Lignes quart (.25/.75) exclues des paris proposés (jamais modélisées par Poisson ; visibles en marché brut, sans calcul, sous leur nom OddsPapi réel "Asian Handicap").
-- OddsPapi expose aussi un marché distinct "European Handicap" (3 voies 1/X/2, un vrai nul) — différent du marché "Asian Handicap" (2 voies) que Python modélise ici ; les deux gardent leur propre nom brut, jamais fusionnés (un renommage d'affichage tenté le 01/10/2026 a été annulé le même jour : il entrait en collision avec ce marché distinct).
+- Lignes quart (.25/.75) exclues des paris proposés (jamais modélisées par Poisson ; visibles en marché brut, sans calcul, sous le nom "Handicap Asiatique").
+- OddsPapi n'envoie en réalité qu'UN SEUL marché "Asian Handicap" (2 voies) qui couvre à la fois les lignes de quart ET les lignes entières/demi — mais 1xBet l'affiche à l'utilisateur sous DEUX onglets séparés selon la granularité de la ligne : "Asian Handicap" pour les lignes de quart, "Handicap" (tout court) pour les lignes entières/demi (vérifié le 01/10/2026 via captures 1xBet + requête Supabase : les cotes de nos lignes entières correspondent exactement à celles de l'onglet "Handicap" de 1xBet, pas de son onglet "Asian Handicap"). Le libellé categorie suit donc cette distinction : "Handicap Asiatique" (lignes de quart, en brut uniquement) vs "Handicap" (lignes entières/demi, modélisées par Poisson). OddsPapi expose en plus un marché réellement distinct "European Handicap" (3 voies 1/X/2, un vrai nul), jamais confondu avec les deux précédents.
 - **Edge** = (proba modèle − proba implicite de la cote) / proba implicite.
 - Sélection **« 12 » interdite** partout.
 

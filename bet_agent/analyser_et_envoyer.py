@@ -735,16 +735,20 @@ def completer_avec_marches_bruts(candidats_modelises, marches):
         handicap = marche.get("handicap")
         nom_avec_ligne = f"{nom_marche} ({handicap})" if handicap is not None else nom_marche
         # Normalisation de categorie (pas de "marche", qui garde le nom brut OddsPapi pour
-        # l'affichage — déjà correct) : le marché "Asian Handicap" (lignes de quart .25/.75,
-        # jamais modélisées, donc toujours en brut ici) doit porter la MÊME categorie que ses
-        # lignes entières/demi modélisées ("Handicap Asiatique") — sinon un même marché réel
-        # apparaît sous 2 catégories différentes selon la ligne, donnant l'impression trompeuse
-        # de 3 types de handicap (constaté le 01/10/2026, signalé par l'utilisateur : "erreur de
-        # rédaction du 3 marché handicap" — Handicap Asiatique / Asian Handicap / European
-        # Handicap alors qu'il n'y a que 2 marchés réels distincts, Asian et European Handicap).
+        # l'affichage — déjà correct). Le marché OddsPapi "Asian Handicap" est UN SEUL marché
+        # qui couvre à la fois les lignes de quart (.25/.75, jamais modélisées, donc toujours
+        # en brut ici) ET les lignes entières/demi — mais 1xBet l'affiche à l'utilisateur sous
+        # DEUX onglets séparés selon la granularité de la ligne : "Asian Handicap" pour les
+        # lignes de quart, "Handicap" (tout court) pour les lignes entières/demi. Vérifié le
+        # 01/10/2026 via captures 1xBet (Grèce-Pays-Bas) + requête Supabase : nos cotes en
+        # base pour handicap=0/-1/-1.5 sous "Asian Handicap" correspondent EXACTEMENT aux
+        # cotes affichées par 1xBet sous son onglet "Handicap", pas "Asian Handicap" — donc le
+        # libellé categorie doit suivre la granularité de la ligne, pas rester fixe. Le marché
+        # "European Handicap" (3 voies 1/X/2) reste distinct, jamais concerné par cette
+        # normalisation.
         nom_bas = nom_marche.lower()
         if nom_bas == "asian handicap":
-            categorie = "Handicap Asiatique"
+            categorie = "Handicap Asiatique" if handicap is not None and _est_ligne_quart(handicap) else "Handicap"
         else:
             categorie = nom_marche
         for s in marche.get("selections", []):
@@ -930,16 +934,18 @@ def _evaluer_marches_brut(marches, mu_home, mu_away, mu_corners=None, mu_cartons
                         candidats.append(_candidat(marche["marche"], handicap, s, p_away_dnb, edge, "Draw No Bet"))
 
         # --- Asian Handicap ---
-        # Marché OddsPapi "Asian Handicap" (2 voies, push possible sur les lignes entières) —
-        # à NE PAS confondre avec le marché OddsPapi "European Handicap" (3 voies, 1/X/2, un
-        # vrai marché DISTINCT, vu en base sur d'autres matchs, ex: Juventus W-Napoli W). Un
-        # renommage d'affichage en "Handicap Européen" a été tenté le 01/10/2026 (captures
-        # 1xBet séparant visuellement "Handicap" de "Asian Handicap"), puis ANNULÉ le même
-        # jour : il entrait en collision avec ce vrai marché "European Handicap" distinct —
-        # deux paris pourraient alors porter le même libellé avec des cotes totalement
-        # différentes pour la même ligne. Le nom brut OddsPapi "Asian Handicap" reste donc
-        # affiché tel quel, y compris pour les lignes entières/demi que cette branche modélise
-        # (les lignes de quart sont exclues juste au-dessus, jamais modélisées ici).
+        # Marché OddsPapi "Asian Handicap" (2 voies, push possible) — à NE PAS confondre avec
+        # le marché OddsPapi "European Handicap" (3 voies, 1/X/2, un vrai marché DISTINCT, vu
+        # en base sur d'autres matchs, ex: Juventus W-Napoli W). Un renommage d'affichage en
+        # "Handicap Européen" a été tenté le 01/10/2026, puis ANNULÉ le même jour : collision
+        # avec ce vrai marché distinct. Captures 1xBet du 01/10/2026 (Grèce-Pays-Bas) PUIS
+        # vérification Supabase (handicap=0 → 1@2.584/2@1.553, handicap=-1.5 → 1@7.1/2@1.038,
+        # exactement les cotes de l'onglet "Handicap" de 1xBet, pas de son onglet "Asian
+        # Handicap") confirment qu'OddsPapi envoie UN SEUL marché "Asian Handicap" couvrant à
+        # la fois les lignes de quart (.25/.75 — onglet "Asian Handicap" sur 1xBet) ET les
+        # lignes entières/demi (onglet "Handicap" sur 1xBet, SANS collision avec "European
+        # Handicap" qui reste un marché 3 voies à part). D'où la distinction par granularité
+        # de ligne ci-dessous, et non plus un seul libellé fixe pour tout le marché.
         elif "asian handicap" in nom and "corner" not in nom and "card" not in nom and "booking" not in nom:
             if handicap is None:
                 continue
@@ -955,7 +961,7 @@ def _evaluer_marches_brut(marches, mu_home, mu_away, mu_corners=None, mu_cartons
                     continue
                 edge = calc_edge(proba, s["cote"])
                 if _edge_calculable(edge, proba):
-                    candidats.append(_candidat(marche["marche"], handicap, s, proba, edge, "Handicap Asiatique"))
+                    candidats.append(_candidat(marche["marche"], handicap, s, proba, edge, "Handicap"))
 
         # --- Handicap Corners / Handicap Cartons ---
         # Demande explicite du 01/10/2026 ("carton et corner faut calcule en poisson [le
@@ -1110,21 +1116,27 @@ def expliquer_marche(categorie, selection_brute, handicap):
                  f"soit l'équipe {num} ({cote_txt}) ne gagne pas, soit l'adversaire marque au moins un but")
         return guide, f"onglet Win to Nil équipe {num}"
 
-    if categorie in ("Handicap Asiatique", "Handicap Européen"):
-        # "Handicap Européen" gardé en compatibilité : un renommage bref le 01/10/2026 (annulé
-        # le même jour, collision avec le vrai marché OddsPapi distinct "European Handicap",
-        # 3 voies 1/X/2) a pu être persisté entre-temps sur d'éventuels tickets.
+    if categorie in ("Handicap Asiatique", "Handicap", "Handicap Européen"):
+        # Marché OddsPapi "Asian Handicap" unique, affiché par 1xBet sous DEUX onglets selon
+        # la granularité de la ligne (vérifié le 01/10/2026, voir commentaire dans
+        # _evaluer_marches_brut) : "Asian Handicap" pour les lignes de quart (.25/.75),
+        # "Handicap" tout court pour les lignes entières/demi — categorie suit cette
+        # distinction pour que le ticket nomme le bon onglet à l'utilisateur. "Handicap
+        # Européen" gardé en compatibilité : un renommage bref le 01/10/2026 (annulé le même
+        # jour, collision avec le vrai marché OddsPapi distinct "European Handicap", 3 voies
+        # 1/X/2) a pu être persisté entre-temps sur d'éventuels tickets.
+        onglet_nom = {"Handicap Asiatique": "Asian Handicap", "Handicap": "Handicap"}.get(categorie, "Handicap Asiatique")
         if sel in ("home", "1"):
             cote_txt, h_effectif = "domicile", handicap
         elif sel in ("away", "2"):
             cote_txt, h_effectif = "extérieure", -handicap
         else:
-            return f"handicap asiatique : {selection_brute}", "onglet Handicap Asiatique"
+            return f"handicap : {selection_brute}", f"onglet {onglet_nom}"
         if h_effectif >= 0:
             guide = f"l'équipe {cote_txt} part avec un avantage fictif de {h_effectif} but(s)"
         else:
             guide = f"l'équipe {cote_txt} part avec un désavantage fictif de {abs(h_effectif)} but(s)"
-        return guide, "onglet Handicap Asiatique"
+        return guide, f"onglet {onglet_nom}"
 
     if categorie in ("Handicap Corners", "Handicap Cartons"):
         unite = "corner(s)" if categorie == "Handicap Corners" else "carton(s) jaune(s)"

@@ -414,7 +414,7 @@ class TestRedactionSansEdgeNone(unittest.TestCase):
         # sur un mécanisme précis (ex: "Allemagne doit gagner nettement, handicap de moins un
         # but et demi pour elle" pour un Asian Handicap -1.5) — le guide Python, toujours exact,
         # doit compléter plutôt que jamais apparaître (comportement d'avant ce correctif).
-        s = _selection("Germany vs Serbia", "Handicap Asiatique", "1", 1.679,
+        s = _selection("Germany vs Serbia", "Handicap", "1", 1.679,
                        guide="l'équipe domicile part avec un désavantage fictif de 1.5 but(s)")
         s["raison_ia"] = "l'Allemagne doit gagner nettement, handicap de moins un but et demi pour elle"
         texte = ae.rediger_ticket_sans_ia([s])
@@ -422,7 +422,7 @@ class TestRedactionSansEdgeNone(unittest.TestCase):
         self.assertIn("désavantage fictif de 1.5 but(s)", texte)
 
     def test_guide_seul_affiche_si_aucune_raison_ia(self):
-        s = _selection("A vs B", "Handicap Asiatique", "1", 1.5,
+        s = _selection("A vs B", "Handicap", "1", 1.5,
                        guide="l'équipe domicile part avec un avantage fictif de 1.0 but(s)")
         texte = ae.rediger_ticket_sans_ia([s])
         self.assertIn("avantage fictif de 1.0 but(s)", texte)
@@ -701,28 +701,32 @@ class TestCompleterAvecMarchesBruts(unittest.TestCase):
 
 
 class TestAsianHandicapVsEuropeanHandicapMarchesDistincts(unittest.TestCase):
-    """OddsPapi expose deux marchés RÉELS et DISTINCTS : "Asian Handicap" (2 voies, push
-    possible sur les lignes entières, lignes de quart incluses) et "European Handicap" (3
-    voies 1/X/2, un vrai nul — vérifié en base, ex: Juventus W-Napoli W, El Salvador-
-    Martinique). Un renommage d'affichage du premier en "Handicap Européen" (pour coller aux
-    onglets 1xBet vus en capture par l'utilisateur le 01/10/2026) a été tenté puis ANNULÉ le
-    même jour : il entrait en collision avec le second, un marché différent qui existe déjà
-    sous ce nom. Les deux doivent donc rester sous leur propre nom OddsPapi, jamais fusionnés
-    ni renommés l'un vers l'autre — même quand ils portent sur le même match et la même ligne."""
+    """OddsPapi n'envoie en réalité qu'UN SEUL marché "Asian Handicap" (2 voies, push
+    possible), qui couvre à la fois les lignes de quart ET les lignes entières/demi — mais
+    1xBet l'affiche sous DEUX onglets séparés selon la granularité de la ligne (vérifié le
+    01/10/2026 via captures 1xBet de Grèce-Pays-Bas + requête Supabase : nos cotes en base
+    pour les lignes entières/demi correspondent EXACTEMENT à celles de l'onglet "Handicap" de
+    1xBet, pas de son onglet "Asian Handicap"). D'où categorie="Handicap Asiatique" pour les
+    lignes de quart (toujours en brut) et categorie="Handicap" pour les lignes entières/demi
+    (modélisées) — même marché OddsPapi, deux noms d'affichage selon la ligne. "European
+    Handicap" (3 voies 1/X/2, un vrai nul — vérifié en base, ex: Juventus W-Napoli W, El
+    Salvador-Martinique) reste un marché réellement DISTINCT, jamais confondu ni fusionné avec
+    les deux précédents (un renommage du premier en "Handicap Européen" a été tenté puis
+    ANNULÉ le 01/10/2026 : collision avec ce marché différent)."""
 
-    def test_ligne_entiere_asian_handicap_garde_son_nom_oddspapi(self):
+    def test_ligne_entiere_asian_handicap_devient_categorie_handicap(self):
         marches = [{"marche": "Asian Handicap", "handicap": 0, "periode": "fulltime",
                     "selections": [{"selection": "1", "cote": 2.324}, {"selection": "2", "cote": 1.665}]}]
         candidats = ae.evaluer_marches_toutes(marches, 1.6, 1.1)
         self.assertEqual(len(candidats), 2)
         for c in candidats:
-            self.assertEqual(c["categorie"], "Handicap Asiatique")
+            self.assertEqual(c["categorie"], "Handicap")
             self.assertTrue(c["marche"].startswith("Asian Handicap ("))
 
     def test_european_handicap_3_voies_jamais_modelise_reste_en_brut_sous_son_nom(self):
         # "European Handicap" (avec un vrai "X") ne matche aucune branche de
         # _evaluer_marches_brut (pas de "asian handicap" dans son nom) : reste en marché brut,
-        # jamais transformé en "Handicap Asiatique"/"Handicap Européen".
+        # jamais transformé en "Handicap"/"Handicap Asiatique"/"Handicap Européen".
         marches = [{"marche": "European Handicap", "handicap": -1, "periode": "fulltime",
                     "selections": [{"selection": "1", "cote": 2.0}, {"selection": "X", "cote": 3.42},
                                    {"selection": "2", "cote": 2.75}]}]
@@ -750,17 +754,19 @@ class TestAsianHandicapVsEuropeanHandicapMarchesDistincts(unittest.TestCase):
         self.assertIn("Asian Handicap (-1)", noms)
         self.assertIn("European Handicap (-1)", noms)
         categories = {c["categorie"] for c in complets}
-        self.assertEqual(categories, {"Handicap Asiatique", "European Handicap"})
+        self.assertEqual(categories, {"Handicap", "European Handicap"})
 
-    def test_ligne_de_quart_en_brut_garde_la_meme_categorie_que_la_ligne_entiere(self):
+    def test_ligne_de_quart_en_brut_garde_sa_propre_categorie_asiatique(self):
         # Signalé par l'utilisateur le 01/10/2026 ("erreur de rédaction du 3 marché handicap",
-        # Asian vs European encore confondus) : vérifié en base, le marché "Asian Handicap"
-        # produisait categorie="Handicap Asiatique" (français) pour les lignes entières/demi
-        # (modélisées) mais categorie="Asian Handicap" (anglais, nom brut OddsPapi non traduit)
-        # pour les lignes de quart (toujours en brut) — un même marché réel sous 2 catégories
-        # différentes selon la ligne, donnant l'impression trompeuse d'un 3e type de handicap.
-        # Les deux doivent désormais porter la MÊME categorie ("Handicap Asiatique"), même si
-        # le texte affiché ("marche") reste "Asian Handicap (-0.75)" (nom brut, inchangé).
+        # Asian vs European encore confondus), puis reconfirmé avec 3 nouvelles captures 1xBet
+        # (Grèce-Pays-Bas) montrant bien 3 ONGLETS visuels distincts côté 1xBet : "Asian
+        # Handicap" (lignes de quart), "Handicap" (lignes entières/demi), "European Handicap"
+        # (3 voies). Vérifié en base (Supabase) : nos lignes entières/demi stockées sous le nom
+        # OddsPapi "Asian Handicap" correspondent aux cotes de l'onglet "Handicap" de 1xBet —
+        # donc categorie doit suivre la granularité de la ligne : "Handicap Asiatique" pour
+        # les lignes de quart (toujours en brut, jamais modélisées), "Handicap" pour les lignes
+        # entières/demi (modélisées). Le texte affiché ("marche") reste "Asian Handicap
+        # (-0.75)" (nom brut OddsPapi, inchangé) dans les deux cas.
         marches = [{"marche": "Asian Handicap", "handicap": -0.75, "periode": "fulltime",
                     "selections": [{"selection": "1", "cote": 3.9}, {"selection": "2", "cote": 1.222}]}]
         modelises = ae.evaluer_marches_toutes(marches, 1.6, 1.1)
@@ -770,6 +776,17 @@ class TestAsianHandicapVsEuropeanHandicapMarchesDistincts(unittest.TestCase):
         for c in complets:
             self.assertEqual(c["categorie"], "Handicap Asiatique")
             self.assertTrue(c["marche"].startswith("Asian Handicap ("))
+
+    def test_ligne_entiere_asian_handicap_en_brut_devient_aussi_categorie_handicap(self):
+        # Même marché "Asian Handicap", mais une ligne entière/demi non modélisée (ex: pas de
+        # mu disponible) doit aussi recevoir categorie="Handicap" via completer_avec_marches_
+        # bruts — pas seulement via evaluer_marches_toutes (branche modélisée).
+        marches = [{"marche": "Asian Handicap", "handicap": 1, "periode": "fulltime",
+                    "selections": [{"selection": "1", "cote": 1.5}, {"selection": "2", "cote": 2.7}]}]
+        complets = ae.completer_avec_marches_bruts([], marches)
+        self.assertEqual(len(complets), 2)
+        for c in complets:
+            self.assertEqual(c["categorie"], "Handicap")
 
 
 class TestHandicapCornersEtCartonsModelisesEnPoisson(unittest.TestCase):
