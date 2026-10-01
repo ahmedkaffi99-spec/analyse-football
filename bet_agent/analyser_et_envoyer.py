@@ -726,6 +726,15 @@ def completer_avec_marches_bruts(candidats_modelises, marches):
             cote = s.get("cote")
             if not cote or cote <= 1:
                 continue
+            # SELECTION_INTERDITE ("12", double chance domicile-ou-extérieur) : interdiction
+            # absolue, de longue date (voir README/docstring du module) — déjà exclue du côté
+            # modélisé (_evaluer_marches_brut, branche Double Chance), mais ce filtre-ci ne
+            # l'ajoutait pas non plus à deja_vus, laissant completer_avec_marches_bruts la
+            # réintroduire en brut (constaté le 01/10/2026, run à 6 profils : "Double Chance
+            # Full Time : 12 @ 1.194" envoyé sur Telegram, malgré l'interdiction). Exclue ici
+            # explicitement, qu'importe la casse du nom de marché.
+            if "double chance" in nom_bas and s["selection"] == SELECTION_INTERDITE:
+                continue
             cle = (nom_avec_ligne, s["selection"])
             if cle in deja_vus:
                 continue

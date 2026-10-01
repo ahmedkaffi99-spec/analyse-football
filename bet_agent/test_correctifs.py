@@ -624,6 +624,22 @@ class TestCompleterAvecMarchesBruts(unittest.TestCase):
         complets = ae.completer_avec_marches_bruts(modelises, marches)
         self.assertEqual(len(complets), len(modelises))  # rien ajouté, déjà tout couvert
 
+    def test_selection_12_interdite_jamais_reintroduite_en_brut(self):
+        # Bug réel constaté le 01/10/2026 (run à 6 profils) : "Double Chance Full Time : 12 @
+        # 1.194" envoyé sur Telegram, malgré l'interdiction absolue de longue date (README,
+        # SELECTION_INTERDITE). Cause : _evaluer_marches_brut (branche Double Chance) ignore
+        # "12" (jamais ajoutée à candidats_modelises), mais ne la signale pas comme "déjà vue"
+        # — completer_avec_marches_bruts la réintroduisait donc en marché brut, sans filtre.
+        marches = [{"marche": "Double Chance Full Time", "handicap": 0.0, "periode": "fulltime",
+                    "selections": [{"selection": "1X", "cote": 1.3}, {"selection": "12", "cote": 1.25},
+                                   {"selection": "2X", "cote": 1.9}]}]
+        modelises = ae.evaluer_marches_toutes(marches, 1.3, 1.2)
+        self.assertNotIn("12", {c["selection"] for c in modelises})
+        complets = ae.completer_avec_marches_bruts(modelises, marches)
+        self.assertNotIn("12", {c["selection"] for c in complets})
+        # 1X et 2X restent bien présents (seule "12" est bannie).
+        self.assertEqual({c["selection"] for c in complets}, {"1X", "2X"})
+
     def test_integration_pool_contient_les_marches_bruts(self):
         donnees = {"matchs": [{
             "match_demande": {"home": "A", "away": "B"}, "api_football": None,

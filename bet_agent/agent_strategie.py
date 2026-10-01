@@ -342,6 +342,14 @@ def valider(proposition, catalogue, profils, signatures_existantes=(), selection
                                f"sur {selection['match']} déjà choisi dans un autre profil ce run — choisis un "
                                "autre pari ou un autre match pour ce profil")
                 continue
+            if selection["pick"]["selection"] == ae.SELECTION_INTERDITE:
+                # Garde-fou en profondeur : SELECTION_INTERDITE ("12") est censée être déjà
+                # absente du catalogue (voir completer_avec_marches_bruts, corrigé le
+                # 01/10/2026), mais c'est une interdiction ABSOLUE — jamais acceptée ici même
+                # si elle réapparaissait un jour par un autre chemin (ex: un nouveau marché brut
+                # avec une sélection "12" qui ne serait pas du Double Chance).
+                erreurs.append(f"{cid} : sélection « 12 » interdite — choisis un autre pari")
+                continue
             probleme = incoherence_raison(selection["raison_ia"], selection["pick"])
             if probleme:
                 erreurs.append(f"{cid} : {probleme} — réécris la raison de CE pari")
