@@ -325,10 +325,18 @@ TRADUCTION_PAYS_FR_EN = {
     "cameroun": "cameroon", "nouvelle-zelande": "new zealand", "australie": "australia",
 }
 
+# Alias/renommages officiels — API-Football et OddsPapi utilisent parfois le nom ADOPTÉ PAR
+# LA FIFA plutôt que le nom usuel anglais (constaté le 02/10/2026, run #84 : "Belgium vs
+# Turkey" toujours à 77% MÊME EN ANGLAIS, parce que la source utilise "Türkiye", le nom
+# officiel depuis 2023 — aucune traduction FR->EN n'aide ici, "Turkey" est déjà l'anglais).
+ALIAS_PAYS = {
+    "turkiye": "turkey", "türkiye": "turkey",
+}
+
 
 def _nom_traduit(nom):
     cle = unidecode(nom or "").strip().lower()
-    return TRADUCTION_PAYS_FR_EN.get(cle, nom)
+    return TRADUCTION_PAYS_FR_EN.get(cle) or ALIAS_PAYS.get(cle) or nom
 
 
 def score_paire_equipes(home_cherche, away_cherche, home_candidat, away_candidat):

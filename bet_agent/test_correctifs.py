@@ -64,6 +64,15 @@ class TestTraductionNomsPaysFrancais(unittest.TestCase):
         self.assertLess(cd.score_paire_equipes("SL Benfica", "CF Os Belenenses",
                                                 "Estrela", "CF Os Belenenses"), cd.SEUIL_MATCH_ACCEPTABLE)
 
+    def test_turkiye_alias_toujours_reconnu(self):
+        # Constaté le 02/10/2026 (run #84, matchs déjà donnés en anglais) : "Belgium vs Turkey"
+        # restait à 77% même sans passer par le français — API-Football/OddsPapi utilisent le
+        # nom officiel FIFA "Türkiye" depuis 2023, pas "Turkey".
+        self.assertGreaterEqual(cd.score_paire_equipes("Belgium", "Turkey", "Belgium", "Türkiye"),
+                                 cd.SEUIL_MATCH_ACCEPTABLE)
+        self.assertGreaterEqual(cd.score_paire_equipes("Belgique", "Turquie", "Belgium", "Türkiye"),
+                                 cd.SEUIL_MATCH_ACCEPTABLE)
+
 
 class TestXgStatsDetaillees(unittest.TestCase):
     """calculer_xg_depuis_stats_detaillees — remplace Understat (retiré du pipeline le
