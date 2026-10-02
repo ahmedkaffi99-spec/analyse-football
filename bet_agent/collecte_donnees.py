@@ -201,7 +201,21 @@ FILTRE_LIGUES_UNIQUES = [
 # championnats s'arrêtent (constaté le 2026-09-26 : 6 matchs seulement, tous de Serie A
 # féminine). Même format (mot-clé du tournoi, pays ou None).
 FILTRE_LIGUES_SECOURS = [
-    ("nations league", None),
+    # Compétitions d'ÉQUIPES NATIONALES, sans restriction de pays/confédération (demande
+    # explicite du 02/10/2026, après un run en pleine trêve internationale où les 22 matchs
+    # manuels donnés par l'utilisateur étaient TOUS des sélections nationales — Ligue des
+    # Nations UEFA, Ligue des Nations CONCACAF, ASEAN Cup, matchs amicaux — alors que le
+    # complément automatique n'en reconnaissait qu'une partie) : "accepte toutes les
+    # compétitions d'équipe nation dans le monde entier".
+    ("nations league", None),       # couvre déjà UEFA ET CONCACAF (pays_attendu=None)
+    ("friendl", None),               # matchs amicaux (OddsPapi : "Friendlies"/"International Friendly")
+    ("asean", None),                 # ASEAN Cup / Championship
+    ("cup of nations", None),        # Africa Cup of Nations (déjà couvert ci-dessous, gardé en alias)
+    ("gold cup", None),              # CONCACAF Gold Cup
+    ("copa america", None),
+    ("asian cup", None),
+    ("world cup qualif", None),      # éliminatoires Coupe du Monde (toutes confédérations)
+    ("euro qualif", None),           # éliminatoires Euro (UEFA)
     ("champions league", None),
     ("europa league", None),
     ("conference league", None),

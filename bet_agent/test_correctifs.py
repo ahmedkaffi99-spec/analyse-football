@@ -504,6 +504,26 @@ class TestSelectionTreveInternationale(unittest.TestCase):
         self.assertEqual(len(matchs), 8)
         self.assertNotIn(("France", "Italie"), matchs)
 
+    def test_toutes_competitions_equipes_nationales_acceptees_en_secours(self):
+        # Demande explicite du 02/10/2026, en pleine trêve internationale (les 22 matchs
+        # manuels de l'utilisateur ce jour-là étaient TOUS des sélections nationales — Ligue
+        # des Nations UEFA, Ligue des Nations CONCACAF, ASEAN Cup, amicaux) : "accepte tous
+        # les compétitions du équipe nation dans les monde entier" — pas seulement la Ligue
+        # des Nations, quelle que soit la confédération/le nom exact de la compétition.
+        fixtures = [
+            _fixture("Ukraine", "Irlande du Nord", "UEFA Nations League", "International"),
+            _fixture("Saint Lucia", "Guadeloupe", "CONCACAF Nations League", "International"),
+            _fixture("Vietnam", "Pakistan", "ASEAN Cup. Division 1", "International"),
+            _fixture("Coree du Sud", "Venezuela", "International Friendlies", "International"),
+            _fixture("Obscur FC", "Autre FC", "Division 5", "Nowhere"),
+        ]
+        matchs = cd.selectionner_matchs_du_jour(fixtures)
+        self.assertEqual(sorted(matchs), sorted([
+            ("Ukraine", "Irlande du Nord"), ("Saint Lucia", "Guadeloupe"),
+            ("Vietnam", "Pakistan"), ("Coree du Sud", "Venezuela"),
+        ]))
+        self.assertNotIn(("Obscur FC", "Autre FC"), matchs)
+
     def test_equipe_feminine_api_football(self):
         self.assertTrue(cd.est_equipe_feminine_api_football("Juventus W"))
         self.assertFalse(cd.est_equipe_feminine_api_football("Wolves"))
