@@ -674,7 +674,7 @@ class TestRedactionSansEdgeNone(unittest.TestCase):
         self.assertNotIn("edge", texte)
 
 
-class TestCinqCouponsIndependantsDeuxATroisJambes(unittest.TestCase):
+class TestCinqCouponsTroisPaliersDeRisque(unittest.TestCase):
     """Verrouille le réglage explicite du 26/09/2026 (un seul pari par match) et celui du
     01/10/2026 : jusqu'à 5 coupons INDÉPENDANTS (remplace l'ancien étagement sûr(1-5)/
     équilibré(6-9)/audacieux(10-15)) — demande explicite "si on a besoin chaque jour jusqu'à 5
@@ -684,44 +684,40 @@ class TestCinqCouponsIndependantsDeuxATroisJambes(unittest.TestCase):
     gagnant est de limiter son nombre de jambes, la diversification du risque venant du NOMBRE
     DE COUPONS indépendants, pas de jambes en plus dans un seul.
 
-    4 des 5 coupons restent au format qui maximise la probabilité de gagner (2-3 jambes). Le
-    5e, "risqué intentionnel" (Option B, demande explicite du 01/10/2026 "si on veut prendre
-    risque sur 1 ou 2 coupon sur 5, fait de façon intentionnel"), accepte délibérément plus de
-    jambes — élargi de 4-5 à 5-10 le 02/10/2026 (demande explicite "augmente un peu les jambes
-    jusqu'à 5 à 10") — un choix de risque ASSUMÉ (après avis donné sur le compromis : ce profil
-    cumule maintenant DEUX leviers de risque, nombre de jambes ET cote individuelle élevée),
-    jamais 10-15 comme l'ancien "audacieux" malgré la borne haute à 10. La cote totale n'est
-    plus une contrainte depuis le 01/10/2026 non plus."""
+    Remplacé le 02/10/2026 (demande explicite "3 coupons avec 2 à 5 jambes → faible risque, 1
+    coupon avec 5 à 8 jambes → risque moyen, 1 coupon avec plus de 8 jambes → risque élevé",
+    après avoir constaté sur le run #84 que l'ancienne structure "4 coupons identiques + 1
+    risqué" faisait converger les 4 coupons sûrs vers la même cote totale ~5) par 3 PALIERS DE
+    RISQUE explicites : 3 coupons 🟢 (2-5 jambes) + 1 coupon 🟡 (5-8 jambes) + 1 coupon 🔴
+    (plus de 8 jambes, cotes élevées assumées comme l'ancien "risqué intentionnel")."""
 
     def test_reglages_du_coupon_du_jour(self):
         self.assertEqual(ae.MAX_JAMBES_PAR_MATCH, 1)
         self.assertEqual(len(ae.PROFILS_COUPON), 5)
         cles = {p["cle"] for p in ae.PROFILS_COUPON}
-        self.assertEqual(cles, {"coupon1", "coupon2", "coupon3", "coupon4", "risque"})
+        self.assertEqual(cles, {"coupon1", "coupon2", "coupon3", "moyen", "eleve"})
         par_cle = {p["cle"]: p for p in ae.PROFILS_COUPON}
-        for cle in ("coupon1", "coupon2", "coupon3", "coupon4"):
-            # Fourchette élargie de 2-3 à 2-5 jambes (demande explicite du 02/10/2026) : laisse
-            # l'IA choisir elle-même combien de jambes sont vraiment défendables, utile en
-            # particulier pour atteindre les planchers de cote totale relevés (8/12) sans forcer
-            # une cote individuelle trop risquée sur seulement 3 jambes.
+        for cle in ("coupon1", "coupon2", "coupon3"):
+            # 🟢 risque faible : 2-5 jambes.
             self.assertEqual((par_cle[cle]["nb_jambes_min"], par_cle[cle]["nb_jambes"]), (2, 5))
-        self.assertEqual((par_cle["risque"]["nb_jambes_min"], par_cle["risque"]["nb_jambes"]), (5, 10))
-        self.assertTrue(par_cle["risque"]["prefere_cote_elevee"])
+        self.assertEqual((par_cle["moyen"]["nb_jambes_min"], par_cle["moyen"]["nb_jambes"]), (5, 8))
+        self.assertFalse(par_cle["moyen"].get("prefere_cote_elevee", False))
+        self.assertEqual((par_cle["eleve"]["nb_jambes_min"], par_cle["eleve"]["nb_jambes"]), (9, 15))
+        self.assertTrue(par_cle["eleve"]["prefere_cote_elevee"])
         # Cote totale : indicative uniquement, plus jamais une contrainte vérifiée (seules des
-        # bornes très larges, finies — jamais 0/infini, casserait selectionner_combo_cote_cible)
-        # — y compris pour le profil risqué : le risque vient du nombre de jambes, pas d'une
-        # cible de cote différente.
+        # bornes très larges, finies — jamais 0/infini, casserait selectionner_combo_cote_cible).
         for profil in ae.PROFILS_COUPON:
             self.assertEqual(profil["cote_min"], 1.01)
             self.assertEqual(profil["cote_max"], 1000000.0)
-        # Planchers de cote totale DIVERSIFIÉS entre les 4 coupons sûrs (demande explicite du
-        # 02/10/2026, après avoir constaté sur le run #84 que les 4 coupons sûrs, tous au même
-        # plancher unique de 5, tombaient tous entre 5.0 et 5.25 — un palier plus haut sur
+        # Planchers de cote totale DIVERSIFIÉS entre les 3 coupons 🟢 (demande explicite du
+        # 02/10/2026, après avoir constaté sur le run #84 que 4 coupons identiques, tous au
+        # même plancher unique de 5, tombaient tous entre 5.0 et 5.25 — un palier plus haut sur
         # certains force l'IA à accepter des cotes individuelles plus hautes pour l'atteindre).
-        self.assertEqual([par_cle[f"coupon{i}"]["cote_totale_min"] for i in range(1, 5)], [5.0, 8.0, 12.0, 5.0])
-        # Le profil risqué n'a pas besoin d'un plancher dédié : prefere_cote_elevee suffit déjà
-        # à viser des cotes individuelles hautes, le plancher par défaut (5.0) est sans effet.
-        self.assertNotIn("cote_totale_min", par_cle["risque"])
+        self.assertEqual([par_cle[f"coupon{i}"]["cote_totale_min"] for i in range(1, 4)], [5.0, 8.0, 12.0])
+        # 🟡/🔴 n'ont pas besoin d'un plancher dédié : avec 5-8 ou 9+ jambes, le produit des
+        # cotes dépasse déjà largement n'importe quel plancher bas par défaut.
+        self.assertNotIn("cote_totale_min", par_cle["moyen"])
+        self.assertNotIn("cote_totale_min", par_cle["eleve"])
 
     def test_deux_paris_sur_le_meme_match_refuses_par_l_ia(self):
         pool = {"A vs B": [_selection("A vs B", "Total", "Over", 1.5), _selection("A vs B", "BTTS", "Yes", 1.6)]}

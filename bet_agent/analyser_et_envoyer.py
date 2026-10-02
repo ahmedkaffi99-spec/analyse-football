@@ -104,53 +104,45 @@ PROBA_MIN_FALLBACK_AUTO = 30.0
 # INDÉPENDANTS (jusqu'à 5, chacun sur des matchs différents autant que possible), pas du
 # nombre de jambes empilées dans un seul coupon.
 #
-# 4 des 5 coupons restent au format qui maximise la probabilité de gagner le combiné en entier
-# (2-3 jambes, voir le run "coupon gagnant" du 01/10/2026). Le 5e, "RISQUÉ INTENTIONNEL",
-# accepte délibérément plus de jambes — demande explicite du 01/10/2026 (Option B : "si on veut
-# prendre risque sur 1 ou 2 coupon sur 5, fait de façon intentionnel"), élargi à 5-10 le
-# 02/10/2026 (demande explicite : "augmente un peu les jambes jusqu'à 5 à 10") — CE choix de
-# risque est assumé : combiné à "prefere_cote_elevee" ci-dessous, les deux leviers de risque
-# (nombre de jambes ET cote individuelle) jouent maintenant ensemble sur ce seul profil, après
-# avis donné à l'utilisateur sur le compromis (jamais 10-15 comme l'ancien "audacieux" — même
-# à ce format, une telle pile reste statistiquement perdante plus souvent que gagnante).
-#
-# "prefere_cote_elevee": True (02/10/2026, correctif explicite : "les 5e coupon que je t'ai dit
-# de prendre risque, sache dire les cotes élevées car cote élevée = gain élevé") — un premier
-# run (75) avait rempli ce profil avec des favoris à cote basse (1.33-1.44, les mêmes choix que
-# les 4 profils sûrs), ce qui ne matérialise aucun risque/gain supplémentaire réel. Ce profil
-# doit maintenant privilégier, PARMI les paris déjà filtrés par Python (probabilité >= 60%,
-# jamais en dessous — voir agent_strategie.SEUIL_PROBA_CATALOGUE), ceux à la cote la PLUS
-# ÉLEVÉE disponible plutôt que les plus sûrs : le risque de ce profil vient maintenant à la
-# fois du nombre de jambes ET du choix de cotes plus hautes (donc d'un gain potentiel plus
-# élevé) — jamais d'un calcul moins rigoureux ou d'un seuil de probabilité abaissé.
 # Un profil s'abstient (jambes=[]) si pas assez de paris vraiment défendables existent pour
 # lui — jusqu'à 5 coupons n'est donc pas un minimum imposé, seulement un plafond.
-# Planchers de cote totale des 4 coupons sûrs, DIVERSIFIÉS (demande explicite du 02/10/2026,
-# après avoir constaté sur le run #84 que les 4 coupons sûrs tombaient tous entre 5.0 et 5.25 :
-# en 2-3 jambes à haute probabilité, le produit des cotes individuelles converge
-# mathématiquement vers le plancher unique de 5 dès qu'il est atteint, rien ne pousse l'IA
-# au-delà) — un plancher plus haut sur certains profils force l'IA à accepter des jambes à
-# cote individuelle plus élevée (donc probabilité un peu plus basse, toujours >= 60% catalogue)
-# pour les atteindre, ce qui étale les 4 coupons sur des paliers de risque/gain différents au
-# lieu de les laisser tous se ressembler.
-CIBLES_COTE_TOTALE_MIN_SURS = [5.0, 8.0, 12.0, 5.0]
+#
+# Historique : 4 coupons identiques (2-3 jambes) + 1 "risqué intentionnel" (5-10 jambes,
+# prefere_cote_elevee) jusqu'au 02/10/2026, remplacé par une structure à 3 PALIERS DE RISQUE
+# explicites (demande explicite du 02/10/2026 : "3 coupons avec 2 à 5 jambes → faible risque,
+# 1 coupon avec 5 à 8 jambes → risque moyen, 1 coupon avec plus de 8 jambes → risque élevé") :
+#   - 3 coupons 🟢 FAIBLE RISQUE, 2-5 jambes
+#   - 1 coupon  🟡 RISQUE MOYEN, 5-8 jambes
+#   - 1 coupon  🔴 RISQUE ÉLEVÉ, plus de 8 jambes (9-15 : NB_MATCHS_MAX=15 est le plafond
+#     structurel de toute façon, un seul pari par match — voir MAX_JAMBES_PAR_MATCH)
+# Planchers de cote totale des 3 coupons 🟢, DIVERSIFIÉS (demande explicite du 02/10/2026,
+# après avoir constaté sur le run #84 que 4 coupons identiques au même plancher de 5 tombaient
+# tous entre 5.0 et 5.25 : en peu de jambes à haute probabilité, le produit des cotes
+# individuelles converge mathématiquement vers le plancher dès qu'il est atteint, rien ne
+# pousse l'IA au-delà) — un plancher plus haut force l'IA à accepter des jambes à cote
+# individuelle plus élevée (donc probabilité un peu plus basse, toujours >= 60% catalogue)
+# pour l'atteindre, ce qui étale les 3 coupons 🟢 sur des paliers différents entre eux aussi.
+# 🟡 et 🔴 n'ont pas besoin d'un plancher dédié : avec 5-8 ou 9+ jambes, même à haute
+# probabilité, le produit des cotes dépasse déjà largement n'importe quel plancher bas.
+CIBLES_COTE_TOTALE_MIN_FAIBLE_RISQUE = [5.0, 8.0, 12.0]
 
 PROFILS_COUPON = [
     # cote_min/cote_max : volontairement très larges (non 0/infini — casserait le calcul de
     # pondération du repli Monte Carlo, 0 * infini = NaN) — gardent un sens pour
     # selectionner_combo_cote_cible (repli 100% Python sans IA, qui a besoin d'une cible pour
     # pondérer son tirage), mais ne bloquent plus jamais la validation de l'IA stratège.
-    # Fourchette élargie de 2-3 à 2-5 jambes (demande explicite du 02/10/2026) : laisse l'IA
-    # choisir elle-même, par profil, combien de jambes sont vraiment défendables (jusqu'à 5)
-    # plutôt que de la plafonner à 3 — utile en particulier pour les profils au plancher de
-    # cote totale relevé (8/12), où une 4e ou 5e jambe à haute probabilité peut être préférable
-    # à forcer une cote individuelle plus risquée sur seulement 3 jambes.
-    *[{"cle": f"coupon{i}", "nom": f"🏆 COUPON {i} (2-5 jambes, probabilité maximale)",
+    *[{"cle": f"coupon{i}", "nom": f"🟢 COUPON {i} (2-5 jambes, risque faible)",
        "cote_min": 1.01, "cote_max": 1000000.0, "nb_jambes_min": 2, "nb_jambes": 5,
-       "cote_totale_min": CIBLES_COTE_TOTALE_MIN_SURS[i - 1]}
-      for i in range(1, 5)],
-    {"cle": "risque", "nom": "🎲 COUPON RISQUÉ INTENTIONNEL (5-10 jambes, cotes élevées assumées)",
-     "cote_min": 1.01, "cote_max": 1000000.0, "nb_jambes_min": 5, "nb_jambes": 10,
+       "cote_totale_min": CIBLES_COTE_TOTALE_MIN_FAIBLE_RISQUE[i - 1]}
+      for i in range(1, 4)],
+    {"cle": "moyen", "nom": "🟡 COUPON RISQUE MOYEN (5-8 jambes)",
+     "cote_min": 1.01, "cote_max": 1000000.0, "nb_jambes_min": 5, "nb_jambes": 8},
+    # prefere_cote_elevee (demande explicite du 02/10/2026, reprise du précédent profil
+    # "risqué intentionnel" : "cote élevée = gain élevé") réservé au palier le plus haut — un
+    # coupon 9-15 jambes rempli de favoris à cote basse (comme les profils 🟢/🟡) ne
+    # matérialiserait aucun risque/gain supplémentaire réel malgré le nombre de jambes.
+    {"cle": "eleve", "nom": "🔴 COUPON RISQUE ÉLEVÉ (9-15 jambes, cotes élevées assumées)",
+     "cote_min": 1.01, "cote_max": 1000000.0, "nb_jambes_min": 9, "nb_jambes": 15,
      "prefere_cote_elevee": True},
 ]
 

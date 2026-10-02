@@ -35,10 +35,10 @@ import analyser_et_envoyer as ae
 NB_TOURS_MAX = 3
 # Plancher de jambes PAR DÉFAUT si un profil ne précise pas "nb_jambes_min" (les tests
 # génériques ci-dessous, avec de petits pools, s'appuient sur ce défaut bas). Le profil réel
-# (PROFILS_COUPON) fixe le sien à 2 (voir le commentaire au-dessus de PROFILS_COUPON, 01/10/2026
-# : 4 coupons indépendants à 2-5 jambes, format qui maximise la probabilité de gagner le
-# combiné en entier, + 1 coupon "risqué intentionnel" à 4-5 jambes, assumé). Un seul pari par
-# match : voir ae.MAX_JAMBES_PAR_MATCH.
+# (PROFILS_COUPON) fixe le sien selon son palier de risque — voir le commentaire au-dessus de
+# PROFILS_COUPON (02/10/2026) : 3 coupons 🟢 risque faible (2-5 jambes) + 1 🟡 risque moyen
+# (5-8) + 1 🔴 risque élevé (9-15, cotes élevées assumées). Un seul pari par match : voir
+# ae.MAX_JAMBES_PAR_MATCH.
 NB_JAMBES_MIN_DEFAUT = 2
 
 # Plancher ABSOLU de cote totale (demande explicite du 01/10/2026 : "interdit les cote total
