@@ -413,15 +413,17 @@ class TestListeManuellePerimee(unittest.TestCase):
                     return json.load(f), auto
 
     def test_liste_perimee_ignoree(self):
+        # selectionner_matchs_du_jour EST appelée (liste périmée → bascule sur la sélection
+        # automatique normale, pas le complément).
         _, auto = self._collecter("2026-08-22")
         auto.assert_called_once()
 
     def test_liste_du_jour_utilisee(self):
-        # selectionner_matchs_du_jour EST appelée (complément automatique du 01/10/2026, voir
-        # TestComplementAutomatiqueListeManuelle) mais son résultat ([] ici) n'affecte pas la
-        # liste manuelle elle-même, utilisée telle quelle.
+        # Complément automatique désactivé par défaut depuis le 02/10/2026 (demande explicite,
+        # voir TestComplementAutomatiqueListeManuelle) : en mode manuel, selectionner_matchs_du_jour
+        # n'est plus appelée du tout — seule la liste manuelle est traitée.
         _, auto = self._collecter(datetime.now().strftime("%Y-%m-%d"))
-        auto.assert_called_once()
+        auto.assert_not_called()
 
     def test_liste_valable_sur_plusieurs_dates(self):
         # Constaté le 30/09/2026 : une liste manuelle couvrant une journée de Ligue des
@@ -439,7 +441,7 @@ class TestListeManuellePerimee(unittest.TestCase):
                     mock.patch.object(cd, "recuperer_fixtures_api_football", return_value=[]), \
                     mock.patch.object(cd, "selectionner_matchs_du_jour", return_value=[]) as auto:
                 cd.collecter_donnees()
-        auto.assert_called_once()  # complément automatique (01/10/2026) — résultat vide ici
+        auto.assert_not_called()  # complément automatique désactivé par défaut (02/10/2026)
 
 
 class TestMatchsManuelsEnv(unittest.TestCase):
@@ -474,7 +476,7 @@ class TestMatchsManuelsEnv(unittest.TestCase):
                     mock.patch.object(cd, "collecter_contexte_serper", return_value=None), \
                     mock.patch.object(cd, "selectionner_matchs_du_jour", return_value=[]) as auto:
                 cd.collecter_donnees()
-        auto.assert_called_once()  # complément automatique (01/10/2026) — résultat vide ici
+        auto.assert_not_called()  # complément automatique désactivé par défaut (02/10/2026)
 
 
 if __name__ == "__main__":
@@ -487,6 +489,16 @@ def _fixture(p1, p2, tournoi, pays, depart="2099-01-01T15:00:00Z"):
 
 
 class TestSelectionTreveInternationale(unittest.TestCase):
+    """FILTRE_LIGUES_UNIQUES est vide par défaut depuis le 02/10/2026 (demande explicite de
+    désactivation du filtre multi-ligues) — ces tests patchent explicitement les 5 grands
+    championnats pour continuer à verrouiller le mécanisme de filtre/secours lui-même, qui
+    reste utilisable si réactivé."""
+
+    FILTRE_5_GRANDS = [
+        ("ligue 1", "france"), ("premier league", "england"), ("serie a", "italy"),
+        ("bundesliga", "germany"), ("la liga", "spain"),
+    ]
+
     def test_feminin_exclu_et_secours_pendant_la_treve(self):
         fixtures = [
             _fixture("Juventus Turin", "SSD Napoli", "Serie A Women", "Italy"),
@@ -494,13 +506,15 @@ class TestSelectionTreveInternationale(unittest.TestCase):
             _fixture("Espagne", "Portugal", "UEFA Nations League", "International"),
             _fixture("Obscur FC", "Autre FC", "Division 5", "Nowhere"),
         ]
-        matchs = cd.selectionner_matchs_du_jour(fixtures)
+        with mock.patch.object(cd, "FILTRE_LIGUES_UNIQUES", self.FILTRE_5_GRANDS):
+            matchs = cd.selectionner_matchs_du_jour(fixtures)
         self.assertEqual(sorted(matchs), [("Espagne", "Portugal"), ("France", "Italie")])
 
     def test_grands_championnats_suffisants_pas_de_secours(self):
         fixtures = [_fixture(f"Club {i}", f"Adv {i}", "Premier League", "England") for i in range(8)]
         fixtures.append(_fixture("France", "Italie", "UEFA Nations League", "International"))
-        matchs = cd.selectionner_matchs_du_jour(fixtures)
+        with mock.patch.object(cd, "FILTRE_LIGUES_UNIQUES", self.FILTRE_5_GRANDS):
+            matchs = cd.selectionner_matchs_du_jour(fixtures)
         self.assertEqual(len(matchs), 8)
         self.assertNotIn(("France", "Italie"), matchs)
 
@@ -517,12 +531,28 @@ class TestSelectionTreveInternationale(unittest.TestCase):
             _fixture("Coree du Sud", "Venezuela", "International Friendlies", "International"),
             _fixture("Obscur FC", "Autre FC", "Division 5", "Nowhere"),
         ]
-        matchs = cd.selectionner_matchs_du_jour(fixtures)
+        with mock.patch.object(cd, "FILTRE_LIGUES_UNIQUES", self.FILTRE_5_GRANDS):
+            matchs = cd.selectionner_matchs_du_jour(fixtures)
         self.assertEqual(sorted(matchs), sorted([
             ("Ukraine", "Irlande du Nord"), ("Saint Lucia", "Guadeloupe"),
             ("Vietnam", "Pakistan"), ("Coree du Sud", "Venezuela"),
         ]))
         self.assertNotIn(("Obscur FC", "Autre FC"), matchs)
+
+    def test_club_friendly_exclu_du_secours_amical(self):
+        # Demande explicite du 02/10/2026 : "friendl" ne doit retenir que les amicaux
+        # d'ÉQUIPES NATIONALES, pas les amicaux de club (constaté : 3 matchs de club non
+        # demandés — Aluminij Kidricevo vs NK Varazdin, Gornik Zabrze vs Odra Opole,
+        # Zlin vs Prostějov — s'étaient glissés dans un run manuel via ce mot-clé trop large).
+        fixtures = [
+            _fixture("Coree du Sud", "Venezuela", "International Friendly", "International"),
+            _fixture("Aluminij Kidricevo", "NK Varazdin", "Club Friendly", "Slovenia"),
+            _fixture("Obscur FC", "Autre FC", "Division 5", "Nowhere"),
+        ]
+        with mock.patch.object(cd, "FILTRE_LIGUES_UNIQUES", self.FILTRE_5_GRANDS):
+            matchs = cd.selectionner_matchs_du_jour(fixtures)
+        self.assertIn(("Coree du Sud", "Venezuela"), matchs)
+        self.assertNotIn(("Aluminij Kidricevo", "NK Varazdin"), matchs)
 
     def test_gulf_cup_et_caf_acceptees_en_secours(self):
         # Demande explicite du 02/10/2026 (suite à la précédente) : "Arabian Gulf Cup et
@@ -533,7 +563,8 @@ class TestSelectionTreveInternationale(unittest.TestCase):
             _fixture("Zamalek", "TP Mazembe", "CAF Confederation Cup", "Africa"),
             _fixture("Obscur FC", "Autre FC", "Division 5", "Nowhere"),
         ]
-        matchs = cd.selectionner_matchs_du_jour(fixtures)
+        with mock.patch.object(cd, "FILTRE_LIGUES_UNIQUES", self.FILTRE_5_GRANDS):
+            matchs = cd.selectionner_matchs_du_jour(fixtures)
         self.assertEqual(sorted(matchs), sorted([
             ("Qatar", "Bahrain"), ("Al Ahly", "Wydad AC"), ("Zamalek", "TP Mazembe"),
         ]))
@@ -1207,20 +1238,43 @@ def _fixture_op(fid, p1, p2):
 
 
 class TestComplementAutomatiqueListeManuelle(unittest.TestCase):
-    """Demande explicite du 01/10/2026 : "si les coupon total est faible ajoute sélection
-    automatique pour augmenter le nombre de match et cote total" — constaté en pratique (run
-    72, 9 matchs manuels, seulement 7 exploitables, coupons à cote très faible). En mode
-    manuel, des candidats automatiques (selectionner_matchs_du_jour, mêmes règles que la
-    sélection du jour) sont ajoutés À LA SUITE des matchs manuels — jamais à la place, et
-    jamais en double emploi avec un match déjà demandé manuellement."""
+    """Mécanisme ajouté le 01/10/2026 ("si les coupon total est faible ajoute sélection
+    automatique...") puis DÉSACTIVÉ PAR DÉFAUT le 02/10/2026 (demande explicite : "desactive
+    ... selection complementaire et traité tout de suite les selection manuelle", après que ce
+    mécanisme a fait entrer des matchs de club non demandés). Le code reste disponible via
+    COMPLEMENT_AUTOMATIQUE_ACTIF=True (patché explicitement dans ces tests) pour verrouiller
+    qu'il fonctionne toujours correctement s'il est un jour réactivé ; voir
+    test_desactive_par_defaut_aucun_appel pour le comportement par défaut actuel."""
 
     MARCHES = [{"marche": "Over Under Full Time", "handicap": 2.5, "periode": "fulltime",
                "selections": [{"selection": "Over", "cote": 1.9}]}]
+
+    def test_desactive_par_defaut_aucun_appel(self):
+        fixtures = [_fixture_op("fA", "Lyon", "Monaco"), _fixture_op("fC", "Lille", "Nantes")]
+        with tempfile.TemporaryDirectory() as d, \
+                mock.patch.object(cd, "SORTIE_JSON", os.path.join(d, "out.json")), \
+                mock.patch.object(cd, "NB_MATCHS_MAX", 5), \
+                mock.patch.object(cd, "MATCHS_MANUELS_ENV", "Lyon - Monaco"), \
+                mock.patch.object(cd, "verifier_quota_oddspapi", return_value=True), \
+                mock.patch.object(cd, "_telecharger_fixtures_oddspapi", return_value=fixtures), \
+                mock.patch.object(cd, "recuperer_fixtures_api_football", return_value=[]), \
+                mock.patch.object(cd, "recuperer_marches_pour_fixture", return_value=self.MARCHES), \
+                mock.patch.object(cd, "collecter_contexte_serper", return_value=None), \
+                mock.patch.object(cd, "selectionner_matchs_du_jour",
+                                  return_value=[("Lyon", "Monaco"), ("Lille", "Nantes")]) as auto:
+            cd._cache_stats_equipes.clear()
+            cd.collecter_donnees()
+            with open(os.path.join(d, "out.json"), encoding="utf-8") as f:
+                sortie = json.load(f)
+        auto.assert_not_called()
+        noms = [(m["match_demande"]["home"], m["match_demande"]["away"]) for m in sortie["matchs"]]
+        self.assertEqual(noms, [("Lyon", "Monaco")])  # uniquement le match manuel, rien d'ajouté
 
     def test_complement_ajoute_apres_les_manuels_sans_doublon(self):
         fixtures = [_fixture_op("fA", "Lyon", "Monaco"), _fixture_op("fC", "Lille", "Nantes")]
         with tempfile.TemporaryDirectory() as d, \
                 mock.patch.object(cd, "SORTIE_JSON", os.path.join(d, "out.json")), \
+                mock.patch.object(cd, "COMPLEMENT_AUTOMATIQUE_ACTIF", True), \
                 mock.patch.object(cd, "NB_MATCHS_MAX", 5), \
                 mock.patch.object(cd, "MATCHS_MANUELS_ENV", "Lyon - Monaco"), \
                 mock.patch.object(cd, "verifier_quota_oddspapi", return_value=True), \
@@ -1244,6 +1298,7 @@ class TestComplementAutomatiqueListeManuelle(unittest.TestCase):
         fixtures = [_fixture_op("fA", "Lyon", "Monaco")]
         with tempfile.TemporaryDirectory() as d, \
                 mock.patch.object(cd, "SORTIE_JSON", os.path.join(d, "out.json")), \
+                mock.patch.object(cd, "COMPLEMENT_AUTOMATIQUE_ACTIF", True), \
                 mock.patch.object(cd, "NB_MATCHS_MAX", 5), \
                 mock.patch.object(cd, "MATCHS_MANUELS_ENV", "Lyon - Monaco"), \
                 mock.patch.object(cd, "verifier_quota_oddspapi", return_value=True), \
@@ -1267,6 +1322,7 @@ class TestComplementAutomatiqueListeManuelle(unittest.TestCase):
                    _fixture_op("fE", "Brest", "Reims")]
         with tempfile.TemporaryDirectory() as d, \
                 mock.patch.object(cd, "SORTIE_JSON", os.path.join(d, "out.json")), \
+                mock.patch.object(cd, "COMPLEMENT_AUTOMATIQUE_ACTIF", True), \
                 mock.patch.object(cd, "NB_MATCHS_MAX", 1), \
                 mock.patch.object(cd, "MATCHS_MANUELS_ENV", "Lyon - Monaco, Lille - Nantes"), \
                 mock.patch.object(cd, "verifier_quota_oddspapi", return_value=True), \

@@ -188,13 +188,11 @@ LIGUES_DOMESTIQUES_MAJEURES = {
 # Laisse la liste vide ([]) pour revenir au comportement normal (toutes les grandes
 # ligues + repli sur le reste des matchs avec cotes réelles).
 # ------------------------------------------------------------
-FILTRE_LIGUES_UNIQUES = [
-    ("ligue 1", "france"),
-    ("premier league", "england"),
-    ("serie a", "italy"),
-    ("bundesliga", "germany"),
-    ("la liga", "spain"),
-]
+# Désactivé (demande explicite du 02/10/2026, après que le complément automatique a inclus
+# 3 matchs amicaux de CLUB — Aluminij Kidricevo vs NK Varazdin, Gornik Zabrze vs Odra Opole,
+# Zlin vs Prostějov — non demandés par l'utilisateur) : liste vide = comportement normal,
+# aucune restriction de ligue.
+FILTRE_LIGUES_UNIQUES = []
 
 # Compétitions de SECOURS, utilisées seulement quand FILTRE_LIGUES_UNIQUES donne moins de
 # NB_MATCHS_MIN matchs — typiquement pendant une trêve internationale, où les 5 grands
@@ -208,7 +206,11 @@ FILTRE_LIGUES_SECOURS = [
     # complément automatique n'en reconnaissait qu'une partie) : "accepte toutes les
     # compétitions d'équipe nation dans le monde entier".
     ("nations league", None),       # couvre déjà UEFA ET CONCACAF (pays_attendu=None)
-    ("friendl", None),               # matchs amicaux (OddsPapi : "Friendlies"/"International Friendly")
+    # Amicaux d'ÉQUIPES NATIONALES seulement (OddsPapi : "Friendlies"/"International
+    # Friendly") — exclut explicitement "Club Friendly" (3e élément = mot-clé d'exclusion),
+    # qui avait fait entrer 3 matchs de club non demandés (Aluminij Kidricevo vs NK Varazdin,
+    # Gornik Zabrze vs Odra Opole, Zlin vs Prostějov — run du 02/10/2026).
+    ("friendl", None, "club"),
     ("asean", None),                 # ASEAN Cup / Championship
     ("cup of nations", None),        # Africa Cup of Nations (déjà couvert ci-dessous, gardé en alias)
     ("gold cup", None),              # CONCACAF Gold Cup
@@ -238,6 +240,12 @@ FILTRE_LIGUES_SECOURS = [
     ("premiership", "scotland"),
     ("botola", "morocco"),
 ]
+
+# Complément automatique de la sélection manuelle : désactivé par défaut (demande explicite du
+# 02/10/2026). Quand True, ajoute des matchs choisis automatiquement à la suite de la liste
+# manuelle si celle-ci ne suffit pas — ce comportement avait fait entrer des matchs non
+# demandés (club friendlies, Botola Pro) dans des runs manuels.
+COMPLEMENT_AUTOMATIQUE_ACTIF = False
 
 # Football féminin : exclu de la sélection automatique (les filtres visent les championnats
 # masculins ; "Serie A" laissait passer la Serie A féminine, dont les stats gratuites datent
@@ -940,10 +948,17 @@ def selectionner_matchs_du_jour(fixtures_oddspapi):
         def correspond_au_filtre(fx, filtre):
             nom_tournoi = (fx.get("tournamentName") or "").lower()
             pays = (fx.get("categoryName") or "").lower()
-            return any(
-                mot_cle_ligue in nom_tournoi and (pays_attendu is None or pays_attendu in pays)
-                for mot_cle_ligue, pays_attendu in filtre
-            )
+
+            def _matche(entree):
+                # 3e élément optionnel : mot-clé d'exclusion (ex: "friendl" + exclusion "club"
+                # pour ne retenir que les amicaux d'ÉQUIPES NATIONALES, pas les amicaux de club).
+                mot_cle_ligue, pays_attendu = entree[0], entree[1]
+                mot_cle_exclu = entree[2] if len(entree) > 2 else None
+                if mot_cle_exclu and mot_cle_exclu in nom_tournoi:
+                    return False
+                return mot_cle_ligue in nom_tournoi and (pays_attendu is None or pays_attendu in pays)
+
+            return any(_matche(entree) for entree in filtre)
 
         tous_candidats = candidats
         candidats = [fx for fx in tous_candidats if correspond_au_filtre(fx, FILTRE_LIGUES_UNIQUES)]
@@ -1258,18 +1273,12 @@ def collecter_donnees():
         if not matchs_a_traiter and liste_manuelle_du_jour:
             matchs_a_traiter = MATCHS_MANUELS
 
-    # Complément automatique de la sélection manuelle (demande explicite du 01/10/2026 : "si
-    # les coupon total est faible ajoute sélection automatique pour augmenter le nombre de
-    # match et cote total") — constaté en pratique (run 72, 9 matchs manuels) : seulement 7/9
-    # exploitables (1 trop proche du coup d'envoi, 1 sans marché 1xBet), coupons à cote très
-    # faible (1.74-5.08) faute d'assez de jambes disponibles. Les matchs manuels restent TOUS
-    # traités en premier, sans aucune restriction (comportement inchangé) ; des candidats
-    # AUTOMATIQUES (mêmes règles que la sélection du jour : exclusion féminines, arrêt dès
-    # NB_MATCHS_MAX matchs AVEC marchés atteint) sont ajoutés À LA SUITE, uniquement pour
-    # combler si la liste manuelle ne suffit pas — jamais pour remplacer ou raccourcir les
-    # matchs demandés explicitement.
+    # Complément automatique de la sélection manuelle — DÉSACTIVÉ (demande explicite du
+    # 02/10/2026, après que ce mécanisme a ajouté 3 matchs amicaux de club non demandés par
+    # l'utilisateur, en plus du problème équivalent du run 75/79 avec Botola Pro / Segunda).
+    # Un run manuel traite désormais UNIQUEMENT les matchs fournis, sans aucun ajout.
     nb_manuels = len(matchs_a_traiter)
-    if mode_manuel:
+    if mode_manuel and COMPLEMENT_AUTOMATIQUE_ACTIF:
         candidats_auto = selectionner_matchs_du_jour(fixtures_oddspapi)
         deja_demandes = list(matchs_a_traiter)
 
