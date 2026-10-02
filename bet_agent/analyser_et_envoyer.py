@@ -140,8 +140,13 @@ PROFILS_COUPON = [
     # pondération du repli Monte Carlo, 0 * infini = NaN) — gardent un sens pour
     # selectionner_combo_cote_cible (repli 100% Python sans IA, qui a besoin d'une cible pour
     # pondérer son tirage), mais ne bloquent plus jamais la validation de l'IA stratège.
-    *[{"cle": f"coupon{i}", "nom": f"🏆 COUPON {i} (2-3 jambes, probabilité maximale)",
-       "cote_min": 1.01, "cote_max": 1000000.0, "nb_jambes_min": 2, "nb_jambes": 3,
+    # Fourchette élargie de 2-3 à 2-5 jambes (demande explicite du 02/10/2026) : laisse l'IA
+    # choisir elle-même, par profil, combien de jambes sont vraiment défendables (jusqu'à 5)
+    # plutôt que de la plafonner à 3 — utile en particulier pour les profils au plancher de
+    # cote totale relevé (8/12), où une 4e ou 5e jambe à haute probabilité peut être préférable
+    # à forcer une cote individuelle plus risquée sur seulement 3 jambes.
+    *[{"cle": f"coupon{i}", "nom": f"🏆 COUPON {i} (2-5 jambes, probabilité maximale)",
+       "cote_min": 1.01, "cote_max": 1000000.0, "nb_jambes_min": 2, "nb_jambes": 5,
        "cote_totale_min": CIBLES_COTE_TOTALE_MIN_SURS[i - 1]}
       for i in range(1, 5)],
     {"cle": "risque", "nom": "🎲 COUPON RISQUÉ INTENTIONNEL (5-10 jambes, cotes élevées assumées)",

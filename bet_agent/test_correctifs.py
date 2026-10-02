@@ -700,7 +700,11 @@ class TestCinqCouponsIndependantsDeuxATroisJambes(unittest.TestCase):
         self.assertEqual(cles, {"coupon1", "coupon2", "coupon3", "coupon4", "risque"})
         par_cle = {p["cle"]: p for p in ae.PROFILS_COUPON}
         for cle in ("coupon1", "coupon2", "coupon3", "coupon4"):
-            self.assertEqual((par_cle[cle]["nb_jambes_min"], par_cle[cle]["nb_jambes"]), (2, 3))
+            # Fourchette élargie de 2-3 à 2-5 jambes (demande explicite du 02/10/2026) : laisse
+            # l'IA choisir elle-même combien de jambes sont vraiment défendables, utile en
+            # particulier pour atteindre les planchers de cote totale relevés (8/12) sans forcer
+            # une cote individuelle trop risquée sur seulement 3 jambes.
+            self.assertEqual((par_cle[cle]["nb_jambes_min"], par_cle[cle]["nb_jambes"]), (2, 5))
         self.assertEqual((par_cle["risque"]["nb_jambes_min"], par_cle["risque"]["nb_jambes"]), (5, 10))
         self.assertTrue(par_cle["risque"]["prefere_cote_elevee"])
         # Cote totale : indicative uniquement, plus jamais une contrainte vérifiée (seules des

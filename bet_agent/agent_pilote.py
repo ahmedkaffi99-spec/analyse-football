@@ -186,7 +186,7 @@ def construire_outils_schemas(profils):
     ]
 
 
-# Profils standards (4 coupons indépendants à 2-3 jambes + 1 "risqué intentionnel" à 4-5),
+# Profils standards (4 coupons indépendants à 2-5 jambes + 1 "risqué intentionnel" à 4-5),
 # utilisés par piloter() quand executer() ne lui fournit pas explicitement prompt_systeme/
 # outils_schemas (cas direct/tests uniquement : executer() les reconstruit toujours lui-même
 # à partir des profils réels du run).
