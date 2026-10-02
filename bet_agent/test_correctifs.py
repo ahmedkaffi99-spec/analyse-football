@@ -710,6 +710,14 @@ class TestCinqCouponsIndependantsDeuxATroisJambes(unittest.TestCase):
         for profil in ae.PROFILS_COUPON:
             self.assertEqual(profil["cote_min"], 1.01)
             self.assertEqual(profil["cote_max"], 1000000.0)
+        # Planchers de cote totale DIVERSIFIÉS entre les 4 coupons sûrs (demande explicite du
+        # 02/10/2026, après avoir constaté sur le run #84 que les 4 coupons sûrs, tous au même
+        # plancher unique de 5, tombaient tous entre 5.0 et 5.25 — un palier plus haut sur
+        # certains force l'IA à accepter des cotes individuelles plus hautes pour l'atteindre).
+        self.assertEqual([par_cle[f"coupon{i}"]["cote_totale_min"] for i in range(1, 5)], [5.0, 8.0, 12.0, 5.0])
+        # Le profil risqué n'a pas besoin d'un plancher dédié : prefere_cote_elevee suffit déjà
+        # à viser des cotes individuelles hautes, le plancher par défaut (5.0) est sans effet.
+        self.assertNotIn("cote_totale_min", par_cle["risque"])
 
     def test_deux_paris_sur_le_meme_match_refuses_par_l_ia(self):
         pool = {"A vs B": [_selection("A vs B", "Total", "Over", 1.5), _selection("A vs B", "BTTS", "Yes", 1.6)]}

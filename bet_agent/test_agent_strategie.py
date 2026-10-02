@@ -625,8 +625,29 @@ class TestCoteTotaleMinimale(unittest.TestCase):
             proposition = {"coupons": [{"profil": "p1", "strategie": "s", "jambes": [{"id": "P1"}]}]}
             acceptes, problemes, calculs = st.valider(proposition, catalogue, [profil])
         self.assertNotIn("p1", acceptes)
-        self.assertTrue(any("trop basse (minimum 5)" in p for p in problemes), problemes)
+        self.assertTrue(any("trop basse (minimum 5" in p for p in problemes), problemes)
         self.assertTrue(any("cote totale 1.50" in c for c in calculs), calculs)
+
+    def test_plancher_diversifie_par_profil_via_cote_totale_min(self):
+        # Demande explicite du 02/10/2026 : le plancher PAR DÉFAUT (st.COTE_TOTALE_MIN) peut
+        # être relevé pour UN profil précis via profil["cote_totale_min"], sans toucher aux
+        # autres — constaté sur le run #84, les 4 coupons sûrs tombaient tous entre 5.0 et 5.25
+        # au même plancher unique de 5 ; un plancher plus haut sur certains force l'IA à
+        # accepter des cotes individuelles plus hautes pour l'atteindre, et donc à diversifier.
+        pool = {
+            "A vs B": [_sel("A vs B", "Total", "Over", 3.0)],
+            "C vs D": [_sel("C vs D", "Total", "Over", 2.0)],
+        }
+        catalogue, _ = st.construire_catalogue(pool)
+        # cote totale réelle 3.0*2.0 = 6.0 : sous le plancher DU PROFIL (8.0) bien qu'au-dessus
+        # du plancher par défaut (5.0, qui ne s'applique plus puisque le profil précise le sien).
+        profil = {"cle": "p1", "nom": "x", "cote_min": 0.0, "cote_max": 1000.0, "nb_jambes": 2,
+                  "nb_jambes_min": 2, "cote_totale_min": 8.0}
+        with mock.patch.object(st, "COTE_TOTALE_MIN", 5.0):
+            proposition = {"coupons": [{"profil": "p1", "strategie": "s", "jambes": [{"id": "P1"}, {"id": "P2"}]}]}
+            acceptes, problemes, _ = st.valider(proposition, catalogue, [profil])
+        self.assertNotIn("p1", acceptes)
+        self.assertTrue(any("trop basse (minimum 8 pour ce profil)" in p for p in problemes), problemes)
 
     def test_cote_au_dessus_du_plancher_acceptee_sans_plafond_haut(self):
         pool = {

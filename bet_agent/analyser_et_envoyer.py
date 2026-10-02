@@ -125,13 +125,24 @@ PROBA_MIN_FALLBACK_AUTO = 30.0
 # élevé) — jamais d'un calcul moins rigoureux ou d'un seuil de probabilité abaissé.
 # Un profil s'abstient (jambes=[]) si pas assez de paris vraiment défendables existent pour
 # lui — jusqu'à 5 coupons n'est donc pas un minimum imposé, seulement un plafond.
+# Planchers de cote totale des 4 coupons sûrs, DIVERSIFIÉS (demande explicite du 02/10/2026,
+# après avoir constaté sur le run #84 que les 4 coupons sûrs tombaient tous entre 5.0 et 5.25 :
+# en 2-3 jambes à haute probabilité, le produit des cotes individuelles converge
+# mathématiquement vers le plancher unique de 5 dès qu'il est atteint, rien ne pousse l'IA
+# au-delà) — un plancher plus haut sur certains profils force l'IA à accepter des jambes à
+# cote individuelle plus élevée (donc probabilité un peu plus basse, toujours >= 60% catalogue)
+# pour les atteindre, ce qui étale les 4 coupons sur des paliers de risque/gain différents au
+# lieu de les laisser tous se ressembler.
+CIBLES_COTE_TOTALE_MIN_SURS = [5.0, 8.0, 12.0, 5.0]
+
 PROFILS_COUPON = [
     # cote_min/cote_max : volontairement très larges (non 0/infini — casserait le calcul de
     # pondération du repli Monte Carlo, 0 * infini = NaN) — gardent un sens pour
     # selectionner_combo_cote_cible (repli 100% Python sans IA, qui a besoin d'une cible pour
     # pondérer son tirage), mais ne bloquent plus jamais la validation de l'IA stratège.
     *[{"cle": f"coupon{i}", "nom": f"🏆 COUPON {i} (2-3 jambes, probabilité maximale)",
-       "cote_min": 1.01, "cote_max": 1000000.0, "nb_jambes_min": 2, "nb_jambes": 3}
+       "cote_min": 1.01, "cote_max": 1000000.0, "nb_jambes_min": 2, "nb_jambes": 3,
+       "cote_totale_min": CIBLES_COTE_TOTALE_MIN_SURS[i - 1]}
       for i in range(1, 5)],
     {"cle": "risque", "nom": "🎲 COUPON RISQUÉ INTENTIONNEL (5-10 jambes, cotes élevées assumées)",
      "cote_min": 1.01, "cote_max": 1000000.0, "nb_jambes_min": 5, "nb_jambes": 10,

@@ -34,9 +34,12 @@ cible différent pour chacun, voir voir_catalogue pour les bornes exactes), chac
 seul pari par match), choisis dans le MÊME catalogue de paris réels. LA COTE TOTALE N'EST PAS UNE CONTRAINTE \
 DE FOURCHETTE — seul le NOMBRE DE JAMBES différencie les profils ; la cote totale qui en résulte (produit des \
 cotes choisies) est acceptée telle quelle, jamais à forcer vers une fourchette précise. SEULE EXCEPTION : la \
-cote totale doit toujours rester AU MOINS 5 (Python refuse en dessous, quel que soit le profil) — si tes \
-favoris à cote basse ne suffisent pas à l'atteindre avec le nombre de jambes minimum, ajoute une jambe de plus \
-(même en dehors du minimum) plutôt que de soumettre un coupon sous ce seuil. Tu composes les {n} coupons L'UN \
+cote totale doit toujours rester AU-DESSUS D'UN PLANCHER (Python refuse en dessous) QUI VARIE SELON LE \
+PROFIL en cours (indiqué par voir_catalogue → cote_totale_min, jamais le même pour les {n} profils — demande \
+explicite du 02/10/2026 pour éviter que les coupons sûrs se ressemblent tous) — si tes favoris à cote basse ne \
+suffisent pas à l'atteindre avec le nombre de jambes minimum, ajoute une jambe de plus (même en dehors du \
+minimum) ou accepte une cote individuelle un peu plus haute (toujours dans le catalogue) plutôt que de \
+soumettre un coupon sous ce plancher. Tu composes les {n} coupons L'UN \
 APRÈS L'AUTRE (jamais en parallèle). Tu peux réutiliser un MATCH déjà pris dans un profil précédent, mais \
 jamais le MÊME pari exact (même marché, même sélection) — Python le refuse. Diversifie aussi les CATÉGORIES \
 à l'échelle des {n} profils, pas seulement à l'intérieur d'un seul coupon (ex: si un profil précédent a pris \
@@ -81,7 +84,7 @@ faible).
 PAS une cible précise à viser — n'ajoute JAMAIS un pari seulement pour faire monter ou descendre la cote totale \
 vers une fourchette. Pour un marché modélisé, ta décision se base sur la probabilité CALCULÉE PAR PYTHON \
 (catalogue), pas sur une estimation que tu inventes toi-même. SEULE VÉRIFICATION PYTHON SUR LA COTE : un \
-plancher ABSOLU de 5 (cote totale >= 5, toujours, quel que soit le profil) — en dessous, Python refuse. Le \
+plancher qui VARIE SELON LE PROFIL (voir cote_totale_min dans voir_catalogue) — en dessous, Python refuse. Le \
 nombre de jambes, lui, doit rester dans la fourchette du profil en cours (voir voir_catalogue), mais même ça : \
 si tu ne trouves pas assez de paris VRAIMENT défendables pour atteindre le minimum de jambes d'un profil, \
 abstiens-toi sur ce profil plutôt que de forcer des paris moyens.
@@ -154,8 +157,9 @@ def construire_outils_schemas(profils):
         {"type": "function", "function": {
             "name": "proposer_coupon",
             "description": "Soumet le coupon du PROFIL EN COURS à Python, qui vérifie (identifiants, un pari par match, "
-                           "nombre de paris dans la fourchette du profil, cote totale >= 5 — AUCUNE fourchette précise "
-                           "de cote vérifiée au-delà de ce plancher) et te renvoie ses calculs (dont la cote totale "
+                           "nombre de paris dans la fourchette du profil, cote totale >= cote_totale_min du profil — "
+                           "ce plancher varie selon le profil, voir voir_catalogue ; aucune fourchette précise de cote "
+                           "vérifiée au-delà) et te renvoie ses calculs (dont la cote totale "
                            "résultante). Si valide, le coupon "
                            "est automatiquement rédigé et enregistré, et tu passes au profil suivant (voir_catalogue te le "
                            "confirmera). Renvoie valide=true ou la liste des problèmes à corriger. jambes vide = abstention "
@@ -364,11 +368,15 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
         profil = etat["profils"][etat["profil_index"]]
         return {
             "profil_en_cours": f"{etat['profil_index'] + 1}/{len(etat['profils'])}",
-            # cote_min/cote_max NON transmis : la cote totale n'est plus une contrainte depuis
-            # le 01/10/2026 (demande explicite) — seul le nombre de jambes différencie les
-            # profils, pas de cote cible à viser ni à afficher à l'IA.
+            # cote_min/cote_max NON transmis : la cote totale n'est plus une contrainte de
+            # FOURCHETTE depuis le 01/10/2026 (demande explicite) — seul le nombre de jambes
+            # différencie les profils. cote_totale_min (plancher, vérifié par Python) reste
+            # transmis — DIVERSIFIÉ PAR PROFIL depuis le 02/10/2026 (demande explicite après
+            # avoir constaté que les 4 coupons sûrs du run #84 tombaient tous entre 5.0 et 5.25
+            # au même plancher unique de 5).
             "profil": {"nom": profil["nom"], "nb_jambes_min": profil.get("nb_jambes_min", 1),
                        "nb_jambes_max": profil["nb_jambes"],
+                       "cote_totale_min": profil.get("cote_totale_min", st.COTE_TOTALE_MIN),
                        "prefere_cote_elevee": profil.get("prefere_cote_elevee", False)},
             "catalogue": etat["catalogue_texte"],
             "contexte_par_match": etat["contexte_texte"],

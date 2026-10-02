@@ -94,7 +94,9 @@ def construire_prompt(pool, profils, catalogue_texte):
         f"- {p['cle']} = {p['nom']} : entre {p.get('nb_jambes_min', NB_JAMBES_MIN_DEFAUT)} et {p['nb_jambes']} "
         "paris — choisis TOI-MÊME, dans cette fourchette, les paris les plus défendables selon la qualité des "
         "données du jour (pas d'obligation d'atteindre le maximum). La cote totale qui en résulte n'est PAS une "
-        "contrainte : ne force jamais un pari seulement pour la faire monter ou descendre."
+        "contrainte précise à viser, SEUL un plancher est vérifié par Python pour CE profil : cote totale >= "
+        f"{p.get('cote_totale_min', COTE_TOTALE_MIN):g} (ce plancher varie selon le profil — ne force jamais un "
+        "pari seulement pour faire monter ou descendre la cote au-delà de ce qu'il faut pour l'atteindre)."
         + (" PROFIL RISQUÉ INTENTIONNEL (demande explicite \"cote élevée = gain élevé\") : parmi les paris déjà "
            "filtrés par Python (probabilité >= 60%, jamais en dessous), choisis ceux à la cote individuelle la "
            "PLUS ÉLEVÉE disponible plutôt que les plus sûrs — contrairement aux autres profils, qui visent la "
@@ -421,14 +423,18 @@ def valider(proposition, catalogue, profils, signatures_existantes=(), selection
         # oblige pas l'IA à atteindre le 50+ et 15-50, mon but c'est tout cote individuel et
         # total qui a la chance de réussite élevée") — Python ne rejette PLUS un coupon pour
         # viser une fourchette précise, seul le nombre de jambes (nb_jambes_min/nb_jambes)
-        # différencie encore les profils. MAIS un PLANCHER ABSOLU reste vérifié (demande
-        # explicite, même jour : "interdit les cote total moins de 5") — un coupon dont la
-        # cote totale tombe sous COTE_TOTALE_MIN, quel que soit le profil, est rejeté comme les
-        # autres règles ci-dessus ; pas de plafond haut, seulement ce plancher.
+        # différencie encore les profils. MAIS un PLANCHER reste vérifié (demande explicite,
+        # même jour : "interdit les cote total moins de 5") — DIVERSIFIÉ PAR PROFIL depuis le
+        # 02/10/2026 (constaté sur le run #84 : les 4 coupons sûrs, tous au même plancher de 5,
+        # tombaient tous entre 5.0 et 5.25 — un plancher qui varie selon le profil, via
+        # profil["cote_totale_min"], étale les coupons sur des paliers différents ; pas de
+        # plafond haut, seulement ce plancher, qui retombe à COTE_TOTALE_MIN si le profil ne
+        # précise rien).
+        plancher = profil.get("cote_totale_min", COTE_TOTALE_MIN)
         cote = ae._produit_cotes(selections) if selections else 0
         calculs.append(f"{cle} : {len(selections)} paris, cote totale {cote:.2f}")
-        if selections and cote < COTE_TOTALE_MIN:
-            erreurs.append(f"cote totale {cote:.2f} trop basse (minimum {COTE_TOTALE_MIN:g}) — "
+        if selections and cote < plancher:
+            erreurs.append(f"cote totale {cote:.2f} trop basse (minimum {plancher:g} pour ce profil) — "
                            "ajoute un pari ou remplace par des cotes plus hautes")
         empreinte = signature(selections)
         if empreinte and empreinte in signatures:
