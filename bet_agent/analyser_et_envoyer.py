@@ -109,10 +109,17 @@ PROBA_MIN_FALLBACK_AUTO = 30.0
 # accepte délibérément plus de jambes (4-5) — demande explicite du 01/10/2026 (Option B : "si
 # on veut prendre risque sur 1 ou 2 coupon sur 5, fait de façon intentionnel") : CE choix de
 # risque est assumé et borné (4-5, jamais 10-15 comme l'ancien "audacieux" — même à ce format,
-# une telle pile reste statistiquement perdante plus souvent que gagnante). Chaque jambe de ce
-# profil passe quand même par le même filtre Python (probabilité >= 60%, voir agent_strategie.
-# SEUIL_PROBA_CATALOGUE) : le risque vient du NOMBRE de jambes empilées, jamais d'un calcul
-# moins rigoureux ou d'un seuil de probabilité abaissé.
+# une telle pile reste statistiquement perdante plus souvent que gagnante).
+#
+# "prefere_cote_elevee": True (02/10/2026, correctif explicite : "les 5e coupon que je t'ai dit
+# de prendre risque, sache dire les cotes élevées car cote élevée = gain élevé") — un premier
+# run (75) avait rempli ce profil avec des favoris à cote basse (1.33-1.44, les mêmes choix que
+# les 4 profils sûrs), ce qui ne matérialise aucun risque/gain supplémentaire réel. Ce profil
+# doit maintenant privilégier, PARMI les paris déjà filtrés par Python (probabilité >= 60%,
+# jamais en dessous — voir agent_strategie.SEUIL_PROBA_CATALOGUE), ceux à la cote la PLUS
+# ÉLEVÉE disponible plutôt que les plus sûrs : le risque de ce profil vient maintenant à la
+# fois du nombre de jambes ET du choix de cotes plus hautes (donc d'un gain potentiel plus
+# élevé) — jamais d'un calcul moins rigoureux ou d'un seuil de probabilité abaissé.
 # Un profil s'abstient (jambes=[]) si pas assez de paris vraiment défendables existent pour
 # lui — jusqu'à 5 coupons n'est donc pas un minimum imposé, seulement un plafond.
 PROFILS_COUPON = [
@@ -123,8 +130,9 @@ PROFILS_COUPON = [
     *[{"cle": f"coupon{i}", "nom": f"🏆 COUPON {i} (2-3 jambes, probabilité maximale)",
        "cote_min": 1.01, "cote_max": 1000000.0, "nb_jambes_min": 2, "nb_jambes": 3}
       for i in range(1, 5)],
-    {"cle": "risque", "nom": "🎲 COUPON RISQUÉ INTENTIONNEL (4-5 jambes, assumé)",
-     "cote_min": 1.01, "cote_max": 1000000.0, "nb_jambes_min": 4, "nb_jambes": 5},
+    {"cle": "risque", "nom": "🎲 COUPON RISQUÉ INTENTIONNEL (4-5 jambes, cotes élevées assumées)",
+     "cote_min": 1.01, "cote_max": 1000000.0, "nb_jambes_min": 4, "nb_jambes": 5,
+     "prefere_cote_elevee": True},
 ]
 
 # IA : Groq + Gemini + OpenRouter (2026-09-26). Listes modifiables sans toucher au code via

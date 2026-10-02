@@ -94,7 +94,11 @@ def construire_prompt(pool, profils, catalogue_texte):
         f"- {p['cle']} = {p['nom']} : entre {p.get('nb_jambes_min', NB_JAMBES_MIN_DEFAUT)} et {p['nb_jambes']} "
         "paris — choisis TOI-MÊME, dans cette fourchette, les paris les plus défendables selon la qualité des "
         "données du jour (pas d'obligation d'atteindre le maximum). La cote totale qui en résulte n'est PAS une "
-        "contrainte : ne force jamais un pari seulement pour la faire monter ou descendre" for p in profils)
+        "contrainte : ne force jamais un pari seulement pour la faire monter ou descendre."
+        + (" PROFIL RISQUÉ INTENTIONNEL (demande explicite \"cote élevée = gain élevé\") : parmi les paris déjà "
+           "filtrés par Python (probabilité >= 60%, jamais en dessous), choisis ceux à la cote individuelle la "
+           "PLUS ÉLEVÉE disponible plutôt que les plus sûrs — contrairement aux autres profils, qui visent la "
+           "probabilité maximale." if p.get("prefere_cote_elevee") else "") for p in profils)
     exemple_coupons = ", ".join(
         '{"profil": "%s", "strategie": "1-2 phrases", "jambes": [{"id": "P3", "raison": "1 phrase"}]}' % p["cle"]
         for p in profils)

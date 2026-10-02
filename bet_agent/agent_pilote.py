@@ -95,7 +95,12 @@ la probabilité Python est nettement au-dessus du seuil.
 cote individuelle basse, environ 1.1-1.5) PLUTÔT QUE DES PARIS À PROBABILITÉ PYTHON FAIBLE (cote unitaire > 2) \
 : la probabilité de gagner TOUTES les jambes d'un combiné est bien meilleure en empilant des favoris nets \
 (probabilité Python élevée) qu'en misant sur des paris incertains — quelle que soit la cote individuelle ou \
-totale qui en résulte, cote basse ou haute, peu importe, SEULE compte la probabilité Python de chaque jambe.
+totale qui en résulte, cote basse ou haute, peu importe, SEULE compte la probabilité Python de chaque jambe. \
+EXCEPTION EXPLICITE : si voir_catalogue indique "prefere_cote_elevee": true pour le profil en cours (demande \
+explicite du 02/10/2026 : "cote élevée = gain élevé"), fais l'INVERSE pour CE profil seulement — choisis, \
+PARMI les paris déjà filtrés par Python (donc toujours >= 60% de probabilité, jamais en dessous), ceux à la \
+cote individuelle la PLUS ÉLEVÉE disponible plutôt que les plus sûrs : ce profil vise délibérément un gain \
+potentiel plus élevé en acceptant plus de risque, en plus du nombre de jambes déjà plus grand.
 - La sélection "12" (double chance domicile-ou-extérieur) n'est PAS interdite : choisis-la comme n'importe \
 quel autre marché si sa probabilité Python est élevée, au même titre que les autres règles ci-dessus.
 - Une ligne de quart (.25/.75, ex: Total 3.25, Handicap -0.75) répartit la mise moitié sur la ligne entière/demi \
@@ -130,7 +135,10 @@ def construire_outils_schemas(profils):
         {"type": "function", "function": {
             "name": "voir_catalogue",
             "description": f"Renvoie le profil EN COURS (parmi les {n} — {noms}, indique sa position "
-                           f"\"2/{n}\" par ex.) avec ses contraintes de cote, le CATALOGUE déjà FILTRÉ ET TRIÉ par "
+                           f"\"2/{n}\" par ex.) avec ses contraintes de cote ET son champ \"prefere_cote_elevee\" "
+                           "(false pour la plupart des profils — priorité à la probabilité ; true pour un profil "
+                           "risqué intentionnel — priorité aux cotes individuelles les plus hautes PARMI les paris "
+                           "déjà filtrés, voir les RÈGLES ABSOLUES), le CATALOGUE déjà FILTRÉ ET TRIÉ par "
                            "Python (seuls les paris modélisables avec probabilité calculée >= 60%, du plus probable "
                            "au moins probable ; identifiants P1, P2..., marché, sélection, cote, probabilité, edge "
                            "— un match absent du catalogue veut dire que Python n'y a rien trouvé d'assez solide), "
@@ -360,7 +368,8 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
             # le 01/10/2026 (demande explicite) — seul le nombre de jambes différencie les
             # profils, pas de cote cible à viser ni à afficher à l'IA.
             "profil": {"nom": profil["nom"], "nb_jambes_min": profil.get("nb_jambes_min", 1),
-                       "nb_jambes_max": profil["nb_jambes"]},
+                       "nb_jambes_max": profil["nb_jambes"],
+                       "prefere_cote_elevee": profil.get("prefere_cote_elevee", False)},
             "catalogue": etat["catalogue_texte"],
             "contexte_par_match": etat["contexte_texte"],
         }

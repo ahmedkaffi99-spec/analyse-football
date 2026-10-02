@@ -155,6 +155,47 @@ class TestExecuterAgentPilote(unittest.TestCase):
         self.assertIn("2.1 point(s)/match", texte_catalogue)
         self.assertIn("4 clean sheet(s) sur 10", texte_catalogue)
 
+    def test_voir_catalogue_transmet_prefere_cote_elevee(self):
+        # Correctif explicite (02/10/2026) : "les 5e coupon que je t'ai dit de prendre risque,
+        # sache dire les cotes élevées car cote élevée = gain élevé" — un premier run (75)
+        # avait rempli ce profil avec des favoris à cote basse (1.33-1.44, mêmes choix que les
+        # profils sûrs), ce qui ne matérialisait aucun risque/gain réel. voir_catalogue doit
+        # transmettre explicitement la préférence du profil à l'IA.
+        profil_risque = {"cle": "risque", "nom": "🎲 RISQUÉ", "cote_min": 1.01, "cote_max": 1000000.0,
+                          "nb_jambes_min": 4, "nb_jambes": 5, "prefere_cote_elevee": True}
+        reponses = [
+            _msg_outil("collecter_donnees", {}),
+            _msg_outil("voir_catalogue", {}),
+            _msg_outil("abandonner", {"raison": "test"}),
+        ]
+        with mock.patch.object(cd, "collecter_donnees", return_value=None), \
+                mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(DONNEES_FACTICES))), \
+                mock.patch.object(ae, "PROFILS_COUPON", [profil_risque]), \
+                mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=POOL_FACTICE), \
+                mock.patch.object(pilote, "_appel_api", side_effect=[(r, 65536) for r in reponses]) as appel:
+            pilote.executer(mission="test", telegram=False)
+        dernier_appel_messages = appel.call_args_list[-1].args[1]
+        contenus_outils = [m["content"] for m in dernier_appel_messages if m.get("role") == "tool"]
+        texte_catalogue = next(c for c in contenus_outils if "catalogue" in c)
+        self.assertIn('"prefere_cote_elevee": true', texte_catalogue)
+
+    def test_voir_catalogue_prefere_cote_elevee_false_par_defaut(self):
+        reponses = [
+            _msg_outil("collecter_donnees", {}),
+            _msg_outil("voir_catalogue", {}),
+            _msg_outil("abandonner", {"raison": "test"}),
+        ]
+        with mock.patch.object(cd, "collecter_donnees", return_value=None), \
+                mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(DONNEES_FACTICES))), \
+                mock.patch.object(ae, "PROFILS_COUPON", [PROFIL]), \
+                mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=POOL_FACTICE), \
+                mock.patch.object(pilote, "_appel_api", side_effect=[(r, 65536) for r in reponses]) as appel:
+            pilote.executer(mission="test", telegram=False)
+        dernier_appel_messages = appel.call_args_list[-1].args[1]
+        contenus_outils = [m["content"] for m in dernier_appel_messages if m.get("role") == "tool"]
+        texte_catalogue = next(c for c in contenus_outils if "catalogue" in c)
+        self.assertIn('"prefere_cote_elevee": false', texte_catalogue)
+
 
 PROFIL_1 = {"cle": "sur", "nom": "🛡️ SÛR", "cote_min": 0.0, "cote_max": 1000.0, "nb_jambes_min": 1, "nb_jambes": 2}
 PROFIL_2 = {"cle": "equilibre", "nom": "⚖️ ÉQUILIBRÉ", "cote_min": 0.0, "cote_max": 1000.0, "nb_jambes_min": 1, "nb_jambes": 2}
