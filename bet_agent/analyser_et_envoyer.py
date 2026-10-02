@@ -115,25 +115,20 @@ PROBA_MIN_FALLBACK_AUTO = 30.0
 #   - 1 coupon  🟡 RISQUE MOYEN, 5-8 jambes
 #   - 1 coupon  🔴 RISQUE ÉLEVÉ, plus de 8 jambes (9-15 : NB_MATCHS_MAX=15 est le plafond
 #     structurel de toute façon, un seul pari par match — voir MAX_JAMBES_PAR_MATCH)
-# Planchers de cote totale des 3 coupons 🟢, DIVERSIFIÉS (demande explicite du 02/10/2026,
-# après avoir constaté sur le run #84 que 4 coupons identiques au même plancher de 5 tombaient
-# tous entre 5.0 et 5.25 : en peu de jambes à haute probabilité, le produit des cotes
-# individuelles converge mathématiquement vers le plancher dès qu'il est atteint, rien ne
-# pousse l'IA au-delà) — un plancher plus haut force l'IA à accepter des jambes à cote
-# individuelle plus élevée (donc probabilité un peu plus basse, toujours >= 60% catalogue)
-# pour l'atteindre, ce qui étale les 3 coupons 🟢 sur des paliers différents entre eux aussi.
-# 🟡 et 🔴 n'ont pas besoin d'un plancher dédié : avec 5-8 ou 9+ jambes, même à haute
-# probabilité, le produit des cotes dépasse déjà largement n'importe quel plancher bas.
-CIBLES_COTE_TOTALE_MIN_FAIBLE_RISQUE = [5.0, 8.0, 12.0]
-
+# Pas de plancher de cote totale DÉDIÉ par coupon 🟢 (retiré le 02/10/2026 : la diversification
+# forcée 5/8/12, ajoutée après le run #84, s'est révélée inutile dès que les coupons ont 2-5
+# jambes au lieu de 2-3 fixe — constaté sur le run #86, SANS aucun plancher dédié, les 3
+# coupons 🟢 se différencient déjà naturellement, l'IA choisissant des jambes/catégories
+# différentes d'un coupon à l'autre : 5.41 / 8.21 / 12.11). Les 3 coupons 🟢 partagent donc le
+# même plancher par défaut (agent_strategie.COTE_TOTALE_MIN = 5.0, voir "cote_totale_min"
+# absent ci-dessous), comme 🟡/🔴.
 PROFILS_COUPON = [
     # cote_min/cote_max : volontairement très larges (non 0/infini — casserait le calcul de
     # pondération du repli Monte Carlo, 0 * infini = NaN) — gardent un sens pour
     # selectionner_combo_cote_cible (repli 100% Python sans IA, qui a besoin d'une cible pour
     # pondérer son tirage), mais ne bloquent plus jamais la validation de l'IA stratège.
     *[{"cle": f"coupon{i}", "nom": f"🟢 COUPON {i} (2-5 jambes, risque faible)",
-       "cote_min": 1.01, "cote_max": 1000000.0, "nb_jambes_min": 2, "nb_jambes": 5,
-       "cote_totale_min": CIBLES_COTE_TOTALE_MIN_FAIBLE_RISQUE[i - 1]}
+       "cote_min": 1.01, "cote_max": 1000000.0, "nb_jambes_min": 2, "nb_jambes": 5}
       for i in range(1, 4)],
     {"cle": "moyen", "nom": "🟡 COUPON RISQUE MOYEN (5-8 jambes)",
      "cote_min": 1.01, "cote_max": 1000000.0, "nb_jambes_min": 5, "nb_jambes": 8},

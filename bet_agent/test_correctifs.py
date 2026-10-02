@@ -709,15 +709,12 @@ class TestCinqCouponsTroisPaliersDeRisque(unittest.TestCase):
         for profil in ae.PROFILS_COUPON:
             self.assertEqual(profil["cote_min"], 1.01)
             self.assertEqual(profil["cote_max"], 1000000.0)
-        # Planchers de cote totale DIVERSIFIÉS entre les 3 coupons 🟢 (demande explicite du
-        # 02/10/2026, après avoir constaté sur le run #84 que 4 coupons identiques, tous au
-        # même plancher unique de 5, tombaient tous entre 5.0 et 5.25 — un palier plus haut sur
-        # certains force l'IA à accepter des cotes individuelles plus hautes pour l'atteindre).
-        self.assertEqual([par_cle[f"coupon{i}"]["cote_totale_min"] for i in range(1, 4)], [5.0, 8.0, 12.0])
-        # 🟡/🔴 n'ont pas besoin d'un plancher dédié : avec 5-8 ou 9+ jambes, le produit des
-        # cotes dépasse déjà largement n'importe quel plancher bas par défaut.
-        self.assertNotIn("cote_totale_min", par_cle["moyen"])
-        self.assertNotIn("cote_totale_min", par_cle["eleve"])
+        # Plancher de cote totale DÉDIÉ retiré (02/10/2026) : inutile dès que les coupons 🟢 ont
+        # 2-5 jambes (constaté sur le run #86, ils se différencient déjà naturellement sans
+        # forcer de palier — 5.41/8.21/12.11). Les 5 profils partagent donc tous le même
+        # plancher par défaut (agent_strategie.COTE_TOTALE_MIN).
+        for cle in ("coupon1", "coupon2", "coupon3", "moyen", "eleve"):
+            self.assertNotIn("cote_totale_min", par_cle[cle])
 
     def test_deux_paris_sur_le_meme_match_refuses_par_l_ia(self):
         pool = {"A vs B": [_selection("A vs B", "Total", "Over", 1.5), _selection("A vs B", "BTTS", "Yes", 1.6)]}
