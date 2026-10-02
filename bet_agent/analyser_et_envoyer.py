@@ -106,10 +106,13 @@ PROBA_MIN_FALLBACK_AUTO = 30.0
 #
 # 4 des 5 coupons restent au format qui maximise la probabilité de gagner le combiné en entier
 # (2-3 jambes, voir le run "coupon gagnant" du 01/10/2026). Le 5e, "RISQUÉ INTENTIONNEL",
-# accepte délibérément plus de jambes (4-5) — demande explicite du 01/10/2026 (Option B : "si
-# on veut prendre risque sur 1 ou 2 coupon sur 5, fait de façon intentionnel") : CE choix de
-# risque est assumé et borné (4-5, jamais 10-15 comme l'ancien "audacieux" — même à ce format,
-# une telle pile reste statistiquement perdante plus souvent que gagnante).
+# accepte délibérément plus de jambes — demande explicite du 01/10/2026 (Option B : "si on veut
+# prendre risque sur 1 ou 2 coupon sur 5, fait de façon intentionnel"), élargi à 5-10 le
+# 02/10/2026 (demande explicite : "augmente un peu les jambes jusqu'à 5 à 10") — CE choix de
+# risque est assumé : combiné à "prefere_cote_elevee" ci-dessous, les deux leviers de risque
+# (nombre de jambes ET cote individuelle) jouent maintenant ensemble sur ce seul profil, après
+# avis donné à l'utilisateur sur le compromis (jamais 10-15 comme l'ancien "audacieux" — même
+# à ce format, une telle pile reste statistiquement perdante plus souvent que gagnante).
 #
 # "prefere_cote_elevee": True (02/10/2026, correctif explicite : "les 5e coupon que je t'ai dit
 # de prendre risque, sache dire les cotes élevées car cote élevée = gain élevé") — un premier
@@ -130,8 +133,8 @@ PROFILS_COUPON = [
     *[{"cle": f"coupon{i}", "nom": f"🏆 COUPON {i} (2-3 jambes, probabilité maximale)",
        "cote_min": 1.01, "cote_max": 1000000.0, "nb_jambes_min": 2, "nb_jambes": 3}
       for i in range(1, 5)],
-    {"cle": "risque", "nom": "🎲 COUPON RISQUÉ INTENTIONNEL (4-5 jambes, cotes élevées assumées)",
-     "cote_min": 1.01, "cote_max": 1000000.0, "nb_jambes_min": 4, "nb_jambes": 5,
+    {"cle": "risque", "nom": "🎲 COUPON RISQUÉ INTENTIONNEL (5-10 jambes, cotes élevées assumées)",
+     "cote_min": 1.01, "cote_max": 1000000.0, "nb_jambes_min": 5, "nb_jambes": 10,
      "prefere_cote_elevee": True},
 ]
 

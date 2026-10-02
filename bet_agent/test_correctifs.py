@@ -613,8 +613,11 @@ class TestCinqCouponsIndependantsDeuxATroisJambes(unittest.TestCase):
     4 des 5 coupons restent au format qui maximise la probabilité de gagner (2-3 jambes). Le
     5e, "risqué intentionnel" (Option B, demande explicite du 01/10/2026 "si on veut prendre
     risque sur 1 ou 2 coupon sur 5, fait de façon intentionnel"), accepte délibérément plus de
-    jambes (4-5) — un choix de risque ASSUMÉ et borné, jamais 10-15 comme l'ancien
-    "audacieux". La cote totale n'est plus une contrainte depuis le 01/10/2026 non plus."""
+    jambes — élargi de 4-5 à 5-10 le 02/10/2026 (demande explicite "augmente un peu les jambes
+    jusqu'à 5 à 10") — un choix de risque ASSUMÉ (après avis donné sur le compromis : ce profil
+    cumule maintenant DEUX leviers de risque, nombre de jambes ET cote individuelle élevée),
+    jamais 10-15 comme l'ancien "audacieux" malgré la borne haute à 10. La cote totale n'est
+    plus une contrainte depuis le 01/10/2026 non plus."""
 
     def test_reglages_du_coupon_du_jour(self):
         self.assertEqual(ae.MAX_JAMBES_PAR_MATCH, 1)
@@ -624,7 +627,8 @@ class TestCinqCouponsIndependantsDeuxATroisJambes(unittest.TestCase):
         par_cle = {p["cle"]: p for p in ae.PROFILS_COUPON}
         for cle in ("coupon1", "coupon2", "coupon3", "coupon4"):
             self.assertEqual((par_cle[cle]["nb_jambes_min"], par_cle[cle]["nb_jambes"]), (2, 3))
-        self.assertEqual((par_cle["risque"]["nb_jambes_min"], par_cle["risque"]["nb_jambes"]), (4, 5))
+        self.assertEqual((par_cle["risque"]["nb_jambes_min"], par_cle["risque"]["nb_jambes"]), (5, 10))
+        self.assertTrue(par_cle["risque"]["prefere_cote_elevee"])
         # Cote totale : indicative uniquement, plus jamais une contrainte vérifiée (seules des
         # bornes très larges, finies — jamais 0/infini, casserait selectionner_combo_cote_cible)
         # — y compris pour le profil risqué : le risque vient du nombre de jambes, pas d'une
