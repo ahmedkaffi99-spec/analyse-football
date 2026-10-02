@@ -524,6 +524,21 @@ class TestSelectionTreveInternationale(unittest.TestCase):
         ]))
         self.assertNotIn(("Obscur FC", "Autre FC"), matchs)
 
+    def test_gulf_cup_et_caf_acceptees_en_secours(self):
+        # Demande explicite du 02/10/2026 (suite à la précédente) : "Arabian Gulf Cup et
+        # african cup caf".
+        fixtures = [
+            _fixture("Qatar", "Bahrain", "Arabian Gulf Cup", "International"),
+            _fixture("Al Ahly", "Wydad AC", "CAF Champions League", "Africa"),
+            _fixture("Zamalek", "TP Mazembe", "CAF Confederation Cup", "Africa"),
+            _fixture("Obscur FC", "Autre FC", "Division 5", "Nowhere"),
+        ]
+        matchs = cd.selectionner_matchs_du_jour(fixtures)
+        self.assertEqual(sorted(matchs), sorted([
+            ("Qatar", "Bahrain"), ("Al Ahly", "Wydad AC"), ("Zamalek", "TP Mazembe"),
+        ]))
+        self.assertNotIn(("Obscur FC", "Autre FC"), matchs)
+
     def test_equipe_feminine_api_football(self):
         self.assertTrue(cd.est_equipe_feminine_api_football("Juventus W"))
         self.assertFalse(cd.est_equipe_feminine_api_football("Wolves"))

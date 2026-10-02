@@ -214,11 +214,13 @@ FILTRE_LIGUES_SECOURS = [
     ("gold cup", None),              # CONCACAF Gold Cup
     ("copa america", None),
     ("asian cup", None),
+    ("gulf cup", None),              # Arabian Gulf Cup (Khaleeji Zain Cup)
     ("world cup qualif", None),      # éliminatoires Coupe du Monde (toutes confédérations)
     ("euro qualif", None),           # éliminatoires Euro (UEFA)
-    ("champions league", None),
+    ("champions league", None),      # couvre aussi "CAF Champions League" (pays_attendu=None)
     ("europa league", None),
     ("conference league", None),
+    ("confederation cup", None),     # CAF Confederation Cup
     ("world cup", None),
     ("africa cup of nations", None),
     ("eredivisie", "netherlands"),
