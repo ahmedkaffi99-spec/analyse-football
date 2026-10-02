@@ -290,6 +290,47 @@ def contient_indicateur_reserve(nom):
     return any(indicateur in nom_normalise for indicateur in INDICATEURS_EQUIPE_RESERVE)
 
 
+# Noms de PAYS/sélections nationales en français -> anglais (langue des noms d'équipe
+# renvoyés par API-Football et OddsPapi) — sans cette traduction, un match fourni avec des
+# noms français (ex: une liste manuelle d'équipes nationales en pleine trêve internationale)
+# score trop bas en fuzzy-matching pur pour dépasser SEUIL_MATCH_ACCEPTABLE, même pour un pays
+# évident (constaté le 02/10/2026, run #83 : "France vs Italie" à 73%, "Lettonie vs Montenegro"
+# à 46%, "Coree du Sud vs Venezuela" à 52% — 14 des 22 matchs manuels donnés en français,
+# aucune correspondance trouvée sur au moins une des deux sources malgré des matchs bien réels).
+TRADUCTION_PAYS_FR_EN = {
+    "allemagne": "germany", "angleterre": "england", "autriche": "austria", "belgique": "belgium",
+    "bosnie-herzegovine": "bosnia and herzegovina", "bosnie herzegovine": "bosnia and herzegovina",
+    "bulgarie": "bulgaria", "chypre": "cyprus", "croatie": "croatia", "danemark": "denmark",
+    "ecosse": "scotland", "espagne": "spain", "estonie": "estonia", "finlande": "finland",
+    "georgie": "georgia", "grece": "greece", "hongrie": "hungary", "irlande": "ireland",
+    "irlande du nord": "northern ireland", "islande": "iceland", "italie": "italy",
+    "lettonie": "latvia", "lituanie": "lithuania", "luxembourg": "luxembourg", "malte": "malta",
+    "macedoine du nord": "north macedonia", "moldavie": "moldova", "monténégro": "montenegro",
+    "norvege": "norway", "pays de galles": "wales", "pays-bas": "netherlands", "pologne": "poland",
+    "portugal": "portugal", "roumanie": "romania", "russie": "russia", "serbie": "serbia",
+    "slovaquie": "slovakia", "slovenie": "slovenia", "suede": "sweden", "suisse": "switzerland",
+    "turquie": "turkey", "ukraine": "ukraine", "andorre": "andorra", "saint-marin": "san marino",
+    "azerbaidjan": "azerbaijan", "bielorussie": "belarus", "kosovo": "kosovo",
+    "iles feroe": "faroe islands",
+    "etats-unis": "united states", "mexique": "mexico", "jamaique": "jamaica",
+    "trinite-et-tobago": "trinidad and tobago", "republique dominicaine": "dominican republic",
+    "porto rico": "puerto rico", "iles caimans": "cayman islands",
+    "coree du sud": "south korea", "coree du nord": "north korea", "japon": "japan",
+    "viet-nam": "vietnam", "thailande": "thailand", "indonesie": "indonesia",
+    "malaisie": "malaysia", "singapour": "singapore", "birmanie": "myanmar",
+    "cambodge": "cambodia", "inde": "india", "chine": "china", "maurice": "mauritius",
+    "ouganda": "uganda", "republique democratique du congo": "dr congo", "rd congo": "dr congo",
+    "maroc": "morocco", "algerie": "algeria", "tunisie": "tunisia", "egypte": "egypt",
+    "afrique du sud": "south africa", "senegal": "senegal", "cote d'ivoire": "ivory coast",
+    "cameroun": "cameroon", "nouvelle-zelande": "new zealand", "australie": "australia",
+}
+
+
+def _nom_traduit(nom):
+    cle = unidecode(nom or "").strip().lower()
+    return TRADUCTION_PAYS_FR_EN.get(cle, nom)
+
+
 def score_paire_equipes(home_cherche, away_cherche, home_candidat, away_candidat):
     """Score de correspondance d'un match = le PLUS FAIBLE des deux scores équipe par équipe.
     Comparer "home away" en une seule chaîne laissait une seule équipe commune suffire à
@@ -299,7 +340,9 @@ def score_paire_equipes(home_cherche, away_cherche, home_candidat, away_candidat
     from rapidfuzz import fuzz
 
     def score(a, b):
-        return fuzz.token_set_ratio(unidecode(a or "").lower(), unidecode(b or "").lower())
+        brut = fuzz.token_set_ratio(unidecode(a or "").lower(), unidecode(b or "").lower())
+        traduit = fuzz.token_set_ratio(unidecode(_nom_traduit(a) or "").lower(), unidecode(_nom_traduit(b) or "").lower())
+        return max(brut, traduit)
 
     return min(score(home_cherche, home_candidat), score(away_cherche, away_candidat))
 SORTIE_JSON = "donnees_collectees.json"

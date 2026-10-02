@@ -31,6 +31,40 @@ class TestCorrespondanceEquipes(unittest.TestCase):
         self.assertIsNone(fx)
 
 
+class TestTraductionNomsPaysFrancais(unittest.TestCase):
+    """Constaté le 02/10/2026 (run #83) : 14 des 22 matchs manuels fournis en français
+    n'étaient appariés à AUCUNE des deux sources (API-Football et/ou OddsPapi, en anglais),
+    le fuzzy-matching brut scorant trop bas pour une simple traduction (ex: "France vs Italie"
+    à 73%, "Lettonie vs Montenegro" à 46%, "Coree du Sud vs Venezuela" à 52%, tous sous
+    SEUIL_MATCH_ACCEPTABLE=80) — alors que les matchs existaient bel et bien."""
+
+    def test_pays_francais_retrouve_son_equivalent_anglais(self):
+        cas = [
+            ("France", "Italie", "France", "Italy"),
+            ("Coree du Sud", "Venezuela", "South Korea", "Venezuela"),
+            ("Lettonie", "Montenegro", "Latvia", "Montenegro"),
+            ("Pologne", "Roumanie", "Poland", "Romania"),
+            ("Belgique", "Turquie", "Belgium", "Turkey"),
+            ("Bosnie-Herzegovine", "Suede", "Bosnia and Herzegovina", "Sweden"),
+            ("Hongrie", "Georgie", "Hungary", "Georgia"),
+            ("Ukraine", "Irlande du Nord", "Ukraine", "Northern Ireland"),
+            ("Iles Feroe", "Slovaquie", "Faroe Islands", "Slovakia"),
+            ("Iles Caimans", "Porto Rico", "Cayman Islands", "Puerto Rico"),
+            ("Kazakhstan", "Moldavie", "Kazakhstan", "Moldova"),
+            ("Chine", "Palestine", "China", "Palestine"),
+            ("DR Congo", "Ouganda", "DR Congo", "Uganda"),
+        ]
+        for home_fr, away_fr, home_en, away_en in cas:
+            score = cd.score_paire_equipes(home_fr, away_fr, home_en, away_en)
+            self.assertGreaterEqual(score, cd.SEUIL_MATCH_ACCEPTABLE,
+                                     f"{home_fr} vs {away_fr} / {home_en} vs {away_en} : {score}")
+
+    def test_faux_positif_toujours_rejete_malgre_la_traduction(self):
+        # La traduction ne doit pas réintroduire le faux positif déjà corrigé ci-dessus.
+        self.assertLess(cd.score_paire_equipes("SL Benfica", "CF Os Belenenses",
+                                                "Estrela", "CF Os Belenenses"), cd.SEUIL_MATCH_ACCEPTABLE)
+
+
 class TestXgStatsDetaillees(unittest.TestCase):
     """calculer_xg_depuis_stats_detaillees — remplace Understat (retiré du pipeline le
     30/09/2026, bloqué la quasi-totalité du temps par un anti-bot) par du calcul Python sur
