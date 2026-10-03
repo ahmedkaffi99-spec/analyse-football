@@ -1722,8 +1722,8 @@ def notifier_telegram(message):
 
 def _construire_contexte_prompt(selections_finales):
     """Contexte par match (une seule fois par match) : buts attendus, confrontations directes,
-    blessures, prédictions, extraits de presse. Les extraits viennent du web : ils sont
-    balisés comme données, jamais comme consignes."""
+    blessures. Volontairement AUCUNE prédiction externe (ni API-Football /predictions, ni
+    extraits web) : l'analyse doit reposer uniquement sur notre propre modèle statistique."""
     blocs, vus = [], set()
     for s in selections_finales:
         if s["match"] in vus:
@@ -1759,17 +1759,6 @@ def _construire_contexte_prompt(selections_finales):
             if joueurs:
                 noms = ", ".join(f"{j['nom']} ({j['motif']})" for j in joueurs if j.get("nom"))
                 lignes.append(f"- Absences déclarées ({libelle}, API-Football) : {noms}")
-        predictions = ctx.get("predictions_api_football") or {}
-        if predictions.get("vainqueur_conseille"):
-            ligne = f"- Prédiction API-Football (second avis, indépendant du modèle) : {predictions['vainqueur_conseille']} favori"
-            if predictions.get("victoire_home_pct") is not None:
-                ligne += (f" ({predictions['victoire_home_pct']}% domicile / {predictions.get('nul_pct')}% nul / "
-                          f"{predictions.get('victoire_away_pct')}% extérieur)")
-            lignes.append(ligne)
-        extraits = ctx.get("contexte_web") or []
-        if extraits:
-            lignes.append("- Extraits de presse récents :")
-            lignes += [f"  « {e} »" for e in extraits]
         if len(lignes) > 1:
             blocs.append("\n".join(lignes))
     if not blocs:

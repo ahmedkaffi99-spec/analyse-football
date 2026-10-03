@@ -1423,17 +1423,10 @@ def collecter_donnees():
             print("      ⏭️ Aucun marché exploitable — match écarté sans autre appel (stats, Elo, presse).")
             continue
 
-        # --- Serper : contexte web brut — utilise le nom OddsPapi (100% de match sur les 8)
-        # si dispo, sinon le nom d'origine demandé. Ne dépend plus d'API-Football.
+        # --- Serper (contexte web) désactivé : demande explicite du 03/10/2026, l'analyse ne
+        # doit reposer que sur notre propre modèle, jamais sur une prédiction/opinion externe
+        # trouvée sur le web.
         contexte_web = None
-        nom_home_pour_recherche = fx_op.get("participant1Name") if fx_op else home_demande
-        nom_away_pour_recherche = fx_op.get("participant2Name") if fx_op else away_demande
-        print(f"      → Collecte contexte web (Serper)...")
-        contexte_web = collecter_contexte_serper(nom_home_pour_recherche, nom_away_pour_recherche)
-        if contexte_web:
-            print(f"      ✓ {len(contexte_web['resultats'])} résultats Serper collectés")
-        else:
-            print(f"      ⚠️ Aucun contexte Serper disponible")
 
         # --- Statistiques historiques : API-Football (saison, domicile/extérieur séparés).
         # Repli TheSportsDB retiré (demande explicite du 30/09/2026 : tout consolidé sur
@@ -1484,10 +1477,10 @@ def collecter_donnees():
             classement_away = trouver_classement(donnees_af["away_id"], stats_away.get("league_id"),
                                                   stats_away.get("season"), nom_away_stats)
 
-        # --- Confrontations directes, blessures/suspensions, prédictions : API-Football,
-        # demande explicite du 30/09/2026 ("appelle tous les endpoints, ne limite rien").
-        # Tous les trois ont besoin du match identifié sur API-Football (fixture_id_api_
-        # football) — silencieusement absents sinon, comme le reste des sources API-Football.
+        # --- Confrontations directes, blessures/suspensions : API-Football, demande explicite
+        # du 30/09/2026 ("appelle tous les endpoints, ne limite rien"). /predictions (API-
+        # Football) désactivé depuis le 03/10/2026 : c'est un pronostic externe, pas une donnée
+        # brute — l'analyse ne doit reposer que sur notre propre modèle statistique.
         head_to_head, blessures, predictions = None, None, None
         if donnees_af and donnees_af.get("home_id") and donnees_af.get("away_id"):
             print(f"      → Recherche confrontations directes {nom_home_stats} vs {nom_away_stats} (API-Football)...")
@@ -1497,8 +1490,6 @@ def collecter_donnees():
             print(f"      → Recherche blessures/suspensions {nom_home_stats} vs {nom_away_stats} (API-Football)...")
             blessures = recuperer_blessures(donnees_af["fixture_id_api_football"], donnees_af.get("home_id"),
                                              donnees_af.get("away_id"), nom_home_stats, nom_away_stats)
-            print(f"      → Recherche prédictions {nom_home_stats} vs {nom_away_stats} (API-Football)...")
-            predictions = recuperer_predictions(donnees_af["fixture_id_api_football"], nom_home_stats, nom_away_stats)
 
         resultats.append({
             "match_demande": {"home": home_demande, "away": away_demande},
