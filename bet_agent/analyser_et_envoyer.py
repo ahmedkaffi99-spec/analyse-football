@@ -2283,9 +2283,16 @@ def selectionner_combo_cote_cible(pool_par_match, nb_jambes, cote_min, cote_max,
     1) un match qui a AU MOINS un candidat edge/probabilité valable, mais aucun sous le
        plafond de cote, garde ses candidats valables au-delà du plafond ;
     2) un match qui n'a LITTÉRALEMENT AUCUN candidat edge/probabilité valable garde quand
-       même le(s) plus proche(s) du seuil (edge_pct le plus élevé parmi tous ses candidats,
-       même négatif) — demande explicite du 03/10/2026 : "les cotes, le plus smart/proche" —
-       plutôt que de faire disparaître le match entièrement."""
+       même le(s) plus proche(s) du seuil (edge_pct le plus élevé), MAIS seulement PARMI les
+       candidats qui respectent au moins PROBA_MIN_FALLBACK_AUTO — jamais un pari à edge
+       positif mais probabilité ridicule (constaté le 03/10/2026, run réel : Ivory Coast vs
+       Cameroon, cote 9.3, edge 2.7% mais proba_modele_pct=11% — un edge positif ne veut pas
+       dire une probabilité correcte, juste que le modèle diverge un peu du marché ; demande
+       explicite de l'utilisateur : "cet cote 9 probabilité de réussite est bon ?" → non,
+       jamais en dessous du plancher de probabilité, même en dernier recours). Si AUCUN
+       candidat n'atteint ce plancher de probabilité non plus, le match disparaît du pool
+       (comme en sélection automatique) — mieux vaut un coupon à une jambe de moins qu'une
+       jambe à ~10% de chances de passer."""
     def _filtre_edge_proba(c):
         return (c["pick"].get("edge_pct") or -999) > EDGE_MIN_FALLBACK_AUTO \
             and c["pick"]["proba_modele_pct"] >= PROBA_MIN_FALLBACK_AUTO
@@ -2297,9 +2304,11 @@ def selectionner_combo_cote_cible(pool_par_match, nb_jambes, cote_min, cote_max,
             return sous_plafond
         if valables:
             return valables if exiger_tous_les_matchs else []
-        if exiger_tous_les_matchs and candidats:
-            meilleur_edge = max((c["pick"].get("edge_pct") or -999) for c in candidats)
-            return [c for c in candidats if (c["pick"].get("edge_pct") or -999) == meilleur_edge]
+        if exiger_tous_les_matchs:
+            proba_correcte = [c for c in candidats if c["pick"]["proba_modele_pct"] >= PROBA_MIN_FALLBACK_AUTO]
+            if proba_correcte:
+                meilleur_edge = max((c["pick"].get("edge_pct") or -999) for c in proba_correcte)
+                return [c for c in proba_correcte if (c["pick"].get("edge_pct") or -999) == meilleur_edge]
         return []
 
     pool_par_match = {m: _filtre_qualite(candidats) for m, candidats in pool_par_match.items()}

@@ -677,11 +677,11 @@ class TestPrioriteCompetitionsReconnuesSansFiltre(unittest.TestCase):
                         matchs.index(("Vonds Ichihara FC", "Iwate Grulla Morioka")))
 
 
-def _selection(match, categorie, selection, cote, edge=8.0, guide=None):
+def _selection(match, categorie, selection, cote, edge=8.0, guide=None, proba=70.0):
     return {"match": match, "home_nom": match.split(" vs ")[0], "away_nom": match.split(" vs ")[1],
             "fixture_id_oddspapi": match,
             "pick": {"categorie": categorie, "marche": f"{categorie} (2.5)", "handicap": 2.5, "selection": selection,
-                     "cote": cote, "proba_modele_pct": 70.0, "edge_pct": edge, "guide": guide, "onglet": "onglet"}}
+                     "cote": cote, "proba_modele_pct": proba, "edge_pct": edge, "guide": guide, "onglet": "onglet"}}
 
 
 class TestMarcheAffichagePointDeVueEquipe(unittest.TestCase):
@@ -1094,6 +1094,35 @@ class TestFiltreDuReplisAutomatiqueSeulement(unittest.TestCase):
         self.assertEqual({c["match"] for c in combo}, {"A vs B", "C vs D"})
         pick_ab = next(c for c in combo if c["match"] == "A vs B")
         self.assertEqual(pick_ab["pick"]["selection"], "Over")  # edge -1.0 > -5.0, le plus proche du seuil
+
+    def test_jamais_un_pari_edge_positif_mais_probabilite_ridicule(self):
+        """Bug réel trouvé le 03/10/2026 sur un run réel (Ivory Coast vs Cameroon, cote 9.3,
+        edge 2.7% mais proba_modele_pct=11%) : le repli "plus proche du seuil" ne comparait
+        QUE edge_pct, ignorant la probabilité — un edge positif ne garantit pas une
+        probabilité correcte, juste que le modèle diverge un peu du marché. Demande explicite
+        de l'utilisateur : "cet cote 9 probabilité de réussite est bon ?" → non, jamais un
+        pari en dessous du plancher de probabilité (PROBA_MIN_FALLBACK_AUTO), même en dernier
+        recours — quitte à ce que le match disparaisse du pool."""
+        pool = {
+            "A vs B": [_selection("A vs B", "Total", "Over", 9.3, edge=2.7, proba=11.0),   # edge positif, proba ridicule
+                       _selection("A vs B", "Total", "Under", 1.9, edge=-3.0, proba=45.0)],  # edge négatif, proba correcte
+            "C vs D": [_selection("C vs D", "Total", "Over", 1.5)],
+        }
+        combo = ae.selectionner_combo_cote_cible(pool, 2, 1.0, 100.0, exiger_tous_les_matchs=True)
+        pick_ab = next(c for c in combo if c["match"] == "A vs B")
+        self.assertEqual(pick_ab["pick"]["selection"], "Under")  # proba 45% retenu, pas le 11% à edge positif
+
+    def test_match_disparait_si_aucun_candidat_n_atteint_le_plancher_de_probabilite(self):
+        """Si même le repli ne trouve aucun candidat avec une probabilité correcte, le match
+        disparaît du pool — mieux vaut un coupon à une jambe de moins qu'une jambe à ~10% de
+        chances de passer, même en mode manuel."""
+        pool = {
+            "A vs B": [_selection("A vs B", "Total", "Over", 9.3, edge=2.7, proba=11.0),
+                       _selection("A vs B", "Total", "Under", 15.0, edge=1.0, proba=6.0)],
+            "C vs D": [_selection("C vs D", "Total", "Over", 1.5)],
+        }
+        combo = ae.selectionner_combo_cote_cible(pool, 1, 1.0, 100.0, exiger_tous_les_matchs=True)
+        self.assertEqual({c["match"] for c in combo}, {"C vs D"})
 
 
 class TestPasDePreselectionPython(unittest.TestCase):
