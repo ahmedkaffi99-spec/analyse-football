@@ -1242,8 +1242,13 @@ def recuperer_marches_pour_fixture(fixture_id):
         markets = bookmaker_odds.get("markets", {})
         marches_bruts_1xbet += len(markets)
         if not markets:
-            print(f"      → Diagnostic : OddsPapi a des cotes pour ce fixture, mais pas pour 1xbet "
-                  f"(bookmakers disponibles : {', '.join(tous_bookmakers) or 'aucun'}).")
+            if tous_bookmakers:
+                print(f"      → Diagnostic : OddsPapi a des cotes pour ce fixture, mais pas pour 1xbet "
+                      f"(bookmakers disponibles : {', '.join(tous_bookmakers)}).")
+            else:
+                print(f"      → Diagnostic : OddsPapi connaît ce fixture mais AUCUN bookmaker (1xbet "
+                      f"compris) n'a encore posté de cote pour ce match — pas encore ouvert, pas un "
+                      f"problème de nom/correspondance.")
         for market_id, market_data in markets.items():
             info_marche = noms_marches.get(str(market_id), {})
 
