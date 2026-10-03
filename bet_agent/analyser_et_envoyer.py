@@ -2205,7 +2205,8 @@ def _produit_cotes(jambes):
     return produit
 
 
-def selectionner_combo_cote_cible(pool_par_match, nb_jambes, cote_min, cote_max, essais=4000):
+def selectionner_combo_cote_cible(pool_par_match, nb_jambes, cote_min, cote_max, essais=4000,
+                                  exiger_tous_les_matchs=False):
     """Recherche aléatoire PONDÉRÉE (Monte Carlo) : compose nb_jambes sélections — une par
     match distinct si assez de matchs, sinon complète avec un 2e marché du même match —
     dont le produit des cotes tombe dans [cote_min, cote_max].
@@ -2233,11 +2234,29 @@ def selectionner_combo_cote_cible(pool_par_match, nb_jambes, cote_min, cote_max,
     COTE_INDIVIDUELLE_MAX_FALLBACK_AUTO) appliqué ICI seulement : le pool complet transmis par
     agent3_calcul_pool_candidats n'est plus filtré (l'IA doit voir tous les marchés), mais ce
     repli 100% automatique n'a aucun jugement pour écarter lui-même un edge négatif, une
-    probabilité trop faible ou une jambe à cote trop longue (longshot)."""
-    pool_par_match = {m: [c for c in candidats if (c["pick"].get("edge_pct") or -999) > EDGE_MIN_FALLBACK_AUTO
-                                              and c["pick"]["proba_modele_pct"] >= PROBA_MIN_FALLBACK_AUTO
-                                              and c["pick"]["cote"] <= COTE_INDIVIDUELLE_MAX_FALLBACK_AUTO]
-                      for m, candidats in pool_par_match.items()}
+    probabilité trop faible ou une jambe à cote trop longue (longshot).
+
+    exiger_tous_les_matchs (demande explicite du 03/10/2026, mode manuel : "mon but est le
+    nombre que je fournis est respecté, et gagner, et plus de gain" — le nombre de jambes ne
+    doit JAMAIS retomber sous le nombre de matchs manuels exploitables à cause du plafond de
+    cote) : un match qui n'a AUCUN candidat edge/probabilité valable ET cote ≤
+    COTE_INDIVIDUELLE_MAX_FALLBACK_AUTO garde malgré tout son (ses) meilleur(s) candidat(s)
+    edge/probabilité valable(s), même au-delà du plafond de cote, plutôt que de disparaître du
+    pool — un match retenu manuellement n'est jamais purement et simplement abandonné."""
+    def _filtre_edge_proba(c):
+        return (c["pick"].get("edge_pct") or -999) > EDGE_MIN_FALLBACK_AUTO \
+            and c["pick"]["proba_modele_pct"] >= PROBA_MIN_FALLBACK_AUTO
+
+    def _filtre_qualite(candidats):
+        valables = [c for c in candidats if _filtre_edge_proba(c)]
+        sous_plafond = [c for c in valables if c["pick"]["cote"] <= COTE_INDIVIDUELLE_MAX_FALLBACK_AUTO]
+        if sous_plafond:
+            return sous_plafond
+        if exiger_tous_les_matchs and valables:
+            return valables
+        return []
+
+    pool_par_match = {m: _filtre_qualite(candidats) for m, candidats in pool_par_match.items()}
     pool_par_match = {m: c for m, c in pool_par_match.items() if c}
     matchs = list(pool_par_match.keys())
     tous_candidats = [c for candidats in pool_par_match.values() for c in candidats]
@@ -2363,14 +2382,15 @@ def generer_coupons(donnees):
             if nb_jambes < profil["nb_jambes"]:
                 print(f"   ℹ️ [{profil['nom']}] {nb_jambes} jambes au lieu de {profil['nb_jambes']} "
                       f"(seulement {len(pool)} match(s) exploitable(s), {MAX_JAMBES_PAR_MATCH} paris max par match)")
-        combo = selectionner_combo_cote_cible(pool, nb_jambes, profil["cote_min"], profil["cote_max"]) if nb_jambes else None
+        combo = selectionner_combo_cote_cible(pool, nb_jambes, profil["cote_min"], profil["cote_max"],
+                                              exiger_tous_les_matchs=mode_manuel) if nb_jambes else None
         signature = frozenset((c["match"], c["pick"]["marche"], c["pick"]["selection"]) for c in combo) if combo else None
         if signature and signature in combos_deja_proposes:
             print(f"   ⚠️ [{profil['nom']}] identique à un coupon précédent (pas assez de matchs) — non proposé.")
             resultats.append({"profil": profil, "selections": []})
             continue
         if combo is None:
-            print(f"   ⚠️ [{profil['nom']}] pas assez de candidats disponibles pour {profil['nb_jambes']} jambes "
+            print(f"   ⚠️ [{profil['nom']}] pas assez de candidats disponibles pour {nb_jambes} jambes "
                   f"({nb_candidats_total} au total) — profil vide aujourd'hui.")
             resultats.append({"profil": profil, "selections": []})
             continue

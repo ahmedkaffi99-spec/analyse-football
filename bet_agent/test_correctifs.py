@@ -1019,6 +1019,34 @@ class TestFiltreDuReplisAutomatiqueSeulement(unittest.TestCase):
         combo = ae.selectionner_combo_cote_cible(pool, 2, 1.0, 100.0)
         self.assertEqual({c["match"] for c in combo}, {"C vs D", "E vs F"})
 
+    def test_exiger_tous_les_matchs_garde_un_match_sans_cote_basse(self):
+        """Demande explicite du 03/10/2026 : "mon but est le nombre que je fournis est
+        respecté, et gagner, et plus de gain" — en mode manuel (exiger_tous_les_matchs=True),
+        un match dont aucun candidat ne descend sous le plafond de cote reste quand même dans
+        le pool (avec son meilleur candidat edge/probabilité valable), plutôt que de faire
+        disparaître le match entier et produire un coupon incomplet ou vide."""
+        pool = {
+            "A vs B": [_selection("A vs B", "Total", "Over", 3.0)],   # cote > 2.0, mais edge/proba OK
+            "C vs D": [_selection("C vs D", "Total", "Over", 1.5)],
+        }
+        # Comportement par défaut (sélection automatique) : le match A vs B est écarté.
+        self.assertIsNone(ae.selectionner_combo_cote_cible(pool, 2, 1.0, 100.0))
+        # Mode manuel : les 2 matchs doivent apparaître.
+        combo = ae.selectionner_combo_cote_cible(pool, 2, 1.0, 100.0, exiger_tous_les_matchs=True)
+        self.assertEqual({c["match"] for c in combo}, {"A vs B", "C vs D"})
+
+    def test_exiger_tous_les_matchs_prefere_quand_meme_la_cote_basse_si_disponible(self):
+        """Quand un match a À LA FOIS un candidat sous le plafond et un au-delà, le plafond
+        reste respecté pour CE match — exiger_tous_les_matchs ne fait que récupérer les matchs
+        qui n'auraient AUCUN candidat valable sinon, il ne désactive pas le plafond partout."""
+        pool = {
+            "A vs B": [_selection("A vs B", "Total", "Over", 3.0), _selection("A vs B", "Total", "Under", 1.5)],
+            "C vs D": [_selection("C vs D", "Total", "Over", 1.5)],
+        }
+        combo = ae.selectionner_combo_cote_cible(pool, 2, 1.0, 100.0, exiger_tous_les_matchs=True)
+        pick_ab = next(c for c in combo if c["match"] == "A vs B")
+        self.assertEqual(pick_ab["pick"]["cote"], 1.5)
+
 
 class TestPasDePreselectionPython(unittest.TestCase):
     """Demande explicite du 26/09/2026 : Python ne doit plus réduire les marchés d'un match à
