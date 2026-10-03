@@ -885,6 +885,10 @@ def completer_avec_marches_bruts(candidats_modelises, marches):
             # référencée brute, pour l'affichage final si ce marché brut finit dans un coupon.
             handicap_affiche = _handicap_point_de_vue_equipe(categorie, s["selection"], handicap)
             nom_marche_affiche = "Handicap" if categorie in CATEGORIES_HANDICAP_SIGNE and nom_bas == "asian handicap" else nom_marche
+            # "Bookings" (nom brut OddsPapi) → "Yellow Cards" (nom réel affiché sur 1xbet) —
+            # même correctif que _candidat (voir ses commentaires).
+            if nom_bas.startswith("bookings"):
+                nom_marche_affiche = "Yellow Cards" + nom_marche_affiche[len("Bookings"):]
             resultat.append({
                 "categorie": categorie, "marche": nom_avec_ligne,
                 "marche_affichage": _nom_avec_ligne(nom_marche_affiche, handicap_affiche),
@@ -1257,7 +1261,12 @@ def expliquer_marche(categorie, selection_brute, handicap):
             "Total Équipe 2": ("le nombre de buts marqués par l'ÉQUIPE 2 (extérieure) SEULE — pas le match entier",
                                 "onglet Total équipe 2 / Total buts équipe extérieure"),
             "Total Corners": ("le nombre total de corners du match", "onglet Corners / Total corners"),
-            "Total Cartons": ("le nombre total de cartons (jaunes + rouges) du match", "onglet Cartons / Total cartons"),
+            # "Total Cartons" = cartons JAUNES uniquement — confirmé le 03/10/2026 par capture
+            # d'écran 1xBet (onglet "Yellow Cards", aucun marché carton rouge n'existe sur
+            # 1xBet) : cohérent avec calculer_mu_cartons_depuis_stats_detaillees, qui exclut
+            # déjà les rouges (trop rares sur 10 matchs). Texte corrigé en conséquence —
+            # l'ancien "(jaunes + rouges)" était faux et trompeur sur le ticket Telegram.
+            "Total Cartons": ("le nombre de cartons JAUNES du match", "onglet Yellow Cards / Total"),
             "Total Fautes": ("le nombre total de fautes commises du match", "onglet Fautes / Total fautes"),
             "Total Tirs": ("le nombre total de tirs (cadrés + non cadrés) du match", "onglet Tirs / Total tirs"),
             "Total Tirs Cadrés": ("le nombre total de tirs CADRÉS du match", "onglet Tirs cadrés / Shots on target"),
@@ -1339,18 +1348,22 @@ def expliquer_marche(categorie, selection_brute, handicap):
             "Handicap Fautes": "faute(s)", "Handicap Tirs": "tir(s)",
             "Handicap Tirs Cadrés": "tir(s) cadré(s)", "Handicap Hors-jeux": "hors-jeu(x)",
         }[categorie]
+        # "Handicap Cartons" vit sous l'onglet "Yellow Cards" sur 1xbet (confirmé le 03/10/2026
+        # par capture d'écran : aucun marché carton rouge n'existe) — jamais "Handicap Cartons",
+        # qui n'est pas le nom réel affiché sur 1xbet.
+        onglet_categorie = "Yellow Cards - Handicap" if categorie == "Handicap Cartons" else categorie
         if sel in ("home", "1"):
             cote_txt = "domicile"
         elif sel in ("away", "2"):
             cote_txt = "extérieure"
         else:
-            return f"handicap {unite} : {selection_brute}", f"onglet {categorie}"
+            return f"handicap {unite} : {selection_brute}", f"onglet {onglet_categorie}"
         h_effectif = _handicap_point_de_vue_equipe(categorie, selection_brute, handicap)
         if h_effectif >= 0:
             guide = f"l'équipe {cote_txt} part avec un avantage fictif de {h_effectif} {unite}"
         else:
             guide = f"l'équipe {cote_txt} part avec un désavantage fictif de {abs(h_effectif)} {unite}"
-        return guide, f"onglet {categorie}"
+        return guide, f"onglet {onglet_categorie}"
 
     return None, None
 
@@ -1388,6 +1401,12 @@ def _candidat(nom_marche, handicap, selection, proba, edge, categorie):
     nom_avec_ligne = _nom_avec_ligne(nom_marche, handicap)
     handicap_affiche = _handicap_point_de_vue_equipe(categorie, sel, handicap)
     nom_marche_affiche = "Handicap" if categorie in CATEGORIES_HANDICAP_SIGNE and nom_marche.lower() == "asian handicap" else nom_marche
+    # "Bookings" (nom brut OddsPapi) n'est pas le nom affiché sur 1xbet : l'onglet s'appelle
+    # "Yellow Cards" (confirmé le 03/10/2026 par capture d'écran — aucun marché carton rouge
+    # n'existe sur 1xbet, cohérent avec calculer_mu_cartons_depuis_stats_detaillees qui exclut
+    # déjà les rouges). Même logique que le renommage "Asian Handicap" → "Handicap" ci-dessus.
+    if categorie in ("Total Cartons", "Handicap Cartons") and nom_marche_affiche[:8].lower() == "bookings":
+        nom_marche_affiche = "Yellow Cards" + nom_marche_affiche[8:]
     marche_affichage = _nom_avec_ligne(nom_marche_affiche, handicap_affiche)
     guide, onglet = expliquer_marche(categorie, sel, handicap)
     return {

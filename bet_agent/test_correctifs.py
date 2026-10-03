@@ -720,6 +720,37 @@ class TestMarcheAffichagePointDeVueEquipe(unittest.TestCase):
         self.assertEqual(par_selection["2"]["marche_affichage"], "Handicap (1.5)")
 
 
+class TestBookingsEstYellowCardsPasCartonRouge(unittest.TestCase):
+    """Bug réel trouvé le 03/10/2026 (capture d'écran 1xBet, demande explicite de
+    l'utilisateur) : le marché OddsPapi "Bookings" ne couvre QUE les cartons JAUNES sur
+    1xBet — l'onglet s'appelle littéralement "Yellow Cards", aucun marché carton rouge
+    n'existe. Avant ce correctif : le guide affichait "le nombre total de cartons (jaunes +
+    rouges)" (faux — déjà incohérent avec calculer_mu_cartons_depuis_stats_detaillees, qui
+    exclut les rouges) et le nom de marché affiché restait "Bookings - ..." (pas le nom réel
+    1xBet)."""
+
+    def test_total_cartons_guide_ne_mentionne_plus_les_rouges(self):
+        guide, onglet = ae.expliquer_marche("Total Cartons", "Over", 4.5)
+        self.assertIn("JAUNES", guide)
+        self.assertNotIn("rouge", guide.lower())
+        self.assertIn("Yellow Cards", onglet)
+
+    def test_handicap_cartons_onglet_nomme_yellow_cards(self):
+        _, onglet = ae.expliquer_marche("Handicap Cartons", "1", 0.0)
+        self.assertIn("Yellow Cards", onglet)
+
+    def test_candidat_renomme_bookings_en_yellow_cards_pour_l_affichage(self):
+        c = ae._candidat("Bookings - Handicap", 0.0, {"selection": "1", "cote": 2.34}, 0.55, 5.0, "Handicap Cartons")
+        self.assertEqual(c["marche"], "Bookings - Handicap (0.0)")  # clé de jointure interne inchangée
+        self.assertEqual(c["marche_affichage"], "Yellow Cards - Handicap (0.0)")
+
+    def test_marche_brut_renomme_bookings_en_yellow_cards(self):
+        marches = [{"marche": "Bookings - Over Under Full Time", "handicap": 4.5, "periode": "fulltime",
+                    "selections": [{"selection": "Over", "cote": 1.5}, {"selection": "Under", "cote": 2.5}]}]
+        resultat = ae.completer_avec_marches_bruts([], marches)
+        self.assertTrue(all(c["marche_affichage"].startswith("Yellow Cards -") for c in resultat))
+
+
 class TestExpliquerMarcheHandicapZero(unittest.TestCase):
     """Bug réel trouvé le 03/10/2026 dans un vrai ticket (St. Lucia vs Guadeloupe, Asian
     Handicap 0.0, sélection extérieure) : le guide généré disait "avantage fictif de -0.0
