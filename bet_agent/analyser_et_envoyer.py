@@ -1324,9 +1324,15 @@ def expliquer_marche(categorie, selection_brute, handicap):
         # 1/X/2) a pu être persisté entre-temps sur d'éventuels tickets.
         onglet_nom = {"Handicap Asiatique": "Asian Handicap", "Handicap": "Handicap"}.get(categorie, "Handicap Asiatique")
         if sel in ("home", "1"):
-            cote_txt, h_effectif = "domicile", handicap
+            cote_txt, h_effectif = "domicile", handicap or 0.0
         elif sel in ("away", "2"):
-            cote_txt, h_effectif = "extérieure", -handicap
+            # "handicap or 0.0" (demande explicite du 03/10/2026, après le constat d'un "-0.0"
+            # écrit dans un vrai ticket St. Lucia vs Guadeloupe) : -handicap sur un handicap de
+            # 0.0 donne -0.0 en Python (zéro négatif, >= 0 est pourtant True) — affiché "-0.0"
+            # au lieu de "0.0", un texte qui semble incohérent avec le pari réel. -0.0 est falsy
+            # en Python, donc "x or 0.0" le remplace par un zéro positif sans toucher aux autres
+            # valeurs.
+            cote_txt, h_effectif = "extérieure", (-handicap) or 0.0
         else:
             return f"handicap : {selection_brute}", f"onglet {onglet_nom}"
         if h_effectif >= 0:
@@ -1343,9 +1349,9 @@ def expliquer_marche(categorie, selection_brute, handicap):
             "Handicap Tirs Cadrés": "tir(s) cadré(s)", "Handicap Hors-jeux": "hors-jeu(x)",
         }[categorie]
         if sel in ("home", "1"):
-            cote_txt, h_effectif = "domicile", handicap
+            cote_txt, h_effectif = "domicile", handicap or 0.0
         elif sel in ("away", "2"):
-            cote_txt, h_effectif = "extérieure", -handicap
+            cote_txt, h_effectif = "extérieure", (-handicap) or 0.0  # voir le commentaire "-0.0" ci-dessus
         else:
             return f"handicap {unite} : {selection_brute}", f"onglet {categorie}"
         if h_effectif >= 0:

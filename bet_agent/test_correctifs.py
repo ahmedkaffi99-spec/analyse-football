@@ -656,6 +656,29 @@ def _selection(match, categorie, selection, cote, edge=8.0, guide=None):
                      "cote": cote, "proba_modele_pct": 70.0, "edge_pct": edge, "guide": guide, "onglet": "onglet"}}
 
 
+class TestExpliquerMarcheHandicapZero(unittest.TestCase):
+    """Bug réel trouvé le 03/10/2026 dans un vrai ticket (St. Lucia vs Guadeloupe, Asian
+    Handicap 0.0, sélection extérieure) : le guide généré disait "avantage fictif de -0.0
+    but(s)" — -handicap sur un handicap de 0.0 donne -0.0 en Python (zéro négatif, toujours
+    >= 0), affiché avec un signe moins qui n'a aucun sens pour l'utilisateur (ça ressemble à
+    une incohérence entre le texte et le pari réel, alors que c'est juste un zéro mal affiché)."""
+
+    def test_handicap_zero_cote_exterieure_jamais_affiche_negatif(self):
+        guide, _ = ae.expliquer_marche("Handicap", "2", 0.0)
+        self.assertIn("avantage fictif de 0.0 but(s)", guide)
+        self.assertNotIn("-0.0", guide)
+
+    def test_handicap_zero_cote_domicile_jamais_affiche_negatif(self):
+        guide, _ = ae.expliquer_marche("Handicap", "1", -0.0)
+        self.assertIn("avantage fictif de 0.0 but(s)", guide)
+        self.assertNotIn("-0.0", guide)
+
+    def test_handicap_corners_zero_cote_exterieure_jamais_affiche_negatif(self):
+        guide, _ = ae.expliquer_marche("Handicap Corners", "2", 0.0)
+        self.assertIn("avantage fictif de 0.0 corner(s)", guide)
+        self.assertNotIn("-0.0", guide)
+
+
 class TestRedactionSansEdgeNone(unittest.TestCase):
     """Constaté en production le 30/09/2026 (run 59, 15 matchs manuels) : le vrai message
     Telegram envoyé contenait "edge None% · Faible" pour une jambe sur un marché brut
