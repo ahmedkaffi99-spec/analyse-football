@@ -798,6 +798,32 @@ class TestUnSeulCouponDuJour(unittest.TestCase):
         self.assertIsNone(resultat)  # aucun match distinct supplémentaire à proposer à la place
 
 
+class TestStrategeIADesactiveParDefaut(unittest.TestCase):
+    """Demande explicite du 03/10/2026 : "diminue le travail de l'IA, seulement en rédaction"
+    — confirmé : l'IA ne choisit plus les paris par défaut (UTILISER_STRATEGE_IA=false),
+    seule la composition automatique Python (Monte Carlo, selectionner_combo_cote_cible) décide
+    quelles jambes entrent dans le coupon. L'IA n'intervient plus qu'à l'étape de rédaction
+    (agent4_rediger_coupons → agent4_ia_analyse_pronostic_redaction), pas avant. Passer
+    UTILISER_STRATEGE_IA à True réactive l'ancien comportement (officiel du 26/09 au
+    03/10/2026) si besoin un autre jour."""
+
+    def test_utiliser_stratege_ia_desactive_par_defaut(self):
+        self.assertFalse(ae.UTILISER_STRATEGE_IA)
+
+    def test_generer_coupons_n_appelle_jamais_le_llm_par_defaut(self):
+        # Même avec une réponse LLM prête à être "choisie", elle ne doit jamais être consultée
+        # tant que UTILISER_STRATEGE_IA reste à son défaut (False) : seule la composition
+        # automatique Python doit produire le résultat.
+        pool = {m: [_selection(m, "Total", "Over", 1.5)] for m in ("A vs B", "C vs D", "E vs F")}
+        reponse = json.dumps({"coupons": [{"profil": "jour", "strategie": "s",
+                            "jambes": [{"id": "P1", "raison": "r1"}]}]})
+        with mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=pool), \
+                mock.patch.object(ae, "appel_llm", return_value=reponse) as appel_llm:
+            resultats = ae.generer_coupons({"matchs": []})
+        appel_llm.assert_not_called()
+        self.assertEqual(len(resultats), 1)
+
+
 class TestCouponsJoursCreux(unittest.TestCase):
     def test_pas_plus_de_deux_paris_par_match_ni_coupons_identiques(self):
         pool = {m: [_selection(m, c, "Over", 1.3 + 0.1 * i) for i, c in enumerate(("Total", "BTTS", "Total Équipe 1"))]

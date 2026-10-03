@@ -402,9 +402,12 @@ def main(argv=None):
     p_run.add_argument("--depuis-run", type=int,
                        help="reprend la collecte archivée de ce run du jour : analyse et IA seulement "
                             "(moteur deterministe uniquement)")
-    p_run.add_argument("--moteur", choices=["agent", "deterministe"], default="agent",
-                       help="agent = agent pilote DeepSeek autonome, officiel par défaut (30/09/2026) ; "
-                            "deterministe = ancien enchaînement fixe collecte->calcul->IA ratifie")
+    p_run.add_argument("--moteur", choices=["agent", "deterministe"], default="deterministe",
+                       help="deterministe = officiel par défaut (03/10/2026, \"diminue le travail de "
+                            "l'IA, seulement en rédaction\") : Python choisit seul les paris "
+                            "(UTILISER_STRATEGE_IA=false, composition Monte Carlo), l'IA ne fait plus "
+                            "que rédiger le texte final ; agent = agent pilote DeepSeek autonome "
+                            "(choisit aussi les paris lui-même), officiel du 30/09 au 03/10/2026")
     p_run.add_argument("--profils-json", type=str, default="",
                        help="JSON d'une liste de profils personnalisés (run PONCTUEL, 01/10/2026) qui "
                             "remplace ae.PROFILS_COUPON pour CE run uniquement ; vide = comportement par "

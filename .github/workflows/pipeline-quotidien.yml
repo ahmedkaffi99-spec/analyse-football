@@ -21,12 +21,12 @@ on:
         type: boolean
         default: false
       moteur:
-        description: "Moteur : agent pilote DeepSeek autonome (officiel), ou ancien enchaînement déterministe"
+        description: "Moteur : deterministe (officiel depuis le 03/10/2026 — Python choisit les paris, l'IA ne fait que rédiger), ou agent pilote DeepSeek autonome (choisit aussi les paris lui-même)"
         type: choice
         options:
-          - agent
           - deterministe
-        default: agent
+          - agent
+        default: deterministe
       depuis_run:
         description: "Reprendre la collecte d'un run du jour (numéro) : analyse + IA seulement (moteur deterministe uniquement)"
         type: string

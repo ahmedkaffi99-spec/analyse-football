@@ -64,11 +64,15 @@ PROBA_MIN_FORTE = 60.0  # % — un marché n'est retenu que si le modèle lui do
 # fourchette de cote totale visée, obtenue en choisissant quelles jambes du pool combiner.
 # Depuis le 26/09/2026 : plus de plancher edge/probabilité ni de limite à 1 candidat par
 # catégorie ici — Python calcule les chiffres de TOUS les marchés modélisables (voir
-# evaluer_marches_toutes) et l'IA (stratège, DeepSeek en priorité) analyse et choisit
-# elle-même, au lieu de ratifier une short-list déjà pré-triée par un seuil Python.
-# L'IA stratège (agent_strategie.py) analyse, planifie et choisit les paris ; Python valide.
-# UTILISER_STRATEGE_IA=false revient à la seule composition automatique (Monte Carlo).
-UTILISER_STRATEGE_IA = os.getenv("UTILISER_STRATEGE_IA", "true").lower() not in ("0", "false", "non", "no")
+# evaluer_marches_toutes).
+# UTILISER_STRATEGE_IA=false PAR DÉFAUT depuis le 03/10/2026 (demande explicite : "diminue le
+# travail de l'IA, seulement en rédaction") : Python choisit SEUL les paris (composition
+# automatique Monte Carlo, selectionner_combo_cote_cible, déjà filtrée par edge/probabilité et
+# orientée vers la diversité de matchs/catégories — voir son docstring) ; l'IA n'intervient
+# plus que pour RÉDIGER le texte final (agent4_rediger_coupons). Passer à "true" réactive
+# l'IA stratège (agent_strategie.py, DeepSeek en priorité) qui analyse, planifie et choisit
+# elle-même les paris — officiel du 26/09 au 03/10/2026, désormais optionnel.
+UTILISER_STRATEGE_IA = os.getenv("UTILISER_STRATEGE_IA", "false").lower() not in ("0", "false", "non", "no")
 # Un seul pari par match, jamais deux (demande explicite du 26/09/2026 : les paris d'un même
 # match sont trop corrélés — constaté le même jour : 8 jambes sur 3 matchs, coupon quasi
 # impossible à gagner). Le coupon combine donc des matchs DIFFÉRENTS, pas des paris multiples

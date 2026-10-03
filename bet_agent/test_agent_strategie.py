@@ -192,6 +192,7 @@ class TestStratege(unittest.TestCase):
         with mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=POOL), \
                 mock.patch.object(ae, "PROFILS_COUPON", PROFILS + [
                     {"cle": "profil3", "nom": "🔥 COUPON 3", "cote_min": 50.0, "cote_max": 100.0, "nb_jambes": 8}]), \
+                mock.patch.object(ae, "UTILISER_STRATEGE_IA", True), \
                 mock.patch.object(ae, "appel_llm", return_value=reponse), mock.patch.object(ae.time, "sleep"):
             resultats = ae.generer_coupons({"matchs": []})
         self.assertEqual(resultats[0]["strategie"], "Stratégie sûre")
@@ -206,6 +207,7 @@ class TestStratege(unittest.TestCase):
         profil_unique = [{"cle": "coupon", "nom": "🎯 COUPON DU JOUR", "cote_min": 3.0, "cote_max": 50.0, "nb_jambes": 6}]
         with mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=POOL), \
                 mock.patch.object(ae, "PROFILS_COUPON", profil_unique), \
+                mock.patch.object(ae, "UTILISER_STRATEGE_IA", True), \
                 mock.patch.object(ae, "appel_llm", return_value=reponse), mock.patch.object(ae.time, "sleep"):
             resultats = ae.generer_coupons({"matchs": []})
         self.assertEqual(len(resultats), 1)

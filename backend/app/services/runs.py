@@ -50,13 +50,14 @@ def charger_collecte_du_jour(db, run_source_id, telecharger=telecharger_collecte
 
 def executer_run(run_id, envoyer_telegram=False, rediger=True, depuis_run=None, moteur="deterministe",
                  profils_personnalises=None, ignorer_diversite_croisee=False):
-    """moteur="agent" (officiel depuis le 30/09/2026, demande explicite de l'utilisateur : fusion
-    de l'agent pilote DeepSeek comme pipeline officiel) : DeepSeek décide lui-même quand
-    collecter, chercher du web, proposer/rédiger/envoyer (bet_agent/agent_pilote.py) — persisté
-    en base exactement comme l'ancien enchaînement déterministe (mêmes tables, même archivage).
-    moteur="deterministe" : ancien enchaînement fixe (collecte -> calcul -> IA ratifie une
-    short-list), conservé pour --depuis-run (reprise d'une collecte archivée, non supporté par
-    l'agent qui pilote sa propre collecte) et comme repli si besoin.
+    """moteur="deterministe" (officiel depuis le 03/10/2026, demande explicite : "diminue le
+    travail de l'IA, seulement en rédaction") : collecte -> calcul Python -> composition
+    automatique Monte Carlo (Python choisit SEUL les paris, voir ae.UTILISER_STRATEGE_IA=false
+    par défaut) -> rédaction LLM du texte final uniquement. Seul moteur supportant
+    --depuis-run (reprise d'une collecte archivée).
+    moteur="agent" : agent pilote DeepSeek autonome, décide lui-même quand collecter, chercher
+    du web, proposer/rédiger/envoyer (bet_agent/agent_pilote.py) — choisit aussi les paris
+    lui-même, pas seulement la rédaction. Officiel du 30/09 au 03/10/2026, reste disponible.
 
     profils_personnalises/ignorer_diversite_croisee (01/10/2026, run PONCTUEL demandé
     explicitement — n'affecte jamais le pipeline quotidien par défaut, qui garde ae.
