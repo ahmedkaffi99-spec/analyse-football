@@ -2278,10 +2278,14 @@ def selectionner_combo_cote_cible(pool_par_match, nb_jambes, cote_min, cote_max,
     exiger_tous_les_matchs (demande explicite du 03/10/2026, mode manuel : "mon but est le
     nombre que je fournis est respecté, et gagner, et plus de gain" — le nombre de jambes ne
     doit JAMAIS retomber sous le nombre de matchs manuels exploitables à cause du plafond de
-    cote) : un match qui n'a AUCUN candidat edge/probabilité valable ET cote ≤
-    COTE_INDIVIDUELLE_MAX_FALLBACK_AUTO garde malgré tout son (ses) meilleur(s) candidat(s)
-    edge/probabilité valable(s), même au-delà du plafond de cote, plutôt que de disparaître du
-    pool — un match retenu manuellement n'est jamais purement et simplement abandonné."""
+    cote OU de l'absence totale d'un pari edge/probabilité valable) : deux niveaux de repli,
+    jamais en sélection automatique (dropper un match y est sans risque, il y en a d'autres) :
+    1) un match qui a AU MOINS un candidat edge/probabilité valable, mais aucun sous le
+       plafond de cote, garde ses candidats valables au-delà du plafond ;
+    2) un match qui n'a LITTÉRALEMENT AUCUN candidat edge/probabilité valable garde quand
+       même le(s) plus proche(s) du seuil (edge_pct le plus élevé parmi tous ses candidats,
+       même négatif) — demande explicite du 03/10/2026 : "les cotes, le plus smart/proche" —
+       plutôt que de faire disparaître le match entièrement."""
     def _filtre_edge_proba(c):
         return (c["pick"].get("edge_pct") or -999) > EDGE_MIN_FALLBACK_AUTO \
             and c["pick"]["proba_modele_pct"] >= PROBA_MIN_FALLBACK_AUTO
@@ -2291,8 +2295,11 @@ def selectionner_combo_cote_cible(pool_par_match, nb_jambes, cote_min, cote_max,
         sous_plafond = [c for c in valables if c["pick"]["cote"] <= COTE_INDIVIDUELLE_MAX_FALLBACK_AUTO]
         if sous_plafond:
             return sous_plafond
-        if exiger_tous_les_matchs and valables:
-            return valables
+        if valables:
+            return valables if exiger_tous_les_matchs else []
+        if exiger_tous_les_matchs and candidats:
+            meilleur_edge = max((c["pick"].get("edge_pct") or -999) for c in candidats)
+            return [c for c in candidats if (c["pick"].get("edge_pct") or -999) == meilleur_edge]
         return []
 
     pool_par_match = {m: _filtre_qualite(candidats) for m, candidats in pool_par_match.items()}

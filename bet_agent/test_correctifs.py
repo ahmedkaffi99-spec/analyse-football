@@ -1078,6 +1078,23 @@ class TestFiltreDuReplisAutomatiqueSeulement(unittest.TestCase):
         pick_ab = next(c for c in combo if c["match"] == "A vs B")
         self.assertEqual(pick_ab["pick"]["cote"], 1.5)
 
+    def test_exiger_tous_les_matchs_garde_le_candidat_le_plus_proche_si_aucun_n_est_valable(self):
+        """Demande explicite du 03/10/2026 ("les cotes, le plus smart/proche") : un match sans
+        AUCUN candidat edge/probabilité valable (même au-delà du plafond de cote) garde quand
+        même son candidat le plus proche du seuil (edge_pct le plus élevé, même négatif),
+        plutôt que de disparaître complètement — mode manuel seulement."""
+        pool = {
+            "A vs B": [_selection("A vs B", "Total", "Over", 1.5, edge=-1.0),
+                       _selection("A vs B", "Total", "Under", 1.8, edge=-5.0)],  # aucun edge>2% : rien de valable
+            "C vs D": [_selection("C vs D", "Total", "Over", 1.5)],
+        }
+        # Sélection automatique : le match A vs B reste écarté (aucun candidat valable).
+        self.assertIsNone(ae.selectionner_combo_cote_cible(pool, 2, 1.0, 100.0))
+        combo = ae.selectionner_combo_cote_cible(pool, 2, 1.0, 100.0, exiger_tous_les_matchs=True)
+        self.assertEqual({c["match"] for c in combo}, {"A vs B", "C vs D"})
+        pick_ab = next(c for c in combo if c["match"] == "A vs B")
+        self.assertEqual(pick_ab["pick"]["selection"], "Over")  # edge -1.0 > -5.0, le plus proche du seuil
+
 
 class TestPasDePreselectionPython(unittest.TestCase):
     """Demande explicite du 26/09/2026 : Python ne doit plus réduire les marchés d'un match à
