@@ -30,6 +30,18 @@ class TestCorrespondanceEquipes(unittest.TestCase):
         fx, _ = cd.trouver_fixture_oddspapi("SL Benfica", "CF Os Belenenses", fixtures)
         self.assertIsNone(fx)
 
+    def test_ordre_domicile_exterieur_inverse_toujours_retrouve(self):
+        # Bug réel du 03/10/2026 (run réel) : "Cameroon - Ivory Coast" saisi par l'utilisateur
+        # ne retrouvait PAS le fixture OddsPapi "Ivory Coast vs Cameroon" (score 0%, ordre
+        # inversé) — la convention domicile/extérieur d'une source externe ne correspond pas
+        # toujours à celle de la demande.
+        self.assertGreaterEqual(cd.score_paire_equipes("Cameroon", "Ivory Coast",
+                                                        "Ivory Coast", "Cameroon"), cd.SEUIL_MATCH_ACCEPTABLE)
+        fixtures = [{"participant1Name": "Ivory Coast", "participant2Name": "Cameroon"}]
+        fx, score = cd.trouver_fixture_oddspapi("Cameroon", "Ivory Coast", fixtures)
+        self.assertIsNotNone(fx)
+        self.assertGreaterEqual(score, cd.SEUIL_MATCH_ACCEPTABLE)
+
 
 class TestTraductionNomsPaysFrancais(unittest.TestCase):
     """Constaté le 02/10/2026 (run #83) : 14 des 22 matchs manuels fournis en français

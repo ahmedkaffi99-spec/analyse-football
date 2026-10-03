@@ -340,11 +340,15 @@ def _nom_traduit(nom):
 
 
 def score_paire_equipes(home_cherche, away_cherche, home_candidat, away_candidat):
-    """Score de correspondance d'un match = le PLUS FAIBLE des deux scores équipe par équipe.
-    Comparer "home away" en une seule chaîne laissait une seule équipe commune suffire à
-    dépasser le seuil (constaté : "SL Benfica vs CF Os Belenenses" apparié à 80% avec
-    "Estrela vs CF Os Belenenses", "Malmo FF vs Hammarby IF" à 82% avec "IF Brommapojkarna
-    vs Hammarby FF") — les stats de la mauvaise équipe étaient alors utilisées."""
+    """Score de correspondance d'un match = le PLUS FAIBLE des deux scores équipe par équipe,
+    EN TESTANT AUSSI L'ORDRE INVERSÉ (demande explicite du 03/10/2026, run réel : "Cameroon -
+    Ivory Coast" saisi par l'utilisateur ne retrouvait PAS le fixture OddsPapi "Ivory Coast vs
+    Cameroon", score 0% — la convention domicile/extérieur d'une source externe ne correspond
+    pas toujours à celle de la demande, surtout pour les matchs à enjeu neutre). Comparer
+    "home away" en une seule chaîne laissait une seule équipe commune suffire à dépasser le
+    seuil (constaté : "SL Benfica vs CF Os Belenenses" apparié à 80% avec "Estrela vs CF Os
+    Belenenses", "Malmo FF vs Hammarby IF" à 82% avec "IF Brommapojkarna vs Hammarby FF") —
+    les stats de la mauvaise équipe étaient alors utilisées."""
     from rapidfuzz import fuzz
 
     def score(a, b):
@@ -352,7 +356,9 @@ def score_paire_equipes(home_cherche, away_cherche, home_candidat, away_candidat
         traduit = fuzz.token_set_ratio(unidecode(_nom_traduit(a) or "").lower(), unidecode(_nom_traduit(b) or "").lower())
         return max(brut, traduit)
 
-    return min(score(home_cherche, home_candidat), score(away_cherche, away_candidat))
+    ordre_direct = min(score(home_cherche, home_candidat), score(away_cherche, away_candidat))
+    ordre_inverse = min(score(home_cherche, away_candidat), score(away_cherche, home_candidat))
+    return max(ordre_direct, ordre_inverse)
 SORTIE_JSON = "donnees_collectees.json"
 
 MARKET_NAMES_CACHE = {}
