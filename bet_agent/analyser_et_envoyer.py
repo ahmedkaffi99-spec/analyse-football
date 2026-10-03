@@ -53,7 +53,10 @@ TICKET_DU_JOUR_JSON = "ticket_du_jour.json"
 SEUIL_EDGE = 5.0  # % — n'accepte un marché que si l'edge calculé dépasse ce seuil
 EDGE_MAX_PLAUSIBLE = 25.0  # % — resserré de 60 à 25 : même un vrai edge dépasse rarement ce niveau
                             # de façon fiable sur un bookmaker professionnel comme 1xbet
-PROBA_MIN_FORTE = 60.0  # % — un marché n'est retenu que si le modèle lui donne AU MOINS
+# Configurable (SEUIL_PROBA_MIN), 70 par défaut depuis le 03/10/2026 : sur 349 paris réellement
+# jugés, la tranche 60-70 % annoncée n'en gagnait que 52 % (ROI -17 %), la tranche 50-60 %
+# seulement 35 % ; au-dessus de 70 % le modèle est bien calibré (78-93 % réels, ROI positif).
+PROBA_MIN_FORTE = float(os.getenv("SEUIL_PROBA_MIN") or 70.0)  # % — un marché n'est retenu que si le modèle lui donne AU MOINS
                          # cette probabilité de gagner (pas seulement un edge positif) : objectif
                          # "coupon smart" avec des jambes individuellement fortes, pas juste
                          # statistiquement avantageuses sur le papier
@@ -751,7 +754,11 @@ COTE_MIN_JAMBE = 1.20   # en dessous, un pari n'apporte presque rien au combiné
 # marchés") — Total Cartons (modèle peu fiable, points de carton/lignes mixtes) était exclu
 # jusqu'au 30/09/2026, mais l'IA voit maintenant TOUS les marchés modélisables avec leurs vrais
 # chiffres (edge, probabilité) et juge elle-même de leur fiabilité, comme pour tout autre marché.
-CATEGORIES_EXCLUES = ("Handicap Corners", "Handicap Cartons")
+# BTTS ajouté le 03/10/2026 : mal calibré dans TOUTES les tranches (35 paris jugés, 48 %
+# réels pour ~63 % annoncés, ROI -21 % ; même au-dessus de 70 % : 3/6). Configurable :
+# MARCHES_EXCLUS="Cat1,Cat2" remplace entièrement cette liste.
+CATEGORIES_EXCLUES = tuple(c.strip() for c in os.getenv("MARCHES_EXCLUS", "").split(",") if c.strip()) or (
+    "Handicap Corners", "Handicap Cartons", "BTTS")
 
 
 def est_marche_exclu(nom_marche):

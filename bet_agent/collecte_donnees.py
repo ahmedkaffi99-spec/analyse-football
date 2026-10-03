@@ -1129,6 +1129,43 @@ def selectionner_matchs_du_jour(fixtures_oddspapi):
     return matchs
 
 
+ECART_MAX_HEURES_FIXTURES = 24
+
+
+def _date_iso(valeur):
+    try:
+        d = datetime.fromisoformat(str(valeur).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+
+
+def meme_rencontre_dans_le_temps(date_a, date_b, ecart_max_heures=ECART_MAX_HEURES_FIXTURES):
+    """Deux fixtures (API-Football, OddsPapi) des mêmes équipes ne désignent le MÊME match que
+    si leurs coups d'envoi sont proches — constaté le 03/10/2026 : Cayman Islands vs Puerto Rico
+    apparié au match du 02/10 (double confrontation de qualification) alors que la cote portait
+    sur celui du 04/10, d'où une mauvaise heure et des stats/H2H calculés pour le mauvais match.
+    Date illisible ou absente : pas de rejet (pas de preuve d'erreur)."""
+    a, b = _date_iso(date_a), _date_iso(date_b)
+    if a is None or b is None:
+        return True
+    return abs(a - b) <= timedelta(hours=ecart_max_heures)
+
+
+def _donnees_api_football(fx_af):
+    return {
+        "home_name": fx_af.get("teams", {}).get("home", {}).get("name"),
+        "away_name": fx_af.get("teams", {}).get("away", {}).get("name"),
+        "home_id": fx_af.get("teams", {}).get("home", {}).get("id"),
+        "away_id": fx_af.get("teams", {}).get("away", {}).get("id"),
+        "league_id": fx_af.get("league", {}).get("id"),
+        "league_name": fx_af.get("league", {}).get("name"),
+        "season": fx_af.get("league", {}).get("season"),
+        "fixture_date": fx_af.get("fixture", {}).get("date"),
+        "fixture_id_api_football": fx_af.get("fixture", {}).get("id"),
+    }
+
+
 def trouver_fixture_api_football(home_cherche, away_cherche, tous_fixtures):
     cible_contient_reserve = contient_indicateur_reserve(home_cherche) or contient_indicateur_reserve(away_cherche)
     meilleur_score, meilleur_fx = 0, None
@@ -1437,19 +1474,8 @@ def collecter_donnees():
 
         # --- API-Football : identité, ligue, saison, date ---
         fx_af, score_af = trouver_fixture_api_football(home_demande, away_demande, tous_fixtures_af)
-        donnees_af = None
+        donnees_af = _donnees_api_football(fx_af) if fx_af else None
         if fx_af:
-            donnees_af = {
-                "home_name": fx_af.get("teams", {}).get("home", {}).get("name"),
-                "away_name": fx_af.get("teams", {}).get("away", {}).get("name"),
-                "home_id": fx_af.get("teams", {}).get("home", {}).get("id"),
-                "away_id": fx_af.get("teams", {}).get("away", {}).get("id"),
-                "league_id": fx_af.get("league", {}).get("id"),
-                "league_name": fx_af.get("league", {}).get("name"),
-                "season": fx_af.get("league", {}).get("season"),
-                "fixture_date": fx_af.get("fixture", {}).get("date"),
-                "fixture_id_api_football": fx_af.get("fixture", {}).get("id"),
-            }
             print(f"      ✓ API-Football trouvé (score {score_af:.0f}%) : {donnees_af['home_name']} vs {donnees_af['away_name']}")
         else:
             print(f"      ⚠️ Aucune correspondance API-Football (meilleur score : {score_af:.0f}%)")
@@ -1468,6 +1494,15 @@ def collecter_donnees():
             fixture_id_oddspapi = fx_op.get("fixtureId")
             print(f"      ✓ OddsPapi trouvé (score {score_op:.0f}%) : "
                   f"{fx_op.get('participant1Name')} vs {fx_op.get('participant2Name')}")
+            if donnees_af and not meme_rencontre_dans_le_temps(donnees_af["fixture_date"], fx_op.get("startTime")):
+                print(f"      ⚠️ API-Football pointe un autre match des mêmes équipes "
+                      f"({donnees_af['fixture_date']} contre {fx_op.get('startTime')} chez OddsPapi) — "
+                      f"nouvelle recherche limitée aux matchs proches de cette date.")
+                proches = [f for f in tous_fixtures_af
+                           if meme_rencontre_dans_le_temps((f.get("fixture") or {}).get("date"), fx_op.get("startTime"))]
+                fx_af, score_af = trouver_fixture_api_football(home_demande, away_demande, proches)
+                donnees_af = _donnees_api_football(fx_af) if fx_af else None
+                print(f"      {'✓ API-Football corrigé : ' + donnees_af['fixture_date'] if donnees_af else '⚠️ Aucun match API-Football à cette date — stats ignorées plutôt que fausses.'}")
             tous_marches = recuperer_marches_pour_fixture(fixture_id_oddspapi)
             if tous_marches:
                 print(f"      ✓ {len(tous_marches)} marchés 1xbet collectés")

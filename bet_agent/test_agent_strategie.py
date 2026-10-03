@@ -31,7 +31,7 @@ def _sel(match, categorie, selection, cote):
     return {"match": match, "home_nom": match.split(" vs ")[0], "away_nom": match.split(" vs ")[1],
             "fixture_id_oddspapi": match,
             "pick": {"categorie": categorie, "marche": f"{categorie} (2.5)", "handicap": 2.5, "selection": selection,
-                     "cote": cote, "proba_modele_pct": 60.0, "edge_pct": 6.0, "guide": "g", "onglet": "o",
+                     "cote": cote, "proba_modele_pct": 75.0, "edge_pct": 6.0, "guide": "g", "onglet": "o",
                      "proba_poisson_pct": 64.0, "proba_marche_pct": 58.0},
             "contexte": {"contexte_web": [], "elo": {}, "buts_attendus": {"domicile": 1.5, "exterieur": 1.0}}}
 
@@ -56,7 +56,7 @@ class TestStratege(unittest.TestCase):
         self.assertIn("P5 : Total (2.5) → Over @ 2.0", texte)
         # Depuis le 01/10/2026 : Python affiche sa probabilité/edge calculés à l'IA (demande
         # explicite "il faut que Python calcule tout, ne donne pas à l'IA à calculer").
-        self.assertIn("probabilité Python 60.0%, edge 6.0%", texte)
+        self.assertIn("probabilité Python 75.0%, edge 6.0%", texte)
 
     def test_catalogue_exclut_les_marches_bruts_sans_calcul(self):
         # Depuis le 01/10/2026 ("réduire les tâches de l'IA, augmenter Python") : un marché
@@ -84,12 +84,12 @@ class TestStratege(unittest.TestCase):
     def test_catalogue_trie_par_probabilite_decroissante(self):
         pool = {"A vs B": [
             {"match": "A vs B", "pick": {"categorie": "Total", "marche": "Total (2.5)", "selection": "Over",
-                                         "cote": 1.6, "proba_modele_pct": 65.0, "edge_pct": 4.0}},
+                                         "cote": 1.6, "proba_modele_pct": 72.0, "edge_pct": 4.0}},
             {"match": "A vs B", "pick": {"categorie": "BTTS", "marche": "BTTS", "selection": "Yes",
                                          "cote": 1.7, "proba_modele_pct": 80.0, "edge_pct": 5.0}},
         ]}
         _, texte = st.construire_catalogue(pool)
-        # BTTS (80%) doit apparaître AVANT Total (65%), même si listé en second dans le pool.
+        # BTTS (80%) doit apparaître AVANT Total (72%), même si listé en second dans le pool.
         self.assertLess(texte.index("BTTS"), texte.index("Total (2.5)"))
 
     def test_choix_valide_des_le_premier_tour(self):

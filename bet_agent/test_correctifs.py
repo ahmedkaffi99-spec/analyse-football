@@ -1069,7 +1069,7 @@ class TestFiltreDuReplisAutomatiqueSeulement(unittest.TestCase):
         plus un critère d'entrée du tout, seule la probabilité modèle l'est."""
         pool = {
             "A vs B": [_selection("A vs B", "Total", "Over", 2.0, edge=15.0, proba=40.0),   # edge fort, proba faible
-                       _selection("A vs B", "Total", "Under", 1.8, edge=-1.0, proba=65.0)],  # edge nul, proba forte
+                       _selection("A vs B", "Total", "Under", 1.8, edge=-1.0, proba=75.0)],  # edge nul, proba forte
         }
         combo = ae.selectionner_combo_cote_cible(pool, 1, 1.0, 100.0)
         self.assertEqual(combo[0]["pick"]["selection"], "Under")
@@ -1634,6 +1634,34 @@ class TestNbJambesForceParLeWorkflow(unittest.TestCase):
                 mock.patch.dict(os.environ, {"NB_JAMBES": "huit"}):
             resultats = ae.generer_coupons({"matchs": []})
         self.assertEqual(len(resultats[0]["selections"]), ae.PROFILS_COUPON[0]["nb_jambes"])
+
+
+class TestCorrectifsP0(unittest.TestCase):
+    """Étape P0 du plan (03/10/2026), fondée sur 349 paris réellement jugés."""
+
+    def test_meme_rencontre_dans_le_temps(self):
+        # Cayman Islands vs Puerto Rico : match du 02/10 (API-Football) ≠ match du 04/10 (OddsPapi).
+        self.assertFalse(cd.meme_rencontre_dans_le_temps("2026-10-02T00:00:00+00:00", "2026-10-04T00:00:00Z"))
+        self.assertTrue(cd.meme_rencontre_dans_le_temps("2026-10-04T00:00:00+00:00", "2026-10-04T00:00:00Z"))
+        self.assertTrue(cd.meme_rencontre_dans_le_temps(None, "2026-10-04T00:00:00Z"))  # pas de preuve d'erreur
+
+    def test_seuil_par_defaut_70(self):
+        self.assertEqual(ae.PROBA_MIN_FORTE, 70.0)
+
+    def test_tranche_60_70_ecartee(self):
+        pool = {"A vs B": [_selection("A vs B", "Total", "Over", 1.5, proba=65.0)],
+                "C vs D": [_selection("C vs D", "Total", "Over", 1.5, proba=72.0)]}
+        self.assertIsNone(ae.selectionner_combo_cote_cible(pool, 2, 1.0, 100.0))
+
+    def test_btts_exclu_du_calcul(self):
+        self.assertIn("BTTS", ae.CATEGORIES_EXCLUES)
+        marches = [{"marche": "Both Teams To Score", "handicap": None, "periode": "fulltime",
+                    "selections": [{"selection": "Yes", "cote": 1.8}, {"selection": "No", "cote": 2.0}]},
+                   {"marche": "Over Under Full Time", "handicap": 2.5, "periode": "fulltime",
+                    "selections": [{"selection": "Over", "cote": 1.9}, {"selection": "Under", "cote": 1.9}]}]
+        categories = {c["categorie"] for c in ae.evaluer_marches_toutes(marches, 1.5, 1.2)}
+        self.assertNotIn("BTTS", categories)
+        self.assertIn("Total", categories)
 
 
 class TestQuotaOddsPapiEpuiseArreteLesAppels(unittest.TestCase):

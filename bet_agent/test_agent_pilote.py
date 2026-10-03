@@ -27,10 +27,10 @@ DONNEES_FACTICES = {"nb_matchs_demandes": 2, "nb_matchs_avec_marches": 2, "nb_ma
 
 POOL_FACTICE = {
     "A vs B": [{"match": "A vs B", "pick": {"categorie": "Total", "marche": "Total (2.5)", "selection": "Over",
-                                            "cote": 1.8, "proba_modele_pct": 62.0, "edge_pct": 8.0,
+                                            "cote": 1.8, "proba_modele_pct": 72.0, "edge_pct": 8.0,
                                             "proba_poisson_pct": 62.0, "proba_marche_pct": 55.0}}],
     "C vs D": [{"match": "C vs D", "pick": {"categorie": "Total", "marche": "Total (2.5)", "selection": "Under",
-                                            "cote": 1.9, "proba_modele_pct": 60.0, "edge_pct": 7.0,
+                                            "cote": 1.9, "proba_modele_pct": 71.0, "edge_pct": 7.0,
                                             "proba_poisson_pct": 60.0, "proba_marche_pct": 53.0}}],
 }
 
@@ -132,7 +132,7 @@ class TestExecuterAgentPilote(unittest.TestCase):
         # le moteur déterministe mais n'était jamais appelé ici.
         pool_avec_contexte = {"A vs B": [{
             "match": "A vs B", "pick": {"categorie": "Total", "marche": "Total (2.5)", "selection": "Over",
-                                        "cote": 1.8, "proba_modele_pct": 62.0, "edge_pct": 8.0},
+                                        "cote": 1.8, "proba_modele_pct": 72.0, "edge_pct": 8.0},
             "contexte": {"buts_attendus": {"domicile": 1.8, "exterieur": 1.1},
                          "forme": {"domicile": {"points_par_match": 2.1, "clean_sheets_sur_10": 4}}},
         }]}
@@ -202,7 +202,7 @@ PROFIL_2 = {"cle": "equilibre", "nom": "⚖️ ÉQUILIBRÉ", "cote_min": 0.0, "c
 PROFIL_3 = {"cle": "audacieux", "nom": "🔥 AUDACIEUX", "cote_min": 0.0, "cote_max": 1000.0, "nb_jambes_min": 1, "nb_jambes": 2}
 
 
-def _pick(categorie, marche, selection, cote, proba_modele_pct=65.0):
+def _pick(categorie, marche, selection, cote, proba_modele_pct=75.0):
     # proba_modele_pct >= SEUIL_PROBA_CATALOGUE (60%) par défaut : depuis le 01/10/2026,
     # construire_catalogue EXCLUT les paris sans probabilité calculée ou en dessous du seuil
     # (demande explicite "réduire les tâches de l'IA, augmenter Python") — ces fixtures
