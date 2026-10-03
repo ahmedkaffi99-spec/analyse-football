@@ -1368,7 +1368,6 @@ def collecter_donnees():
                 "season": fx_af.get("league", {}).get("season"),
                 "fixture_date": fx_af.get("fixture", {}).get("date"),
                 "fixture_id_api_football": fx_af.get("fixture", {}).get("id"),
-                "score_matching": score_af,
             }
             print(f"      ✓ API-Football trouvé (score {score_af:.0f}%) : {donnees_af['home_name']} vs {donnees_af['away_name']}")
         else:
@@ -1482,7 +1481,6 @@ def collecter_donnees():
             "api_football": donnees_af,
             "oddspapi": {
                 "fixture_id": fixture_id_oddspapi,
-                "score_matching": score_op,
                 "tous_marches": tous_marches,
             },
             "serper": contexte_web,
