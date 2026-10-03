@@ -958,6 +958,22 @@ def assez_tot_avant_coup_envoi(depart_iso, maintenant=None):
     return depart - maintenant >= timedelta(minutes=MINUTES_MIN_AVANT_COUP_ENVOI)
 
 
+def _correspond_au_filtre(fx, filtre):
+    nom_tournoi = (fx.get("tournamentName") or "").lower()
+    pays = (fx.get("categoryName") or "").lower()
+
+    def _matche(entree):
+        # 3e élément optionnel : mot-clé d'exclusion (ex: "friendl" + exclusion "club"
+        # pour ne retenir que les amicaux d'ÉQUIPES NATIONALES, pas les amicaux de club).
+        mot_cle_ligue, pays_attendu = entree[0], entree[1]
+        mot_cle_exclu = entree[2] if len(entree) > 2 else None
+        if mot_cle_exclu and mot_cle_exclu in nom_tournoi:
+            return False
+        return mot_cle_ligue in nom_tournoi and (pays_attendu is None or pays_attendu in pays)
+
+    return any(_matche(entree) for entree in filtre)
+
+
 def selectionner_matchs_du_jour(fixtures_oddspapi):
     """Sélectionne entre NB_MATCHS_MIN et NB_MATCHS_MAX matchs DIRECTEMENT depuis la liste
     de fixtures OddsPapi déjà récupérée (aucun appel réseau supplémentaire) — la découverte
@@ -995,31 +1011,15 @@ def selectionner_matchs_du_jour(fixtures_oddspapi):
     # AVANT le tri prioritaires/reste pour que le repli ne réintroduise pas d'autres ligues.
     if FILTRE_LIGUES_UNIQUES:
         avant = len(candidats)
-
-        def correspond_au_filtre(fx, filtre):
-            nom_tournoi = (fx.get("tournamentName") or "").lower()
-            pays = (fx.get("categoryName") or "").lower()
-
-            def _matche(entree):
-                # 3e élément optionnel : mot-clé d'exclusion (ex: "friendl" + exclusion "club"
-                # pour ne retenir que les amicaux d'ÉQUIPES NATIONALES, pas les amicaux de club).
-                mot_cle_ligue, pays_attendu = entree[0], entree[1]
-                mot_cle_exclu = entree[2] if len(entree) > 2 else None
-                if mot_cle_exclu and mot_cle_exclu in nom_tournoi:
-                    return False
-                return mot_cle_ligue in nom_tournoi and (pays_attendu is None or pays_attendu in pays)
-
-            return any(_matche(entree) for entree in filtre)
-
         tous_candidats = candidats
-        candidats = [fx for fx in tous_candidats if correspond_au_filtre(fx, FILTRE_LIGUES_UNIQUES)]
+        candidats = [fx for fx in tous_candidats if _correspond_au_filtre(fx, FILTRE_LIGUES_UNIQUES)]
         noms_filtre = ", ".join(f"{lg} ({p})" if p else lg for lg, p in FILTRE_LIGUES_UNIQUES)
         print(f"   🎯 Filtre multi-ligues actif : {noms_filtre} — {len(candidats)}/{avant} candidats retenus")
 
         if len(candidats) < NB_MATCHS_MIN and FILTRE_LIGUES_SECOURS:
             deja = {id(fx) for fx in candidats}
             secours = [fx for fx in tous_candidats
-                       if id(fx) not in deja and correspond_au_filtre(fx, FILTRE_LIGUES_SECOURS)]
+                       if id(fx) not in deja and _correspond_au_filtre(fx, FILTRE_LIGUES_SECOURS)]
             candidats = candidats + secours
             print(f"   🛟 Moins de {NB_MATCHS_MIN} matchs dans les grands championnats (trêve internationale ?) — "
                   f"{len(secours)} match(s) ajouté(s) depuis les compétitions de secours "
@@ -1044,11 +1044,24 @@ def selectionner_matchs_du_jour(fixtures_oddspapi):
                   "et corrige les mots-clés si besoin.")
 
     def est_prioritaire(fx):
+        # Demande explicite du 03/10/2026 : en sélection automatique (aucune liste manuelle),
+        # l'IA/Python choisissait parmi n'importe quel match ayant des cotes réelles — y
+        # compris des clubs totalement obscurs (Comoros, J3 League japonaise, K3 League
+        # coréenne...) quand aucun grand championnat européen n'était en cours à l'heure de la
+        # collecte, alors que des équipes nationales ou des compétitions reconnues (Ligue des
+        # Nations, Gold Cup, 2es divisions majeures...) étaient disponibles. FILTRE_LIGUES_
+        # SECOURS listait déjà ces compétitions reconnues, mais seulement comme repli DERRIÈRE
+        # FILTRE_LIGUES_UNIQUES (désactivé depuis le 02/10/2026) — jamais utilisé pour trier la
+        # sélection automatique elle-même. Reprend cette même liste ICI, inconditionnellement,
+        # pour continuer à préférer les compétitions reconnues sur les obscures même sans le
+        # filtre multi-ligues actif.
         nom_tournoi = (fx.get("tournamentName") or "").lower()
         pays = (fx.get("categoryName") or "").lower()
         if any(mot_cle in nom_tournoi for mot_cle in COMPETITIONS_EUROPEENNES_UNIQUES):
             return True
-        return any(mot_cle in nom_tournoi for mot_cle in LIGUES_DOMESTIQUES_MAJEURES.get(pays, ()))
+        if any(mot_cle in nom_tournoi for mot_cle in LIGUES_DOMESTIQUES_MAJEURES.get(pays, ())):
+            return True
+        return _correspond_au_filtre(fx, FILTRE_LIGUES_SECOURS)
 
     prioritaires = sorted((fx for fx in candidats if est_prioritaire(fx)), key=lambda fx: fx.get("startTime", ""))
     reste = sorted((fx for fx in candidats if not est_prioritaire(fx)), key=lambda fx: fx.get("startTime", ""))

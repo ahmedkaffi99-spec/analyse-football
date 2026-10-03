@@ -649,6 +649,34 @@ class TestSelectionTreveInternationale(unittest.TestCase):
         self.assertFalse(cd.est_equipe_feminine_api_football("Wolves"))
 
 
+class TestPrioriteCompetitionsReconnuesSansFiltre(unittest.TestCase):
+    """Bug réel trouvé le 03/10/2026 : en sélection automatique (aucune liste manuelle), des
+    clubs totalement obscurs (Comoros, J3 League japonaise, K3 League coréenne...) étaient
+    choisis plutôt que des équipes nationales/compétitions reconnues disponibles le même jour
+    — FILTRE_LIGUES_UNIQUES étant vide par défaut depuis le 02/10/2026, FILTRE_LIGUES_SECOURS
+    (Ligue des Nations, Gold Cup, 2es divisions majeures...) n'était alors JAMAIS consulté, y
+    compris pour trier la sélection automatique elle-même (est_prioritaire ne regardait que
+    les 5 grands championnats + coupes d'Europe). FILTRE_LIGUES_SECOURS doit maintenant
+    toujours compter comme "prioritaire", filtre actif ou non."""
+
+    def test_nations_league_prioritaire_sur_club_obscur_sans_filtre_actif(self):
+        self.assertEqual(cd.FILTRE_LIGUES_UNIQUES, [])  # confirme le défaut réel du pipeline
+        fixtures = [
+            _fixture("Fomboni Club", "15 de Agosto", "CAF Champions League", "Comoros",
+                     "2099-01-01T01:00:00Z"),
+            _fixture("Vonds Ichihara FC", "Iwate Grulla Morioka", "J3 League", "Japan",
+                     "2099-01-01T02:00:00Z"),
+            _fixture("Ukraine", "Northern Ireland", "UEFA Nations League", "International",
+                     "2099-01-01T20:00:00Z"),
+        ]
+        matchs = cd.selectionner_matchs_du_jour(fixtures)
+        # La Ligue des Nations passe AVANT le club japonais obscur malgré un coup d'envoi
+        # bien plus tardif (startTime n'est le critère de tri qu'À L'INTÉRIEUR d'un même
+        # groupe prioritaire/non-prioritaire, jamais entre les deux groupes).
+        self.assertLess(matchs.index(("Ukraine", "Northern Ireland")),
+                        matchs.index(("Vonds Ichihara FC", "Iwate Grulla Morioka")))
+
+
 def _selection(match, categorie, selection, cote, edge=8.0, guide=None):
     return {"match": match, "home_nom": match.split(" vs ")[0], "away_nom": match.split(" vs ")[1],
             "fixture_id_oddspapi": match,
