@@ -2478,9 +2478,13 @@ def generer_coupons(donnees):
                 print(f"   ℹ️ [{profil['nom']}] {nb_jambes} jambes (sur {len(pool)} match(s) manuel(s) "
                       f"exploitable(s)) — un pari par match, {MAX_JAMBES_PAR_MATCH} max.")
         else:
-            nb_jambes = min(profil["nb_jambes"], jambes_possibles)
-            if nb_jambes < profil["nb_jambes"]:
-                print(f"   ℹ️ [{profil['nom']}] {nb_jambes} jambes au lieu de {profil['nb_jambes']} "
+            # NB_JAMBES (input du workflow, demande explicite du 03/10/2026 : "un coupon sûr et
+            # 8 jambes") remplace le nombre de jambes du profil pour CE run seulement.
+            nb_force = (os.getenv("NB_JAMBES") or "").strip()
+            nb_cible = int(nb_force) if nb_force.isdigit() and int(nb_force) > 0 else profil["nb_jambes"]
+            nb_jambes = min(nb_cible, jambes_possibles)
+            if nb_jambes < nb_cible:
+                print(f"   ℹ️ [{profil['nom']}] {nb_jambes} jambes au lieu de {nb_cible} "
                       f"(seulement {len(pool)} match(s) exploitable(s), {MAX_JAMBES_PAR_MATCH} paris max par match)")
         combo = selectionner_combo_cote_cible(pool, nb_jambes, profil["cote_min"], profil["cote_max"],
                                               exiger_tous_les_matchs=mode_manuel) if nb_jambes else None

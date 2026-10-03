@@ -1603,6 +1603,25 @@ class TestContexteWeb(unittest.TestCase):
         self.assertIn("Confrontations directes", prompt)
 
 
+class TestNbJambesForceParLeWorkflow(unittest.TestCase):
+    """Demande explicite du 03/10/2026 : "un coupon sûr et 8 jambes" — NB_JAMBES (input du
+    workflow) remplace le nombre de jambes du profil, sélection automatique."""
+
+    def test_nb_jambes_force(self):
+        pool = {f"M{i} vs N{i}": [_selection(f"M{i} vs N{i}", "Total", "Over", 1.3)] for i in range(10)}
+        with mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=pool), \
+                mock.patch.dict(os.environ, {"NB_JAMBES": "8"}):
+            resultats = ae.generer_coupons({"matchs": []})
+        self.assertEqual(len(resultats[0]["selections"]), 8)
+
+    def test_valeur_invalide_ignoree(self):
+        pool = {f"M{i} vs N{i}": [_selection(f"M{i} vs N{i}", "Total", "Over", 1.3)] for i in range(10)}
+        with mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=pool), \
+                mock.patch.dict(os.environ, {"NB_JAMBES": "huit"}):
+            resultats = ae.generer_coupons({"matchs": []})
+        self.assertEqual(len(resultats[0]["selections"]), ae.PROFILS_COUPON[0]["nb_jambes"])
+
+
 class TestQuotaOddsPapiEpuiseArreteLesAppels(unittest.TestCase):
     """Demande explicite du 03/10/2026 ("utilisation d'OddsPapi diminuée") : un 429 sur /odds
     = quota du jour épuisé — jamais re-tenté, et plus aucun appel /odds pour le reste du run."""

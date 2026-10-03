@@ -47,6 +47,10 @@ on:
         description: "Run PONCTUEL (01/10/2026) : JSON d'une liste de profils personnalisés qui remplace les 3 profils standard pour CE run (moteur agent uniquement) — vide = comportement par défaut inchangé"
         type: string
         default: ""
+      nb_jambes:
+        description: "Nombre de jambes du coupon pour CE run (vide = celui du profil, 5) — sélection automatique, moteur deterministe"
+        type: string
+        default: ""
       ignorer_diversite_croisee:
         description: "Run PONCTUEL : désactive la diversité de catégorie entre profils (traite chaque profil comme le premier) — l'anti-doublon exact reste actif dans tous les cas"
         type: boolean
@@ -92,6 +96,7 @@ jobs:
       MATCHS_MANUELS: ${{ inputs.matchs_manuels }}
       PROFILS_JSON: ${{ inputs.profils_json }}
       IGNORER_DIVERSITE_CROISEE: ${{ inputs.ignorer_diversite_croisee }}
+      NB_JAMBES: ${{ inputs.nb_jambes }}
     steps:
       - uses: actions/checkout@v4
 
