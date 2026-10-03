@@ -64,6 +64,18 @@ class QuotaOddsPapiEpuise(Exception):
     pass
 
 
+def _lever_si_429_oddspapi(r):
+    """Deux 429 très différents chez OddsPapi : "REQUEST_LIMIT_EXCEEDED" (quota de 250/jour
+    épuisé, inutile de réessayer) et "RATE_LIMITED" (trop de requêtes à la seconde, il suffit
+    d'attendre — constaté le 03/10/2026, run 104 : traité à tort comme un quota épuisé, 28
+    matchs sur 30 sont restés sans cotes et le coupon est parti avec 2 jambes au lieu de 8)."""
+    if r.status_code != 429:
+        return
+    if "REQUEST_LIMIT_EXCEEDED" in r.text or "request limit of" in r.text:
+        raise QuotaOddsPapiEpuise(f"429 quota OddsPapi du jour épuisé — {r.text[:150]}")
+    raise ValueError(f"429 limite de vitesse OddsPapi, nouvel essai après une pause — {r.text[:100]}")
+
+
 _quota_oddspapi_epuise = False
 
 # Plan gratuit API-Football : 10 requêtes/minute (confirmé via /status le 2026-07-23).
@@ -1160,7 +1172,7 @@ DATE_CIBLE_DEBUT = os.getenv("DATE_CIBLE_DEBUT")
 DATE_CIBLE_FIN = os.getenv("DATE_CIBLE_FIN")
 
 
-@retry(stop=stop_after_attempt(4), wait=wait_exponential(multiplier=1, min=5, max=30),
+@retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=5, max=30),
        retry=retry_if_not_exception_type(QuotaOddsPapiEpuise))
 def _telecharger_fixtures_oddspapi():
     if DATE_CIBLE_DEBUT and DATE_CIBLE_FIN:
@@ -1174,7 +1186,7 @@ def _telecharger_fixtures_oddspapi():
     r = SESSION_ODDSPAPI.get(url, params=params, timeout=(5, 20), verify=VERIFIER_SSL_ODDSPAPI)
     if r.status_code == 429:
         print(f"   ⚠️ OddsPapi fixtures 429 — corps: {r.text[:200]}")
-        raise QuotaOddsPapiEpuise("429 quota OddsPapi épuisé")
+    _lever_si_429_oddspapi(r)
     if r.status_code == 401:
         print(f"   ❌ OddsPapi fixtures 401 — clé invalide : {r.text[:200]}")
         return []
@@ -1220,13 +1232,13 @@ def get_market_names():
     return MARKET_NAMES_CACHE
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_fixed(5), retry=retry_if_not_exception_type(QuotaOddsPapiEpuise))
+@retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=5, max=20),
+       retry=retry_if_not_exception_type(QuotaOddsPapiEpuise))
 def _telecharger_odds_oddspapi(fixture_id):
     url_odds = "https://api.oddspapi.io/v4/odds"
     params_odds = {"apiKey": ODDSPAPI_KEY, "fixtureId": fixture_id, "bookmakers": "1xbet", "oddsFormat": "decimal"}
     r2 = SESSION_ODDSPAPI.get(url_odds, params=params_odds, timeout=(5, 20), verify=VERIFIER_SSL_ODDSPAPI)
-    if r2.status_code == 429:
-        raise QuotaOddsPapiEpuise(f"429 quota OddsPapi épuisé — {r2.text[:150]}")
+    _lever_si_429_oddspapi(r2)
     if r2.status_code != 200:
         print(f"      ⚠️ OddsPapi odds status {r2.status_code} — corps: {r2.text[:200]}")
         return None

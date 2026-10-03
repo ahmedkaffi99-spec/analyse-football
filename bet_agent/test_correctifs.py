@@ -1630,8 +1630,19 @@ class TestQuotaOddsPapiEpuiseArreteLesAppels(unittest.TestCase):
         cd._quota_oddspapi_epuise = False
         self.addCleanup(setattr, cd, "_quota_oddspapi_epuise", False)
 
+    def test_429_limite_de_vitesse_reessaye_au_lieu_de_tout_couper(self):
+        # Run 104 (03/10/2026) : "RATE_LIMITED" (trop de requêtes à la seconde) traité à tort
+        # comme un quota épuisé — 28 matchs sur 30 sans cotes, coupon à 2 jambes au lieu de 8.
+        limite = mock.Mock(status_code=429, text='{"error":{"code":"RATE_LIMITED"}}')
+        ok = mock.Mock(status_code=200, json=lambda: [])
+        with mock.patch.object(cd.SESSION_ODDSPAPI, "get", side_effect=[limite, ok]) as appel, \
+                mock.patch.object(cd._telecharger_odds_oddspapi.retry, "sleep", lambda s: None):
+            cd.recuperer_marches_pour_fixture("f1")
+        self.assertEqual(appel.call_count, 2)
+        self.assertFalse(cd._quota_oddspapi_epuise)
+
     def test_429_non_retente_puis_plus_aucun_appel(self):
-        reponse = mock.Mock(status_code=429, text="You have exceeded your request limit of 250 requests.")
+        reponse = mock.Mock(status_code=429, text='{"error":{"code":"REQUEST_LIMIT_EXCEEDED","details":"You have exceeded your request limit of 250 requests."}}')
         with mock.patch.object(cd.SESSION_ODDSPAPI, "get", return_value=reponse) as appel:
             self.assertIsNone(cd.recuperer_marches_pour_fixture("f1"))
             self.assertEqual(appel.call_count, 1)  # pas de 2e ni 3e essai
