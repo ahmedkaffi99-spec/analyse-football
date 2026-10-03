@@ -64,8 +64,25 @@ def verifier_jambes(db, jambes):
                 continue
             but_dom, but_ext = resultat_af
 
-        pick = {"categorie": jambe.categorie, "selection": jambe.selection, "handicap": jambe.handicap}
-        jambe.resultat = VERDICT_VERS_RESULTAT.get(vr.grader_pick(pick, but_dom, but_ext), "non_verifiable")
+        type_stat = vr.STAT_API_FOOTBALL_PAR_CATEGORIE.get(jambe.categorie)
+        if type_stat:
+            # Corners/cartons/fautes/tirs/hors-jeux : OddsPapi /v4/scores ne renvoie que les
+            # buts (but_dom/but_ext ci-dessus, inutilisables ici) — statistiques finales
+            # cherchées séparément via API-Football (03/10/2026, 55% des jambes étaient
+            # "non_verifiable" pour cette seule raison avant ce correctif).
+            fixture_af = jambe.match.fixture_id_api_football if jambe.match else None
+            stats = vr.recuperer_statistiques_finales_api_football(fixture_af, domicile) if fixture_af else None
+            if stats is None:
+                jambe.resultat = "non_verifiable"
+            else:
+                bloc_dom, bloc_ext = stats
+                val_dom = cd._valeur_stat(bloc_dom, type_stat)
+                val_ext = cd._valeur_stat(bloc_ext, type_stat)
+                verdict = vr.grader_pick_stat(jambe.categorie, jambe.handicap, jambe.selection, val_dom, val_ext)
+                jambe.resultat = VERDICT_VERS_RESULTAT.get(verdict, "non_verifiable")
+        else:
+            pick = {"categorie": jambe.categorie, "selection": jambe.selection, "handicap": jambe.handicap}
+            jambe.resultat = VERDICT_VERS_RESULTAT.get(vr.grader_pick(pick, but_dom, but_ext), "non_verifiable")
         compte[jambe.resultat] += 1
         if jambe.match:
             jambe.match.score_domicile, jambe.match.score_exterieur = but_dom, but_ext

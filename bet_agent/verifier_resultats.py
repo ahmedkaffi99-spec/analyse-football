@@ -42,9 +42,22 @@ if not VERIFIER_SSL_ODDSPAPI:
 ODDSPAPI_KEY = os.getenv("ODDSPAPI_KEY")
 TICKET_JSON = "ticket_du_jour.json"
 
-# Corners/cartons : aucune donnée de score fournie par OddsPapi (uniquement les buts) —
-# ces jambes ne peuvent pas être vérifiées automatiquement, jamais inventées.
-CATEGORIES_NON_VERIFIABLES = ("Total Corners", "Total Cartons", "Handicap Corners", "Handicap Cartons")
+# Corners/cartons/fautes/tirs/hors-jeux : OddsPapi /v4/scores ne renvoie QUE les buts —
+# longtemps non vérifiables du tout (constaté le 03/10/2026 : 442 jambes sur 809, 55% de la
+# base, "non_verifiable" pour cette seule raison). API-Football expose ces statistiques
+# finales via /fixtures/statistics (même endpoint déjà utilisé par collecte_donnees.py pour
+# les stats PRÉ-match, recuperer_stats_10_derniers_matchs) — réutilisé ici POST-match pour
+# juger ces marchés au lieu de les abandonner. Catégorie -> nom du type de statistique
+# API-Football (voir collecte_donnees._valeur_stat).
+STAT_API_FOOTBALL_PAR_CATEGORIE = {
+    "Total Corners": "Corner Kicks", "Handicap Corners": "Corner Kicks",
+    "Total Cartons": "Yellow Cards", "Handicap Cartons": "Yellow Cards",
+    "Total Cartons Équipe 1": "Yellow Cards", "Total Cartons Équipe 2": "Yellow Cards",
+    "Total Fautes": "Fouls", "Handicap Fautes": "Fouls",
+    "Total Tirs": "Total Shots", "Handicap Tirs": "Total Shots",
+    "Total Tirs Cadrés": "Shots on Goal", "Handicap Tirs Cadrés": "Shots on Goal",
+    "Total Hors-jeux": "Offsides", "Handicap Hors-jeux": "Offsides",
+}
 
 # Suivi EN DIRECT (demande explicite du 01/10/2026, pendant un match réel suivi manuellement
 # par l'utilisateur : "on trouve pas un endpoint sur api football en match live") — statuts
@@ -139,6 +152,47 @@ def trouver_score_api_football(home_nom, away_nom, fixtures_af, cd):
     return buts["home"], buts["away"]
 
 
+def recuperer_statistiques_finales_api_football(fixture_id_af, domicile):
+    """Stats finales (corners, cartons jaunes, fautes, tirs, hors-jeux) d'un match TERMINÉ —
+    seule source disponible pour ces marchés, OddsPapi /v4/scores ne renvoie que les buts.
+    Renvoie (bloc_stats_domicile, bloc_stats_exterieur), chacun à passer à cd._valeur_stat
+    pour extraire une statistique précise. None si indisponible (quota API-Football épuisé,
+    panne, statistiques pas suivies pour ce match/cette ligue) — jamais inventé."""
+    import collecte_donnees as cd
+    try:
+        blocs = cd._appel_statistiques_fixture(fixture_id_af)
+    except Exception as e:
+        print(f"⚠️ Stats finales API-Football indisponibles (fixture {fixture_id_af}) : {e}")
+        return None
+    if len(blocs) != 2:
+        return None
+    b0, b1 = blocs
+    nom0 = unidecode(((b0.get("team") or {}).get("name") or "").lower())
+    nom1 = unidecode(((b1.get("team") or {}).get("name") or "").lower())
+    d = unidecode((domicile or "").lower())
+    score0, score1 = fuzz.token_set_ratio(d, nom0), fuzz.token_set_ratio(d, nom1)
+    bloc_dom, bloc_ext = (b0, b1) if score0 >= score1 else (b1, b0)
+    return bloc_dom.get("statistics"), bloc_ext.get("statistics")
+
+
+def grader_pick_stat(categorie, handicap, selection, valeur_domicile, valeur_exterieur):
+    """Jugement des marchés corners/cartons/fautes/tirs/hors-jeux — mêmes règles que
+    grader_pick (juger_total/juger_handicap), mais sur une statistique de fin de match
+    (recuperer_statistiques_finales_api_football) au lieu des buts. None si la statistique
+    est indisponible pour ce match (pas suivie par API-Football pour cette ligue — jamais
+    inventée)."""
+    if valeur_domicile is None or valeur_exterieur is None:
+        return None
+    if categorie in ("Total Cartons Équipe 1", "Total Cartons Équipe 2"):
+        valeur = valeur_domicile if categorie.endswith("1") else valeur_exterieur
+        return juger_total(handicap, selection, valeur)
+    if categorie.startswith("Total"):
+        return juger_total(handicap, selection, valeur_domicile + valeur_exterieur)
+    if categorie.startswith("Handicap"):
+        return juger_handicap(handicap, selection, valeur_domicile, valeur_exterieur) if handicap is not None else None
+    return None
+
+
 def trouver_etat_live_api_football(home_nom, away_nom, fixtures_af, cd):
     """Comme trouver_score_api_football, mais pour un match EN COURS (ni pas commencé, ni
     terminé) : renvoie (but_domicile, but_exterieur, minute_ecoulee, statut_court) si le match
@@ -171,10 +225,12 @@ def trouver_etat_live_api_football(home_nom, away_nom, fixtures_af, cd):
 # au score réel final plutôt qu'à une probabilité Poisson.
 # ============================================================
 
-def juger_total(categorie, handicap, selection, home_g, away_g):
-    if handicap is None:
+def juger_total(handicap, selection, total):
+    """total déjà calculé par l'appelant (buts du match entier, d'UNE SEULE équipe, ou toute
+    autre statistique comparable — corners, cartons... voir grader_pick_stat) — générique
+    depuis le 03/10/2026, pour être réutilisable au-delà des buts."""
+    if handicap is None or total is None:
         return None
-    total = {"Total": home_g + away_g, "Total Équipe 1": home_g, "Total Équipe 2": away_g}[categorie]
     if abs(total - handicap) < 1e-9:
         return "push"
     est_over = "over" in selection.lower()
@@ -258,8 +314,11 @@ def grader_pick(pick, home_g, away_g):
     handicap = pick.get("handicap")
 
     if categorie in ("Total", "Total Équipe 1", "Total Équipe 2"):
-        return juger_total(categorie, handicap, selection, home_g, away_g)
-    if categorie in CATEGORIES_NON_VERIFIABLES:
+        total = {"Total": home_g + away_g, "Total Équipe 1": home_g, "Total Équipe 2": away_g}[categorie]
+        return juger_total(handicap, selection, total)
+    if categorie in STAT_API_FOOTBALL_PAR_CATEGORIE:
+        # Corners/cartons/fautes/tirs/hors-jeux : jugés par grader_pick_stat (statistiques
+        # finales API-Football), jamais ici (grader_pick ne reçoit que des buts).
         return None
     if categorie == "BTTS":
         return juger_btts(selection, home_g, away_g)

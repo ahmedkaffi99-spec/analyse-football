@@ -158,6 +158,40 @@ def test_repli_api_football_quand_oddspapi_indisponible(client, monkeypatch):
     assert resultat["gagne"] == 2 and resultat["perdu"] == 1  # même verdict que via OddsPapi
 
 
+def test_verification_corners_handicap_via_statistiques_api_football(client, monkeypatch):
+    # Correctif du 03/10/2026 : OddsPapi /v4/scores ne renvoie que les buts — Handicap Corners
+    # (et Total/Handicap Cartons/Fautes/Tirs/Hors-jeux) restait "non_verifiable" à vie avant ce
+    # correctif (55% des jambes de la base). Statistiques finales cherchées via API-Football
+    # (fixtures/statistics), par fixture_id_api_football du match (42 dans collecte_exemple).
+    profils = [{"profil": {"cle": "profil1", "nom": "🛡️ COUPON 1", "cote_min": 1, "cote_max": 10},
+                "selections": [{"match": "Lens vs Auxerre", "home_nom": "Lens", "away_nom": "Auxerre",
+                                "fixture_id_oddspapi": "idLENSAUX",
+                                "pick": {"categorie": "Handicap Corners", "marche": "Corners - Handicap (-1.0)",
+                                         "handicap": -1.0, "selection": "1", "cote": 1.9,
+                                         "proba_modele_pct": 60.0, "edge_pct": 5.0, "guide": "g", "onglet": "o"}}]}]
+    ticket = {"date": "2026-09-25", "genere_a": "2026-09-25T12:05:00",
+              "profils": [{"cle": p["profil"]["cle"], "nom": p["profil"]["nom"], "selections": p["selections"]}
+                          for p in profils], "resultat_envoye": False}
+    client.post("/api/imports", json={"collecte": collecte_exemple(), "ticket": ticket})
+
+    cd, _, vr = pipeline.modules()
+    monkeypatch.setattr(vr, "recuperer_fixtures_du_jour", lambda: {"idLENSAUX": {
+        "statusName": "Finished", "participant1Name": "RC Lens", "participant2Name": "AJ Auxerre"}})
+    monkeypatch.setattr(vr, "recuperer_score", lambda fid: (2, 1))
+    # Lens (domicile) 7 corners, Auxerre (extérieur) 4 : (7 - 1) = 6 > 4 -> gagné.
+    monkeypatch.setattr(cd, "_appel_statistiques_fixture", lambda fixture_id: [
+        {"team": {"name": "RC Lens"}, "statistics": [{"type": "Corner Kicks", "value": 7}]},
+        {"team": {"name": "AJ Auxerre"}, "statistics": [{"type": "Corner Kicks", "value": 4}]},
+    ])
+
+    resultat = client.post("/api/coupons/verification").json()
+    assert resultat["gagne"] == 1 and resultat["perdu"] == 0
+
+    coupons = {c["profil"]: c for c in client.get("/api/coupons").json()}
+    assert coupons["profil1"]["statut"] == "gagne"
+    assert coupons["profil1"]["jambes"][0]["resultat"] == "gagne"
+
+
 def test_statut_coupon():
     assert statut_coupon(["gagne", "push"]) == "gagne"
     assert statut_coupon(["gagne", "en_attente"]) == "en_attente"
