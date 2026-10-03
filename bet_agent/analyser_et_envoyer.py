@@ -730,6 +730,20 @@ def _gain_et_push_sur_ligne_demie(mu_home, mu_away, h, max_buts=25):
     return p_gain, p_push
 
 
+# RÈGLE CANONIQUE DU HANDICAP ASIATIQUE sur 1xBet (demande explicite de l'utilisateur,
+# 03/10/2026 : 1xBet étiquette souvent TOUT handicap "Handicap", y compris un Asiatique à
+# ligne demie — jamais se fier au seul libellé textuel, toujours classifier par la VALEUR
+# NUMÉRIQUE) — vérifié ci-dessous par TestProbaHandicapCouvertPushParTypeDeLigne :
+#   - Ligne de QUART (.25/.75) : deux demi-mises sur les deux lignes entières/demies
+#     adjacentes (ex: 1.25 = moitié sur 1.0, moitié sur 1.5) — jamais un simple gagne/perd.
+#   - Ligne ENTIÈRE (0, 1, 2...) : remboursement (push) possible si l'écart réel tombe
+#     EXACTEMENT sur la ligne — seul cas où un push existe.
+#   - Ligne DEMIE (.5) : AUCUN push possible (l'écart de buts, toujours entier, ne peut
+#     jamais tomber exactement sur une valeur .5) — gagne ou perd intégralement.
+# Un marché "European Handicap"/"Handicap Européen" (3 voies 1/X/2, le nul reste un résultat
+# possible) est un marché OddsPapi TOTALEMENT DISTINCT, jamais traité par ce calcul — voir
+# TestAsianHandicapVsEuropeanHandicapMarchesDistincts : il ne doit jamais être confondu avec
+# l'Asiatique (2 voies, push/split au lieu d'un nul) quelle que soit la valeur du handicap.
 def proba_handicap_couvert(mu_home, mu_away, handicap_home, max_buts=25):
     """Probabilité de gain sur un handicap asiatique donné pour 'home'.
     Gère correctement les lignes quart (.25/.75) : en réalité, ce sont DEUX demi-mises

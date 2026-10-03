@@ -1041,6 +1041,31 @@ class TestCompleterAvecMarchesBruts(unittest.TestCase):
         self.assertIn("Correct Score", marches_du_pool)
 
 
+class TestProbaHandicapCouvertPushParTypeDeLigne(unittest.TestCase):
+    """Verrouille la règle canonique du handicap asiatique rappelée explicitement par
+    l'utilisateur le 03/10/2026 : classifier par la VALEUR NUMÉRIQUE du handicap, jamais par
+    le libellé 1xBet (qui dit souvent juste "Handicap" même pour un Asiatique à ligne demie).
+    - Ligne ENTIÈRE : push (remboursement) possible si l'écart tombe exactement sur la ligne.
+    - Ligne DEMIE (.5) : AUCUN push possible, l'écart de buts étant toujours entier.
+    - Ligne de QUART (.25/.75) : moyenne de deux demi-mises sur les lignes adjacentes."""
+
+    def test_ligne_entiere_peut_pousser(self):
+        _, p_push = ae._gain_et_push_sur_ligne_demie(1.5, 1.0, -1.0)
+        self.assertGreater(p_push, 0.0)
+
+    def test_ligne_demie_ne_pousse_jamais(self):
+        _, p_push = ae._gain_et_push_sur_ligne_demie(1.5, 1.0, -1.5)
+        self.assertEqual(p_push, 0.0)
+
+    def test_ligne_quart_est_la_moyenne_des_deux_lignes_adjacentes(self):
+        mu_home, mu_away, ligne = 1.5, 1.0, -1.25
+        resultat = ae.proba_handicap_couvert(mu_home, mu_away, ligne)
+        g_bas, p_bas = ae._gain_et_push_sur_ligne_demie(mu_home, mu_away, ligne + 0.25)  # -1.0
+        g_haut, p_haut = ae._gain_et_push_sur_ligne_demie(mu_home, mu_away, ligne - 0.25)  # -1.5
+        attendu = ((g_bas + p_bas * 0.5) + (g_haut + p_haut * 0.5)) / 2
+        self.assertAlmostEqual(resultat, attendu, places=9)
+
+
 class TestAsianHandicapVsEuropeanHandicapMarchesDistincts(unittest.TestCase):
     """OddsPapi n'envoie en réalité qu'UN SEUL marché "Asian Handicap" (2 voies, push
     possible), qui couvre à la fois les lignes de quart ET les lignes entières/demi — mais
