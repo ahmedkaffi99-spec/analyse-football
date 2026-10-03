@@ -186,12 +186,10 @@ def construire_outils_schemas(profils):
     ]
 
 
-# Profils standards (3 coupons 🟢 risque faible à 2-5 jambes + 1 🟡 risque moyen à 5-8 +
-# 1 🔴 risque élevé à plus de 8), utilisés par piloter() quand executer() ne lui fournit pas
-# explicitement prompt_systeme/outils_schemas (cas direct/tests uniquement : executer() les
-# reconstruit toujours lui-même à partir des profils réels du run).
-_PROFILS_PAR_DEFAUT = ([{"nom": f"🟢 COUPON {i}"} for i in range(1, 4)]
-                       + [{"nom": "🟡 COUPON RISQUE MOYEN"}, {"nom": "🔴 COUPON RISQUE ÉLEVÉ"}])
+# Profil standard (un seul coupon du jour depuis le 03/10/2026), utilisé par piloter() quand
+# executer() ne lui fournit pas explicitement prompt_systeme/outils_schemas (cas direct/tests
+# uniquement : executer() reconstruit toujours lui-même à partir des profils réels du run).
+_PROFILS_PAR_DEFAUT = [{"nom": "🏆 COUPON DU JOUR"}]
 PROMPT_SYSTEME = construire_prompt_systeme(_PROFILS_PAR_DEFAUT)
 OUTILS_SCHEMAS = construire_outils_schemas(_PROFILS_PAR_DEFAUT)
 

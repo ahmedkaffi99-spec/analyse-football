@@ -86,59 +86,26 @@ PROBA_MIN_FALLBACK_AUTO = 30.0
 
 # Choix du 26/09/2026 (demande explicite) : coupon(s) combinant des matchs DIFFÉRENTS (un
 # seul pari par match, voir MAX_JAMBES_PAR_MATCH).
-# Choix du 30/09/2026 (demande explicite : "je laisse le choix à l'IA de choisir combien elle
-# veut") : nb_jambes_min=1/nb_jambes=NB_MATCHS_MAX pour chaque profil, cote totale cible comme
-# seul vrai différenciateur. INVERSÉ le 01/10/2026 (demande explicite : "ne oblige pas l'IA à
-# atteindre le 50+ et 15-50, mon but c'est tout cote individuel et total qui a la chance de
-# réussite élevée") : la cote totale n'est plus une contrainte (agent_strategie.valider() ne la
-# vérifie plus, affichée à titre indicatif uniquement) — c'est maintenant le NOMBRE DE JAMBES
-# qui différencie les 3 profils (peu/moyen/beaucoup), la cote totale résultant naturellement
-# des favoris choisis par l'IA plutôt que d'être imposée.
-# Passé à 5 coupons INDÉPENDANTS (01/10/2026, demande explicite : "jusqu'à 5 coupon combiné
-# pour qu'on dépende pas d'un seul coupon par jour") — remplace l'ancien étagement sûr(1-5)/
-# équilibré(6-9)/audacieux(10-15). Constat de cette même conversation, chiffré sur les runs
-# réels (53-73) : la quasi-totalité des coupons perdus n'avaient qu'UNE SEULE jambe perdante
-# parmi plusieurs gagnantes — empiler des jambes dans un seul combiné réduit sa survie de façon
-# MULTIPLICATIVE (0.6^9 ≈ 1%) MÊME quand chaque jambe prise seule est un bon pari (60%+ de
-# probabilité réelle). La diversification du risque vient donc du NOMBRE DE COUPONS
-# INDÉPENDANTS (jusqu'à 5, chacun sur des matchs différents autant que possible), pas du
-# nombre de jambes empilées dans un seul coupon.
 #
-# Un profil s'abstient (jambes=[]) si pas assez de paris vraiment défendables existent pour
-# lui — jusqu'à 5 coupons n'est donc pas un minimum imposé, seulement un plafond.
-#
-# Historique : 4 coupons identiques (2-3 jambes) + 1 "risqué intentionnel" (5-10 jambes,
-# prefere_cote_elevee) jusqu'au 02/10/2026, remplacé par une structure à 3 PALIERS DE RISQUE
-# explicites (demande explicite du 02/10/2026 : "3 coupons avec 2 à 5 jambes → faible risque,
-# 1 coupon avec 5 à 8 jambes → risque moyen, 1 coupon avec plus de 8 jambes → risque élevé") :
-#   - 3 coupons 🟢 FAIBLE RISQUE, 2-5 jambes
-#   - 1 coupon  🟡 RISQUE MOYEN, 5-8 jambes
-#   - 1 coupon  🔴 RISQUE ÉLEVÉ, plus de 8 jambes (9-15 : NB_MATCHS_MAX=15 est le plafond
-#     structurel de toute façon, un seul pari par match — voir MAX_JAMBES_PAR_MATCH)
-# Pas de plancher de cote totale DÉDIÉ par coupon 🟢 (retiré le 02/10/2026 : la diversification
-# forcée 5/8/12, ajoutée après le run #84, s'est révélée inutile dès que les coupons ont 2-5
-# jambes au lieu de 2-3 fixe — constaté sur le run #86, SANS aucun plancher dédié, les 3
-# coupons 🟢 se différencient déjà naturellement, l'IA choisissant des jambes/catégories
-# différentes d'un coupon à l'autre : 5.41 / 8.21 / 12.11). Les 3 coupons 🟢 partagent donc le
-# même plancher par défaut (agent_strategie.COTE_TOTALE_MIN = 5.0, voir "cote_totale_min"
-# absent ci-dessous), comme 🟡/🔴.
+# Historique (26/09/2026 → 02/10/2026) : un seul coupon, puis étagement sûr/équilibré/
+# audacieux, puis jusqu'à 5 coupons indépendants (4 sûrs + 1 risqué, puis 3 paliers de risque
+# 🟢🟡🔴) — l'idée étant de ne jamais dépendre d'un seul coupon par jour. Revenu à UN SEUL
+# coupon par jour le 03/10/2026 (demande explicite "supprime la diversité et un coupon du
+# jour"), après un bilan réel décevant (run #86, 02/10/2026) : 4 des 5 coupons perdus le même
+# jour, la "diversification par le nombre de coupons" n'ayant pas empêché une mauvaise journée
+# généralisée — mieux vaut un seul coupon composé avec le plus grand soin (voir aussi le
+# correctif H2H du même jour) que plusieurs coupons de qualité inégale. La logique MULTI-
+# PROFILS (diversité croisée entre profils, planchers de cote dédiés, paliers de risque) reste
+# dans agent_strategie.py/agent_pilote.py — jamais déclenchée tant que PROFILS_COUPON n'a qu'UN
+# SEUL profil (aucune sélection "déjà verrouillée d'un profil précédent" ne peut exister) — pas
+# supprimée au cas où elle serait utile un autre jour, mais inerte par défaut.
 PROFILS_COUPON = [
     # cote_min/cote_max : volontairement très larges (non 0/infini — casserait le calcul de
     # pondération du repli Monte Carlo, 0 * infini = NaN) — gardent un sens pour
     # selectionner_combo_cote_cible (repli 100% Python sans IA, qui a besoin d'une cible pour
     # pondérer son tirage), mais ne bloquent plus jamais la validation de l'IA stratège.
-    *[{"cle": f"coupon{i}", "nom": f"🟢 COUPON {i} (2-5 jambes, risque faible)",
-       "cote_min": 1.01, "cote_max": 1000000.0, "nb_jambes_min": 2, "nb_jambes": 5}
-      for i in range(1, 4)],
-    {"cle": "moyen", "nom": "🟡 COUPON RISQUE MOYEN (5-8 jambes)",
-     "cote_min": 1.01, "cote_max": 1000000.0, "nb_jambes_min": 5, "nb_jambes": 8},
-    # prefere_cote_elevee (demande explicite du 02/10/2026, reprise du précédent profil
-    # "risqué intentionnel" : "cote élevée = gain élevé") réservé au palier le plus haut — un
-    # coupon 9-15 jambes rempli de favoris à cote basse (comme les profils 🟢/🟡) ne
-    # matérialiserait aucun risque/gain supplémentaire réel malgré le nombre de jambes.
-    {"cle": "eleve", "nom": "🔴 COUPON RISQUE ÉLEVÉ (9-15 jambes, cotes élevées assumées)",
-     "cote_min": 1.01, "cote_max": 1000000.0, "nb_jambes_min": 9, "nb_jambes": 15,
-     "prefere_cote_elevee": True},
+    {"cle": "jour", "nom": "🏆 COUPON DU JOUR (probabilité maximale)",
+     "cote_min": 1.01, "cote_max": 1000000.0, "nb_jambes_min": 2, "nb_jambes": 5},
 ]
 
 # IA : Groq + Gemini + OpenRouter (2026-09-26). Listes modifiables sans toucher au code via
@@ -375,6 +342,36 @@ def calculer_xg_depuis_stats_detaillees(sd_home, sd_away):
     except (TypeError, ValueError):
         return None
     return round(max(0.15, mu_home), 2), round(max(0.15, mu_away), 2)
+
+
+# Poids MAXIMUM du H2H dans le xG final — jamais dominant, un signal parmi d'autres (demande
+# explicite du 03/10/2026, après le constat du 02/10/2026, run #86 : Poland vs Romania, le H2H
+# collecté montrait déjà Pologne +2.5 buts de moyenne sur les confrontations passées (3-0.5),
+# mais le xG utilisé pour le pari ne venait QUE de la forme générale récente (1.4-1.7 but/match,
+# quasi équilibrée) — jamais mélangé au H2H, alors affiché à l'IA en texte seulement. Résultat
+# réel : Pologne 6-0, confirmant que le H2H était le signal le plus fiable ici. Plafonné à 40%
+# et atteint seulement à partir de NB_H2H_POIDS_PLEIN confrontations analysées, pour qu'un H2H
+# sur 2-3 matchs seulement (bruité) ne domine jamais un échantillon de forme plus large.
+H2H_POIDS_MAX = 0.4
+NB_H2H_POIDS_PLEIN = 5
+
+
+def _ponderer_avec_h2h(xg_home, xg_away, h2h):
+    """Mélange le xG calculé depuis la forme récente avec la moyenne de buts des confrontations
+    directes (head_to_head) quand elle existe — jamais plus de H2H_POIDS_MAX, atteint seulement
+    à NB_H2H_POIDS_PLEIN confrontations analysées (moins de confrontations = poids proportionnel,
+    jamais 0 dès qu'il y en a au moins une)."""
+    if not h2h or xg_home is None or xg_away is None:
+        return xg_home, xg_away
+    nb = h2h.get("matchs_analyses")
+    buts_home_h2h = h2h.get("buts_home_moyenne")
+    buts_away_h2h = h2h.get("buts_away_moyenne")
+    if not nb or buts_home_h2h is None or buts_away_h2h is None:
+        return xg_home, xg_away
+    poids_h2h = min(nb, NB_H2H_POIDS_PLEIN) / NB_H2H_POIDS_PLEIN * H2H_POIDS_MAX
+    xg_home_ajuste = (1 - poids_h2h) * xg_home + poids_h2h * float(buts_home_h2h)
+    xg_away_ajuste = (1 - poids_h2h) * xg_away + poids_h2h * float(buts_away_h2h)
+    return round(max(0.15, xg_home_ajuste), 2), round(max(0.15, xg_away_ajuste), 2)
 
 
 def calculer_mu_corners_depuis_stats_detaillees(sd_home, sd_away):
@@ -2082,6 +2079,14 @@ def agent3_calcul_pool_candidats(donnees):
         else:
             home_xg, away_xg, _, _, _ = estimer_expected_goals_depuis_marches(marches)
             print(f"      → Stats indisponibles, repli sur estimation depuis les cotes : {home_xg} / {away_xg}")
+
+        h2h = m.get("head_to_head")
+        home_xg_avant_h2h, away_xg_avant_h2h = home_xg, away_xg
+        home_xg, away_xg = _ponderer_avec_h2h(home_xg, away_xg, h2h)
+        if (home_xg, away_xg) != (home_xg_avant_h2h, away_xg_avant_h2h):
+            print(f"      → Buts attendus ajustés avec le H2H ({h2h.get('matchs_analyses')} confrontation(s), "
+                  f"{h2h.get('buts_home_moyenne')}-{h2h.get('buts_away_moyenne')} buts en moyenne) : "
+                  f"{home_xg_avant_h2h}/{away_xg_avant_h2h} → {home_xg}/{away_xg}")
 
         # forme (01/10/2026, demande explicite) : points_par_match_moyenne/clean_sheets_nombre
         # étaient collectés (stats_detaillees_10_matchs, 15 métriques API-Football) mais jamais

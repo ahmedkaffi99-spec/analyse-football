@@ -89,6 +89,37 @@ class TestXgStatsDetaillees(unittest.TestCase):
         self.assertIsNone(ae.calculer_xg_depuis_stats_detaillees(None, {"buts_marques_moyenne": 1.0}))
         self.assertIsNone(ae.calculer_xg_depuis_stats_detaillees({}, {}))
 
+
+class TestPondererAvecH2h(unittest.TestCase):
+    """Demande explicite du 03/10/2026, après le run #86 (02/10/2026) : Poland vs Romania avait
+    un H2H déjà collecté montrant une nette domination polonaise (3-0.5 buts de moyenne sur 2
+    confrontations), jamais mélangé au xG utilisé pour le pari (basé uniquement sur la forme
+    générale, quasi équilibrée) — la Pologne a ensuite gagné 6-0, confirmant que le H2H était
+    le signal à suivre. _ponderer_avec_h2h corrige ça, sans jamais laisser le H2H dominer."""
+
+    def test_h2h_tire_le_xg_vers_la_domination_historique(self):
+        xg_home, xg_away = ae._ponderer_avec_h2h(1.5, 1.55, {
+            "matchs_analyses": 2, "buts_home_moyenne": 3.0, "buts_away_moyenne": 0.5,
+        })
+        # poids = min(2,5)/5 * 0.4 = 0.16 : 84% forme + 16% H2H.
+        self.assertAlmostEqual(xg_home, round(0.84 * 1.5 + 0.16 * 3.0, 2), places=2)
+        self.assertAlmostEqual(xg_away, round(0.84 * 1.55 + 0.16 * 0.5, 2), places=2)
+        self.assertGreater(xg_home, 1.5)   # tiré vers le haut (H2H plus offensif pour le domicile)
+        self.assertLess(xg_away, 1.55)     # tiré vers le bas (H2H plus faible pour l'extérieur)
+
+    def test_h2h_absent_ne_change_rien(self):
+        self.assertEqual(ae._ponderer_avec_h2h(1.5, 1.55, None), (1.5, 1.55))
+        self.assertEqual(ae._ponderer_avec_h2h(1.5, 1.55, {"matchs_analyses": 0}), (1.5, 1.55))
+        self.assertEqual(ae._ponderer_avec_h2h(None, 1.55, {"matchs_analyses": 2,
+                          "buts_home_moyenne": 3.0, "buts_away_moyenne": 0.5}), (None, 1.55))
+
+    def test_poids_plafonne_a_h2h_poids_max_meme_avec_beaucoup_de_confrontations(self):
+        xg_home, _ = ae._ponderer_avec_h2h(1.0, 1.0, {
+            "matchs_analyses": 50, "buts_home_moyenne": 5.0, "buts_away_moyenne": 0.0,
+        })
+        # Même avec 50 confrontations, le H2H ne pèse jamais plus de H2H_POIDS_MAX (40%).
+        self.assertAlmostEqual(xg_home, round(0.6 * 1.0 + 0.4 * 5.0, 2), places=2)
+
     def test_champ_manquant_renvoie_none(self):
         home = {"buts_marques_moyenne": 2.0, "buts_encaisses_moyenne": None}
         away = {"buts_marques_moyenne": 1.2, "buts_encaisses_moyenne": 1.6}
@@ -674,47 +705,29 @@ class TestRedactionSansEdgeNone(unittest.TestCase):
         self.assertNotIn("edge", texte)
 
 
-class TestCinqCouponsTroisPaliersDeRisque(unittest.TestCase):
-    """Verrouille le réglage explicite du 26/09/2026 (un seul pari par match) et celui du
-    01/10/2026 : jusqu'à 5 coupons INDÉPENDANTS (remplace l'ancien étagement sûr(1-5)/
-    équilibré(6-9)/audacieux(10-15)) — demande explicite "si on a besoin chaque jour jusqu'à 5
-    coupon combiné pour qu'on dépende pas d'un seul coupon par jour". Constat chiffré sur les
-    runs réels (53-73) : empiler des jambes réduit la survie du combiné de façon multiplicative
-    (0.6^9 ≈ 1%) même avec de bons paris individuels — la seule façon saine de viser un combiné
-    gagnant est de limiter son nombre de jambes, la diversification du risque venant du NOMBRE
-    DE COUPONS indépendants, pas de jambes en plus dans un seul.
-
-    Remplacé le 02/10/2026 (demande explicite "3 coupons avec 2 à 5 jambes → faible risque, 1
-    coupon avec 5 à 8 jambes → risque moyen, 1 coupon avec plus de 8 jambes → risque élevé",
-    après avoir constaté sur le run #84 que l'ancienne structure "4 coupons identiques + 1
-    risqué" faisait converger les 4 coupons sûrs vers la même cote totale ~5) par 3 PALIERS DE
-    RISQUE explicites : 3 coupons 🟢 (2-5 jambes) + 1 coupon 🟡 (5-8 jambes) + 1 coupon 🔴
-    (plus de 8 jambes, cotes élevées assumées comme l'ancien "risqué intentionnel")."""
+class TestUnSeulCouponDuJour(unittest.TestCase):
+    """Historique (26/09/2026 → 02/10/2026) : un seul coupon, puis jusqu'à 5 coupons
+    indépendants (4 sûrs + 1 risqué, puis 3 paliers de risque 🟢🟡🔴) pour ne pas dépendre d'un
+    seul coupon par jour. Revenu à UN SEUL coupon par jour le 03/10/2026 (demande explicite
+    "supprime la diversité et un coupon du jour"), après un bilan réel décevant (run #86,
+    02/10/2026) : 4 des 5 coupons perdus le même jour — la diversification par le nombre de
+    coupons n'a pas protégé contre une mauvaise journée généralisée. Mieux composer un seul
+    coupon (avec le correctif H2H, voir TestPondererAvecH2h) plutôt que plusieurs de qualité
+    inégale. La logique multi-profils reste disponible dans agent_strategie.py/agent_pilote.py
+    (jamais supprimée) mais est inerte tant que PROFILS_COUPON n'a qu'un seul profil."""
 
     def test_reglages_du_coupon_du_jour(self):
         self.assertEqual(ae.MAX_JAMBES_PAR_MATCH, 1)
-        self.assertEqual(len(ae.PROFILS_COUPON), 5)
-        cles = {p["cle"] for p in ae.PROFILS_COUPON}
-        self.assertEqual(cles, {"coupon1", "coupon2", "coupon3", "moyen", "eleve"})
-        par_cle = {p["cle"]: p for p in ae.PROFILS_COUPON}
-        for cle in ("coupon1", "coupon2", "coupon3"):
-            # 🟢 risque faible : 2-5 jambes.
-            self.assertEqual((par_cle[cle]["nb_jambes_min"], par_cle[cle]["nb_jambes"]), (2, 5))
-        self.assertEqual((par_cle["moyen"]["nb_jambes_min"], par_cle["moyen"]["nb_jambes"]), (5, 8))
-        self.assertFalse(par_cle["moyen"].get("prefere_cote_elevee", False))
-        self.assertEqual((par_cle["eleve"]["nb_jambes_min"], par_cle["eleve"]["nb_jambes"]), (9, 15))
-        self.assertTrue(par_cle["eleve"]["prefere_cote_elevee"])
+        self.assertEqual(len(ae.PROFILS_COUPON), 1)
+        profil = ae.PROFILS_COUPON[0]
+        self.assertEqual(profil["cle"], "jour")
+        self.assertEqual((profil["nb_jambes_min"], profil["nb_jambes"]), (2, 5))
+        self.assertFalse(profil.get("prefere_cote_elevee", False))
+        self.assertNotIn("cote_totale_min", profil)
         # Cote totale : indicative uniquement, plus jamais une contrainte vérifiée (seules des
         # bornes très larges, finies — jamais 0/infini, casserait selectionner_combo_cote_cible).
-        for profil in ae.PROFILS_COUPON:
-            self.assertEqual(profil["cote_min"], 1.01)
-            self.assertEqual(profil["cote_max"], 1000000.0)
-        # Plancher de cote totale DÉDIÉ retiré (02/10/2026) : inutile dès que les coupons 🟢 ont
-        # 2-5 jambes (constaté sur le run #86, ils se différencient déjà naturellement sans
-        # forcer de palier — 5.41/8.21/12.11). Les 5 profils partagent donc tous le même
-        # plancher par défaut (agent_strategie.COTE_TOTALE_MIN).
-        for cle in ("coupon1", "coupon2", "coupon3", "moyen", "eleve"):
-            self.assertNotIn("cote_totale_min", par_cle[cle])
+        self.assertEqual(profil["cote_min"], 1.01)
+        self.assertEqual(profil["cote_max"], 1000000.0)
 
     def test_deux_paris_sur_le_meme_match_refuses_par_l_ia(self):
         pool = {"A vs B": [_selection("A vs B", "Total", "Over", 1.5), _selection("A vs B", "BTTS", "Yes", 1.6)]}
