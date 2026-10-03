@@ -668,11 +668,16 @@ class TestCoteTotaleMinimale(unittest.TestCase):
 
 
 class TestCoupEnvoi(unittest.TestCase):
-    def test_match_qui_commence_bientot_ecarte_a_la_reprise(self):
+    def test_match_deja_commence_ecarte_a_la_reprise(self):
+        # Demande explicite du 03/10/2026 ("retire cet 45 min") : seul un match DÉJÀ commencé
+        # est encore écarté ici — un match qui démarre bientôt (même dans 1 minute) reste
+        # valable, "Pre-Game"/"hasOdds" (verifier_fraicheur_matchs) suffisent à écarter un
+        # match réellement plus pariable.
         from datetime import datetime, timezone
         maintenant = datetime(2026, 9, 26, 13, 0, tzinfo=timezone.utc)
-        self.assertFalse(ae.coup_envoi_assez_loin("2026-09-26T13:30:00Z", maintenant))
-        self.assertFalse(ae.coup_envoi_assez_loin("2026-09-26T12:00:00Z", maintenant))
+        self.assertFalse(ae.coup_envoi_assez_loin("2026-09-26T12:00:00Z", maintenant))  # déjà commencé
+        self.assertTrue(ae.coup_envoi_assez_loin("2026-09-26T13:01:00Z", maintenant))  # dans 1 min
+        self.assertTrue(ae.coup_envoi_assez_loin("2026-09-26T13:30:00Z", maintenant))
         self.assertTrue(ae.coup_envoi_assez_loin("2026-09-26T18:45:00Z", maintenant))
         self.assertTrue(ae.coup_envoi_assez_loin(None, maintenant))
 

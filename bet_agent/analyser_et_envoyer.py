@@ -2017,12 +2017,18 @@ def calculer_stats_combine(selections_finales):
     return round(cote_totale, 2), (round(proba_combinee * 100, 1) if proba_combinee is not None else None)
 
 
-MINUTES_MIN_AVANT_COUP_ENVOI = 45  # même règle qu'à la collecte : pas de match qui commence bientôt
+# Demande explicite du 03/10/2026 : "retire cet 45 min" — un match proche du coup d'envoi
+# (ex. Canada vs Peru, retiré à 44 min alors qu'il avait de bons paris disponibles) ne doit
+# plus être exclu uniquement pour ça. 0 = seul un match DÉJÀ commencé est encore exclu ici
+# (coup_envoi dans le passé) ; "Pre-Game"/"hasOdds" (voir verifier_fraicheur_matchs) restent
+# vérifiés séparément et suffisent à écarter un match réellement plus pariable.
+MINUTES_MIN_AVANT_COUP_ENVOI = 0
 
 
 def coup_envoi_assez_loin(depart_iso, maintenant=None):
-    """Faux si le match commence dans moins de MINUTES_MIN_AVANT_COUP_ENVOI minutes. Indispensable
-    quand l'analyse reprend une collecte faite plus tôt (--depuis-run). Heure illisible : gardé."""
+    """Faux si le match a déjà commencé (ou MINUTES_MIN_AVANT_COUP_ENVOI minutes avant, si
+    jamais remonté au-delà de 0). Indispensable quand l'analyse reprend une collecte faite
+    plus tôt (--depuis-run). Heure illisible : gardé."""
     if not depart_iso:
         return True
     try:
@@ -2084,7 +2090,7 @@ def verifier_fraicheur_matchs(matchs_exploitables):
             demande = m["match_demande"]
             statut = fx.get("statusName") if fx else "introuvable"
             if fx and statut == "Pre-Game" and fx.get("hasOdds"):
-                statut = f"coup d'envoi à {fx.get('startTime')}, moins de {MINUTES_MIN_AVANT_COUP_ENVOI} min"
+                statut = f"coup d'envoi déjà passé ({fx.get('startTime')})"
             print(f"   ⚠️ {demande['home']} vs {demande['away']} n'est plus pariable "
                   f"(statut actuel : {statut}) — retiré avant construction des coupons.")
 
