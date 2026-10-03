@@ -51,6 +51,10 @@ on:
         description: "Nombre de jambes du coupon pour CE run (vide = celui du profil, 5) — sélection automatique, moteur deterministe"
         type: string
         default: ""
+      nb_jambes_min:
+        description: "Minimum de jambes pour CE run : en dessous, aucun coupon (vide = pas de minimum)"
+        type: string
+        default: ""
       ignorer_diversite_croisee:
         description: "Run PONCTUEL : désactive la diversité de catégorie entre profils (traite chaque profil comme le premier) — l'anti-doublon exact reste actif dans tous les cas"
         type: boolean
@@ -97,6 +101,7 @@ jobs:
       PROFILS_JSON: ${{ inputs.profils_json }}
       IGNORER_DIVERSITE_CROISEE: ${{ inputs.ignorer_diversite_croisee }}
       NB_JAMBES: ${{ inputs.nb_jambes }}
+      NB_JAMBES_MIN: ${{ inputs.nb_jambes_min }}
     steps:
       - uses: actions/checkout@v4
 

@@ -2486,6 +2486,14 @@ def generer_coupons(donnees):
             if nb_jambes < nb_cible:
                 print(f"   ℹ️ [{profil['nom']}] {nb_jambes} jambes au lieu de {nb_cible} "
                       f"(seulement {len(pool)} match(s) exploitable(s), {MAX_JAMBES_PAR_MATCH} paris max par match)")
+        # NB_JAMBES_MIN (input du workflow, demande explicite du 03/10/2026 : "coupon 15 matchs,
+        # minimum 12") : en dessous, aucun coupon plutôt qu'un coupon plus court que demandé.
+        nb_min_force = (os.getenv("NB_JAMBES_MIN") or "").strip()
+        if not mode_manuel and nb_min_force.isdigit() and nb_jambes < int(nb_min_force):
+            print(f"   ⚠️ [{profil['nom']}] seulement {nb_jambes} jambe(s) possible(s), minimum demandé "
+                  f"{nb_min_force} — aucun coupon envoyé.")
+            resultats.append({"profil": profil, "selections": []})
+            continue
         combo = selectionner_combo_cote_cible(pool, nb_jambes, profil["cote_min"], profil["cote_max"],
                                               exiger_tous_les_matchs=mode_manuel) if nb_jambes else None
         signature = frozenset((c["match"], c["pick"]["marche"], c["pick"]["selection"]) for c in combo) if combo else None

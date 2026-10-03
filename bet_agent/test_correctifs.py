@@ -1614,6 +1614,20 @@ class TestNbJambesForceParLeWorkflow(unittest.TestCase):
             resultats = ae.generer_coupons({"matchs": []})
         self.assertEqual(len(resultats[0]["selections"]), 8)
 
+    def test_minimum_non_atteint_aucun_coupon(self):
+        pool = {f"M{i} vs N{i}": [_selection(f"M{i} vs N{i}", "Total", "Over", 1.3)] for i in range(10)}
+        with mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=pool), \
+                mock.patch.dict(os.environ, {"NB_JAMBES": "15", "NB_JAMBES_MIN": "12"}):
+            resultats = ae.generer_coupons({"matchs": []})
+        self.assertEqual(resultats[0]["selections"], [])
+
+    def test_minimum_atteint_coupon_complet(self):
+        pool = {f"M{i} vs N{i}": [_selection(f"M{i} vs N{i}", "Total", "Over", 1.3)] for i in range(13)}
+        with mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=pool), \
+                mock.patch.dict(os.environ, {"NB_JAMBES": "15", "NB_JAMBES_MIN": "12"}):
+            resultats = ae.generer_coupons({"matchs": []})
+        self.assertEqual(len(resultats[0]["selections"]), 13)
+
     def test_valeur_invalide_ignoree(self):
         pool = {f"M{i} vs N{i}": [_selection(f"M{i} vs N{i}", "Total", "Over", 1.3)] for i in range(10)}
         with mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=pool), \
