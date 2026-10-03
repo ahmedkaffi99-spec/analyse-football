@@ -77,7 +77,12 @@ def construire_catalogue(pool, seuil_proba=SEUIL_PROBA_CATALOGUE):
             cid = f"P{numero}"
             catalogue[cid] = c
             p = c["pick"]
-            lignes.append(f"- {cid} : {p['marche']} → {p['selection']} @ {p['cote']} — "
+            # marche_affichage (ligne du point de vue de l'équipe sélectionnée, celle que
+            # 1xBet affiche réellement) plutôt que "marche" (ligne brute domicile-référencée,
+            # réservée aux lookups internes — voir analyser_et_envoyer._candidat) : sans ça,
+            # l'IA justifiait son choix avec un signe de ligne qui ne correspond pas à ce que
+            # l'utilisateur voit réellement sur 1xBet.
+            lignes.append(f"- {cid} : {p.get('marche_affichage') or p['marche']} → {p['selection']} @ {p['cote']} — "
                           f"probabilité Python {p['proba_modele_pct']}%, edge {p['edge_pct']}%")
     return catalogue, "\n".join(lignes)
 

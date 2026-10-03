@@ -916,8 +916,15 @@ def completer_avec_marches_bruts(candidats_modelises, marches):
             if cle in deja_vus:
                 continue
             deja_vus.add(cle)
+            # marche_affichage : même correctif que _candidat (voir ses commentaires) — la
+            # ligne du point de vue de l'équipe sélectionnée, jamais la ligne domicile-
+            # référencée brute, pour l'affichage final si ce marché brut finit dans un coupon.
+            handicap_affiche = _handicap_point_de_vue_equipe(categorie, s["selection"], handicap)
+            nom_marche_affiche = "Handicap" if categorie in CATEGORIES_HANDICAP_SIGNE and nom_bas == "asian handicap" else nom_marche
             resultat.append({
-                "categorie": categorie, "marche": nom_avec_ligne, "handicap": handicap,
+                "categorie": categorie, "marche": nom_avec_ligne,
+                "marche_affichage": _nom_avec_ligne(nom_marche_affiche, handicap_affiche),
+                "handicap": handicap,
                 "selection": s["selection"], "cote": cote,
                 "proba_modele_pct": None, "edge_pct": None, "guide": _note_ligne_quart(handicap),
                 "onglet": None, "proba_poisson_pct": None, "proba_marche_pct": None,
@@ -1244,6 +1251,31 @@ def _evaluer_marches_brut(marches, mu_home, mu_away, mu_corners=None, mu_cartons
     return sorted(candidats, key=lambda c: (c["proba_modele_pct"], c["edge_pct"]), reverse=True)
 
 
+# Catégories "Handicap" où OddsPapi renvoie TOUJOURS la ligne du point de vue de l'équipe
+# DOMICILE, alors que 1xBet affiche la ligne du point de vue de l'équipe SÉLECTIONNÉE — bug
+# réel trouvé le 03/10/2026 dans un vrai ticket (Poland vs Romania, Asian Handicap, sélection
+# extérieure) : le marché affiché disait "Asian Handicap (-1.5)" alors que la vraie ligne jouée
+# sur 1xBet pour la Roumanie est "Handicap (1.5)" — le signe domicile-référencé d'OddsPapi avait
+# fuité tel quel dans le texte du ticket, au lieu d'être ramené du point de vue de l'équipe
+# choisie (ce que le guide pédagogique, lui, faisait déjà correctement).
+CATEGORIES_HANDICAP_SIGNE = ("Handicap Asiatique", "Handicap", "Handicap Européen",
+                              "Handicap Corners", "Handicap Cartons", "Handicap Fautes",
+                              "Handicap Tirs", "Handicap Tirs Cadrés", "Handicap Hors-jeux")
+
+
+def _handicap_point_de_vue_equipe(categorie, selection_brute, handicap):
+    """Convertit la ligne domicile-référencée d'OddsPapi vers le point de vue de l'équipe
+    SÉLECTIONNÉE (celle que 1xBet affiche à l'écran). "or 0.0" évite le zéro négatif (-0.0) que
+    Python produit sur une ligne à 0 pour l'équipe extérieure (-0.0 >= 0 est pourtant True, mais
+    s'affiche avec un signe moins trompeur)."""
+    if categorie not in CATEGORIES_HANDICAP_SIGNE or handicap is None:
+        return handicap
+    sel = (selection_brute or "").lower()
+    if sel in ("away", "2"):
+        return (-handicap) or 0.0
+    return handicap or 0.0
+
+
 def expliquer_marche(categorie, selection_brute, handicap):
     """Traduit une catégorie déjà connue avec certitude (calculée plus haut par le code,
     JAMAIS devinée depuis le texte brut du marché) en un guide pédagogique + l'onglet 1xbet
@@ -1324,17 +1356,12 @@ def expliquer_marche(categorie, selection_brute, handicap):
         # 1/X/2) a pu être persisté entre-temps sur d'éventuels tickets.
         onglet_nom = {"Handicap Asiatique": "Asian Handicap", "Handicap": "Handicap"}.get(categorie, "Handicap Asiatique")
         if sel in ("home", "1"):
-            cote_txt, h_effectif = "domicile", handicap or 0.0
+            cote_txt = "domicile"
         elif sel in ("away", "2"):
-            # "handicap or 0.0" (demande explicite du 03/10/2026, après le constat d'un "-0.0"
-            # écrit dans un vrai ticket St. Lucia vs Guadeloupe) : -handicap sur un handicap de
-            # 0.0 donne -0.0 en Python (zéro négatif, >= 0 est pourtant True) — affiché "-0.0"
-            # au lieu de "0.0", un texte qui semble incohérent avec le pari réel. -0.0 est falsy
-            # en Python, donc "x or 0.0" le remplace par un zéro positif sans toucher aux autres
-            # valeurs.
-            cote_txt, h_effectif = "extérieure", (-handicap) or 0.0
+            cote_txt = "extérieure"
         else:
             return f"handicap : {selection_brute}", f"onglet {onglet_nom}"
+        h_effectif = _handicap_point_de_vue_equipe(categorie, selection_brute, handicap)
         if h_effectif >= 0:
             guide = f"l'équipe {cote_txt} part avec un avantage fictif de {h_effectif} but(s)"
         else:
@@ -1349,11 +1376,12 @@ def expliquer_marche(categorie, selection_brute, handicap):
             "Handicap Tirs Cadrés": "tir(s) cadré(s)", "Handicap Hors-jeux": "hors-jeu(x)",
         }[categorie]
         if sel in ("home", "1"):
-            cote_txt, h_effectif = "domicile", handicap or 0.0
+            cote_txt = "domicile"
         elif sel in ("away", "2"):
-            cote_txt, h_effectif = "extérieure", (-handicap) or 0.0  # voir le commentaire "-0.0" ci-dessus
+            cote_txt = "extérieure"
         else:
             return f"handicap {unite} : {selection_brute}", f"onglet {categorie}"
+        h_effectif = _handicap_point_de_vue_equipe(categorie, selection_brute, handicap)
         if h_effectif >= 0:
             guide = f"l'équipe {cote_txt} part avec un avantage fictif de {h_effectif} {unite}"
         else:
@@ -1383,11 +1411,25 @@ def _nom_avec_ligne(nom_marche, handicap):
 
 
 def _candidat(nom_marche, handicap, selection, proba, edge, categorie):
+    sel = selection["selection"]
+    # "marche" reste la ligne BRUTE domicile-référencée d'OddsPapi (nom + handicap) — jamais
+    # touchée ici, parce que evaluer_marches_toutes() s'en sert comme CLÉ DE JOINTURE vers
+    # probabilites_sans_marge() (même nom+ligne exacts, voir le commentaire dans cette
+    # fonction) ; la modifier ferait échouer ce lookup en silence et ferait disparaître le
+    # marché entier du pool (régression réelle constatée en testant ce correctif).
+    # "marche_affichage" est la ligne du point de vue de l'équipe SÉLECTIONNÉE, celle que
+    # 1xBet affiche réellement à l'écran (voir CATEGORIES_HANDICAP_SIGNE) — RÉSERVÉE à
+    # l'affichage final du ticket (rediger_ticket_sans_ia et la rédaction LLM), jamais à un
+    # lookup interne.
     nom_avec_ligne = _nom_avec_ligne(nom_marche, handicap)
-    guide, onglet = expliquer_marche(categorie, selection["selection"], handicap)
+    handicap_affiche = _handicap_point_de_vue_equipe(categorie, sel, handicap)
+    nom_marche_affiche = "Handicap" if categorie in CATEGORIES_HANDICAP_SIGNE and nom_marche.lower() == "asian handicap" else nom_marche
+    marche_affichage = _nom_avec_ligne(nom_marche_affiche, handicap_affiche)
+    guide, onglet = expliquer_marche(categorie, sel, handicap)
     return {
         "categorie": categorie,
         "marche": nom_avec_ligne,
+        "marche_affichage": marche_affichage,
         "handicap": handicap,
         "selection": selection["selection"],
         "cote": selection["cote"],
@@ -1741,8 +1783,9 @@ def _construire_donnees_prompt(selections_finales):
     donnees_prompt = ""
     for s in selections_finales:
         pick = s["pick"]
+        marche_txt = pick.get("marche_affichage") or pick["marche"]  # voir _candidat
         donnees_prompt += (
-            f"\n{s['match']} : marché \"{pick['marche']}\", sélection \"{pick['selection']}\" "
+            f"\n{s['match']} : marché \"{marche_txt}\", sélection \"{pick['selection']}\" "
             f"@ {pick['cote']}, probabilité modèle {pick['proba_modele_pct']}%, "
             f"edge {pick['edge_pct']}%\n"
             f"  Guide déjà rédigé (à recopier tel quel) : {pick['guide']}\n"
@@ -1919,7 +1962,11 @@ def rediger_ticket_sans_ia(selections_finales):
             detail = f"edge {p['edge_pct']}% · {niveau_confiance(p['edge_pct'])}"
         else:
             detail = "marché brut, sans calcul Python"
-        blocs.append(f"⚽ *{s['match']}* — {p['marche']} : {p['selection']} @ {p['cote']} ({detail})")
+        # marche_affichage (ligne du point de vue de l'équipe sélectionnée) prioritaire sur
+        # "marche" (ligne brute domicile-référencée, gardée pour les lookups internes
+        # uniquement — voir _candidat) ; absent sur d'anciens tickets déjà en base, d'où le repli.
+        marche_txt = p.get("marche_affichage") or p["marche"]
+        blocs.append(f"⚽ *{s['match']}* — {marche_txt} : {p['selection']} @ {p['cote']} ({detail})")
     return "\n".join(blocs)
 
 

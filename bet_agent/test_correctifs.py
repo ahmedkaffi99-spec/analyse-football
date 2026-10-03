@@ -656,6 +656,42 @@ def _selection(match, categorie, selection, cote, edge=8.0, guide=None):
                      "cote": cote, "proba_modele_pct": 70.0, "edge_pct": edge, "guide": guide, "onglet": "onglet"}}
 
 
+class TestMarcheAffichagePointDeVueEquipe(unittest.TestCase):
+    """Bug réel trouvé le 03/10/2026 dans un vrai ticket (Poland vs Romania, Asian Handicap,
+    sélection extérieure) : le ticket Telegram affichait "Asian Handicap (-1.5)" alors que la
+    vraie ligne jouée sur 1xBet pour l'équipe sélectionnée est "Handicap (1.5)" — ni le bon nom
+    d'onglet (OddsPapi dit "Asian Handicap" pour TOUTE ligne, 1xBet n'utilise ce nom que pour
+    les lignes de quart), ni le bon signe (OddsPapi réfère toujours au domicile)."""
+
+    def test_candidat_separe_marche_interne_et_marche_affichage(self):
+        c = ae._candidat("Asian Handicap", -1.5, {"selection": "2", "cote": 1.564}, 0.692, 8.2, "Handicap")
+        # "marche" (clé de jointure interne vers probabilites_sans_marge) reste la ligne brute.
+        self.assertEqual(c["marche"], "Asian Handicap (-1.5)")
+        # "marche_affichage" (ce que montre vraiment 1xBet pour l'équipe sélectionnée) corrige
+        # à la fois le nom d'onglet et le signe.
+        self.assertEqual(c["marche_affichage"], "Handicap (1.5)")
+
+    def test_rediger_ticket_utilise_marche_affichage_pas_marche_brut(self):
+        selection = {"match": "Poland vs Romania", "pick": ae._candidat(
+            "Asian Handicap", -1.5, {"selection": "2", "cote": 1.564}, 0.692, 8.2, "Handicap")}
+        texte = ae.rediger_ticket_sans_ia([selection])
+        self.assertIn("Handicap (1.5)", texte)
+        self.assertNotIn("Asian Handicap (-1.5)", texte)
+
+    def test_evaluer_marches_toutes_retrouve_toujours_le_marche_apres_le_correctif(self):
+        # Régression réelle constatée en développant ce correctif : evaluer_marches_toutes()
+        # fait un lookup par (marche, selection) vers probabilites_sans_marge() — si "marche"
+        # avait été remplacé par la version affichage (signée), ce lookup échouait en silence
+        # et le marché disparaissait entièrement du pool.
+        marches = [{"marche": "Asian Handicap", "handicap": -1.5, "periode": "fulltime",
+                    "selections": [{"selection": "1", "cote": 1.9}, {"selection": "2", "cote": 1.9}]}]
+        candidats = ae.evaluer_marches_toutes(marches, 1.5, 1.2)
+        self.assertEqual(len(candidats), 2)
+        par_selection = {c["selection"]: c for c in candidats}
+        self.assertEqual(par_selection["1"]["marche_affichage"], "Handicap (-1.5)")
+        self.assertEqual(par_selection["2"]["marche_affichage"], "Handicap (1.5)")
+
+
 class TestExpliquerMarcheHandicapZero(unittest.TestCase):
     """Bug réel trouvé le 03/10/2026 dans un vrai ticket (St. Lucia vs Guadeloupe, Asian
     Handicap 0.0, sélection extérieure) : le guide généré disait "avantage fictif de -0.0
