@@ -23,7 +23,10 @@ jobs:
             backend/requirements.txt
             bet_agent/requirements.txt
 
-      - run: pip install -r backend/requirements-dev.txt
+      - run: pip install -r backend/requirements-dev.txt scikit-learn
+
+      - name: Tests du moteur d'analyse
+        run: python -m pytest moteur -q
 
       - name: Tests du pipeline
         working-directory: bet_agent
