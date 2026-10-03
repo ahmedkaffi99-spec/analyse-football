@@ -85,7 +85,6 @@ MAX_JAMBES_PAR_MATCH = 1
 # cote_cible) pige dans ce MÊME pool sans jugement possible — sans filtre, elle choisirait
 # parfois un pari objectivement mauvais (edge négatif, probabilité faible). Seuils appliqués
 # UNIQUEMENT à ce repli automatique, jamais à ce que reçoit l'IA.
-EDGE_MIN_FALLBACK_AUTO = 2.0
 PROBA_MIN_FALLBACK_AUTO = 30.0
 # Demande explicite du 03/10/2026 : "cote individuelle plus de 2 n'est pas choisie, notre cote
 # cible est 1.1 à 2.1" — aucune jambe individuelle au-delà de cette cote, pour un coupon
@@ -2266,36 +2265,38 @@ def selectionner_combo_cote_cible(pool_par_match, nb_jambes, cote_min, cote_max,
     Jamais None tant qu'il y a au moins nb_jambes candidats au total, jamais un chiffre
     inventé — uniquement un choix parmi des candidats déjà calculés en pur Python.
 
-    Filtre edge/probabilité/cote individuelle (EDGE_MIN_FALLBACK_AUTO, PROBA_MIN_FALLBACK_AUTO,
+    Filtre probabilité/cote individuelle (PROBA_MIN_FORTE, PROBA_MIN_FALLBACK_AUTO,
     COTE_INDIVIDUELLE_MAX_FALLBACK_AUTO) appliqué ICI seulement : le pool complet transmis par
     agent3_calcul_pool_candidats n'est plus filtré (l'IA doit voir tous les marchés), mais ce
-    repli 100% automatique n'a aucun jugement pour écarter lui-même un edge négatif, une
-    probabilité trop faible ou une jambe à cote trop longue (longshot).
+    repli 100% automatique n'a aucun jugement pour écarter lui-même une probabilité trop
+    faible ou une jambe à cote trop longue (longshot).
+
+    Demande explicite du 03/10/2026 ("on choisit les cotes avec chance de réussite, pas un
+    edge") : le filtre retient d'abord par PROBABILITÉ MODÈLE (PROBA_MIN_FORTE), plus
+    l'edge du tout — un edge positif ne veut pas dire une probabilité correcte, juste que le
+    modèle diverge un peu du marché (constaté sur Ivory Coast-Cameroon : cote 9.3, edge 2.7%,
+    proba 11% ; et sur Belarus-San Marino/Estonia-Luxembourg le 03/10/2026, deux paris à
+    edge positif mais proba 45%/36%, tous deux perdus). Une probabilité forte l'est par
+    définition, qu'elle batte le marché ou non.
 
     exiger_tous_les_matchs (demande explicite du 03/10/2026, mode manuel : "mon but est le
     nombre que je fournis est respecté, et gagner, et plus de gain" — le nombre de jambes ne
     doit JAMAIS retomber sous le nombre de matchs manuels exploitables à cause du plafond de
-    cote OU de l'absence totale d'un pari edge/probabilité valable) : deux niveaux de repli,
+    cote OU de l'absence totale d'un pari à probabilité correcte) : deux niveaux de repli,
     jamais en sélection automatique (dropper un match y est sans risque, il y en a d'autres) :
-    1) un match qui a AU MOINS un candidat edge/probabilité valable, mais aucun sous le
-       plafond de cote, garde ses candidats valables au-delà du plafond ;
-    2) un match qui n'a LITTÉRALEMENT AUCUN candidat edge/probabilité valable garde quand
-       même le(s) plus proche(s) du seuil (edge_pct le plus élevé), MAIS seulement PARMI les
-       candidats qui respectent au moins PROBA_MIN_FALLBACK_AUTO — jamais un pari à edge
-       positif mais probabilité ridicule (constaté le 03/10/2026, run réel : Ivory Coast vs
-       Cameroon, cote 9.3, edge 2.7% mais proba_modele_pct=11% — un edge positif ne veut pas
-       dire une probabilité correcte, juste que le modèle diverge un peu du marché ; demande
-       explicite de l'utilisateur : "cet cote 9 probabilité de réussite est bon ?" → non,
-       jamais en dessous du plancher de probabilité, même en dernier recours). Si AUCUN
-       candidat n'atteint ce plancher de probabilité non plus, le match disparaît du pool
+    1) un match qui a AU MOINS un candidat à forte probabilité, mais aucun sous le plafond de
+       cote, garde ses candidats valables au-delà du plafond ;
+    2) un match qui n'a LITTÉRALEMENT AUCUN candidat à forte probabilité garde quand même
+       le(s) plus probable(s), MAIS seulement PARMI les candidats qui respectent au moins
+       PROBA_MIN_FALLBACK_AUTO (30%) — jamais en dessous de ce plancher, même en dernier
+       recours. Si AUCUN candidat n'atteint ce plancher non plus, le match disparaît du pool
        (comme en sélection automatique) — mieux vaut un coupon à une jambe de moins qu'une
        jambe à ~10% de chances de passer."""
     def _filtre_edge_proba(c):
-        # Un marché brut non modélisé (completer_avec_marches_bruts) a proba_modele_pct/
-        # edge_pct = None (pas de calcul Python) — jamais planté ici, jamais retenu non plus
-        # (None n'est ni > ni >= un seuil, "ou 0"/"ou -999" le rendent juste faux proprement).
-        return (c["pick"].get("edge_pct") or -999) > EDGE_MIN_FALLBACK_AUTO \
-            and (c["pick"].get("proba_modele_pct") or 0) >= PROBA_MIN_FALLBACK_AUTO
+        # Un marché brut non modélisé (completer_avec_marches_bruts) a proba_modele_pct=None
+        # (pas de calcul Python) — jamais planté ici, jamais retenu non plus ("ou 0" le rend
+        # juste faux proprement).
+        return (c["pick"].get("proba_modele_pct") or 0) >= PROBA_MIN_FORTE
 
     def _filtre_qualite(candidats):
         valables = [c for c in candidats if _filtre_edge_proba(c)]
@@ -2307,8 +2308,8 @@ def selectionner_combo_cote_cible(pool_par_match, nb_jambes, cote_min, cote_max,
         if exiger_tous_les_matchs:
             proba_correcte = [c for c in candidats if (c["pick"].get("proba_modele_pct") or 0) >= PROBA_MIN_FALLBACK_AUTO]
             if proba_correcte:
-                meilleur_edge = max((c["pick"].get("edge_pct") or -999) for c in proba_correcte)
-                return [c for c in proba_correcte if (c["pick"].get("edge_pct") or -999) == meilleur_edge]
+                meilleure_proba = max((c["pick"].get("proba_modele_pct") or 0) for c in proba_correcte)
+                return [c for c in proba_correcte if (c["pick"].get("proba_modele_pct") or 0) == meilleure_proba]
         return []
 
     pool_par_match = {m: _filtre_qualite(candidats) for m, candidats in pool_par_match.items()}

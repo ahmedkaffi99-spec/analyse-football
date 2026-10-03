@@ -1046,20 +1046,33 @@ class TestMatchsVirtuelsEtMarches(unittest.TestCase):
 
 
 class TestFiltreDuReplisAutomatiqueSeulement(unittest.TestCase):
-    """Le pool complet (edge négatif inclus) va à l'IA, mais selectionner_combo_cote_cible
-    (repli 100% Python, sans IA) doit quand même écarter les paris à edge négatif/faible —
-    sans jugement possible, il choisirait sinon un pari objectivement mauvais."""
+    """Le pool complet (probabilité faible incluse) va à l'IA, mais selectionner_combo_cote_cible
+    (repli 100% Python, sans IA) doit quand même écarter les paris à faible probabilité de
+    réussite — demande explicite du 03/10/2026 ("on choisit les cotes avec chance de réussite,
+    pas un edge") : sans jugement possible, il choisirait sinon un pari objectivement peu
+    probable juste parce que son edge est positif."""
 
-    def test_repli_automatique_ecarte_l_edge_negatif(self):
+    def test_repli_automatique_ecarte_la_probabilite_faible(self):
         pool = {
-            "A vs B": [_selection("A vs B", "Total", "Over", 1.5, edge=-5.0)],   # edge négatif : écarté
-            "C vs D": [_selection("C vs D", "Total", "Over", 1.5, edge=8.0)],
-            "E vs F": [_selection("E vs F", "Total", "Over", 1.5, edge=8.0)],
+            "A vs B": [_selection("A vs B", "Total", "Over", 1.5, proba=45.0)],  # < PROBA_MIN_FORTE (60) : écarté
+            "C vs D": [_selection("C vs D", "Total", "Over", 1.5)],
+            "E vs F": [_selection("E vs F", "Total", "Over", 1.5)],
         }
-        # Un seul match a un edge exploitable en plus de C/D et E/F : 2 jambes possibles, pas 3.
+        # Un seul match a une probabilité exploitable en plus de C/D et E/F : 2 jambes possibles, pas 3.
         self.assertIsNone(ae.selectionner_combo_cote_cible(pool, 3, 1.0, 100.0))
         combo = ae.selectionner_combo_cote_cible(pool, 2, 1.0, 100.0)
         self.assertEqual({c["match"] for c in combo}, {"C vs D", "E vs F"})
+
+    def test_repli_automatique_prefere_la_forte_probabilite_a_l_edge(self):
+        """Cas direct de la demande du 03/10/2026 : entre un edge élevé à probabilité faible
+        et un edge nul/négatif à forte probabilité, le repli retient le second — l'edge n'est
+        plus un critère d'entrée du tout, seule la probabilité modèle l'est."""
+        pool = {
+            "A vs B": [_selection("A vs B", "Total", "Over", 2.0, edge=15.0, proba=40.0),   # edge fort, proba faible
+                       _selection("A vs B", "Total", "Under", 1.8, edge=-1.0, proba=65.0)],  # edge nul, proba forte
+        }
+        combo = ae.selectionner_combo_cote_cible(pool, 1, 1.0, 100.0)
+        self.assertEqual(combo[0]["pick"]["selection"], "Under")
 
     def test_repli_automatique_ecarte_la_cote_individuelle_trop_longue(self):
         """Demande explicite du 03/10/2026 : "cote individuelle plus de 2 n'est pas choisie"."""
@@ -1101,13 +1114,13 @@ class TestFiltreDuReplisAutomatiqueSeulement(unittest.TestCase):
         self.assertEqual(pick_ab["pick"]["cote"], 1.5)
 
     def test_exiger_tous_les_matchs_garde_le_candidat_le_plus_proche_si_aucun_n_est_valable(self):
-        """Demande explicite du 03/10/2026 ("les cotes, le plus smart/proche") : un match sans
-        AUCUN candidat edge/probabilité valable (même au-delà du plafond de cote) garde quand
-        même son candidat le plus proche du seuil (edge_pct le plus élevé, même négatif),
-        plutôt que de disparaître complètement — mode manuel seulement."""
+        """Demande explicite du 03/10/2026 ("on choisit les cotes avec chance de réussite, pas
+        un edge") : un match sans AUCUN candidat à forte probabilité (PROBA_MIN_FORTE, même
+        au-delà du plafond de cote) garde quand même son candidat le plus probable, plutôt que
+        de disparaître complètement — mode manuel seulement."""
         pool = {
-            "A vs B": [_selection("A vs B", "Total", "Over", 1.5, edge=-1.0),
-                       _selection("A vs B", "Total", "Under", 1.8, edge=-5.0)],  # aucun edge>2% : rien de valable
+            "A vs B": [_selection("A vs B", "Total", "Over", 1.5, proba=35.0),
+                       _selection("A vs B", "Total", "Under", 1.8, proba=50.0)],  # aucun >= PROBA_MIN_FORTE (60)
             "C vs D": [_selection("C vs D", "Total", "Over", 1.5)],
         }
         # Sélection automatique : le match A vs B reste écarté (aucun candidat valable).
@@ -1115,7 +1128,7 @@ class TestFiltreDuReplisAutomatiqueSeulement(unittest.TestCase):
         combo = ae.selectionner_combo_cote_cible(pool, 2, 1.0, 100.0, exiger_tous_les_matchs=True)
         self.assertEqual({c["match"] for c in combo}, {"A vs B", "C vs D"})
         pick_ab = next(c for c in combo if c["match"] == "A vs B")
-        self.assertEqual(pick_ab["pick"]["selection"], "Over")  # edge -1.0 > -5.0, le plus proche du seuil
+        self.assertEqual(pick_ab["pick"]["selection"], "Under")  # proba 50% > 35%, le plus probable
 
     def test_jamais_un_pari_edge_positif_mais_probabilite_ridicule(self):
         """Bug réel trouvé le 03/10/2026 sur un run réel (Ivory Coast vs Cameroon, cote 9.3,
