@@ -751,7 +751,15 @@ COTE_MIN_JAMBE = 1.20   # en dessous, un pari n'apporte presque rien au combiné
 # marchés") — Total Cartons (modèle peu fiable, points de carton/lignes mixtes) était exclu
 # jusqu'au 30/09/2026, mais l'IA voit maintenant TOUS les marchés modélisables avec leurs vrais
 # chiffres (edge, probabilité) et juge elle-même de leur fiabilité, comme pour tout autre marché.
-CATEGORIES_EXCLUES = ()
+CATEGORIES_EXCLUES = ("Handicap Corners", "Handicap Cartons")
+
+
+def est_marche_exclu(nom_marche):
+    """Demande explicite du 03/10/2026 ("exclu les marchés handicap corner et yellow") après
+    deux jambes perdues le même jour (Belarus-San Marino, Estonia-Luxembourg) — exclus aussi
+    en brut (completer_avec_marches_bruts), sinon ils reviendraient par cette porte."""
+    nom = (nom_marche or "").lower()
+    return "handicap" in nom and ("corner" in nom or "card" in nom or "booking" in nom)
 
 
 def _edge_calculable(edge, proba):
@@ -849,7 +857,7 @@ def completer_avec_marches_bruts(candidats_modelises, marches):
     deja_vus = {(c["marche"], c["selection"]) for c in candidats_modelises}
     resultat = list(candidats_modelises)
     for marche in marches:
-        if not est_marche_match_entier(marche):
+        if not est_marche_match_entier(marche) or est_marche_exclu(marche.get("marche")):
             continue
         nom_marche = marche.get("marche") or "Marché"
         handicap = marche.get("handicap")

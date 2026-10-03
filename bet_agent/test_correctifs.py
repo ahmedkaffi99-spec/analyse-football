@@ -1427,7 +1427,14 @@ class TestHandicapCornersEtCartonsModelisesEnPoisson(unittest.TestCase):
     handicap], et les autres donc" — Corners - Handicap et Bookings - Handicap sont
     maintenant modélisés (proba_handicap_couvert, même modèle que le handicap principal) via
     mu_corners_equipes/mu_cartons_equipes (split domicile/extérieur), et non plus laissés en
-    marché brut sans calcul quand ce split est disponible."""
+    marché brut sans calcul quand ce split est disponible. Exclus du coupon depuis le
+    03/10/2026 (CATEGORIES_EXCLUES) — le modèle reste testé, exclusion levée ici, pour pouvoir
+    le réactiver sans réécrire le calcul."""
+
+    def setUp(self):
+        patch = mock.patch.object(ae, "CATEGORIES_EXCLUES", ())
+        patch.start()
+        self.addCleanup(patch.stop)
 
     def test_corners_handicap_modelise_avec_le_split_par_equipe(self):
         marches = [{"marche": "Corners - Handicap", "handicap": -1.5, "periode": "fulltime",
@@ -1453,11 +1460,39 @@ class TestHandicapCornersEtCartonsModelisesEnPoisson(unittest.TestCase):
                     "selections": [{"selection": "1", "cote": 1.9}, {"selection": "2", "cote": 1.9}]}]
         modelises = ae.evaluer_marches_toutes(marches, 1.5, 1.2)
         self.assertEqual(modelises, [])
-        complets = ae.completer_avec_marches_bruts(modelises, marches)
+        with mock.patch.object(ae, "est_marche_exclu", return_value=False):
+            complets = ae.completer_avec_marches_bruts(modelises, marches)
         self.assertEqual(len(complets), 2)
         for c in complets:
             self.assertEqual(c["categorie"], "Corners - Handicap")
             self.assertIsNone(c["proba_modele_pct"])
+
+
+class TestHandicapCornersEtCartonsExclus(unittest.TestCase):
+    """Demande explicite du 03/10/2026 : "exclu les marchés handicap corner et yellow" —
+    jamais proposés, ni modélisés ni en brut. Les autres marchés corners/cartons (Total
+    Corners, Total Cartons) restent disponibles."""
+
+    MARCHES = [
+        {"marche": "Corners - Handicap", "handicap": -1.5, "periode": "fulltime",
+         "selections": [{"selection": "1", "cote": 1.9}, {"selection": "2", "cote": 1.9}]},
+        {"marche": "Bookings - Handicap", "handicap": 0, "periode": "fulltime",
+         "selections": [{"selection": "1", "cote": 1.8}, {"selection": "2", "cote": 2.0}]},
+        {"marche": "Corners - Over Under Full Time", "handicap": 9.5, "periode": "fulltime",
+         "selections": [{"selection": "Over", "cote": 1.9}, {"selection": "Under", "cote": 1.9}]},
+    ]
+
+    def test_jamais_modelises_meme_avec_le_split_par_equipe(self):
+        candidats = ae.evaluer_marches_toutes(self.MARCHES, 1.5, 1.2, mu_corners_equipes=(6.0, 4.0),
+                                              mu_cartons_equipes=(1.8, 2.3))
+        self.assertFalse({"Handicap Corners", "Handicap Cartons"} & {c["categorie"] for c in candidats})
+
+    def test_jamais_reajoutes_en_marche_brut(self):
+        complets = ae.completer_avec_marches_bruts([], self.MARCHES)
+        noms = {c["categorie"] for c in complets}
+        self.assertNotIn("Corners - Handicap", noms)
+        self.assertNotIn("Bookings - Handicap", noms)
+        self.assertIn("Corners - Over Under Full Time", noms)
 
     def test_ligne_quart_jamais_modelisee_meme_avec_split_disponible(self):
         # Cohérence avec le handicap principal : les lignes de quart ne sont jamais modélisées.
