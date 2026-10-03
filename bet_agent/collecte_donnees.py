@@ -1229,13 +1229,21 @@ def recuperer_marches_pour_fixture(fixture_id):
         print(f"      ⚠️ OddsPapi odds indisponible après retries : {_cause_reelle(e)}")
         return None
     if not data:
+        print(f"      → Diagnostic : OddsPapi renvoie une réponse vide pour ce fixtureId "
+              f"(aucune cote, pour aucun bookmaker — probablement pas encore ouvert chez OddsPapi).")
         return None
 
     noms_marches = get_market_names()
     tous_marches = []
+    marches_bruts_1xbet = 0
     for event in (data if isinstance(data, list) else [data]):
+        tous_bookmakers = sorted((event.get("bookmakerOdds") or {}).keys())
         bookmaker_odds = event.get("bookmakerOdds", {}).get("1xbet", {})
         markets = bookmaker_odds.get("markets", {})
+        marches_bruts_1xbet += len(markets)
+        if not markets:
+            print(f"      → Diagnostic : OddsPapi a des cotes pour ce fixture, mais pas pour 1xbet "
+                  f"(bookmakers disponibles : {', '.join(tous_bookmakers) or 'aucun'}).")
         for market_id, market_data in markets.items():
             info_marche = noms_marches.get(str(market_id), {})
 
@@ -1264,6 +1272,9 @@ def recuperer_marches_pour_fixture(fixture_id):
                     "periode": periode,
                     "selections": selections,
                 })
+    if not tous_marches and marches_bruts_1xbet:
+        print(f"      → Diagnostic : 1xbet liste {marches_bruts_1xbet} marché(s) pour ce fixture, "
+              f"mais aucune cote exploitable (toutes les sélections sont à prix nul/suspendu).")
     return tous_marches if tous_marches else None
 
 
