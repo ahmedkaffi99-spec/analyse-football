@@ -2300,8 +2300,11 @@ def selectionner_combo_cote_cible(pool_par_match, nb_jambes, cote_min, cote_max,
        (comme en sélection automatique) — mieux vaut un coupon à une jambe de moins qu'une
        jambe à ~10% de chances de passer."""
     def _filtre_edge_proba(c):
+        # Un marché brut non modélisé (completer_avec_marches_bruts) a proba_modele_pct/
+        # edge_pct = None (pas de calcul Python) — jamais planté ici, jamais retenu non plus
+        # (None n'est ni > ni >= un seuil, "ou 0"/"ou -999" le rendent juste faux proprement).
         return (c["pick"].get("edge_pct") or -999) > EDGE_MIN_FALLBACK_AUTO \
-            and c["pick"]["proba_modele_pct"] >= PROBA_MIN_FALLBACK_AUTO
+            and (c["pick"].get("proba_modele_pct") or 0) >= PROBA_MIN_FALLBACK_AUTO
 
     def _filtre_qualite(candidats):
         valables = [c for c in candidats if _filtre_edge_proba(c)]
@@ -2311,7 +2314,7 @@ def selectionner_combo_cote_cible(pool_par_match, nb_jambes, cote_min, cote_max,
         if valables:
             return valables if exiger_tous_les_matchs else []
         if exiger_tous_les_matchs:
-            proba_correcte = [c for c in candidats if c["pick"]["proba_modele_pct"] >= PROBA_MIN_FALLBACK_AUTO]
+            proba_correcte = [c for c in candidats if (c["pick"].get("proba_modele_pct") or 0) >= PROBA_MIN_FALLBACK_AUTO]
             if proba_correcte:
                 meilleur_edge = max((c["pick"].get("edge_pct") or -999) for c in proba_correcte)
                 return [c for c in proba_correcte if (c["pick"].get("edge_pct") or -999) == meilleur_edge]

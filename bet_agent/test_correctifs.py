@@ -1136,6 +1136,24 @@ class TestFiltreDuReplisAutomatiqueSeulement(unittest.TestCase):
         combo = ae.selectionner_combo_cote_cible(pool, 1, 1.0, 100.0, exiger_tous_les_matchs=True)
         self.assertEqual({c["match"] for c in combo}, {"C vs D"})
 
+    def test_marche_brut_non_modelise_ne_plante_jamais_le_repli(self):
+        """Bug réel trouvé le 03/10/2026 sur un run réel (TypeError: '>=' not supported
+        between instances of 'NoneType' and 'float') : un marché brut non modélisé
+        (completer_avec_marches_bruts) a proba_modele_pct=None ET edge_pct=None — le repli
+        les comparait directement à PROBA_MIN_FALLBACK_AUTO sans protection "ou 0", plantant
+        tout le run dès qu'un tel marché entrait dans le pool (fréquent : la plupart des
+        marchés d'un match ne sont jamais modélisés par Poisson, voir agent3_calcul_pool_
+        candidats)."""
+        pool = {
+            "A vs B": [_selection("A vs B", "Total", "Over", 9.3, edge=None, proba=None),
+                       _selection("A vs B", "Total", "Under", 1.9, edge=-3.0, proba=45.0)],
+            "C vs D": [_selection("C vs D", "Total", "Over", 1.5)],
+        }
+        combo = ae.selectionner_combo_cote_cible(pool, 2, 1.0, 100.0, exiger_tous_les_matchs=True)
+        self.assertEqual({c["match"] for c in combo}, {"A vs B", "C vs D"})
+        pick_ab = next(c for c in combo if c["match"] == "A vs B")
+        self.assertEqual(pick_ab["pick"]["selection"], "Under")  # jamais le marché brut (proba=None)
+
 
 class TestPasDePreselectionPython(unittest.TestCase):
     """Demande explicite du 26/09/2026 : Python ne doit plus réduire les marchés d'un match à
