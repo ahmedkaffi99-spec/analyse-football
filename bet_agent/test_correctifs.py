@@ -85,6 +85,16 @@ class TestTraductionNomsPaysFrancais(unittest.TestCase):
         self.assertGreaterEqual(cd.score_paire_equipes("Belgique", "Turquie", "Belgium", "Türkiye"),
                                  cd.SEUIL_MATCH_ACCEPTABLE)
 
+    def test_czechia_alias_toujours_reconnu(self):
+        # Bug réel trouvé le 03/10/2026 : "Spain vs Czech Republic" ne dépassait jamais 57-60%
+        # de score — l'Espagne, championne du monde, ne pouvait pas être "introuvable" dans
+        # les sources, c'était forcément un problème de nom. La Tchéquie a officiellement
+        # raccourci son nom en "Czechia" en 2016, repris par API-Football/OddsPapi.
+        self.assertGreaterEqual(cd.score_paire_equipes("Spain", "Czech Republic", "Spain", "Czechia"),
+                                 cd.SEUIL_MATCH_ACCEPTABLE)
+        self.assertGreaterEqual(cd.score_paire_equipes("Espagne", "Republique Tcheque", "Spain", "Czechia"),
+                                 cd.SEUIL_MATCH_ACCEPTABLE)
+
 
 class TestXgStatsDetaillees(unittest.TestCase):
     """calculer_xg_depuis_stats_detaillees — remplace Understat (retiré du pipeline le

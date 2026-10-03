@@ -329,8 +329,13 @@ TRADUCTION_PAYS_FR_EN = {
 # LA FIFA plutôt que le nom usuel anglais (constaté le 02/10/2026, run #84 : "Belgium vs
 # Turkey" toujours à 77% MÊME EN ANGLAIS, parce que la source utilise "Türkiye", le nom
 # officiel depuis 2023 — aucune traduction FR->EN n'aide ici, "Turkey" est déjà l'anglais).
+# "Czech Republic" -> "Czechia" (constaté le 03/10/2026 : "Spain vs Czech Republic" ne
+# dépassait jamais 57-60% — une équipe nationale aussi connue qui "n'existe pas" dans les
+# sources ne pouvait être qu'un problème de nom, jamais une vraie absence) : la Tchéquie a
+# officiellement raccourci son nom en "Czechia" en 2016, nom repris par API-Football/OddsPapi.
 ALIAS_PAYS = {
     "turkiye": "turkey", "türkiye": "turkey",
+    "czech republic": "czechia", "republique tcheque": "czechia", "tchequie": "czechia",
 }
 
 
