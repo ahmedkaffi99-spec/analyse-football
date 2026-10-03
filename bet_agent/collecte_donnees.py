@@ -270,8 +270,11 @@ NB_MATCHS_MAX = 15  # plafond de matchs AVEC marchés — au-delà, la collecte 
 # NB_MATCHS_MAX et on s'arrête dès que NB_MATCHS_MAX matchs exploitables sont trouvés
 # (constaté le 2026-09-26 : 13 matchs sur 15 sans marché avaient consommé tout le quota).
 NB_CANDIDATS_A_SONDER = 30
-# Délai minimal avant le coup d'envoi : laisser le temps de lire le coupon et de parier.
-MINUTES_MIN_AVANT_COUP_ENVOI = 45
+# Délai minimal avant le coup d'envoi, PENDANT LA SÉLECTION AUTOMATIQUE des matchs du jour —
+# nom distinct de ae.MINUTES_MIN_FILET_SECURITE (analyser_et_envoyer.py, filet de sécurité
+# juste avant l'envoi, = 0 depuis le 03/10/2026) pour ne plus confondre les deux : même nom,
+# deux fichiers, deux valeurs différentes, source d'un vrai bug (Canada-Peru écarté à 44 min).
+MINUTES_MIN_SELECTION_AUTO = 45
 
 SEUIL_MATCH_ACCEPTABLE = 80  # relevé de 60 à 80 après un faux positif (équipes réserve "II" matchées à tort)
 
@@ -955,7 +958,7 @@ def recuperer_predictions(fixture_id, nom_home, nom_away):
 
 
 def assez_tot_avant_coup_envoi(depart_iso, maintenant=None):
-    """Faux si le match commence dans moins de MINUTES_MIN_AVANT_COUP_ENVOI minutes (ou est
+    """Faux si le match commence dans moins de MINUTES_MIN_SELECTION_AUTO minutes (ou est
     déjà commencé). Une heure illisible ou absente n'exclut pas le match."""
     if not depart_iso:
         return True
@@ -966,7 +969,7 @@ def assez_tot_avant_coup_envoi(depart_iso, maintenant=None):
     if depart.tzinfo is None:
         depart = depart.replace(tzinfo=timezone.utc)
     maintenant = maintenant or datetime.now(timezone.utc)
-    return depart - maintenant >= timedelta(minutes=MINUTES_MIN_AVANT_COUP_ENVOI)
+    return depart - maintenant >= timedelta(minutes=MINUTES_MIN_SELECTION_AUTO)
 
 
 def _correspond_au_filtre(fx, filtre):
@@ -1146,8 +1149,8 @@ def _telecharger_fixtures_oddspapi():
         date_from = f"{DATE_CIBLE_DEBUT}T00:00:00Z"
         date_to = f"{DATE_CIBLE_FIN}T00:00:00Z"
     else:
-        date_from = datetime.now().strftime("%Y-%m-%dT00:00:00Z")
-        date_to = (datetime.now() + timedelta(days=2)).strftime("%Y-%m-%dT00:00:00Z")
+        date_from = datetime.now(timezone.utc).strftime("%Y-%m-%dT00:00:00Z")
+        date_to = (datetime.now(timezone.utc) + timedelta(days=2)).strftime("%Y-%m-%dT00:00:00Z")
     url = "https://api.oddspapi.io/v4/fixtures"
     params = {"apiKey": ODDSPAPI_KEY, "sportId": 10, "from": date_from, "to": date_to}
     r = SESSION.get(url, params=params, timeout=(5, 20), verify=VERIFIER_SSL_ODDSPAPI)

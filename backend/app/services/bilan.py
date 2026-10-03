@@ -36,7 +36,10 @@ def construire_message(coupons):
                         + f"\n\n{detail}\n💰 Cote totale : *{c.cote_totale}*")
     jour = coupons[0].jour.isoformat()
     separateur = "\n\n━━━━━━━━━━━━━━━━━━━━\n\n"
-    return f"🏁 *RÉSULTATS DU JOUR — 3 PROFILS — {jour}*\n━━━━━━━━━━━━━━━━━━━━\n\n" + separateur.join(sections)
+    nb = len(coupons)
+    suffixe = f" — {nb} PROFILS" if nb > 1 else ""
+    return (f"🏁 *RÉSULTATS DU JOUR{suffixe} — {jour}*\n━━━━━━━━━━━━━━━━━━━━\n\n"
+            + separateur.join(sections))
 
 
 def envoyer_bilans(db, notifier):

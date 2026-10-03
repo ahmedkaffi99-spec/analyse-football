@@ -31,9 +31,10 @@ def charger_agent_pilote():
 def reinitialiser_caches(cd, ae=None):
     """Les modules du pipeline gardent des caches au niveau module, prévus pour un script
     lancé une fois par jour. Dans un serveur qui tourne plusieurs jours, ils serviraient les
-    données de la veille (classements) — on les vide avant chaque run."""
+    données de la veille (classements, marchés OddsPapi) — on les vide avant chaque run."""
     cd._cache_classement_api_football.clear()
     cd._cache_stats_equipes.clear()
+    cd.MARKET_NAMES_CACHE.clear()
     if hasattr(ae, "reinitialiser_budget_ia"):
         ae.reinitialiser_budget_ia()  # budget IA neuf ; la clé a pu être corrigée depuis
 

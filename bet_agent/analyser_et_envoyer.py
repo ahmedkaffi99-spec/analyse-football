@@ -2010,12 +2010,14 @@ def calculer_stats_combine(selections_finales):
 # (ex. Canada vs Peru, retiré à 44 min alors qu'il avait de bons paris disponibles) ne doit
 # plus être exclu uniquement pour ça. 0 = seul un match DÉJÀ commencé est encore exclu ici
 # (coup_envoi dans le passé) ; "Pre-Game"/"hasOdds" (voir verifier_fraicheur_matchs) restent
-# vérifiés séparément et suffisent à écarter un match réellement plus pariable.
-MINUTES_MIN_AVANT_COUP_ENVOI = 0
+# vérifiés séparément et suffisent à écarter un match réellement plus pariable. Nom distinct
+# de cd.MINUTES_MIN_SELECTION_AUTO (collecte_donnees.py, = 45, sélection automatique) pour ne
+# plus avoir deux constantes au même nom et à des valeurs différentes dans deux fichiers.
+MINUTES_MIN_FILET_SECURITE = 0
 
 
 def coup_envoi_assez_loin(depart_iso, maintenant=None):
-    """Faux si le match a déjà commencé (ou MINUTES_MIN_AVANT_COUP_ENVOI minutes avant, si
+    """Faux si le match a déjà commencé (ou MINUTES_MIN_FILET_SECURITE minutes avant, si
     jamais remonté au-delà de 0). Indispensable quand l'analyse reprend une collecte faite
     plus tôt (--depuis-run). Heure illisible : gardé."""
     if not depart_iso:
@@ -2027,7 +2029,7 @@ def coup_envoi_assez_loin(depart_iso, maintenant=None):
     if depart.tzinfo is None:
         depart = depart.replace(tzinfo=timezone.utc)
     maintenant = maintenant or datetime.now(timezone.utc)
-    return depart - maintenant >= timedelta(minutes=MINUTES_MIN_AVANT_COUP_ENVOI)
+    return depart - maintenant >= timedelta(minutes=MINUTES_MIN_FILET_SECURITE)
 
 
 def verifier_fraicheur_matchs(matchs_exploitables):
@@ -2050,8 +2052,8 @@ def verifier_fraicheur_matchs(matchs_exploitables):
         date_from = f"{date_cible_debut}T00:00:00Z"
         date_to = f"{date_cible_fin}T00:00:00Z"
     else:
-        date_from = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%dT00:00:00Z")
-        date_to = (datetime.now() + timedelta(days=2)).strftime("%Y-%m-%dT00:00:00Z")
+        date_from = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%dT00:00:00Z")
+        date_to = (datetime.now(timezone.utc) + timedelta(days=2)).strftime("%Y-%m-%dT00:00:00Z")
     try:
         r = requests.get("https://api.oddspapi.io/v4/fixtures",
                           params={"apiKey": ODDSPAPI_KEY, "sportId": 10, "from": date_from, "to": date_to},
@@ -2608,8 +2610,8 @@ def estimer_heure_fin_ticket(selections_finales):
         date_from = f"{date_cible_debut}T00:00:00Z"
         date_to = f"{date_cible_fin}T00:00:00Z"
     else:
-        date_from = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%dT00:00:00Z")
-        date_to = (datetime.now() + timedelta(days=2)).strftime("%Y-%m-%dT00:00:00Z")
+        date_from = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%dT00:00:00Z")
+        date_to = (datetime.now(timezone.utc) + timedelta(days=2)).strftime("%Y-%m-%dT00:00:00Z")
     try:
         r = requests.get("https://api.oddspapi.io/v4/fixtures",
                           params={"apiKey": ODDSPAPI_KEY, "sportId": 10, "from": date_from, "to": date_to},

@@ -66,7 +66,7 @@ def _faux_pipeline(monkeypatch, collecte, profils, erreur=None):
             json.dump(collecte, f)
 
     cd = SimpleNamespace(SORTIE_JSON=None, collecter_donnees=collecter,
-                         _cache_classement_api_football={}, _cache_stats_equipes={})
+                         _cache_classement_api_football={}, _cache_stats_equipes={}, MARKET_NAMES_CACHE={})
     ae = SimpleNamespace(
         generer_coupons=lambda donnees: profils,
         agent4_rediger_coupons=lambda res: [f"ticket {p['profil']['cle']}" for p in res],

@@ -1,6 +1,7 @@
 """Schéma de la base. Un RUN = une exécution du pipeline (ou un import de fichiers JSON
 produits sur Termux). Chaque run possède ses MATCHS (avec toutes leurs COTES 1xBet et les
-données d'équipe collectées) et ses 3 COUPONS, eux-mêmes composés de JAMBES (paris)."""
+données d'équipe collectées) et ses COUPONS (un par profil de PROFILS_COUPON — un seul par
+défaut depuis le 03/10/2026), eux-mêmes composés de JAMBES (paris)."""
 
 from datetime import date, datetime, timezone
 
@@ -83,7 +84,7 @@ class Coupon(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     run_id: Mapped[int] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), index=True)
     jour: Mapped[date] = mapped_column(Date, index=True)
-    profil: Mapped[str] = mapped_column(String(20))  # profil1 | profil2 | profil3
+    profil: Mapped[str] = mapped_column(String(20))  # clé dans PROFILS_COUPON (ex: "jour")
     nom: Mapped[str] = mapped_column(String(80))
     cote_min: Mapped[float | None] = mapped_column(Float)
     cote_max: Mapped[float | None] = mapped_column(Float)
