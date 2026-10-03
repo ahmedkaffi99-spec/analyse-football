@@ -293,12 +293,16 @@ def est_equipe_feminine_api_football(nom):
 
 
 NB_MATCHS_MIN = 8   # objectif minimum de jambes pour un coupon jugé complet
-NB_MATCHS_MAX = 15  # plafond de matchs AVEC marchés — au-delà, la collecte devient trop lente/coûteuse en quota
+# Plafond de matchs AVEC marchés — 15 jusqu'au 03/10/2026, porté à 30 (demande explicite :
+# "bien plus de 12 à 15 matchs chaque jour") : un pool plus large laisse plus de chances de
+# trouver des jambes à forte probabilité. Coût : ~1 appel OddsPapi /odds par match sondé
+# (quota 250/jour), rendu supportable par la réduction des autres appels OddsPapi.
+NB_MATCHS_MAX = 30
 # Nombre de candidats sondés : les cotes sont vérifiées EN PREMIER, un match sans marché 1xbet
 # est écarté sans aucun autre appel (stats, Elo, presse). On sonde donc plus large que
 # NB_MATCHS_MAX et on s'arrête dès que NB_MATCHS_MAX matchs exploitables sont trouvés
 # (constaté le 2026-09-26 : 13 matchs sur 15 sans marché avaient consommé tout le quota).
-NB_CANDIDATS_A_SONDER = 30
+NB_CANDIDATS_A_SONDER = 50
 # Délai minimal avant le coup d'envoi, PENDANT LA SÉLECTION AUTOMATIQUE des matchs du jour —
 # nom distinct de ae.MINUTES_MIN_FILET_SECURITE (analyser_et_envoyer.py, filet de sécurité
 # juste avant l'envoi, = 0 depuis le 03/10/2026) pour ne plus confondre les deux : même nom,
