@@ -1,4 +1,4 @@
-"""Jugement des jambes à partir des scores réels (OddsPapi), en réutilisant les fonctions de
+"""Jugement des jambes à partir des scores réels (API-Football, repli OddsPapi), en réutilisant les fonctions de
 verifier_resultats.py (grader_pick & co) — même règles que le bilan Telegram du soir."""
 
 from collections import Counter
@@ -32,15 +32,30 @@ def verifier_jambes(db, jambes):
     if not a_juger:
         return compte
 
-    fixtures = vr.recuperer_fixtures_du_jour()
-    fixtures_af = None  # chargées à la demande (repli), une seule fois pour tout le passage
+    # API-Football d'abord (demande explicite du 03/10/2026 : "utilisation d'OddsPapi
+    # diminuée") : quota de 7 500/jour contre 250 pour OddsPapi, et ce passage tourne chaque
+    # heure de 15h à 23h. OddsPapi n'est appelé que pour un match introuvable côté
+    # API-Football — jamais pour un match trouvé mais pas encore terminé.
+    fixtures_af = vr.recuperer_fixtures_api_football_du_jour()
+    fixtures = None  # OddsPapi, chargé à la demande (repli), une seule fois pour tout le passage
     scores = {}
     for jambe in a_juger:
         domicile = jambe.domicile or jambe.libelle_match.split(" vs ")[0]
         exterieur = jambe.libelle_match.split(" vs ")[-1]
-        fx = fixtures.get(jambe.fixture_id_oddspapi)
         but_dom = but_ext = None
-        if fx and fx.get("statusName") == "Finished":
+        if vr.trouver_fixture_api_football(domicile, exterieur, fixtures_af, cd):
+            resultat_af = vr.trouver_score_api_football(domicile, exterieur, fixtures_af, cd)
+            if resultat_af is None:
+                compte["pas_termine"] += 1
+                continue
+            but_dom, but_ext = resultat_af
+        else:
+            if fixtures is None:
+                fixtures = vr.recuperer_fixtures_du_jour()
+            fx = fixtures.get(jambe.fixture_id_oddspapi)
+            if not fx or fx.get("statusName") != "Finished":
+                compte["pas_termine"] += 1
+                continue
             if jambe.fixture_id_oddspapi not in scores:
                 scores[jambe.fixture_id_oddspapi] = vr.recuperer_score(jambe.fixture_id_oddspapi)
             score = scores[jambe.fixture_id_oddspapi]
@@ -53,16 +68,6 @@ def verifier_jambes(db, jambes):
                 but_dom, but_ext = p1, p2
             else:
                 but_dom, but_ext = p2, p1
-        else:
-            # OddsPapi indisponible pour ce match (quota épuisé, panne, fixture introuvable) :
-            # repli sur API-Football (quota séparé), retrouvé par nom d'équipe.
-            if fixtures_af is None:
-                fixtures_af = vr.recuperer_fixtures_api_football_du_jour()
-            resultat_af = vr.trouver_score_api_football(domicile, exterieur, fixtures_af, cd)
-            if resultat_af is None:
-                compte["pas_termine"] += 1
-                continue
-            but_dom, but_ext = resultat_af
 
         type_stat = vr.STAT_API_FOOTBALL_PAR_CATEGORIE.get(jambe.categorie)
         if type_stat:

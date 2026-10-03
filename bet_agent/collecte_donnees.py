@@ -17,7 +17,7 @@ from urllib3.util.retry import Retry
 from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 from unidecode import unidecode
-from tenacity import retry, stop_after_attempt, wait_fixed, wait_exponential, RetryError
+from tenacity import retry, stop_after_attempt, wait_fixed, wait_exponential, RetryError, retry_if_not_exception_type
 
 load_dotenv("envi.local")
 
@@ -48,6 +48,23 @@ _retry_reseau = Retry(
 SESSION = requests.Session()
 SESSION.mount("https://", HTTPAdapter(max_retries=_retry_reseau))
 SESSION.mount("http://", HTTPAdapter(max_retries=_retry_reseau))
+
+# OddsPapi : quota de 250 requêtes/jour. Un 429 y signifie "quota du jour épuisé" (constaté :
+# "You have exceeded your request limit of 250 requests"), jamais réparable par un nouvel
+# essai — chaque retry sur 429 (jusqu'à 5 tentatives réseau × 3 essais métier par match)
+# gaspillait du temps sans rien obtenir. Session dédiée sans 429 dans les statuts re-tentés,
+# et une fois le quota constaté épuisé, plus aucun appel /odds du run (demande explicite du
+# 03/10/2026 : "utilisation d'OddsPapi diminuée").
+SESSION_ODDSPAPI = requests.Session()
+SESSION_ODDSPAPI.mount("https://", HTTPAdapter(max_retries=Retry(
+    total=3, backoff_factor=1.5, status_forcelist=[500, 502, 503, 504], allowed_methods=["GET"])))
+
+
+class QuotaOddsPapiEpuise(Exception):
+    pass
+
+
+_quota_oddspapi_epuise = False
 
 # Plan gratuit API-Football : 10 requêtes/minute (confirmé via /status le 2026-07-23).
 # Avec jusqu'à 30 équipes (NB_MATCHS_MAX=15 matchs, 2 appels /leagues + /teams/statistics
@@ -1143,7 +1160,8 @@ DATE_CIBLE_DEBUT = os.getenv("DATE_CIBLE_DEBUT")
 DATE_CIBLE_FIN = os.getenv("DATE_CIBLE_FIN")
 
 
-@retry(stop=stop_after_attempt(4), wait=wait_exponential(multiplier=1, min=5, max=30))
+@retry(stop=stop_after_attempt(4), wait=wait_exponential(multiplier=1, min=5, max=30),
+       retry=retry_if_not_exception_type(QuotaOddsPapiEpuise))
 def _telecharger_fixtures_oddspapi():
     if DATE_CIBLE_DEBUT and DATE_CIBLE_FIN:
         date_from = f"{DATE_CIBLE_DEBUT}T00:00:00Z"
@@ -1153,10 +1171,10 @@ def _telecharger_fixtures_oddspapi():
         date_to = (datetime.now(timezone.utc) + timedelta(days=2)).strftime("%Y-%m-%dT00:00:00Z")
     url = "https://api.oddspapi.io/v4/fixtures"
     params = {"apiKey": ODDSPAPI_KEY, "sportId": 10, "from": date_from, "to": date_to}
-    r = SESSION.get(url, params=params, timeout=(5, 20), verify=VERIFIER_SSL_ODDSPAPI)
+    r = SESSION_ODDSPAPI.get(url, params=params, timeout=(5, 20), verify=VERIFIER_SSL_ODDSPAPI)
     if r.status_code == 429:
         print(f"   ⚠️ OddsPapi fixtures 429 — corps: {r.text[:200]}")
-        raise ValueError("429 rate limited / quota exceeded")
+        raise QuotaOddsPapiEpuise("429 quota OddsPapi épuisé")
     if r.status_code == 401:
         print(f"   ❌ OddsPapi fixtures 401 — clé invalide : {r.text[:200]}")
         return []
@@ -1188,7 +1206,7 @@ def get_market_names():
     if MARKET_NAMES_CACHE:
         return MARKET_NAMES_CACHE
     try:
-        r = SESSION.get("https://api.oddspapi.io/v4/markets", params={"apiKey": ODDSPAPI_KEY}, timeout=(5, 15), verify=VERIFIER_SSL_ODDSPAPI)
+        r = SESSION_ODDSPAPI.get("https://api.oddspapi.io/v4/markets", params={"apiKey": ODDSPAPI_KEY}, timeout=(5, 15), verify=VERIFIER_SSL_ODDSPAPI)
         data = r.json()
         for m in data:
             if m.get("sportId") == 10:
@@ -1202,13 +1220,13 @@ def get_market_names():
     return MARKET_NAMES_CACHE
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_fixed(5))
+@retry(stop=stop_after_attempt(3), wait=wait_fixed(5), retry=retry_if_not_exception_type(QuotaOddsPapiEpuise))
 def _telecharger_odds_oddspapi(fixture_id):
     url_odds = "https://api.oddspapi.io/v4/odds"
     params_odds = {"apiKey": ODDSPAPI_KEY, "fixtureId": fixture_id, "bookmakers": "1xbet", "oddsFormat": "decimal"}
-    r2 = SESSION.get(url_odds, params=params_odds, timeout=(5, 20), verify=VERIFIER_SSL_ODDSPAPI)
+    r2 = SESSION_ODDSPAPI.get(url_odds, params=params_odds, timeout=(5, 20), verify=VERIFIER_SSL_ODDSPAPI)
     if r2.status_code == 429:
-        raise ValueError("429 rate limited")
+        raise QuotaOddsPapiEpuise(f"429 quota OddsPapi épuisé — {r2.text[:150]}")
     if r2.status_code != 200:
         print(f"      ⚠️ OddsPapi odds status {r2.status_code} — corps: {r2.text[:200]}")
         return None
@@ -1223,8 +1241,16 @@ def recuperer_marches_pour_fixture(fixture_id):
     juger"). Avant ce jour, le 1X2 était le seul marché encore filtré ici (motif jamais
     documenté) ; le vocabulaire reste brut (noms de marché et de sélection tels que fournis
     par OddsPapi, sans simplification)."""
+    global _quota_oddspapi_epuise
+    if _quota_oddspapi_epuise:
+        print("      ⏭️ Quota OddsPapi déjà épuisé ce run — aucun nouvel appel /odds.")
+        return None
     try:
         data = _telecharger_odds_oddspapi(fixture_id)
+    except QuotaOddsPapiEpuise as e:
+        _quota_oddspapi_epuise = True
+        print(f"      ⚠️ {e} — plus aucun appel /odds pour le reste du run.")
+        return None
     except Exception as e:
         print(f"      ⚠️ OddsPapi odds indisponible après retries : {_cause_reelle(e)}")
         return None
@@ -1326,10 +1352,6 @@ def collecter_contexte_serper(home, away):
 def collecter_donnees():
     print(f"🚀 Collecte de données brutes pour {NB_MATCHS_MIN} à {NB_MATCHS_MAX} matchs "
           f"(API-Football + stats historiques + OddsPapi + Serper)...")
-
-    print("   → Vérification préalable de la clé OddsPapi (1 appel léger)...")
-    if not verifier_quota_oddspapi():
-        print("   ⚠️ OddsPapi indisponible — les matchs seront collectés sans cotes")
 
     print("   → Récupération de la liste des fixtures OddsPapi (1 seul appel)...")
     try:
@@ -1515,6 +1537,7 @@ def collecter_donnees():
             "api_football": donnees_af,
             "oddspapi": {
                 "fixture_id": fixture_id_oddspapi,
+                "start_time": fx_op.get("startTime") if fx_op else None,
                 "tous_marches": tous_marches,
             },
             "serper": contexte_web,
@@ -1527,7 +1550,7 @@ def collecter_donnees():
         })
 
     sortie = {
-        "date_collecte": datetime.now().isoformat(),
+        "date_collecte": datetime.now(timezone.utc).isoformat(),
         # mode_manuel/nb_manuels (demande explicite du 03/10/2026 : "c'est moi qui choisis les
         # équipes ET le nombre de jambes du coupon chaque run") — transmis à generer_coupons()
         # pour qu'un run en sélection manuelle utilise TOUS les matchs donnés dans le coupon,

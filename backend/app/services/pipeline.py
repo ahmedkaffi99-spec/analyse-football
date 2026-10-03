@@ -35,6 +35,7 @@ def reinitialiser_caches(cd, ae=None):
     cd._cache_classement_api_football.clear()
     cd._cache_stats_equipes.clear()
     cd.MARKET_NAMES_CACHE.clear()
+    cd._quota_oddspapi_epuise = False
     if hasattr(ae, "reinitialiser_budget_ia"):
         ae.reinitialiser_budget_ia()  # budget IA neuf ; la clé a pu être corrigée depuis
 

@@ -24,6 +24,16 @@ def base_vide():
     yield
 
 
+@pytest.fixture(autouse=True)
+def sans_api_football_reelle(monkeypatch):
+    """La vérification interroge API-Football en premier : jamais d'appel réseau en test
+    (un test qui veut des fixtures API-Football les fournit lui-même)."""
+    from app.services import pipeline
+
+    _, _, vr = pipeline.modules()
+    monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda: [])
+
+
 @pytest.fixture
 def client():
     """Client authentifié (l'API est entièrement privée)."""

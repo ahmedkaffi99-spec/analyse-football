@@ -2,6 +2,7 @@
 import json
 import unittest
 from unittest import mock
+from datetime import datetime, timedelta, timezone
 
 import agent_strategie as st
 import analyser_et_envoyer as ae
@@ -270,6 +271,36 @@ class TestFraicheurNePasEffacerSurErreurApi(unittest.TestCase):
         reponse_en_panne = mock.Mock(status_code=429, text="Too Many Requests")
         with mock.patch.object(ae.requests, "get", return_value=reponse_en_panne):
             self.assertEqual(ae.verifier_fraicheur_matchs(matchs), matchs)
+
+
+class TestFraicheurSansAppelSiCollecteRecente(unittest.TestCase):
+    """Demande explicite du 03/10/2026 ("utilisation d'OddsPapi diminuée") : juste après la
+    collecte, l'heure de coup d'envoi déjà connue suffit — aucun appel OddsPapi."""
+
+    def _match(self, depart):
+        return {"oddspapi": {"fixture_id": "id1", "start_time": depart}, "match_demande": {"home": "A", "away": "B"}}
+
+    def test_collecte_recente_aucun_appel_et_match_a_venir_garde(self):
+        matchs = [self._match("2099-01-01T15:00:00Z")]
+        recente = datetime.now(timezone.utc).isoformat()
+        with mock.patch.object(ae.requests, "get") as appel:
+            self.assertEqual(ae.verifier_fraicheur_matchs(matchs, recente), matchs)
+        appel.assert_not_called()
+
+    def test_collecte_recente_match_deja_commence_retire(self):
+        matchs = [self._match("2000-01-01T15:00:00Z")]
+        recente = datetime.now(timezone.utc).isoformat()
+        with mock.patch.object(ae.requests, "get") as appel:
+            self.assertEqual(ae.verifier_fraicheur_matchs(matchs, recente), [])
+        appel.assert_not_called()
+
+    def test_collecte_ancienne_revérifie_chez_oddspapi(self):
+        matchs = [self._match("2099-01-01T15:00:00Z")]
+        ancienne = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat()
+        reponse = mock.Mock(status_code=429, text="quota")
+        with mock.patch.object(ae.requests, "get", return_value=reponse) as appel:
+            ae.verifier_fraicheur_matchs(matchs, ancienne)
+        appel.assert_called_once()
 
 
 class TestDiversiteDesMarches(unittest.TestCase):

@@ -122,11 +122,9 @@ def recuperer_fixtures_api_football_du_jour():
         return []
 
 
-def trouver_score_api_football(home_nom, away_nom, fixtures_af, cd):
-    """Fuzzy-match par nom d'équipe (cd.score_paire_equipes, même seuil que la collecte).
-    Renvoie (but_domicile, but_exterieur) — déjà dans le bon ordre — seulement si un match est
-    trouvé ET terminé (statut 'FT' : temps réglementaire, pas de prolongation/tirs au but pour
-    ces compétitions). None si aucun match fiable ou pas encore terminé."""
+def trouver_fixture_api_football(home_nom, away_nom, fixtures_af, cd):
+    """Fuzzy-match par nom d'équipe (cd.score_paire_equipes, même seuil que la collecte) —
+    le fixture API-Football le plus proche, ou None si aucun n'est fiable."""
     meilleur, meilleur_score = None, 0
     for fx in fixtures_af:
         equipes = fx.get("teams") or {}
@@ -135,7 +133,15 @@ def trouver_score_api_football(home_nom, away_nom, fixtures_af, cd):
                                         (equipes.get("away") or {}).get("name"))
         if score > meilleur_score:
             meilleur, meilleur_score = fx, score
-    if not meilleur or meilleur_score < cd.SEUIL_MATCH_ACCEPTABLE:
+    return meilleur if meilleur and meilleur_score >= cd.SEUIL_MATCH_ACCEPTABLE else None
+
+
+def trouver_score_api_football(home_nom, away_nom, fixtures_af, cd):
+    """Renvoie (but_domicile, but_exterieur) — déjà dans le bon ordre — seulement si un match est
+    trouvé ET terminé (statut 'FT' : temps réglementaire, pas de prolongation/tirs au but pour
+    ces compétitions). None si aucun match fiable ou pas encore terminé."""
+    meilleur = trouver_fixture_api_football(home_nom, away_nom, fixtures_af, cd)
+    if not meilleur:
         return None
     if (meilleur.get("fixture") or {}).get("status", {}).get("short") != "FT":
         return None

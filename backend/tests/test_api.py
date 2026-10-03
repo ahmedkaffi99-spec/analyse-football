@@ -192,6 +192,28 @@ def test_verification_corners_handicap_via_statistiques_api_football(client, mon
     assert coupons["profil1"]["jambes"][0]["resultat"] == "gagne"
 
 
+def test_verification_api_football_d_abord_sans_appel_oddspapi(client, monkeypatch):
+    # Demande explicite du 03/10/2026 ("utilisation d'OddsPapi diminuée") : un match trouvé
+    # côté API-Football, terminé OU pas encore, ne déclenche jamais d'appel OddsPapi.
+    client.post("/api/imports", json={"collecte": collecte_exemple(), "ticket": ticket_exemple()})
+    _, _, vr = pipeline.modules()
+    appels_oddspapi = []
+    monkeypatch.setattr(vr, "recuperer_fixtures_du_jour", lambda: appels_oddspapi.append(1) or {})
+    monkeypatch.setattr(vr, "recuperer_score", lambda fid: appels_oddspapi.append(1))
+    monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda: [
+        {"teams": {"home": {"name": "RC Lens"}, "away": {"name": "AJ Auxerre"}},
+         "fixture": {"status": {"short": "2H"}}, "goals": {"home": 1, "away": 0}}])
+
+    resultat = client.post("/api/coupons/verification").json()
+    assert resultat["pas_termine"] == 3 and appels_oddspapi == []
+
+    monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda: [
+        {"teams": {"home": {"name": "RC Lens"}, "away": {"name": "AJ Auxerre"}},
+         "fixture": {"status": {"short": "FT"}}, "goals": {"home": 2, "away": 1}}])
+    resultat = client.post("/api/coupons/verification").json()
+    assert resultat["gagne"] == 2 and resultat["perdu"] == 1 and appels_oddspapi == []
+
+
 def test_statut_coupon():
     assert statut_coupon(["gagne", "push"]) == "gagne"
     assert statut_coupon(["gagne", "en_attente"]) == "en_attente"

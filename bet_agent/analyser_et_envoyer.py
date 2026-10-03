@@ -2039,15 +2039,51 @@ def coup_envoi_assez_loin(depart_iso, maintenant=None):
     return depart - maintenant >= timedelta(minutes=MINUTES_MIN_FILET_SECURITE)
 
 
-def verifier_fraicheur_matchs(matchs_exploitables):
+# Collecte plus récente que ça : la revérification de fraîcheur se contente des heures de
+# coup d'envoi déjà collectées, sans rappeler OddsPapi (demande explicite du 03/10/2026 :
+# "utilisation d'OddsPapi diminuée", quota de 250 requêtes/jour). L'appel n'est fait que
+# pour une collecte ancienne (reprise --depuis-run), seul cas réel du 25/07/2026.
+MINUTES_COLLECTE_FRAICHE = 60
+
+
+def _collecte_recente(date_collecte, maintenant=None):
+    if not date_collecte:
+        return False
+    try:
+        collecte = datetime.fromisoformat(str(date_collecte).replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if collecte.tzinfo is None:
+        collecte = collecte.replace(tzinfo=timezone.utc)
+    maintenant = maintenant or datetime.now(timezone.utc)
+    return maintenant - collecte < timedelta(minutes=MINUTES_COLLECTE_FRAICHE)
+
+
+def _filtrer_coup_envoi_local(matchs_exploitables):
+    encore_valables = []
+    for m in matchs_exploitables:
+        depart = m["oddspapi"].get("start_time") or (m.get("api_football") or {}).get("fixture_date")
+        if coup_envoi_assez_loin(depart):
+            encore_valables.append(m)
+        else:
+            demande = m["match_demande"]
+            print(f"   ⚠️ {demande['home']} vs {demande['away']} n'est plus pariable "
+                  f"(coup d'envoi déjà passé ({depart})) — retiré avant construction des coupons.")
+    return encore_valables
+
+
+def verifier_fraicheur_matchs(matchs_exploitables, date_collecte=None):
     """Filet de sécurité fraîcheur : la sélection initiale (collecte_donnees.py) ne garde
     que les matchs 'Pre-Game' avec cotes actives, mais un match peut démarrer ou se
     terminer entre la collecte et l'envoi si trop de temps s'écoule (constaté en pratique
     le 2026-07-25 : plusieurs heures d'écart lors de tests manuels ont rendu 5 matchs sur 9
     déjà terminés au moment de l'envoi). Revérifie le statut RÉEL juste avant utilisation et
-    retire tout match qui n'est plus 'Pre-Game' avec cotes actives."""
+    retire tout match qui n'est plus 'Pre-Game' avec cotes actives. Collecte récente
+    (MINUTES_COLLECTE_FRAICHE) : heure de coup d'envoi locale seulement, aucun appel."""
     if not matchs_exploitables:
         return matchs_exploitables
+    if _collecte_recente(date_collecte):
+        return _filtrer_coup_envoi_local(matchs_exploitables)
 
     # Respecte DATE_CIBLE_DEBUT/FIN comme la collecte initiale (collecte_donnees.py) : sinon
     # cette revérification, bornée à aujourd'hui+2j, marque à tort "introuvable" tout match
@@ -2106,7 +2142,7 @@ def agent3_calcul_pool_candidats(donnees):
     analyse et choisit elle-même, plutôt que de ratifier une short-list déjà pré-triée par
     Python. Renvoie {nom_match: [candidat, ...]}."""
     matchs_exploitables = [m for m in donnees["matchs"] if m["oddspapi"]["tous_marches"]]
-    matchs_exploitables = verifier_fraicheur_matchs(matchs_exploitables)
+    matchs_exploitables = verifier_fraicheur_matchs(matchs_exploitables, donnees.get("date_collecte"))
     print(f"   → {len(matchs_exploitables)} matchs avec marchés collectés à analyser "
           f"(TOUS les marchés modélisables sont transmis à l'IA, sans présélection Python)")
 
