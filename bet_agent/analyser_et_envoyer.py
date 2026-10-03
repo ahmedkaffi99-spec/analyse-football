@@ -966,9 +966,17 @@ def _evaluer_marches_brut(marches, mu_home, mu_away, mu_corners=None, mu_cartons
             est_tir = "shot" in nom and not est_tir_cadre
             est_hors_jeu = "offside" in nom
 
-            if (est_corner or est_carton or est_faute or est_tir or est_tir_cadre or est_hors_jeu) \
+            if est_carton and (est_team1 or est_team2):
+                # "Yellow Cards - Total 1"/"Total 2" (demande explicite du 03/10/2026, capture
+                # d'écran 1xBet) : mu_cartons_equipes (home, away) est déjà calculé pour le
+                # Handicap Cartons, réutilisé ici tel quel — jamais un chiffre inventé.
+                if mu_cartons_equipes is None:
+                    continue
+                mu_cible = mu_cartons_equipes[0] if est_team1 else mu_cartons_equipes[1]
+                categorie = "Total Cartons Équipe 1" if est_team1 else "Total Cartons Équipe 2"
+            elif (est_corner or est_faute or est_tir or est_tir_cadre or est_hors_jeu) \
                     and (est_team1 or est_team2):
-                # Marché "Total Corners/Cards/Fouls/Shots/Offsides Team 1/2" : seule la ligne
+                # Marché "Total Corners/Fouls/Shots/Offsides Team 1/2" : seule la ligne
                 # globale du match est estimée ici, aucun mu PAR ÉQUIPE pour CE marché précis
                 # n'est câblé jusqu'ici — on n'invente pas ce chiffre, on ignore ce marché
                 # plutôt que de l'évaluer à tort contre le total du match entier (c'est
@@ -1252,6 +1260,7 @@ def expliquer_marche(categorie, selection_brute, handicap):
     sel = (selection_brute or "").lower()
 
     if categorie in ("Total", "Total Équipe 1", "Total Équipe 2", "Total Corners", "Total Cartons",
+                      "Total Cartons Équipe 1", "Total Cartons Équipe 2",
                       "Total Fautes", "Total Tirs", "Total Tirs Cadrés", "Total Hors-jeux"):
         sens = "inférieur" if "under" in sel else "supérieur"
         objet_par_categorie = {
@@ -1267,6 +1276,13 @@ def expliquer_marche(categorie, selection_brute, handicap):
             # déjà les rouges (trop rares sur 10 matchs). Texte corrigé en conséquence —
             # l'ancien "(jaunes + rouges)" était faux et trompeur sur le ticket Telegram.
             "Total Cartons": ("le nombre de cartons JAUNES du match", "onglet Yellow Cards / Total"),
+            # Total 1/Total 2 (demande explicite du 03/10/2026, capture d'écran 1xBet) : cartons
+            # JAUNES d'UNE SEULE équipe, jamais le total du match — même distinction Équipe 1/2
+            # que pour les buts ci-dessus.
+            "Total Cartons Équipe 1": ("le nombre de cartons JAUNES reçus par l'ÉQUIPE 1 (domicile) SEULE — "
+                                        "pas le match entier", "onglet Yellow Cards / Total 1"),
+            "Total Cartons Équipe 2": ("le nombre de cartons JAUNES reçus par l'ÉQUIPE 2 (extérieure) SEULE — "
+                                        "pas le match entier", "onglet Yellow Cards / Total 2"),
             "Total Fautes": ("le nombre total de fautes commises du match", "onglet Fautes / Total fautes"),
             "Total Tirs": ("le nombre total de tirs (cadrés + non cadrés) du match", "onglet Tirs / Total tirs"),
             "Total Tirs Cadrés": ("le nombre total de tirs CADRÉS du match", "onglet Tirs cadrés / Shots on target"),
@@ -1405,7 +1421,8 @@ def _candidat(nom_marche, handicap, selection, proba, edge, categorie):
     # "Yellow Cards" (confirmé le 03/10/2026 par capture d'écran — aucun marché carton rouge
     # n'existe sur 1xbet, cohérent avec calculer_mu_cartons_depuis_stats_detaillees qui exclut
     # déjà les rouges). Même logique que le renommage "Asian Handicap" → "Handicap" ci-dessus.
-    if categorie in ("Total Cartons", "Handicap Cartons") and nom_marche_affiche[:8].lower() == "bookings":
+    if categorie in ("Total Cartons", "Total Cartons Équipe 1", "Total Cartons Équipe 2", "Handicap Cartons") \
+            and nom_marche_affiche[:8].lower() == "bookings":
         nom_marche_affiche = "Yellow Cards" + nom_marche_affiche[8:]
     marche_affichage = _nom_avec_ligne(nom_marche_affiche, handicap_affiche)
     guide, onglet = expliquer_marche(categorie, sel, handicap)

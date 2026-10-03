@@ -1384,6 +1384,57 @@ class TestHandicapCornersEtCartonsModelisesEnPoisson(unittest.TestCase):
                              ae.estimer_ligne_equilibree(marches, ["card", "booking"], equipe=2))
 
 
+class TestTotalCartonsParEquipe(unittest.TestCase):
+    """Demande explicite du 03/10/2026 (capture d'écran 1xBet, onglet "Yellow Cards" — sous-
+    onglets "Total 1"/"Total 2") : modéliser le nombre de cartons JAUNES d'UNE SEULE équipe,
+    pas seulement le total du match (Total Cartons) ou le Handicap. Réutilise mu_cartons_
+    equipes, déjà calculé pour le Handicap Cartons — jamais un chiffre inventé."""
+
+    def test_bookings_over_under_team_1_modelise_avec_mu_home(self):
+        marches = [{"marche": "Bookings - Over Under Team 1", "handicap": 2.0, "periode": "fulltime",
+                    "selections": [{"selection": "Over", "cote": 1.8}, {"selection": "Under", "cote": 1.9}]}]
+        candidats = ae.evaluer_marches_toutes(marches, 1.5, 1.2, mu_cartons_equipes=(1.8, 2.3))
+        self.assertEqual(len(candidats), 2)
+        for c in candidats:
+            self.assertEqual(c["categorie"], "Total Cartons Équipe 1")
+            self.assertIsNotNone(c["proba_modele_pct"])
+
+    def test_bookings_over_under_team_2_modelise_avec_mu_away(self):
+        marches = [{"marche": "Bookings - Over Under Team 2", "handicap": 2.5, "periode": "fulltime",
+                    "selections": [{"selection": "Over", "cote": 2.0}, {"selection": "Under", "cote": 1.85}]}]
+        candidats = ae.evaluer_marches_toutes(marches, 1.5, 1.2, mu_cartons_equipes=(1.8, 2.3))
+        self.assertEqual(len(candidats), 2)
+        for c in candidats:
+            self.assertEqual(c["categorie"], "Total Cartons Équipe 2")
+
+    def test_sans_mu_cartons_equipes_reste_ignore(self):
+        marches = [{"marche": "Bookings - Over Under Team 1", "handicap": 2.0, "periode": "fulltime",
+                    "selections": [{"selection": "Over", "cote": 1.8}, {"selection": "Under", "cote": 1.9}]}]
+        self.assertEqual(ae.evaluer_marches_toutes(marches, 1.5, 1.2), [])
+
+    def test_corners_team_1_reste_ignore_jamais_confondu_avec_cartons(self):
+        # Seuls les cartons ont un mu par équipe câblé pour Total Team1/2 — les corners (et
+        # fautes/tirs/hors-jeux) restent ignorés, comme avant ce correctif.
+        marches = [{"marche": "Corners - Over Under Team 1", "handicap": 4.5, "periode": "fulltime",
+                    "selections": [{"selection": "Over", "cote": 1.8}, {"selection": "Under", "cote": 1.9}]}]
+        candidats = ae.evaluer_marches_toutes(marches, 1.5, 1.2, mu_corners_equipes=(6.0, 4.0),
+                                              mu_cartons_equipes=(1.8, 2.3))
+        self.assertEqual(candidats, [])
+
+    def test_guide_et_onglet_distinguent_equipe_1_et_2(self):
+        guide1, onglet1 = ae.expliquer_marche("Total Cartons Équipe 1", "Over", 2.0)
+        guide2, onglet2 = ae.expliquer_marche("Total Cartons Équipe 2", "Over", 2.5)
+        self.assertIn("ÉQUIPE 1", guide1)
+        self.assertIn("ÉQUIPE 2", guide2)
+        self.assertIn("Yellow Cards", onglet1)
+        self.assertIn("Yellow Cards", onglet2)
+
+    def test_nom_marche_affiche_renomme_bookings_en_yellow_cards(self):
+        c = ae._candidat("Bookings - Over Under Team 1", 2.0, {"selection": "Over", "cote": 1.8},
+                          0.55, 5.0, "Total Cartons Équipe 1")
+        self.assertEqual(c["marche_affichage"], "Yellow Cards - Over Under Team 1 (2.0)")
+
+
 class TestContexteWeb(unittest.TestCase):
     def test_contexte_web_extrait_du_match(self):
         stats = {"matchs_joues": 20, "buts_marques_domicile": 1.3, "buts_encaisses_domicile": 1.3,
