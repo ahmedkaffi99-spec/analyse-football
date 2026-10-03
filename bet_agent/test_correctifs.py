@@ -811,10 +811,10 @@ class TestUnSeulCouponDuJour(unittest.TestCase):
         self.assertEqual((profil["nb_jambes_min"], profil["nb_jambes"]), (2, 5))
         self.assertFalse(profil.get("prefere_cote_elevee", False))
         self.assertNotIn("cote_totale_min", profil)
-        # Cote totale : indicative uniquement, plus jamais une contrainte vérifiée (seules des
-        # bornes très larges, finies — jamais 0/infini, casserait selectionner_combo_cote_cible).
-        self.assertEqual(profil["cote_min"], 1.01)
-        self.assertEqual(profil["cote_max"], 1000000.0)
+        # Cote totale cible (demande explicite du 03/10/2026 : "notre cote cible est 1.1 à
+        # 2.1") : bornes désormais resserrées pour selectionner_combo_cote_cible.
+        self.assertEqual(profil["cote_min"], 1.1)
+        self.assertEqual(profil["cote_max"], 2.1)
 
     def test_deux_paris_sur_le_meme_match_refuses_par_l_ia(self):
         pool = {"A vs B": [_selection("A vs B", "Total", "Over", 1.5), _selection("A vs B", "BTTS", "Yes", 1.6)]}
@@ -1004,6 +1004,17 @@ class TestFiltreDuReplisAutomatiqueSeulement(unittest.TestCase):
             "E vs F": [_selection("E vs F", "Total", "Over", 1.5, edge=8.0)],
         }
         # Un seul match a un edge exploitable en plus de C/D et E/F : 2 jambes possibles, pas 3.
+        self.assertIsNone(ae.selectionner_combo_cote_cible(pool, 3, 1.0, 100.0))
+        combo = ae.selectionner_combo_cote_cible(pool, 2, 1.0, 100.0)
+        self.assertEqual({c["match"] for c in combo}, {"C vs D", "E vs F"})
+
+    def test_repli_automatique_ecarte_la_cote_individuelle_trop_longue(self):
+        """Demande explicite du 03/10/2026 : "cote individuelle plus de 2 n'est pas choisie"."""
+        pool = {
+            "A vs B": [_selection("A vs B", "Total", "Over", 2.5)],   # cote > 2.0 : écartée
+            "C vs D": [_selection("C vs D", "Total", "Over", 1.5)],
+            "E vs F": [_selection("E vs F", "Total", "Over", 1.5)],
+        }
         self.assertIsNone(ae.selectionner_combo_cote_cible(pool, 3, 1.0, 100.0))
         combo = ae.selectionner_combo_cote_cible(pool, 2, 1.0, 100.0)
         self.assertEqual({c["match"] for c in combo}, {"C vs D", "E vs F"})
