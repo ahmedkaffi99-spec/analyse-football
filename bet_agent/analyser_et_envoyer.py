@@ -2313,6 +2313,13 @@ def generer_coupons(donnees):
     # Au plus MAX_JAMBES_PAR_MATCH paris par match : les jours creux (trêve internationale),
     # les coupons ont moins de jambes plutôt que des paris corrélés sur les mêmes matchs.
     jambes_possibles = sum(min(len(v), MAX_JAMBES_PAR_MATCH) for v in pool.values())
+    # Sélection MANUELLE (demande explicite du 03/10/2026 : "c'est moi qui choisis les équipes
+    # ET le nombre de jambes du coupon chaque run") : TOUS les matchs donnés par l'utilisateur
+    # doivent entrer dans le coupon — un seul pari par match (MAX_JAMBES_PAR_MATCH), jamais un
+    # sous-ensemble choisi par la composition automatique selon la fourchette du profil
+    # (nb_jambes_min/nb_jambes). Le nombre de jambes devient simplement le nombre de matchs
+    # manuels qui ont réellement un candidat exploitable (impossible d'en inventer un).
+    mode_manuel = bool(donnees.get("mode_manuel"))
     combos_deja_proposes = []
     resultats = []
 
@@ -2341,10 +2348,16 @@ def generer_coupons(donnees):
             resultats.append({"profil": profil, "selections": [], "abstention": choix_ia["abstention"]})
             continue
 
-        nb_jambes = min(profil["nb_jambes"], jambes_possibles)
-        if nb_jambes < profil["nb_jambes"]:
-            print(f"   ℹ️ [{profil['nom']}] {nb_jambes} jambes au lieu de {profil['nb_jambes']} "
-                  f"(seulement {len(pool)} match(s) exploitable(s), {MAX_JAMBES_PAR_MATCH} paris max par match)")
+        if mode_manuel:
+            nb_jambes = jambes_possibles
+            if nb_jambes < len(pool):
+                print(f"   ℹ️ [{profil['nom']}] {nb_jambes} jambes (sur {len(pool)} match(s) manuel(s) "
+                      f"exploitable(s)) — un pari par match, {MAX_JAMBES_PAR_MATCH} max.")
+        else:
+            nb_jambes = min(profil["nb_jambes"], jambes_possibles)
+            if nb_jambes < profil["nb_jambes"]:
+                print(f"   ℹ️ [{profil['nom']}] {nb_jambes} jambes au lieu de {profil['nb_jambes']} "
+                      f"(seulement {len(pool)} match(s) exploitable(s), {MAX_JAMBES_PAR_MATCH} paris max par match)")
         combo = selectionner_combo_cote_cible(pool, nb_jambes, profil["cote_min"], profil["cote_max"]) if nb_jambes else None
         signature = frozenset((c["match"], c["pick"]["marche"], c["pick"]["selection"]) for c in combo) if combo else None
         if signature and signature in combos_deja_proposes:

@@ -1507,6 +1507,12 @@ def collecter_donnees():
 
     sortie = {
         "date_collecte": datetime.now().isoformat(),
+        # mode_manuel/nb_manuels (demande explicite du 03/10/2026 : "c'est moi qui choisis les
+        # équipes ET le nombre de jambes du coupon chaque run") — transmis à generer_coupons()
+        # pour qu'un run en sélection manuelle utilise TOUS les matchs donnés dans le coupon,
+        # plutôt qu'un sous-ensemble choisi par la composition automatique.
+        "mode_manuel": mode_manuel,
+        "nb_manuels": nb_manuels if mode_manuel else 0,
         "nb_matchs_demandes": len(resultats),
         "nb_matchs_avec_marches": sum(1 for r in resultats if r["oddspapi"]["tous_marches"]),
         "nb_marches_total": sum(len(r["oddspapi"]["tous_marches"] or []) for r in resultats),

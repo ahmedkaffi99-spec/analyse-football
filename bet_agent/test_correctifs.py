@@ -852,6 +852,50 @@ class TestStrategeIADesactiveParDefaut(unittest.TestCase):
         self.assertEqual(len(resultats), 1)
 
 
+class TestModeManuelToutesLesEquipesDansLeCoupon(unittest.TestCase):
+    """Demande explicite du 03/10/2026 : "les matchs que je sélectionne manuellement, tout
+    traité et mis dans le coupon — c'est moi qui choisis les équipes ET le nombre de jambes du
+    coupon chaque run". En sélection manuelle, le coupon doit utiliser TOUS les matchs donnés
+    (un pari par match), pas un sous-ensemble choisi selon la fourchette nb_jambes du profil."""
+
+    def test_generer_coupons_utilise_tous_les_matchs_manuels_meme_au_dela_du_profil(self):
+        # 7 matchs manuels exploitables, profil par défaut plafonné à 5 jambes : les 7 doivent
+        # quand même se retrouver dans le coupon (nb_jambes_min/nb_jambes du profil ignorés).
+        pool = {f"M{i} vs A{i}": [_selection(f"M{i} vs A{i}", "Total", "Over", 1.3 + 0.01 * i)]
+                for i in range(7)}
+        with mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=pool):
+            resultats = ae.generer_coupons({"matchs": [], "mode_manuel": True, "nb_manuels": 7})
+        self.assertEqual(len(resultats[0]["selections"]), 7)
+
+    def test_sans_mode_manuel_le_profil_plafonne_toujours_le_nombre_de_jambes(self):
+        # Même pool, SANS mode_manuel : le plafond nb_jambes du profil (5 par défaut) s'applique
+        # toujours — comportement inchangé pour la sélection automatique.
+        pool = {f"M{i} vs A{i}": [_selection(f"M{i} vs A{i}", "Total", "Over", 1.3 + 0.01 * i)]
+                for i in range(7)}
+        with mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=pool):
+            resultats = ae.generer_coupons({"matchs": []})
+        self.assertEqual(len(resultats[0]["selections"]), ae.PROFILS_COUPON[0]["nb_jambes"])
+
+    def test_collecter_donnees_expose_mode_manuel_et_nb_manuels(self):
+        fixtures = [_fixture_op("fA", "Lyon", "Monaco"), _fixture_op("fC", "Lille", "Nantes")]
+        marches = [{"marche": "Over Under Full Time", "handicap": 2.5, "periode": "fulltime",
+                   "selections": [{"selection": "Over", "cote": 1.9}]}]
+        with tempfile.TemporaryDirectory() as d, \
+                mock.patch.object(cd, "SORTIE_JSON", os.path.join(d, "out.json")), \
+                mock.patch.object(cd, "MATCHS_MANUELS_ENV", "Lyon - Monaco, Lille - Nantes"), \
+                mock.patch.object(cd, "verifier_quota_oddspapi", return_value=True), \
+                mock.patch.object(cd, "_telecharger_fixtures_oddspapi", return_value=fixtures), \
+                mock.patch.object(cd, "recuperer_fixtures_api_football", return_value=[]), \
+                mock.patch.object(cd, "recuperer_marches_pour_fixture", return_value=marches), \
+                mock.patch.object(cd, "collecter_contexte_serper", return_value=None):
+            cd._cache_stats_equipes.clear()
+            cd.collecter_donnees()
+            with open(os.path.join(d, "out.json"), encoding="utf-8") as f:
+                sortie = json.load(f)
+        self.assertTrue(sortie["mode_manuel"])
+        self.assertEqual(sortie["nb_manuels"], 2)
+
+
 class TestCouponsJoursCreux(unittest.TestCase):
     def test_pas_plus_de_deux_paris_par_match_ni_coupons_identiques(self):
         pool = {m: [_selection(m, c, "Over", 1.3 + 0.1 * i) for i, c in enumerate(("Total", "BTTS", "Total Équipe 1"))]
