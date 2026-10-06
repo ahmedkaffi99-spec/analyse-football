@@ -267,3 +267,16 @@ def test_comparaison_hors_echantillon():
     r = comparer(matchs, CFG)
     assert r["cibles"]["over_2_5"]["scores"]["poisson"]["n"] > 0
     assert r["cibles"]["over_2_5"]["meilleur_hors_echantillon"] is not None
+
+
+def test_contrat_prediction_et_cote_invalide():
+    from moteur import contrat
+
+    matchs, _ = championnat()
+    p = predire_match(construire_features(matchs[200], Historique(matchs)), CFG)[0]
+    d = contrat.avec_cote(contrat.prediction(7, p), 1.30, "1xbet")
+    assert d["implied_probability"] == pytest.approx(1 / 1.30)
+    assert d["edge"] == pytest.approx(d["probability"] * 1.30 - 1)
+    for invalide in (None, 0, 1.0, -2):
+        assert contrat.avec_cote(contrat.prediction(7, p), invalide)["edge"] is None
+    assert contrat.insuffisant(7, 8, "stats")["status"] == "INSUFFICIENT_DATA"
