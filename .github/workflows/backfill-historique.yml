@@ -1,0 +1,78 @@
+# Backfill de l'historique (hist_matchs) depuis API-Football, pour le moteur d'analyse (moteur/
+# backtest.py) : nécessite les secrets réels (API_FOOTBALL_KEY, DATABASE_URL/SUPABASE_DB_PASSWORD),
+# donc lancé via workflow_dispatch uniquement (jamais automatique — consomme du quota API-Football).
+name: Backfill historique
+
+on:
+  workflow_dispatch:
+    inputs:
+      ligue:
+        description: "Identifiant de ligue API-Football (ex. 39 = Premier League, 61 = Ligue 1)"
+        type: string
+        required: true
+      saisons:
+        description: "Saisons séparées par des virgules (ex. 2022,2023,2024)"
+        type: string
+        required: true
+      sans_stats:
+        description: "N'enregistrer que les scores (pas les statistiques détaillées) — économise du quota"
+        type: boolean
+        default: false
+      limite_appels_stats:
+        description: "Plafond du nombre de matchs dont on cherche les statistiques, par saison (vide = sans limite)"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      PYTHONUNBUFFERED: "1"
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+      API_FOOTBALL_QUOTA_PAR_MINUTE: ${{ secrets.API_FOOTBALL_QUOTA_PAR_MINUTE }}
+      SAISON_MAX_PLAN_GRATUIT: ${{ secrets.SAISON_MAX_PLAN_GRATUIT }}
+      LIGUE: ${{ inputs.ligue }}
+      SAISONS: ${{ inputs.saisons }}
+      SANS_STATS: ${{ inputs.sans_stats }}
+      LIMITE_APPELS_STATS: ${{ inputs.limite_appels_stats }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            bet_agent/requirements.txt
+
+      - name: Vérifier la configuration
+        run: |
+          if [ -z "$DATABASE_URL" ] && [ -z "$SUPABASE_DB_PASSWORD" ]; then
+            echo "::error::Secret SUPABASE_DB_PASSWORD manquant"
+            exit 1
+          fi
+          if [ -z "$API_FOOTBALL_KEY" ]; then
+            echo "::error::Secret API_FOOTBALL_KEY manquant"
+            exit 1
+          fi
+
+      - run: pip install -r backend/requirements.txt
+
+      - name: Backfill
+        working-directory: backend
+        run: |
+          ARGS="backfill --ligue $LIGUE --saisons $SAISONS"
+          if [ "$SANS_STATS" = "true" ]; then
+            ARGS="$ARGS --sans-stats"
+          fi
+          if [ -n "$LIMITE_APPELS_STATS" ]; then
+            ARGS="$ARGS --limite-appels-stats $LIMITE_APPELS_STATS"
+          fi
+          python -m app.taches $ARGS

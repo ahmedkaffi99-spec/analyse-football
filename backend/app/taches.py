@@ -6,6 +6,7 @@
     python -m app.taches live [--telegram] [--run-id N]
     python -m app.taches envoyer [--run-id N] [--forcer]
     python -m app.taches tester-api
+    python -m app.taches backfill --ligue N --saisons 2023,2024 [--sans-stats] [--limite-appels-stats N]
 
 Code de sortie 1 si le run finit en erreur : le workflow GitHub apparaît alors en rouge."""
 
@@ -129,6 +130,25 @@ def tache_envoyer(args):
         print(f"{'✅' if run.envoye_telegram else '❌'} Run {run.id} : {len(textes)} coupon(s) "
               f"{'envoyé(s)' if run.envoye_telegram else 'non envoyé(s) — voir erreur Telegram ci-dessus'}")
         return 0 if run.envoye_telegram else 1
+
+
+def tache_backfill(args):
+    """Télécharge et enregistre (table hist_matchs) les matchs d'une ligue sur une ou plusieurs
+    saisons, depuis API-Football — alimente moteur/backtest.py sans toucher au pipeline quotidien."""
+    from app.services.historique import backfill_ligue_saison
+
+    saisons = [int(s.strip()) for s in args.saisons.split(",") if s.strip()]
+    total = {"matchs": 0, "termines": 0, "avec_stats": 0}
+    with SessionLocal() as db:
+        for saison in saisons:
+            print(f"📥 Backfill ligue {args.ligue}, saison {saison}...")
+            resultat = backfill_ligue_saison(db, args.ligue, saison, avec_stats=not args.sans_stats,
+                                             limite_appels_stats=args.limite_appels_stats)
+            for cle in total:
+                total[cle] += resultat[cle]
+    print(f"🏁 Backfill terminé : {total['matchs']} match(s) enregistré(s) au total "
+          f"({total['termines']} terminé(s), {total['avec_stats']} avec statistiques).")
+    return 0
 
 
 def tache_tester_api(args, requetes=None):
@@ -427,6 +447,13 @@ def main(argv=None):
     sous.add_parser("tester-api", help="vérifie l'Edge Function api en ligne (jeton du Vault)")
     sous.add_parser("modeles-gratuits", help="liste les modèles gratuits d'OpenRouter (identifiants exacts)")
     sous.add_parser("tester-ia", help="teste les clés Groq, Gemini et OpenRouter avec une vraie réponse")
+    p_backfill = sous.add_parser("backfill", help="télécharge l'historique d'une ligue (API-Football) pour le moteur")
+    p_backfill.add_argument("--ligue", type=int, required=True, help="identifiant de ligue API-Football")
+    p_backfill.add_argument("--saisons", type=str, required=True, help="saisons séparées par des virgules, ex. 2022,2023,2024")
+    p_backfill.add_argument("--sans-stats", action="store_true", help="n'enregistre pas les statistiques détaillées (score seulement)")
+    p_backfill.add_argument("--limite-appels-stats", type=int, default=None,
+                            help="plafond du nombre de matchs dont on va chercher les statistiques, par saison "
+                                 "(budget de quota) ; défaut : sans limite")
     args = parser.parse_args(argv)
 
     if args.tache == "modeles-gratuits":  # n'a pas besoin de la base
@@ -437,7 +464,7 @@ def main(argv=None):
     with SessionLocal() as db:
         cloturer_runs_interrompus(db)
     taches = {"run": tache_run, "verifier": tache_verifier, "live": tache_live, "envoyer": tache_envoyer,
-              "tester-api": tache_tester_api}
+              "tester-api": tache_tester_api, "backfill": tache_backfill}
     return taches[args.tache](args)
 
 
