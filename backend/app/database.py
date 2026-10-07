@@ -35,7 +35,7 @@ def get_db():
 
 
 def init_db():
-    from app import models  # noqa: F401 — enregistre les tables sur Base.metadata
+    from app import models, models_historique  # noqa: F401 — enregistre les tables sur Base.metadata
 
     if SCHEMA:
         with engine.begin() as connexion:
