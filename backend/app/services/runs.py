@@ -14,6 +14,7 @@ from app.models import Run
 from app.services import pipeline
 from app.services.archives import archiver_run, telecharger_collecte
 from app.services.persistance import enregistrer_collecte, enregistrer_coupons
+from app.services.qualite_marches import qualite_marches
 from app.services.statistiques import resume_pour_ia
 
 
@@ -115,7 +116,9 @@ def executer_run(run_id, envoyer_telegram=False, rediger=True, depuis_run=None, 
             run.statut, run.detail = "abandonne", "Aucun match avec marchés 1xBet exploitables."
             return
 
-        resultats = ae.generer_coupons(donnees)
+        # Agent 3.5 (raisonnement IA, pas un calcul de plus) : vrais taux de réussite mesurés
+        # par marché sur les paris déjà jugés — voir ae.agent35_validation_ia.
+        resultats = ae.generer_coupons(donnees, qualite_marches=qualite_marches(db))
         if not any(item["selections"] for item in resultats):
             run.statut, run.detail = "abandonne", "Aucun profil n'a trouvé de sélection valable."
             return

@@ -2371,5 +2371,68 @@ class TestHeadToHeadBlessuresPredictions(unittest.TestCase):
         self.assertIsNone(resultat)
 
 
+def _pick(marche, selection, cote, proba, edge):
+    return {"marche": marche, "selection": selection, "cote": cote, "proba_modele_pct": proba, "edge_pct": edge}
+
+
+class TestAgent35ValidationIa(unittest.TestCase):
+    """08/10/2026 : coupon du jour composé de 5 jambes toutes à edge négatif, toutes sur deux
+    marchés mesurés structurellement mauvais (Double Chance Full Time sans ligne, Over/Under
+    1.5) — l'IA doit pouvoir remplacer une jambe par une autre DÉJÀ CALCULÉE du même match
+    quand l'historique réel mesuré la dit nettement plus fiable, jamais inventer un chiffre."""
+
+    def setUp(self):
+        self.combo = [{"match": "A vs B", "pick": _pick("Double Chance Full Time", "12", 1.22, 73.0, -10.6)}]
+        self.pool = {"A vs B": [
+            self.combo[0],
+            {"match": "A vs B", "pick": _pick("Corners - Over Under Full Time (10.5)", "Over", 1.85, 71.0, 4.9)},
+        ]}
+        self.qualite = {
+            "Double Chance Full Time": {"n": 22, "taux_reussite_pct": 9.1, "edge_moyen_pct": -4.3},
+            "Corners - Over Under Full Time (10.5)": {"n": 61, "taux_reussite_pct": 96.7, "edge_moyen_pct": 4.9},
+        }
+
+    def test_remplace_une_jambe_vers_un_marche_mesure_plus_fiable(self):
+        reponse = json.dumps({"decisions": [
+            {"garder": False, "marche": "Corners - Over Under Full Time (10.5)", "selection": "Over"}]})
+        with mock.patch.object(ae, "appel_llm", return_value=reponse):
+            resultat = ae.agent35_validation_ia(self.combo, self.pool, self.qualite)
+        self.assertEqual(resultat[0]["pick"]["marche"], "Corners - Over Under Full Time (10.5)")
+
+    def test_garder_ne_change_rien(self):
+        reponse = json.dumps({"decisions": [{"garder": True}]})
+        with mock.patch.object(ae, "appel_llm", return_value=reponse):
+            resultat = ae.agent35_validation_ia(self.combo, self.pool, self.qualite)
+        self.assertEqual(resultat, self.combo)
+
+    def test_remplacant_absent_du_pool_ignore_sans_planter(self):
+        reponse = json.dumps({"decisions": [{"garder": False, "marche": "Marché inventé", "selection": "X"}]})
+        with mock.patch.object(ae, "appel_llm", return_value=reponse):
+            resultat = ae.agent35_validation_ia(self.combo, self.pool, self.qualite)
+        self.assertEqual(resultat, self.combo)
+
+    def test_reponse_ia_invalide_garde_le_combo_python(self):
+        with mock.patch.object(ae, "appel_llm", return_value="pas du json"):
+            resultat = ae.agent35_validation_ia(self.combo, self.pool, self.qualite)
+        self.assertEqual(resultat, self.combo)
+
+    def test_ia_en_panne_garde_le_combo_python(self):
+        with mock.patch.object(ae, "appel_llm", side_effect=ValueError("quota épuisé")):
+            resultat = ae.agent35_validation_ia(self.combo, self.pool, self.qualite)
+        self.assertEqual(resultat, self.combo)
+
+    def test_longueur_incoherente_garde_le_combo_python(self):
+        reponse = json.dumps({"decisions": [{"garder": True}, {"garder": True}]})
+        with mock.patch.object(ae, "appel_llm", return_value=reponse):
+            resultat = ae.agent35_validation_ia(self.combo, self.pool, self.qualite)
+        self.assertEqual(resultat, self.combo)
+
+    def test_sans_qualite_marches_combo_inchange_sans_appel_ia(self):
+        with mock.patch.object(ae, "appel_llm") as appel:
+            resultat = ae.agent35_validation_ia(self.combo, self.pool, None)
+        appel.assert_not_called()
+        self.assertEqual(resultat, self.combo)
+
+
 if __name__ == "__main__":
     unittest.main()

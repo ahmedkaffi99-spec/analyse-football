@@ -2433,10 +2433,118 @@ def selectionner_combo_cote_cible(pool_par_match, nb_jambes, cote_min, cote_max,
     return meilleure_combo
 
 
-def generer_coupons(donnees):
+def _extraire_json_objet(texte):
+    """Tolère les blocs ```json``` et le texte parasite autour de l'objet (même tolérance que
+    agent_strategie.extraire_json, dupliquée ici pour ne pas créer de dépendance entre les deux
+    modules IA)."""
+    if not texte:
+        raise ValueError("réponse vide")
+    texte = re.sub(r"```(?:json)?", "", texte)
+    debut, fin = texte.find("{"), texte.rfind("}")
+    if debut < 0 or fin <= debut:
+        raise ValueError("aucun objet JSON dans la réponse")
+    return json.loads(texte[debut:fin + 1])
+
+
+def _ligne_qualite(nom_marche, qualite_marches):
+    q = (qualite_marches or {}).get(nom_marche)
+    if not q:
+        return ""
+    edge_txt = f", edge réel moyen {q['edge_moyen_pct']}%" if q.get("edge_moyen_pct") is not None else ""
+    return f" [historique RÉEL sur ce marché : {q['n']} pari(s) jugé(s), {q['taux_reussite_pct']}% réellement gagnés{edge_txt}]"
+
+
+def agent35_validation_ia(combo, pool, qualite_marches):
+    """AGENT 3.5 — IA, RAISONNEMENT (pas un calcul Python de plus) : demande explicite du
+    08/10/2026 après un coupon du jour composé de 5 jambes toutes à edge négatif, toutes
+    venant de deux marchés mesurés structurellement mauvais (Double Chance Full Time sans
+    ligne, Over/Under Full Time 1.5) alors que d'autres marchés au MÊME niveau de probabilité
+    restent rentables (Corners Over/Under, Double Chance avec ligne 0). Plutôt que d'exclure
+    ces marchés en dur en Python (une liste CATEGORIES_EXCLUES de plus), l'IA relit chaque
+    jambe déjà composée par le Monte Carlo avec son VRAI taux de réussite mesuré sur les paris
+    déjà jugés (qualite_marches, calculé en base par backend.app.services.qualite_marches —
+    jamais une opinion, toujours une mesure réelle) et les AUTRES candidats réels du même
+    match, puis décide de garder ou remplacer chaque jambe.
+
+    Jamais de chiffre inventé : une jambe de remplacement n'est acceptée QUE si elle
+    correspond EXACTEMENT (marché + sélection) à un candidat déjà calculé par Python dans le
+    pool de ce match — sinon la proposition est ignorée et la jambe d'origine gardée. Une
+    panne de l'IA, une réponse invalide ou l'absence de données de qualité (début d'activité,
+    pas encore assez de paris jugés) renvoient le combo Python inchangé : jamais de coupon
+    bloqué par cette étape."""
+    if not combo or not qualite_marches:
+        return combo
+    lignes = []
+    for i, c in enumerate(combo):
+        pick = c["pick"]
+        alternatives = [
+            a for a in pool.get(c["match"], [])
+            if (a["pick"]["marche"], a["pick"]["selection"]) != (pick["marche"], pick["selection"])
+            and a["pick"].get("proba_modele_pct") is not None
+        ]
+        alternatives.sort(key=lambda a: a["pick"]["proba_modele_pct"], reverse=True)
+        alt_txt = "\n".join(
+            f'     - marché "{a["pick"]["marche"]}", sélection "{a["pick"]["selection"]}" @ {a["pick"]["cote"]} '
+            f'(probabilité {a["pick"]["proba_modele_pct"]}%, edge {a["pick"]["edge_pct"]}%)'
+            f'{_ligne_qualite(a["pick"]["marche"], qualite_marches)}'
+            for a in alternatives[:6]
+        )
+        lignes.append(
+            f'{i + 1}. {c["match"]} — actuellement : marché "{pick["marche"]}", sélection "{pick["selection"]}" '
+            f'@ {pick["cote"]} (probabilité {pick["proba_modele_pct"]}%, edge {pick["edge_pct"]}%)'
+            f'{_ligne_qualite(pick["marche"], qualite_marches)}\n'
+            f"   Autres paris réels disponibles sur ce même match :\n{alt_txt or '     (aucun autre)'}"
+        )
+    prompt = (
+        "System: Tu juges la QUALITÉ RÉELLE de marchés de paris à partir de statistiques "
+        "RÉELLEMENT MESURÉES sur des paris déjà joués et jugés — jamais une intuition. Réponds "
+        "UNIQUEMENT en JSON.\n\n"
+        "Un coupon a déjà été composé par un calcul Python (probabilité du modèle). Pour CHAQUE "
+        "jambe ci-dessous, tu vois sa probabilité du jour et, QUAND IL EXISTE assez de paris "
+        "déjà jugés sur EXACTEMENT ce marché, son historique réel (taux de réussite mesuré, edge "
+        "réel moyen). Un marché sans historique affiché n'a simplement pas encore assez de paris "
+        "jugés — ni bon ni mauvais, juge-le sur ses seuls chiffres du jour.\n\n"
+        + "\n\n".join(lignes) +
+        "\n\nPour CHAQUE jambe (dans l'ordre), décide GARDER si rien de clairement meilleur, ou "
+        "REMPLACER par une des alternatives listées SI son historique réel montre un taux de "
+        "réussite nettement plus fiable à probabilité du jour comparable. N'invente JAMAIS un "
+        "marché absent des alternatives listées. Réponds avec UNIQUEMENT ce JSON :\n"
+        '{"decisions": [{"garder": true} | {"garder": false, "marche": "...", "selection": "..."}, ...]}'
+    )
+    try:
+        reponse = appel_llm(prompt, max_tokens=1500, json_attendu=True)
+        decisions = _extraire_json_objet(reponse).get("decisions")
+    except Exception as e:
+        print(f"   ⚠️ [Validation IA des marchés] indisponible ({_cause(e)[:150]}) — coupon Python gardé tel quel.")
+        return combo
+    if not isinstance(decisions, list) or len(decisions) != len(combo):
+        print("   ⚠️ [Validation IA des marchés] réponse incohérente — coupon Python gardé tel quel.")
+        return combo
+
+    nouveau_combo = list(combo)
+    for i, decision in enumerate(decisions):
+        if not isinstance(decision, dict) or decision.get("garder", True):
+            continue
+        cible = (decision.get("marche"), decision.get("selection"))
+        remplacant = next((a for a in pool.get(combo[i]["match"], [])
+                           if (a["pick"]["marche"], a["pick"]["selection"]) == cible), None)
+        if remplacant is None:
+            continue
+        print(f'   🧠 [Validation IA des marchés] {combo[i]["match"]} : "{combo[i]["pick"]["marche"]}" - '
+              f'{combo[i]["pick"]["selection"]} → "{remplacant["pick"]["marche"]}" - {remplacant["pick"]["selection"]}'
+              f' (historique réel plus fiable)')
+        nouveau_combo[i] = remplacant
+    return nouveau_combo
+
+
+def generer_coupons(donnees, qualite_marches=None):
     """Compose le(s) coupon(s) de PROFILS_COUPON (un seul par défaut) à partir d'UN SEUL pool
     de candidats calculé une fois par Agent 3 (agent3_calcul_pool_candidats) — un seul calcul
-    Poisson/edge par match, une composition en aval par profil configuré."""
+    Poisson/edge par match, une composition en aval par profil configuré.
+
+    qualite_marches (optionnel, calculé par backend.app.services.qualite_marches à partir des
+    paris déjà jugés en base) : si fourni, chaque coupon composé par le Monte Carlo passe par
+    agent35_validation_ia avant d'être retenu — voir cette fonction pour le raisonnement."""
     pool = agent3_calcul_pool_candidats(donnees)
     nb_candidats_total = sum(len(v) for v in pool.values())
     print(f"\n   📦 Pool commun : {nb_candidats_total} candidat(s) sur {len(pool)} match(s) distinct(s)")
@@ -2513,12 +2621,13 @@ def generer_coupons(donnees):
                   f"({nb_candidats_total} au total) — profil vide aujourd'hui.")
             resultats.append({"profil": profil, "selections": []})
             continue
+        combo = agent35_validation_ia(combo, pool, qualite_marches)
         cote_reelle = _produit_cotes(combo)
         dans_cible = profil["cote_min"] <= cote_reelle <= profil["cote_max"]
         etat_txt = "" if dans_cible else "  ⚠️ HORS CIBLE (pas assez de matchs pour mieux ce jour-là), meilleur compromis gardé"
         print(f"   {'✓' if dans_cible else '⚠️'} [{profil['nom']}] {len(combo)} jambes, cote totale réelle "
               f"{cote_reelle:.2f} (cible {profil['cote_min']}-{profil['cote_max']}){etat_txt}")
-        combos_deja_proposes.append(signature)
+        combos_deja_proposes.append(frozenset((c["match"], c["pick"]["marche"], c["pick"]["selection"]) for c in combo))
         resultats.append({"profil": profil, "selections": combo})
     return resultats
 
