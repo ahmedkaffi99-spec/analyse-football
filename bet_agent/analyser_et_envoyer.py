@@ -2465,6 +2465,23 @@ def _ligne_qualite(nom_marche, qualite_marches):
     return f" [historique RÉEL sur ce marché : {q['n']} pari(s) jugé(s), {q['taux_reussite_pct']}% réellement gagnés{edge_txt}]"
 
 
+def _resume_pick_pour_log(pick, qualite_marches):
+    """Résumé compact d'une jambe pour les logs de remplacement (demande explicite du
+    09/10/2026, "ajoute dans les logs la raison de chaque remplacement : ancienne jambe →
+    nouvelle jambe → probabilité → historique → edge") : distingue explicitement un marché
+    SANS historique mesuré (jamais ou trop rarement joué) d'un marché mesuré MOINS fiable —
+    les deux sont des raisons valables de remplacer, mais pas la MÊME raison, et le dire
+    comme "historique réel plus fiable" dans les deux cas serait trompeur sur le premier."""
+    q = (qualite_marches or {}).get(pick["marche"])
+    if q:
+        edge_txt = f", edge réel {q['edge_moyen_pct']:+.1f}%" if q.get("edge_moyen_pct") is not None else ""
+        historique = f"{q['taux_reussite_pct']}% réel sur {q['n']} pari(s){edge_txt}"
+    else:
+        historique = "aucun historique mesuré (jamais assez joué)"
+    return (f'"{pick["marche"]}" - {pick["selection"]} '
+            f'[proba jour {pick["proba_modele_pct"]}%, edge jour {pick["edge_pct"]}%, historique : {historique}]')
+
+
 def agent35_validation_ia(combo, pool, qualite_marches):
     """AGENT 3.5 — IA, RAISONNEMENT (pas un calcul Python de plus) : demande explicite du
     08/10/2026 après un coupon du jour composé de 5 jambes toutes à edge négatif, toutes
@@ -2541,9 +2558,9 @@ def agent35_validation_ia(combo, pool, qualite_marches):
                            if (a["pick"]["marche"], a["pick"]["selection"]) == cible), None)
         if remplacant is None:
             continue
-        print(f'   🧠 [Validation IA des marchés] {combo[i]["match"]} : "{combo[i]["pick"]["marche"]}" - '
-              f'{combo[i]["pick"]["selection"]} → "{remplacant["pick"]["marche"]}" - {remplacant["pick"]["selection"]}'
-              f' (historique réel plus fiable)')
+        print(f'   🧠 [Validation IA des marchés] {combo[i]["match"]} :\n'
+              f'      Ancienne jambe : {_resume_pick_pour_log(combo[i]["pick"], qualite_marches)}\n'
+              f'      Nouvelle jambe : {_resume_pick_pour_log(remplacant["pick"], qualite_marches)}')
         nouveau_combo[i] = remplacant
     return nouveau_combo
 
