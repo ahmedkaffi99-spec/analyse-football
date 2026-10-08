@@ -1,8 +1,10 @@
 """Tests hors-ligne des correctifs (aucun appel réseau) : python -m unittest test_correctifs"""
+import io
 import json
 import os
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from datetime import datetime
 from types import SimpleNamespace
 from unittest import mock
@@ -947,14 +949,16 @@ class TestModeManuelToutesLesEquipesDansLeCoupon(unittest.TestCase):
             resultats = ae.generer_coupons({"matchs": [], "mode_manuel": True, "nb_manuels": 7})
         self.assertEqual(len(resultats[0]["selections"]), 7)
 
-    def test_sans_mode_manuel_le_profil_plafonne_toujours_le_nombre_de_jambes(self):
-        # Même pool, SANS mode_manuel : le plafond nb_jambes du profil (5 par défaut) s'applique
-        # toujours — comportement inchangé pour la sélection automatique.
+    def test_sans_mode_manuel_le_profil_reste_un_plafond_jamais_force(self):
+        # Même pool, SANS mode_manuel : nb_jambes du profil (5 par défaut) reste un PLAFOND,
+        # jamais un nombre forcé — recherche adaptative du 09/10/2026, voir TestNbJambesAdaptatif.
         pool = {f"M{i} vs A{i}": [_selection(f"M{i} vs A{i}", "Total", "Over", 1.3 + 0.01 * i)]
                 for i in range(7)}
         with mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=pool):
             resultats = ae.generer_coupons({"matchs": []})
-        self.assertEqual(len(resultats[0]["selections"]), ae.PROFILS_COUPON[0]["nb_jambes"])
+        nb_min = ae.PROFILS_COUPON[0]["nb_jambes_min"]
+        nb_max = ae.PROFILS_COUPON[0]["nb_jambes"]
+        self.assertTrue(nb_min <= len(resultats[0]["selections"]) <= nb_max)
 
     def test_collecter_donnees_expose_mode_manuel_et_nb_manuels(self):
         fixtures = [_fixture_op("fA", "Lyon", "Monaco"), _fixture_op("fC", "Lille", "Nantes")]
@@ -1657,11 +1661,15 @@ class TestNbJambesForceParLeWorkflow(unittest.TestCase):
         self.assertEqual(len(resultats[0]["selections"]), 13)
 
     def test_valeur_invalide_ignoree(self):
+        # NB_JAMBES invalide -> repli sur la recherche ADAPTATIVE (09/10/2026), jamais forcé à
+        # profil["nb_jambes"] : seul le plafond (nb_jambes du profil) est garanti, pas le compte exact.
         pool = {f"M{i} vs N{i}": [_selection(f"M{i} vs N{i}", "Total", "Over", 1.3)] for i in range(10)}
         with mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=pool), \
                 mock.patch.dict(os.environ, {"NB_JAMBES": "huit"}):
             resultats = ae.generer_coupons({"matchs": []})
-        self.assertEqual(len(resultats[0]["selections"]), ae.PROFILS_COUPON[0]["nb_jambes"])
+        nb_min = ae.PROFILS_COUPON[0]["nb_jambes_min"]
+        nb_max = ae.PROFILS_COUPON[0]["nb_jambes"]
+        self.assertTrue(nb_min <= len(resultats[0]["selections"]) <= nb_max)
 
 
 class TestCorrectifsP0(unittest.TestCase):
@@ -2460,6 +2468,109 @@ class TestAgent35ValidationIa(unittest.TestCase):
             resultat = ae.agent35_validation_ia(self.combo, self.pool, None)
         appel.assert_not_called()
         self.assertEqual(resultat, self.combo)
+
+
+class TestScoreQualiteCombo(unittest.TestCase):
+    """09/10/2026 : le score de sélection intègre désormais probabilité (calibrée si
+    disponible) > historique réel fiable > edge > diversité des marchés, dans cet ordre strict
+    — et un historique mesuré sur trop peu de paris ne doit jamais être considéré comme fiable."""
+
+    def test_historique_ignore_sous_le_seuil_minimum(self):
+        pick = {"marche": "M", "proba_modele_pct": 60.0}
+        qm_peu = {"M": {"n": 2, "taux_reussite_pct": 100.0, "edge_moyen_pct": 50.0}}
+        self.assertIsNone(ae._historique_fiable_pct(pick, qm_peu))
+
+    def test_historique_utilise_si_assez_de_paris(self):
+        pick = {"marche": "M", "proba_modele_pct": 60.0}
+        qm_assez = {"M": {"n": ae.HISTORIQUE_N_MIN_FIABLE, "taux_reussite_pct": 80.0, "edge_moyen_pct": 2.0}}
+        self.assertEqual(ae._historique_fiable_pct(pick, qm_assez), 80.0)
+
+    def test_sans_calibrateur_utilise_la_probabilite_brute(self):
+        self.assertEqual(ae._proba_pour_score({"proba_modele_pct": 73.5}), 73.5)
+
+    def test_calibrateur_fourni_remplace_la_probabilite_brute(self):
+        # Prépare le branchement futur d'une vraie calibration (point 4, 09/10/2026) sans en
+        # inventer une : aucun calibrateur n'est passé en production aujourd'hui.
+        self.assertEqual(ae._proba_pour_score({"proba_modele_pct": 73.5}, calibrateur=lambda p: 50.0), 50.0)
+
+    def test_priorite_1_probabilite(self):
+        combo_forte = [_selection("A vs B", "Total", "Over", 1.3, edge=1.0, proba=80.0)]
+        combo_faible = [_selection("C vs D", "Total", "Over", 1.3, edge=1.0, proba=70.0)]
+        self.assertGreater(ae._score_qualite_combo(combo_forte), ae._score_qualite_combo(combo_faible))
+
+    def test_priorite_2_historique_depart_egalite_de_probabilite(self):
+        qm = {"Total (2.5)": {"n": 10, "taux_reussite_pct": 90.0, "edge_moyen_pct": 0.0}}
+        combo_avec_historique = [_selection("A vs B", "Total", "Over", 1.3, edge=1.0, proba=70.0)]
+        combo_sans_historique = [_selection("C vs D", "BTTS", "Yes", 1.3, edge=1.0, proba=70.0)]
+        self.assertGreater(ae._score_qualite_combo(combo_avec_historique, qm),
+                           ae._score_qualite_combo(combo_sans_historique, qm))
+
+    def test_priorite_3_edge_depart_egalite_proba_et_historique(self):
+        combo_edge_fort = [_selection("A vs B", "Total", "Over", 1.3, edge=5.0, proba=70.0)]
+        combo_edge_faible = [_selection("C vs D", "Total", "Over", 1.3, edge=1.0, proba=70.0)]
+        self.assertGreater(ae._score_qualite_combo(combo_edge_fort), ae._score_qualite_combo(combo_edge_faible))
+
+    def test_priorite_4_diversite_des_marches_en_dernier(self):
+        combo_divers = [_selection("A vs B", "Total", "Over", 1.3, edge=1.0, proba=70.0),
+                        _selection("C vs D", "BTTS", "Yes", 1.3, edge=1.0, proba=70.0)]
+        combo_repetitif = [_selection("E vs F", "Total", "Over", 1.3, edge=1.0, proba=70.0),
+                           _selection("G vs H", "Total", "Over", 1.3, edge=1.0, proba=70.0)]
+        self.assertGreater(ae._score_qualite_combo(combo_divers), ae._score_qualite_combo(combo_repetitif))
+
+
+class TestSelectionAdaptativeNbJambes(unittest.TestCase):
+    """09/10/2026, demande explicite : ne force plus profil["nb_jambes"] — teste 2 à 5 jambes
+    et garde le meilleur compromis cote/qualité, jamais la plus grande taille par défaut."""
+
+    def test_choisit_moins_de_jambes_pour_respecter_la_cible_de_cote(self):
+        # 7 matchs à cote ~1.3 : 2 jambes (~1.69) tombe dans [1.1, 2.1], 5 jambes (~3.7) non —
+        # ne doit plus forcer 5 jambes au prix de sortir de la cible.
+        pool = {f"M{i} vs A{i}": [_selection(f"M{i} vs A{i}", "Total", "Over", 1.3)] for i in range(7)}
+        with mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=pool):
+            resultats = ae.generer_coupons({"matchs": []})
+        selections = resultats[0]["selections"]
+        self.assertTrue(1.1 <= ae._produit_cotes(selections) <= 2.1)
+        self.assertLess(len(selections), ae.PROFILS_COUPON[0]["nb_jambes"])
+
+    def test_ne_sacrifie_pas_la_qualite_pour_remplir_le_plafond(self):
+        # Les candidats à forte probabilité (80%) existent mais feraient dépasser la cible à 5
+        # jambes ; des candidats à probabilité plus faible (70%, cote plus longue) existent
+        # aussi et pourraient artificiellement combler un 5e emplacement. La recherche
+        # adaptative doit préférer un coupon plus court et de meilleure qualité plutôt que
+        # d'ajouter une jambe faible juste pour atteindre 5.
+        pool = {f"M{i} vs A{i}": [_selection(f"M{i} vs A{i}", "Total", "Over", 1.3, proba=80.0)] for i in range(4)}
+        pool["M4 vs A4"] = [_selection("M4 vs A4", "Total", "Over", 1.3, proba=70.0)]
+        with mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=pool):
+            resultats = ae.generer_coupons({"matchs": []})
+        selections = resultats[0]["selections"]
+        # Une cote totale dans la cible existe forcément à 2 jambes (1.3*1.3=1.69) : la
+        # recherche adaptative doit la trouver plutôt que forcer un coupon plus long hors cible.
+        self.assertTrue(1.1 <= ae._produit_cotes(selections) <= 2.1)
+
+    def test_message_hors_cible_dit_la_vraie_raison_pas_un_manque_de_matchs(self):
+        # 10 matchs exploitables (largement assez pour le plafond du profil, 5) mais chaque
+        # jambe a une cote de 1.5 : même à 2 jambes (plancher), la cote (2.25) dépasse déjà la
+        # cible 1.1-2.1 — la cible est mathématiquement hors de portée à ce seuil de
+        # probabilité, PAS un manque de matchs.
+        pool = {f"M{i} vs A{i}": [_selection(f"M{i} vs A{i}", "Total", "Over", 1.5)] for i in range(10)}
+        tampon = io.StringIO()
+        with mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=pool), redirect_stdout(tampon):
+            ae.generer_coupons({"matchs": []})
+        sortie = tampon.getvalue()
+        self.assertIn("incompatible avec le seuil de probabilité actuel", sortie)
+        self.assertIn("PAS un manque de matchs", sortie)
+        self.assertNotIn("pas assez de matchs exploitables", sortie)
+
+    def test_message_pas_assez_de_matchs_quand_cest_vraiment_le_cas(self):
+        # Seulement 3 matchs exploitables (sous le plafond du profil, 5) : ici, c'est bien un
+        # manque de matchs, le message doit le dire.
+        pool = {f"M{i} vs A{i}": [_selection(f"M{i} vs A{i}", "Total", "Over", 1.5)] for i in range(3)}
+        tampon = io.StringIO()
+        with mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=pool), redirect_stdout(tampon):
+            ae.generer_coupons({"matchs": []})
+        sortie = tampon.getvalue()
+        self.assertIn("pas assez de matchs exploitables", sortie)
+        self.assertNotIn("incompatible avec le seuil de probabilité actuel", sortie)
 
 
 if __name__ == "__main__":

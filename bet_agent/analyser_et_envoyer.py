@@ -2302,8 +2302,79 @@ def _produit_cotes(jambes):
     return produit
 
 
+# ============================================================
+# SCORE DE QUALITÉ D'UN COUPON — demande explicite du 09/10/2026, ordre de priorité imposé :
+# probabilité (calibrée si disponible) > historique réel fiable > edge > diversité des
+# marchés > cote cible (en dernier recours seulement). Utilisé à la fois pour choisir la
+# meilleure combinaison À UN NOMBRE DE JAMBES DONNÉ (selectionner_combo_cote_cible) et pour
+# comparer des coupons à des NOMBRES DE JAMBES DIFFÉRENTS (_score_cross_jambes, recherche
+# adaptative — ne force plus un nombre fixe de jambes).
+# ============================================================
+
+# En dessous : un historique n'est PAS assez mesuré pour influencer le score (demande
+# explicite : "un marché avec 1 ou 2 paris ne doit pas être considéré comme fiable"). Même
+# valeur que backend.app.services.qualite_marches.SEUIL_N_MIN, redéfinie ici (pas d'import
+# backend depuis bet_agent) : bet_agent ne doit jamais faire confiance à un historique
+# insuffisant même si un futur appelant oublie de filtrer en amont.
+HISTORIQUE_N_MIN_FIABLE = 8
+
+
+def _proba_pour_score(pick, calibrateur=None):
+    """Probabilité utilisée par le score : CALIBRÉE si un calibrateur est fourni, sinon la
+    probabilité BRUTE du modèle (jamais une calibration inventée). Aucune calibration n'est
+    branchée dans le pipeline production à ce jour (09/10/2026) — voir moteur/calibration.py,
+    qui existe et fonctionne mais n'est pas encore relié à bet_agent. calibrateur reste donc
+    toujours None en production ; ce paramètre prépare le branchement futur (passer une
+    fonction pick -> proba_calibrée, ex. un Calibrateur.calibrer déjà ajusté walk-forward) sans
+    qu'aucun autre code n'ait à changer le jour où elle sera prête."""
+    if calibrateur is not None:
+        return calibrateur(pick)
+    return pick["proba_modele_pct"] or 0.0
+
+
+def _historique_fiable_pct(pick, qualite_marches):
+    """Taux de réussite RÉEL du marché (backend.app.services.qualite_marches), seulement si
+    mesuré sur au moins HISTORIQUE_N_MIN_FIABLE paris déjà jugés — sinon None (traité comme
+    neutre : ni bonus, ni pénalité, jamais une fiabilité inventée sur un échantillon trop
+    petit)."""
+    q = (qualite_marches or {}).get(pick["marche"])
+    if q and q.get("n", 0) >= HISTORIQUE_N_MIN_FIABLE:
+        return q["taux_reussite_pct"]
+    return None
+
+
+def _score_qualite_combo(combo, qualite_marches=None, calibrateur=None):
+    """Moyenne du coupon sur les 4 critères de qualité prédictive, DANS L'ORDRE DE PRIORITÉ
+    demandé (probabilité > historique > edge > diversité des marchés) : un tuple comparé
+    lexicographiquement fait respecter cet ordre strictement. Un marché sans historique
+    suffisamment mesuré retombe sur sa probabilité du jour (ni bonus ni pénalité inventés) :
+    un coupon entièrement composé de marchés inédits n'est ni avantagé ni désavantagé par ce
+    critère, seule la probabilité et l'edge du jour le départagent alors."""
+    probas = [_proba_pour_score(c["pick"], calibrateur) for c in combo]
+    historiques = [_historique_fiable_pct(c["pick"], qualite_marches) for c in combo]
+    historiques = [h if h is not None else p for h, p in zip(historiques, probas)]
+    edges = [c["pick"]["edge_pct"] or 0.0 for c in combo]
+    nb_categories_distinctes = len({c["pick"]["categorie"] for c in combo})
+    return (round(sum(probas) / len(probas), 2), round(sum(historiques) / len(historiques), 2),
+            round(sum(edges) / len(edges), 2), nb_categories_distinctes)
+
+
+def _score_cross_jambes(combo, cote_min, cote_max, qualite_marches=None, calibrateur=None):
+    """Compare des coupons À DES NOMBRES DE JAMBES DIFFÉRENTS (recherche adaptative) : priorité
+    à la cote cible SI atteignable, sinon à la meilleure qualité prédictive (_score_qualite_
+    combo) — jamais à la taille du coupon elle-même. La cote cible reste un objectif, mais
+    passe APRÈS la qualité dans l'ordre des critères (demande explicite du 09/10/2026) : parmi
+    deux coupons qui manquent tous les deux la cible, le plus proche ne gagne pas s'il est de
+    moins bonne qualité prédictive — seul un écart de cote départage deux coupons de qualité
+    égale."""
+    cote = _produit_cotes(combo)
+    dans_cible = cote_min <= cote <= cote_max
+    ecart = 0.0 if dans_cible else min(abs(cote - cote_min), abs(cote - cote_max))
+    return (dans_cible,) + _score_qualite_combo(combo, qualite_marches, calibrateur) + (-ecart,)
+
+
 def selectionner_combo_cote_cible(pool_par_match, nb_jambes, cote_min, cote_max, essais=4000,
-                                  exiger_tous_les_matchs=False):
+                                  exiger_tous_les_matchs=False, qualite_marches=None, calibrateur=None):
     """Recherche aléatoire PONDÉRÉE (Monte Carlo) : compose nb_jambes sélections — une par
     match distinct si assez de matchs, sinon complète avec un 2e marché du même match —
     dont le produit des cotes tombe dans [cote_min, cote_max].
@@ -2317,15 +2388,23 @@ def selectionner_combo_cote_cible(pool_par_match, nb_jambes, cote_min, cote_max,
     'sûr' à cible basse ratait sa cible une fois le pool élargi pour aider le Coupon
     'audacieux'). Reste un tirage aléatoire (pas glouton/déterministe), juste orienté.
 
-    Critères de choix final, dans l'ordre :
-    1) tombe dans la cible de cote (sinon la plus proche si pas assez de matchs ce jour-là),
-    2) le PLUS de catégories de marché DISTINCTES possible (BTTS, Handicap, Double Chance,
+    Critères de choix final, dans l'ordre (revu le 09/10/2026, demande explicite) :
+    1) tombe dans la cible de cote (sinon la plus proche si aucune combinaison n'y arrive),
+    2) le moins de matchs répétés possible (diversité de matchs, anti-corrélation),
+    3) probabilité moyenne (calibrée si un calibrateur est fourni — aucun en production
+       actuellement, voir _proba_pour_score),
+    4) taux de réussite RÉEL moyen (qualite_marches, seulement les marchés mesurés sur au
+       moins HISTORIQUE_N_MIN_FIABLE paris jugés — jamais un historique à 1-2 paris),
+    5) edge moyen,
+    6) le PLUS de catégories de marché DISTINCTES possible (BTTS, Handicap, Double Chance,
        Pair/Impair, Clean Sheet...) — sans ce critère, la recherche converge presque toujours
        vers des combinaisons de pur Total Over/Under (souvent les plus probables individuel-
-       lement), constaté en pratique,
-    3) la probabilité moyenne la plus forte, à diversité égale.
+       lement), constaté en pratique.
     Jamais None tant qu'il y a au moins nb_jambes candidats au total, jamais un chiffre
     inventé — uniquement un choix parmi des candidats déjà calculés en pur Python.
+
+    qualite_marches/calibrateur : voir _score_qualite_combo. Les deux sont optionnels (None
+    par défaut, comportement inchangé pour un appelant qui ne les fournit pas).
 
     Filtre probabilité/cote individuelle (PROBA_MIN_FORTE, PROBA_MIN_FALLBACK_AUTO,
     COTE_INDIVIDUELLE_MAX_FALLBACK_AUTO) appliqué ICI seulement : le pool complet transmis par
@@ -2428,16 +2507,14 @@ def selectionner_combo_cote_cible(pool_par_match, nb_jambes, cote_min, cote_max,
 
         cote = _produit_cotes(combo)
         dans_cible = cote_min <= cote <= cote_max
-        proba_moyenne = sum(c["pick"]["proba_modele_pct"] for c in combo) / len(combo)
         nb_matchs_distincts = len({c["match"] for c in combo})
-        nb_categories_distinctes = len({c["pick"]["categorie"] for c in combo})
         ecart = 0.0 if dans_cible else min(abs(cote - cote_min), abs(cote - cote_max))
-        # Priorité : 1) cote dans la cible (ou la plus proche), 2) diversité de matchs
-        # (moins de corrélation entre jambes), 3) diversité de catégories, 4) probabilité
-        # moyenne. La diversité de matchs passe AVANT celle des catégories : le risque de
-        # corréler deux paris sur le MÊME match est plus grave que de manquer de variété
-        # dans les TYPES de pari.
-        score = (dans_cible, -ecart, nb_matchs_distincts, nb_categories_distinctes, proba_moyenne)
+        # Priorité (demande explicite du 09/10/2026) : 1) cote dans la cible (ou la plus
+        # proche), 2) diversité de MATCHS (moins de corrélation entre jambes — le risque de
+        # corréler deux paris sur le MÊME match est plus grave que tout ce qui suit), puis
+        # _score_qualite_combo dans son propre ordre : 3) probabilité (calibrée si dispo),
+        # 4) historique réel fiable, 5) edge, 6) diversité des MARCHÉS (catégories).
+        score = (dans_cible, -ecart, nb_matchs_distincts) + _score_qualite_combo(combo, qualite_marches, calibrateur)
         if meilleur_score is None or score > meilleur_score:
             meilleur_score, meilleure_combo = score, combo
 
@@ -2570,9 +2647,17 @@ def generer_coupons(donnees, qualite_marches=None):
     de candidats calculé une fois par Agent 3 (agent3_calcul_pool_candidats) — un seul calcul
     Poisson/edge par match, une composition en aval par profil configuré.
 
+    Nombre de jambes ADAPTATIF en sélection automatique (09/10/2026, demande explicite) :
+    profil["nb_jambes"] est un PLAFOND, jamais un nombre forcé — chaque nombre de jambes entre
+    profil["nb_jambes_min"] et profil["nb_jambes"] est essayé, le meilleur compromis cote/
+    qualité est gardé (voir _score_cross_jambes). NB_JAMBES (input du workflow) reste
+    prioritaire et impose un nombre exact quand fourni, comportement inchangé.
+
     qualite_marches (optionnel, calculé par backend.app.services.qualite_marches à partir des
-    paris déjà jugés en base) : si fourni, chaque coupon composé par le Monte Carlo passe par
-    agent35_validation_ia avant d'être retenu — voir cette fonction pour le raisonnement."""
+    paris déjà jugés en base) : si fourni, (1) influence le score de chaque candidat pendant
+    la recherche Monte Carlo (_score_qualite_combo : probabilité > historique réel fiable >
+    edge > diversité des marchés) et (2) chaque coupon composé passe ensuite par
+    agent35_validation_ia avant d'être retenu — voir ces deux fonctions pour le raisonnement."""
     pool = agent3_calcul_pool_candidats(donnees)
     nb_candidats_total = sum(len(v) for v in pool.values())
     print(f"\n   📦 Pool commun : {nb_candidats_total} candidat(s) sur {len(pool)} match(s) distinct(s)")
@@ -2615,44 +2700,96 @@ def generer_coupons(donnees, qualite_marches=None):
             resultats.append({"profil": profil, "selections": [], "abstention": choix_ia["abstention"]})
             continue
 
+        nb_min_force = (os.getenv("NB_JAMBES_MIN") or "").strip()
         if mode_manuel:
             nb_jambes = jambes_possibles
             if nb_jambes < len(pool):
                 print(f"   ℹ️ [{profil['nom']}] {nb_jambes} jambes (sur {len(pool)} match(s) manuel(s) "
                       f"exploitable(s)) — un pari par match, {MAX_JAMBES_PAR_MATCH} max.")
+            combo = selectionner_combo_cote_cible(pool, nb_jambes, profil["cote_min"], profil["cote_max"],
+                                                  exiger_tous_les_matchs=True,
+                                                  qualite_marches=qualite_marches) if nb_jambes else None
         else:
             # NB_JAMBES (input du workflow, demande explicite du 03/10/2026 : "un coupon sûr et
-            # 8 jambes") remplace le nombre de jambes du profil pour CE run seulement.
+            # 8 jambes") impose un nombre de jambes EXACT pour CE run, prioritaire sur la
+            # recherche adaptative ci-dessous — comportement inchangé pour ce cas précis.
             nb_force = (os.getenv("NB_JAMBES") or "").strip()
-            nb_cible = int(nb_force) if nb_force.isdigit() and int(nb_force) > 0 else profil["nb_jambes"]
-            nb_jambes = min(nb_cible, jambes_possibles)
-            if nb_jambes < nb_cible:
-                print(f"   ℹ️ [{profil['nom']}] {nb_jambes} jambes au lieu de {nb_cible} "
-                      f"(seulement {len(pool)} match(s) exploitable(s), {MAX_JAMBES_PAR_MATCH} paris max par match)")
-        # NB_JAMBES_MIN (input du workflow, demande explicite du 03/10/2026 : "coupon 15 matchs,
-        # minimum 12") : en dessous, aucun coupon plutôt qu'un coupon plus court que demandé.
-        nb_min_force = (os.getenv("NB_JAMBES_MIN") or "").strip()
-        if not mode_manuel and nb_min_force.isdigit() and nb_jambes < int(nb_min_force):
-            print(f"   ⚠️ [{profil['nom']}] seulement {nb_jambes} jambe(s) possible(s), minimum demandé "
-                  f"{nb_min_force} — aucun coupon envoyé.")
-            resultats.append({"profil": profil, "selections": []})
-            continue
-        combo = selectionner_combo_cote_cible(pool, nb_jambes, profil["cote_min"], profil["cote_max"],
-                                              exiger_tous_les_matchs=mode_manuel) if nb_jambes else None
+            if nb_force.isdigit() and int(nb_force) > 0:
+                nb_cible = int(nb_force)
+                nb_jambes = min(nb_cible, jambes_possibles)
+                if nb_jambes < nb_cible:
+                    print(f"   ℹ️ [{profil['nom']}] {nb_jambes} jambes au lieu de {nb_cible} "
+                          f"(seulement {len(pool)} match(s) exploitable(s), {MAX_JAMBES_PAR_MATCH} paris max par match)")
+                # NB_JAMBES_MIN (demande explicite du 03/10/2026 : "coupon 15 matchs, minimum
+                # 12") : en dessous, aucun coupon plutôt qu'un coupon plus court que demandé.
+                if nb_min_force.isdigit() and nb_jambes < int(nb_min_force):
+                    print(f"   ⚠️ [{profil['nom']}] seulement {nb_jambes} jambe(s) possible(s), minimum demandé "
+                          f"{nb_min_force} — aucun coupon envoyé.")
+                    resultats.append({"profil": profil, "selections": []})
+                    continue
+                combo = selectionner_combo_cote_cible(pool, nb_jambes, profil["cote_min"], profil["cote_max"],
+                                                      qualite_marches=qualite_marches) if nb_jambes else None
+            else:
+                # Recherche ADAPTATIVE du nombre de jambes (demande explicite du 09/10/2026,
+                # après constat que forcer profil["nb_jambes"]=5 produisait systématiquement
+                # une cote hors cible : 5 jambes à PROBA_MIN_FORTE=70% impliquent une cote
+                # totale structurellement bien au-dessus de 1.1-2.1) : ne force plus
+                # profil["nb_jambes"], teste chaque nombre de jambes possible entre le plancher
+                # (profil["nb_jambes_min"], relevé par NB_JAMBES_MIN si fourni) et
+                # profil["nb_jambes"], garde la combinaison qui respecte au mieux la cible de
+                # cote PUIS la meilleure qualité prédictive (_score_cross_jambes) — jamais la
+                # plus grande par défaut, jamais en sacrifiant la qualité pour remplir
+                # artificiellement un nombre de jambes fixe.
+                # même défaut que agent_strategie.NB_JAMBES_MIN_DEFAUT, pour un profil qui ne
+                # précise pas "nb_jambes_min" (tests, profils ponctuels).
+                plancher = profil.get("nb_jambes_min", 2)
+                if nb_min_force.isdigit():
+                    plancher = max(plancher, int(nb_min_force))
+                plafond = min(profil["nb_jambes"], jambes_possibles)
+                if plafond < plancher:
+                    print(f"   ⚠️ [{profil['nom']}] seulement {jambes_possibles} jambe(s) possible(s), minimum "
+                          f"demandé {plancher} — aucun coupon envoyé.")
+                    resultats.append({"profil": profil, "selections": []})
+                    continue
+                essais_combos = [c for n in range(plancher, plafond + 1)
+                                 for c in [selectionner_combo_cote_cible(
+                                     pool, n, profil["cote_min"], profil["cote_max"], qualite_marches=qualite_marches)]
+                                 if c is not None]
+                combo = max(essais_combos, key=lambda c: _score_cross_jambes(
+                    c, profil["cote_min"], profil["cote_max"], qualite_marches)) if essais_combos else None
+                if combo is not None and len(combo) != plafond:
+                    print(f"   🔁 [{profil['nom']}] {len(combo)} jambes retenues (recherche adaptative "
+                          f"{plancher}-{plafond}) : meilleur compromis cote/qualité, pas forcément le maximum.")
         signature = frozenset((c["match"], c["pick"]["marche"], c["pick"]["selection"]) for c in combo) if combo else None
         if signature and signature in combos_deja_proposes:
             print(f"   ⚠️ [{profil['nom']}] identique à un coupon précédent (pas assez de matchs) — non proposé.")
             resultats.append({"profil": profil, "selections": []})
             continue
         if combo is None:
-            print(f"   ⚠️ [{profil['nom']}] pas assez de candidats disponibles pour {nb_jambes} jambes "
-                  f"({nb_candidats_total} au total) — profil vide aujourd'hui.")
+            print(f"   ⚠️ [{profil['nom']}] pas assez de candidats disponibles ({nb_candidats_total} au total) "
+                  f"— profil vide aujourd'hui.")
             resultats.append({"profil": profil, "selections": []})
             continue
         combo = agent35_validation_ia(combo, pool, qualite_marches)
         cote_reelle = _produit_cotes(combo)
         dans_cible = profil["cote_min"] <= cote_reelle <= profil["cote_max"]
-        etat_txt = "" if dans_cible else "  ⚠️ HORS CIBLE (pas assez de matchs pour mieux ce jour-là), meilleur compromis gardé"
+        if dans_cible:
+            etat_txt = ""
+        elif mode_manuel:
+            etat_txt = "  ⚠️ HORS CIBLE (sélection manuelle : la cote dépend des matchs choisis), meilleur compromis gardé"
+        elif jambes_possibles < profil["nb_jambes"]:
+            etat_txt = "  ⚠️ HORS CIBLE (pas assez de matchs exploitables aujourd'hui), meilleur compromis gardé"
+        else:
+            # Demande explicite du 09/10/2026 : ne plus dire "pas assez de matchs" quand le
+            # problème vient des paramètres — ici, assez de matchs existaient (jambes_possibles
+            # >= profil["nb_jambes"]), donc la cible est réellement incompatible avec le seuil
+            # de probabilité actuel (chaque jambe individuelle à PROBA_MIN_FORTE a une cote
+            # minimale d'environ 1/PROBA_MIN_FORTE, trop élevée pour que le produit retombe
+            # dans la cible une fois plusieurs jambes multipliées).
+            etat_txt = (f"  ⚠️ HORS CIBLE — incompatible avec le seuil de probabilité actuel "
+                        f"(PROBA_MIN_FORTE={PROBA_MIN_FORTE:.0f}%, cote individuelle minimale ~"
+                        f"{100 / PROBA_MIN_FORTE:.2f}), PAS un manque de matchs ({jambes_possibles} "
+                        f"exploitables aujourd'hui) — meilleur compromis gardé")
         print(f"   {'✓' if dans_cible else '⚠️'} [{profil['nom']}] {len(combo)} jambes, cote totale réelle "
               f"{cote_reelle:.2f} (cible {profil['cote_min']}-{profil['cote_max']}){etat_txt}")
         combos_deja_proposes.append(frozenset((c["match"], c["pick"]["marche"], c["pick"]["selection"]) for c in combo))
