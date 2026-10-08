@@ -106,6 +106,24 @@ def test_doublons_dans_le_meme_pool_ne_comptes_quune_fois():
         assert n == 1
 
 
+def test_capture_un_tres_grand_nombre_de_candidats_sans_depasser_la_limite_de_parametres():
+    # Constaté en production le 10/10/2026 (run 124) : un run réel évalue facilement plusieurs
+    # milliers de candidats (centaines de marchés x dizaines de matchs) ; un seul INSERT
+    # multi-lignes dépassait la limite Postgres de 65535 paramètres et la capture entière
+    # échouait silencieusement. 1500 candidats forcent plusieurs lots (TAILLE_LOT=1000).
+    with SessionLocal() as db:
+        run = _run(db)
+        pool = {}
+        for i in range(1500):
+            match = f"M{i} vs X{i}"
+            pool[match] = [_candidat(match, _pick("Total", "Over", 1.9), fixture_id_oddspapi=f"fx{i}")]
+        n = capturer_predictions(db, run, pool)
+        assert n == 1500
+        assert db.scalar(select(HistCote.id).limit(1)) is not None
+        total = len(list(db.scalars(select(HistCote))))
+        assert total == 1500
+
+
 def test_proba_moteur_capturee_si_disponible_sinon_none_jamais_invente():
     with SessionLocal() as db:
         # Aucun hist_matchs peuplé : le moteur n'a pas d'historique suffisant -> None, jamais

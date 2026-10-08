@@ -98,13 +98,23 @@ def capturer_predictions(db, run, pool, comparaison=None):
     if not lignes:
         return 0
 
+    # Un run réel peut évaluer plusieurs milliers de candidats (centaines de marchés x dizaines
+    # de matchs) : un seul INSERT multi-lignes dépasserait la limite Postgres de 65535
+    # paramètres par requête (constaté en production le 10/10/2026, run 124 : échec silencieux,
+    # capture entièrement perdue). Chaque ligne a 19 colonnes -> au plus ~3449 lignes/requête ;
+    # TAILLE_LOT=1000 laisse une marge confortable.
+    TAILLE_LOT = 1000
     moteur_insert = pg_insert if db.get_bind().dialect.name == "postgresql" else sqlite_insert
-    stmt = moteur_insert(HistCote).values(lignes)
-    stmt = stmt.on_conflict_do_nothing(
-        index_elements=["jour", "fixture_id_oddspapi", "marche", "ligne", "selection"])
-    resultat = db.execute(stmt)
+    inserees = 0
+    for debut in range(0, len(lignes), TAILLE_LOT):
+        lot = lignes[debut:debut + TAILLE_LOT]
+        stmt = moteur_insert(HistCote).values(lot)
+        stmt = stmt.on_conflict_do_nothing(
+            index_elements=["jour", "fixture_id_oddspapi", "marche", "ligne", "selection"])
+        resultat = db.execute(stmt)
+        inserees += resultat.rowcount or 0
     db.commit()
-    return resultat.rowcount or 0
+    return inserees
 
 
 def juger_cotes_en_attente(db):
