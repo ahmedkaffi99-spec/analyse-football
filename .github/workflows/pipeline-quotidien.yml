@@ -102,6 +102,11 @@ jobs:
       IGNORER_DIVERSITE_CROISEE: ${{ inputs.ignorer_diversite_croisee }}
       NB_JAMBES: ${{ inputs.nb_jambes }}
       NB_JAMBES_MIN: ${{ inputs.nb_jambes_min }}
+      # Comparaison parallèle bet_agent/moteur + capture hist_cotes + moteur central (shadow) :
+      # jamais utilisées pour la sélection ni Telegram (voir runs.py) — vars du dépôt, vides par
+      # défaut tant que l'utilisateur ne les active pas explicitement (Settings > Variables).
+      MOTEUR_COMPARAISON_ACTIVE: ${{ vars.MOTEUR_COMPARAISON_ACTIVE }}
+      MOTEUR_CENTRAL_SHADOW: ${{ vars.MOTEUR_CENTRAL_SHADOW }}
     steps:
       - uses: actions/checkout@v4
 

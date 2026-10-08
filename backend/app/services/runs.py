@@ -160,14 +160,37 @@ def executer_run(run_id, envoyer_telegram=False, rediger=True, depuis_run=None, 
         # à la comparaison ci-dessus, qui reste simplement journalisée) : ne modifie jamais la
         # sélection/les probabilités/la calibration déjà figées plus haut, écrit seulement des
         # lignes supplémentaires. Un échec ici ne doit jamais faire échouer le run réel.
+        pool_central = pool_comparaison
         try:
             from app.services.capture_historique import capturer_predictions
 
-            pool_capture = pool_comparaison if pool_comparaison is not None else ae.agent3_calcul_pool_candidats(donnees)
-            n_captures = capturer_predictions(db, run, pool_capture, comparaison=comparaison)
+            pool_central = pool_central if pool_central is not None else ae.agent3_calcul_pool_candidats(donnees)
+            n_captures = capturer_predictions(db, run, pool_central, comparaison=comparaison)
             print(f"   📸 [Capture historique] {n_captures} cote(s) réelle(s) capturée(s) dans hist_cotes.")
         except Exception as e:  # jamais faire échouer le vrai run pour une capture
             print(f"   ⚠️ Capture historique indisponible ({pipeline.masquer_secrets(str(e))[:150]}).")
+
+        # Moteur CENTRAL, mode SHADOW (10/10/2026, demande explicite : "le moteur central
+        # calcule ses décisions mais n'envoie rien et ne modifie pas le coupon Telegram") —
+        # désactivé par défaut (MOTEUR_CENTRAL_SHADOW), uniquement journalisé dans
+        # hist_decisions_centrales. MOTEUR_CENTRAL_ACTIVE (moteur_central/config.py) reste
+        # false : aucun chemin de ce bloc ne peut encore piloter la sélection/Telegram
+        # ci-dessus (déjà figées et envoyées avant ce point). Un échec ici ne doit jamais
+        # faire échouer le run réel.
+        if os.getenv("MOTEUR_CENTRAL_SHADOW", "").lower() in ("1", "true", "oui", "yes"):
+            try:
+                from app.services.comparaison_moteurs import comparer_candidats
+                from app.services.decision_centrale import calculer_et_journaliser_shadow
+
+                pool_central = pool_central if pool_central is not None else ae.agent3_calcul_pool_candidats(donnees)
+                comparaison_central = comparaison if comparaison is not None else comparer_candidats(db, pool_central)
+                ligne = calculer_et_journaliser_shadow(db, run, pool_central, comparaison_central)
+                print(f"   🧭 [Moteur central — shadow] bet_agent={ligne.coupon_bet_agent['nb_jambes'] if ligne.coupon_bet_agent['genere'] else 'non généré'} "
+                      f"jambe(s), moteur={ligne.coupon_moteur['nb_jambes'] if ligne.coupon_moteur['genere'] else 'non généré'} "
+                      f"jambe(s), central={ligne.coupon_central['nb_jambes'] if ligne.coupon_central['genere'] else 'non généré'} "
+                      f"jambe(s) (purement informatif, jamais envoyé).")
+            except Exception as e:  # jamais faire échouer le vrai run pour le shadow
+                print(f"   ⚠️ Moteur central (shadow) indisponible ({pipeline.masquer_secrets(str(e))[:150]}).")
     except Exception as e:
         db.rollback()
         run = db.get(Run, run_id)

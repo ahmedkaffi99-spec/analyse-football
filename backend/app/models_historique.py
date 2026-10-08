@@ -19,6 +19,12 @@ hist_cotes    : capture PROSPECTIVE (demande explicite du 10/10/2026 : "rendre p
 hist_predictions : journal de chaque prédiction produite (format moteur.contrat), pour
                    l'audit ("pourquoi ce pari a été choisi ?") et pour mesurer en continu
                    la calibration réelle une fois les résultats connus.
+hist_decisions_centrales : une ligne par run réel, journal du mode SHADOW du moteur_central/
+                   (demande explicite du 10/10/2026) — les 3 coupons indépendants (bet_agent
+                   seul, moteur seul, moteur central) et les raisons/métriques de chaque choix,
+                   purement informatif : jamais lu par la sélection réelle ni par Telegram tant
+                   que MOTEUR_CENTRAL_ACTIVE reste false. Alimentée par
+                   app.services.decision_centrale.journaliser_shadow.
 """
 
 from datetime import date, datetime, timezone
@@ -149,3 +155,26 @@ class HistPrediction(Base):
     horodatage: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=maintenant, index=True)
 
     match: Mapped[HistMatch] = relationship(back_populates="predictions")
+
+
+class HistDecisionCentrale(Base):
+    """Journal SHADOW du moteur_central/ : un run réel -> une ligne. coupon_bet_agent/
+    coupon_moteur/coupon_central sont le résultat brut de moteur_central.selection.selectionner
+    (JSON), raisons/metriques le détail de choix_moteur.choisir_par_marche — jamais utilisé
+    pour modifier la sélection réelle ni Telegram (voir decision_centrale.py)."""
+
+    __tablename__ = "hist_decisions_centrales"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), index=True, unique=True)
+    horodatage: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=maintenant, index=True)
+    coupon_bet_agent: Mapped[dict | None] = mapped_column(JSON)
+    coupon_moteur: Mapped[dict | None] = mapped_column(JSON)
+    coupon_central: Mapped[dict | None] = mapped_column(JSON)
+    raisons: Mapped[dict | None] = mapped_column(JSON)   # choix_moteur.choisir_par_marche, par marché
+    metriques: Mapped[dict | None] = mapped_column(JSON)  # info complémentaire (taille des pools, etc.)
+
+    def vers_dict(self):
+        return {"id": self.id, "run_id": self.run_id, "horodatage": self.horodatage,
+                "coupon_bet_agent": self.coupon_bet_agent, "coupon_moteur": self.coupon_moteur,
+                "coupon_central": self.coupon_central, "raisons": self.raisons, "metriques": self.metriques}
