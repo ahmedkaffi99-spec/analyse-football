@@ -2626,5 +2626,67 @@ class TestButsAttendusContexteTotalPourMarcheMatchEntier(unittest.TestCase):
         self.assertIn("UNIQUEMENT le chiffre de CETTE équipe", prompt_envoye)
 
 
+class TestVerifierFideliteTicket(unittest.TestCase):
+    """10/10/2026, demande explicite : contrôle automatique post-génération — le LLM ne doit
+    jamais pouvoir modifier silencieusement cote/edge/probabilité (via la confiance, qui en
+    dérive). Un ticket infidèle doit déclencher le repli sur rediger_ticket_sans_ia, jamais
+    être envoyé tel quel."""
+
+    def setUp(self):
+        self.pick = {"marche_affichage": "Total (3.5)", "marche": "Over Under Full Time (3.5)",
+                    "selection": "Under", "cote": 1.26, "edge_pct": 1.9, "proba_modele_pct": 80.9}
+        self.selections = [{"match": "A vs B", "pick": self.pick}]
+        self.texte_fidele = ("⚽ A vs B\n   🎯 Marché : Total (3.5) - Under @ 1.26 "
+                             "(edge 1.9% · Confiance : Moyen)\n   📖 Guide : x\n")
+
+    def test_ticket_fidele_accepte(self):
+        self.assertTrue(ae.verifier_fidelite_ticket(self.texte_fidele, self.selections))
+
+    def test_cote_alteree_rejetee(self):
+        texte = self.texte_fidele.replace("1.26", "1.50")
+        self.assertFalse(ae.verifier_fidelite_ticket(texte, self.selections))
+
+    def test_edge_altere_rejete(self):
+        texte = self.texte_fidele.replace("1.9%", "9.9%")
+        self.assertFalse(ae.verifier_fidelite_ticket(texte, self.selections))
+
+    def test_confiance_incoherente_avec_la_probabilite_rejetee(self):
+        # proba=80.9% -> Moyen (70-85%) : "Élevé" ne correspond pas, doit être rejeté.
+        texte = self.texte_fidele.replace("Moyen", "Élevé")
+        self.assertFalse(ae.verifier_fidelite_ticket(texte, self.selections))
+
+    def test_marche_altere_rejete(self):
+        texte = self.texte_fidele.replace("Total (3.5)", "Total (2.5)")
+        self.assertFalse(ae.verifier_fidelite_ticket(texte, self.selections))
+
+    def test_jambe_manquante_rejetee(self):
+        deux_selections = self.selections + [{"match": "C vs D", "pick": dict(self.pick)}]
+        self.assertFalse(ae.verifier_fidelite_ticket(self.texte_fidele, deux_selections))
+
+    def test_texte_vide_rejete(self):
+        self.assertFalse(ae.verifier_fidelite_ticket("", self.selections))
+        self.assertFalse(ae.verifier_fidelite_ticket(None, self.selections))
+
+    def test_marche_brut_sans_edge_ni_proba_tolere_sans_ces_controles(self):
+        pick_brut = {"marche_affichage": "Correct Score", "marche": "Correct Score",
+                    "selection": "2:1", "cote": 8.5, "edge_pct": None, "proba_modele_pct": None}
+        selections = [{"match": "A vs B", "pick": pick_brut}]
+        texte = "⚽ A vs B\n   🎯 Marché : Correct Score - 2:1 @ 8.5 (marché brut)\n"
+        self.assertTrue(ae.verifier_fidelite_ticket(texte, selections))
+
+    def test_redaction_rejetee_declenche_le_repli_sans_ia(self):
+        # Simule une réponse LLM qui invente une cote différente de celle calculée par Python :
+        # agent4_ia_analyse_pronostic_redaction doit rejeter ce texte et rédiger lui-même.
+        s = _selection("A vs B", "Total", "Under", 1.26, edge=1.9, proba=80.9)
+        texte_invente = ("⚽ A vs B\n   🎯 Marché : Total (2.5) - Under @ 1.90 "
+                         "(edge 1.9% · Confiance : Moyen)\n" + "x" * 50)
+        ae.reinitialiser_budget_ia()
+        with mock.patch.object(ae, "appel_llm_petites_taches", return_value=texte_invente), \
+                mock.patch.object(ae.time, "sleep"):
+            resultat = ae.agent4_ia_analyse_pronostic_redaction([s])
+        self.assertIn("1.26", resultat)   # la vraie cote, pas 1.90
+        self.assertNotIn("1.90", resultat)
+
+
 if __name__ == "__main__":
     unittest.main()

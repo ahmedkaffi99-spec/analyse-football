@@ -1996,11 +1996,62 @@ def rediger_ticket_sans_ia(selections_finales):
     return "\n".join(blocs)
 
 
+_COTE_RE = re.compile(r"@\s*([\d]+[.,][\d]+)")
+_EDGE_RE = re.compile(r"edge\s*(-?[\d]+(?:[.,][\d]+)?)\s*%", re.IGNORECASE)
+_CONFIANCE_RE = re.compile(r"Confiance\s*:\s*([A-Za-zÀ-ÿ]+)", re.IGNORECASE)
+
+
+def verifier_fidelite_ticket(texte, selections_finales):
+    """Contrôle automatique post-génération (demande explicite du 10/10/2026, section
+    TELEGRAM) : le LLM ne doit JAMAIS pouvoir modifier silencieusement une cote, un edge ou
+    une probabilité (via le niveau de confiance, qui en dérive directement). Pour chaque
+    jambe, vérifie que le bloc du ticket contient EXACTEMENT (à l'arrondi d'affichage près) :
+    le marché (texte exact), la sélection (texte exact), la cote, l'edge si calculé, et un
+    niveau de confiance cohérent avec la probabilité interne — jamais recalculés ici, juste
+    comparés aux chiffres déjà produits par Agent 3 (calc_edge, niveau_confiance).
+
+    Ne vérifie PAS "cote totale" ni "probabilité combinée" : ces deux chiffres sont ajoutés
+    APRÈS le texte du LLM, par calculer_stats_combine() en pur Python (voir agent4_rediger_
+    coupons) — jamais vus ni touchés par le LLM, donc déjà garantis exacts par construction.
+
+    Renvoie False (jamais d'exception) si le texte est incomplet, mal formé, ou si UN SEUL
+    chiffre ne correspond pas — l'appelant doit alors utiliser rediger_ticket_sans_ia (pur
+    Python, toujours fidèle) plutôt que d'envoyer un texte potentiellement inventé."""
+    if not texte:
+        return False
+    blocs = texte.split("⚽")[1:]  # le premier split est vide ou l'intro éventuelle
+    if len(blocs) != len(selections_finales):
+        return False
+    for bloc, s in zip(blocs, selections_finales):
+        p = s["pick"]
+        marche_txt = p.get("marche_affichage") or p["marche"]
+        if marche_txt not in bloc or str(p["selection"]) not in bloc:
+            return False
+        cote_trouvee = _COTE_RE.search(bloc)
+        if not cote_trouvee or abs(float(cote_trouvee.group(1).replace(",", ".")) - p["cote"]) > 0.01:
+            return False
+        if p.get("edge_pct") is not None:
+            edge_trouve = _EDGE_RE.search(bloc)
+            if not edge_trouve or abs(float(edge_trouve.group(1).replace(",", ".")) - p["edge_pct"]) > 0.15:
+                return False
+        if p.get("proba_modele_pct") is not None:
+            confiance_trouvee = _CONFIANCE_RE.search(bloc)
+            if confiance_trouvee and confiance_trouvee.group(1).strip().lower() \
+                    != niveau_confiance(p["proba_modele_pct"]).lower():
+                return False
+    return True
+
+
 def agent4_ia_analyse_pronostic_redaction(selections_finales):
     """AGENT 4 — IA. Responsabilité unique : transformer les chiffres déjà calculés (Agent 3)
     en un texte pédagogique. Ne recalcule JAMAIS un edge, une cote ou une probabilité —
     ne fait que raisonner et rédiger à partir de ce qu'on lui donne. 3 tâches chaînées :
-    analyse -> pronostic -> rédaction pédagogique finale."""
+    analyse -> pronostic -> rédaction pédagogique finale.
+
+    Contrôle de fidélité (10/10/2026, voir verifier_fidelite_ticket) : le texte rédigé par le
+    LLM n'est envoyé que s'il reproduit EXACTEMENT les chiffres internes (cote, edge,
+    confiance) — sinon repli automatique sur rediger_ticket_sans_ia, jamais un texte
+    potentiellement inventé envoyé tel quel."""
     donnees_prompt = _construire_donnees_prompt(selections_finales)
 
     if all(s.get("raison_ia") for s in selections_finales):
@@ -2016,6 +2067,10 @@ def agent4_ia_analyse_pronostic_redaction(selections_finales):
     ticket_texte = _tache_redaction(donnees_prompt, pronostic_texte, len(selections_finales))
     if not ticket_texte:
         print("   ⚠️ Rédaction IA indisponible — ticket rédigé automatiquement à partir des chiffres calculés.")
+        ticket_texte = rediger_ticket_sans_ia(selections_finales)
+    elif not verifier_fidelite_ticket(ticket_texte, selections_finales):
+        print("   ⚠️ Rédaction IA rejetée (cote/edge/confiance ne correspondent pas aux chiffres "
+              "internes) — ticket rédigé automatiquement à partir des chiffres calculés.")
         ticket_texte = rediger_ticket_sans_ia(selections_finales)
     return ticket_texte
 
@@ -2292,10 +2347,17 @@ def agent3_calcul_pool_candidats(donnees):
             continue
 
         nom_match = f"{home_nom} vs {away_nom}"
+        # af_home_id/af_away_id/competition_id/date_iso (10/10/2026) : jamais utilisés par la
+        # sélection ni Telegram — uniquement pour comparaison_moteurs.py (comparaison parallèle
+        # bet_agent/moteur, backend), qui a besoin des identifiants API-Football et de la date
+        # pour construire l'historique réel de chaque équipe. None si l'équipe API-Football n'a
+        # pas été retrouvée (jamais un identifiant inventé).
         pool[nom_match] = [
             {
                 "match": nom_match, "home_nom": home_nom, "away_nom": away_nom,
                 "fixture_id_oddspapi": m["oddspapi"]["fixture_id"], "pick": c, "contexte": contexte_match,
+                "af_home_id": af.get("home_id") if af else None, "af_away_id": af.get("away_id") if af else None,
+                "competition_id": af.get("league_id") if af else None, "date_iso": m["oddspapi"].get("start_time"),
             }
             for c in candidats
         ]

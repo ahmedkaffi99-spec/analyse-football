@@ -3,6 +3,7 @@ coupon(s) → rédaction IA → Telegram), mais déterministe (pas de LLM pilote
 étape enregistrée en base. L'envoi Telegram est optionnel et désactivé par défaut."""
 
 import json
+import os
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
@@ -128,6 +129,29 @@ def executer_run(run_id, envoyer_telegram=False, rediger=True, depuis_run=None, 
         if envoyer_telegram and textes:
             run.envoye_telegram = bool(ae.agent5_envoyer_coupons(textes))
         run.statut = "termine"
+
+        # Comparaison PARALLÈLE bet_agent/moteur (10/10/2026, demande explicite : "faire
+        # fonctionner le nouveau moteur en parallèle... sans modifier le coupon Telegram") —
+        # désactivée par défaut (MOTEUR_COMPARAISON_ACTIVE), UNIQUEMENT journalisée, jamais
+        # utilisée pour la sélection (déjà figée ci-dessus) ni pour envoyer_telegram (déjà
+        # fait). Un recalcul séparé du pool (au lieu de réutiliser celui de generer_coupons)
+        # pour ne RIEN changer au chemin existant — un échec ici ne doit jamais faire échouer
+        # le run réel.
+        if os.getenv("MOTEUR_COMPARAISON_ACTIVE", "").lower() in ("1", "true", "oui", "yes"):
+            try:
+                from app.services.comparaison_moteurs import comparer_candidats
+
+                pool_comparaison = ae.agent3_calcul_pool_candidats(donnees)
+                comparaison = comparer_candidats(db, pool_comparaison)
+                disponibles = [c for c in comparaison if c["proba_moteur_pct"] is not None]
+                print(f"\n   🔬 [Comparaison parallèle moteur] {len(comparaison)} candidat(s) comparé(s), "
+                      f"{len(disponibles)} avec une prédiction moteur disponible.")
+                for c in disponibles[:10]:
+                    print(f"      {c['match']} — {c['marche_bet_agent']} {c['selection']} : "
+                          f"bet_agent={c['proba_bet_agent_pct']}% vs moteur={c['proba_moteur_pct']}% "
+                          f"({c['modele_moteur']}, {c['calibration']}) — {c['decision_moteur']}")
+            except Exception as e:  # jamais faire échouer le vrai run pour une comparaison
+                print(f"   ⚠️ Comparaison parallèle moteur indisponible ({pipeline.masquer_secrets(str(e))[:150]}).")
     except Exception as e:
         db.rollback()
         run = db.get(Run, run_id)
