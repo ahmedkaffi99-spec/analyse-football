@@ -64,6 +64,31 @@ def test_issues_somment_a_1_et_over_under_complementaires():
     assert dnb["rembourse"] == pytest.approx(r["X"]) and not marches.est_binaire(dnb)
 
 
+def test_handicap_cote_2_utilise_la_ligne_inversee_pas_la_meme_ligne():
+    """Bug réel trouvé le 09/10/2026 : issue_buts appliquait la MÊME ligne (référencée domicile,
+    convention OddsPapi) aux deux sélections du handicap au lieu de l'inverser pour "2" —
+    domicile gagnant d'1 seul but à une ligne de -1.5 (ne couvre pas), l'extérieur à "2" doit
+    gagner son pari (tête de -1.5 à +1.5 shifted), le code bogué renvoyait "perdu"."""
+    assert marches.issue_buts("handicap", -1.5, "2", 2, 1) == "gagne"  # domicile gagne 1 but, ne couvre pas -1.5
+    assert marches.issue_buts("handicap", -1.5, "1", 2, 1) == "perdu"  # même match, domicile perd son pari
+    assert marches.issue_buts("handicap", -1.5, "2", 3, 1) == "perdu"  # domicile gagne 2 buts, couvre -1.5
+    assert marches.issue_buts("handicap", -1.5, "1", 3, 1) == "gagne"
+
+
+def test_handicap_1_et_2_sont_complementaires_gagne_perdu_push_ensemble():
+    """Les deux côtés d'un même handicap asiatique doivent être des paris strictement
+    complémentaires (l'un gagne si et seulement si l'autre perd, tous deux remboursés sur le
+    même push) — sinon les probabilités du modèle ne somment plus correctement sur les deux
+    sélections d'un même marché, une incohérence qui aurait dû révéler le bug ci-dessus."""
+    m = lois.matrice_scores(1.6, 1.0)
+    for ligne in (-1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5):
+        d1 = marches.distribution_buts(m, "handicap", ligne, "1")
+        d2 = marches.distribution_buts(m, "handicap", ligne, "2")
+        assert d1["gagne"] == pytest.approx(d2["perdu"])
+        assert d1["perdu"] == pytest.approx(d2["gagne"])
+        assert d1["rembourse"] == pytest.approx(d2["rembourse"])
+
+
 def test_edge_formule_exacte():
     assert cotes.edge(0.82, 1.30) == pytest.approx(0.066)
     binaire = {"gagne": 0.82, "demi_gagne": 0, "rembourse": 0, "demi_perdu": 0, "perdu": 0.18}

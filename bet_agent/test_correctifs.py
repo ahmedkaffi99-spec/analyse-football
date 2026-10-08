@@ -845,6 +845,33 @@ class TestRedactionSansEdgeNone(unittest.TestCase):
         self.assertNotIn("edge", texte)
 
 
+class TestNiveauConfianceBaseSurLaProbabiliteV2PasLedge(unittest.TestCase):
+    """Bug réel constaté en production le 08/10/2026 (run 118) : les 5 jambes du coupon
+    avaient 70-76% de probabilité (le SEUL critère de sélection depuis le 03/10/2026, "on
+    choisit les cotes avec chance de réussite, pas un edge") mais un edge négatif — le ticket
+    Telegram réel les affichait pourtant "Faible confiance", alors que c'étaient les choix les
+    plus solides du modèle ce jour-là. niveau_confiance doit juger sur la probabilité."""
+
+    def test_forte_probabilite_edge_negatif_nest_plus_faible(self):
+        self.assertEqual(ae.niveau_confiance(73.2), "Moyen")
+        self.assertNotEqual(ae.niveau_confiance(73.2), "Faible")
+
+    def test_tres_forte_probabilite_edge_negatif_est_eleve(self):
+        self.assertEqual(ae.niveau_confiance(90.0), "Élevé")
+
+    def test_faible_probabilite_edge_positif_reste_faible(self):
+        self.assertEqual(ae.niveau_confiance(35.0), "Faible")
+
+    def test_aucune_probabilite_reste_faible(self):
+        self.assertEqual(ae.niveau_confiance(None), "Faible")
+
+    def test_ticket_reflete_la_probabilite_pas_ledge(self):
+        s = _selection("A vs B", "Total", "Over", 1.21, edge=-8.2, proba=75.9)
+        texte = ae.rediger_ticket_sans_ia([s])
+        self.assertIn("Moyen", texte)
+        self.assertNotIn("Faible", texte)
+
+
 class TestUnSeulCouponDuJour(unittest.TestCase):
     """Historique (26/09/2026 → 02/10/2026) : un seul coupon, puis jusqu'à 5 coupons
     indépendants (4 sûrs + 1 risqué, puis 3 paliers de risque 🟢🟡🔴) pour ne pas dépendre d'un
@@ -981,15 +1008,16 @@ class TestCouponsJoursCreux(unittest.TestCase):
 
 class TestRedactionSansIA(unittest.TestCase):
     def test_panne_de_tous_les_llm_ne_fait_plus_perdre_le_ticket(self):
-        selections = [_selection("A vs B", "Total", "Over", 1.5, edge=12.0), _selection("C vs D", "BTTS", "Yes", 1.8, edge=25.0)]
+        selections = [_selection("A vs B", "Total", "Over", 1.5, edge=12.0, proba=70.0),
+                      _selection("C vs D", "BTTS", "Yes", 1.8, edge=25.0, proba=90.0)]
         with mock.patch.object(ae, "appel_llm_petites_taches", side_effect=ValueError("Tous les modèles ont échoué")), \
                 mock.patch.object(ae.time, "sleep"):
             texte = ae.agent4_ia_analyse_pronostic_redaction(selections)
         # Format compact (2026-09-26) : une ligne par match, sans Guide/Où parier/Pourquoi —
         # garantit un ticket qui tient toujours en UN seul message Telegram (voir TestTelegram).
         self.assertEqual(texte.count("⚽"), 2)
-        self.assertIn("Total (2.5) : Over @ 1.5 (edge 12.0% · Moyen)", texte)
-        self.assertIn("BTTS (2.5) : Yes @ 1.8 (edge 25.0% · Élevé)", texte)
+        self.assertIn("Total (2.5) : Over @ 1.5 (edge 12.0% · Moyen (proba 70.0%))", texte)
+        self.assertIn("BTTS (2.5) : Yes @ 1.8 (edge 25.0% · Élevé (proba 90.0%))", texte)
 
     def test_erreur_gemini_en_liste_lisible(self):
         reponse = mock.Mock(status_code=429, json=lambda: [{"error": {"message": "Quota exceeded"}}])

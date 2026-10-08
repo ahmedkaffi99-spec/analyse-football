@@ -61,7 +61,15 @@ def issue_buts(marche, ligne, selection, h, a):
     if marche == "dnb":
         return _signe(h - a if selection == "1" else a - h)
     if marche == "handicap":
-        return issue_ligne(h - a if selection == "1" else a - h, ligne)
+        # ligne référencée du point de vue du domicile (même convention qu'OddsPapi, voir
+        # bet_agent.analyser_et_envoyer : "OddsPapi renvoie TOUJOURS la ligne du point de vue
+        # de l'équipe DOMICILE"). Corrigé le 09/10/2026 : la sélection "2" doit évaluer la
+        # marge extérieure contre la ligne INVERSÉE (symétrique de celle du domicile), jamais
+        # la même ligne brute — sinon la condition de victoire de "2" est celle d'un handicap
+        # extérieur de MÊME signe que le domicile au lieu de son opposé, inversant le résultat
+        # dès que ligne != 0 (ex: ligne=-1.5, domicile gagne 1 but seulement : "2" doit gagner
+        # son pari — l'extérieur n'a pas couvert -1.5 — mais le code bogué renvoyait "perdu").
+        return issue_ligne(h - a, ligne) if selection == "1" else issue_ligne(a - h, -ligne)
     if marche == "btts":
         les_deux = h > 0 and a > 0
         return "gagne" if les_deux == (selection == "oui") else "perdu"

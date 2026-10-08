@@ -1845,7 +1845,8 @@ def _tache_pronostic(donnees_prompt, analyse_texte):
         f"Voici l'analyse déjà rédigée :\n{analyse_texte}\n\n"
         f"Pour CHAQUE match, confirme le pronostic final (reprends exactement le marché, la sélection "
         f"et la cote donnés) et ajoute un niveau de confiance simple : Faible / Moyen / Élevé, basé "
-        f"sur l'edge (édge <10% = Faible, 10-20% = Moyen, >20% = Élevé). Une ligne par match : "
+        f"sur la PROBABILITÉ du modèle (proba <70% = Faible, 70-85% = Moyen, >85% = Élevé) — PAS "
+        f"sur l'edge, qui ne mesure pas la chance de réussite. Une ligne par match : "
         f"'Match : Marché - Sélection @ Cote — Confiance : niveau'."
     )
     print("   🎯 [Tâche 2/3] Pronostic final...")
@@ -1918,11 +1919,19 @@ def _tache_redaction(donnees_prompt, pronostic_texte, nb_jambes_attendues):
     return None
 
 
-def niveau_confiance(edge_pct):
-    """Même règle que celle donnée au LLM (tâche 2) : <10% Faible, 10-20% Moyen, >20% Élevé."""
-    if edge_pct is None or edge_pct < 10:
+def niveau_confiance(proba_pct):
+    """Même règle que celle donnée au LLM (tâche 2) : <70% Faible, 70-85% Moyen, >85% Élevé.
+
+    Basé sur la PROBABILITÉ du modèle, pas sur l'edge (corrigé le 09/10/2026) : depuis le
+    03/10/2026 ("on choisit les cotes avec chance de réussite, pas un edge"), la probabilité
+    est le SEUL critère de sélection (PROBA_MIN_FORTE) — baser la confiance affichée sur
+    l'edge produisait un contresens visible dans les tickets réels (run 118, 08/10/2026) :
+    5 jambes à 70-76% de probabilité (le critère qui les a fait sélectionner) affichées
+    "Faible confiance" parce que leur edge était négatif, alors que c'étaient précisément les
+    choix les plus solides du modèle ce jour-là."""
+    if proba_pct is None or proba_pct < 70:
         return "Faible"
-    return "Moyen" if edge_pct <= 20 else "Élevé"
+    return "Moyen" if proba_pct <= 85 else "Élevé"
 
 
 def rediger_ticket_sans_ia(selections_finales):
@@ -1949,8 +1958,9 @@ def rediger_ticket_sans_ia(selections_finales):
     sans mentionner le résultat partiel possible pile sur la ligne) ; le guide Python, toujours
     exact, comble ce qui manque sans jamais remplacer l'analyse propre de l'IA. Sinon (repli
     100% Python sans IA, selectionner_combo_cote_cible), le niveau de confiance (Faible/Moyen/
-    Élevé, calculé depuis l'edge, jamais estimé par l'IA — demande du 27/09/2026) reste affiché :
-    c'est alors la SEULE justification du choix. Ne jamais afficher "edge None%" (constaté le
+    Élevé, calculé depuis la PROBABILITÉ du modèle — corrigé le 09/10/2026, c'était l'edge
+    avant, jamais estimé par l'IA — demande du 27/09/2026) reste affiché : c'est alors la
+    SEULE justification du choix. Ne jamais afficher "edge None%" (constaté le
     30/09/2026, run 59 : une jambe sur un marché brut sans edge calculé affichait "edge None% ·
     Faible" dans le vrai message Telegram envoyé)."""
     blocs = []
@@ -1964,8 +1974,9 @@ def rediger_ticket_sans_ia(selections_finales):
             detail = raison
         elif guide:
             detail = guide
-        elif p.get("edge_pct") is not None:
-            detail = f"edge {p['edge_pct']}% · {niveau_confiance(p['edge_pct'])}"
+        elif p.get("proba_modele_pct") is not None:
+            edge_txt = f"edge {p['edge_pct']}% · " if p.get("edge_pct") is not None else ""
+            detail = f"{edge_txt}{niveau_confiance(p['proba_modele_pct'])} (proba {p['proba_modele_pct']}%)"
         else:
             detail = "marché brut, sans calcul Python"
         # marche_affichage (ligne du point de vue de l'équipe sélectionnée) prioritaire sur
