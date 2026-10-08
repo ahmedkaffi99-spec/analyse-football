@@ -2352,12 +2352,17 @@ def agent3_calcul_pool_candidats(donnees):
         # bet_agent/moteur, backend), qui a besoin des identifiants API-Football et de la date
         # pour construire l'historique réel de chaque équipe. None si l'équipe API-Football n'a
         # pas été retrouvée (jamais un identifiant inventé).
+        # fixture_id_api_football/competition (10/10/2026) : uniquement pour la capture
+        # prospective hist_cotes (backend/app/services/capture_historique.py) — identité du
+        # match, jamais utilisés par la sélection ni Telegram.
         pool[nom_match] = [
             {
                 "match": nom_match, "home_nom": home_nom, "away_nom": away_nom,
                 "fixture_id_oddspapi": m["oddspapi"]["fixture_id"], "pick": c, "contexte": contexte_match,
                 "af_home_id": af.get("home_id") if af else None, "af_away_id": af.get("away_id") if af else None,
                 "competition_id": af.get("league_id") if af else None, "date_iso": m["oddspapi"].get("start_time"),
+                "fixture_id_api_football": af.get("fixture_id_api_football") if af else None,
+                "competition": af.get("league_name") if af else None,
             }
             for c in candidats
         ]

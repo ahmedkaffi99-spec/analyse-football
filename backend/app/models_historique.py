@@ -4,17 +4,26 @@ le pipeline en production pendant que le moteur se construit et se backteste à 
 
 hist_matchs   : un match par ligne (clé = fixture_id API-Football), score + statistiques
                 finales une fois terminé. Alimenté par le backfill (services/historique.py).
-hist_cotes    : relevés de cotes HORODATÉS (plusieurs lignes par match possibles, une par
-                passage de collecte) — contrairement à la table cotes existante, jamais
-                écrasée : c'est la mémoire des cotes réellement vues avant chaque match.
+hist_cotes    : capture PROSPECTIVE (demande explicite du 10/10/2026 : "rendre possible une
+                vraie mesure future du ROI" — jamais de cote historique fabriquée ni simulée,
+                uniquement ce qu'OddsPapi a réellement renvoyé au moment du run) de chaque
+                candidat vu par bet_agent (et, si disponible, par moteur/) à l'instant exact de
+                la prédiction. Autonome : PAS de clé étrangère vers hist_matchs (qui ne couvre
+                aujourd'hui que le backfill Premier League, alors que la production voit tous
+                les championnats) — toute l'identité du match est dupliquée ici pour pouvoir
+                retrouver exactement la prédiction d'origine même si le match n'est jamais
+                backfillé. Alimentée par app.services.capture_historique.capturer_predictions,
+                appelée depuis chaque run réel (services/runs.py). resultat/juge_le restent NULL
+                jusqu'à ce que app.services.capture_historique.juger_cotes_en_attente associe le
+                résultat réel une fois le match terminé.
 hist_predictions : journal de chaque prédiction produite (format moteur.contrat), pour
                    l'audit ("pourquoi ce pari a été choisi ?") et pour mesurer en continu
                    la calibration réelle une fois les résultats connus.
 """
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -47,7 +56,6 @@ class HistMatch(Base):
     stats: Mapped[dict | None] = mapped_column(JSON)
     maj_le: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=maintenant, onupdate=maintenant)
 
-    cotes: Mapped[list["HistCote"]] = relationship(back_populates="match", cascade="all, delete-orphan")
     predictions: Mapped[list["HistPrediction"]] = relationship(back_populates="match", cascade="all, delete-orphan")
 
     def vers_dict(self):
@@ -59,24 +67,62 @@ class HistMatch(Base):
 
 
 class HistCote(Base):
+    """Une capture prospective = un (run, match, marché brut, ligne, sélection) vu par
+    bet_agent lors d'un run réel. jour+fixture_id_oddspapi+marche+ligne+selection est UNIQUE :
+    le même candidat revu plusieurs fois dans la même journée (le cron tourne plusieurs fois
+    par jour) n'est capturé qu'une seule fois — premier vu, jamais écrasé (voir
+    capture_historique.capturer_predictions, insertion ON CONFLICT DO NOTHING)."""
+
     __tablename__ = "hist_cotes"
-    __table_args__ = (UniqueConstraint("match_id", "marche", "ligne", "selection", "bookmaker", "horodatage",
-                                       name="uq_hist_cote_releve"),)
+    __table_args__ = (UniqueConstraint("jour", "fixture_id_oddspapi", "marche", "ligne", "selection",
+                                       name="uq_hist_cote_capture_jour"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    match_id: Mapped[int] = mapped_column(ForeignKey("hist_matchs.match_id", ondelete="CASCADE"), index=True)
-    marche: Mapped[str] = mapped_column(String(40))  # vocabulaire moteur.modeles.marches (resultat, buts_total...)
+    run_id: Mapped[int] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), index=True)
+    jour: Mapped[date] = mapped_column(Date, index=True)  # date (UTC) de la capture, clé de dédoublonnage
+
+    # Identité du match dupliquée ici (pas de FK vers hist_matchs : la production voit tous les
+    # championnats, pas seulement ceux backfillés) — assez pour retrouver exactement le match.
+    fixture_id_oddspapi: Mapped[str | None] = mapped_column(String(64), index=True)
+    fixture_id_api_football: Mapped[int | None] = mapped_column(Integer, index=True)
+    competition_id: Mapped[int | None] = mapped_column(Integer)
+    competition: Mapped[str | None] = mapped_column(String(120))
+    domicile: Mapped[str] = mapped_column(String(120))
+    exterieur: Mapped[str] = mapped_column(String(120))
+    coup_envoi: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    # Marché brut OddsPapi ("marché brut" demandé explicitement) + vocabulaire court bet_agent
+    # (categorie) nécessaire pour réutiliser bet_agent.verifier_resultats.grader_pick_stat.
+    marche: Mapped[str] = mapped_column(String(120))
+    categorie: Mapped[str | None] = mapped_column(String(60))
     ligne: Mapped[float | None] = mapped_column(Float)
-    selection: Mapped[str] = mapped_column(String(10))
-    cote: Mapped[float] = mapped_column(Float)
-    bookmaker: Mapped[str | None] = mapped_column(String(40))
-    horodatage: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    selection: Mapped[str] = mapped_column(String(64))
+    cote: Mapped[float] = mapped_column(Float)  # cote réellement récupérée auprès d'OddsPapi au moment du run
 
-    match: Mapped[HistMatch] = relationship(back_populates="cotes")
+    proba_bet_agent_pct: Mapped[float | None] = mapped_column(Float)
+    edge_bet_agent_pct: Mapped[float | None] = mapped_column(Float)
+    proba_moteur_pct: Mapped[float | None] = mapped_column(Float)
+    edge_moteur_pct: Mapped[float | None] = mapped_column(Float)
+    modele_moteur: Mapped[str | None] = mapped_column(String(40))
 
-    def vers_releve(self):
-        return {"marche": self.marche, "ligne": self.ligne, "selection": self.selection,
-                "cote": self.cote, "horodatage": self.horodatage}
+    horodatage: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=maintenant, index=True)
+
+    # Rempli plus tard par capture_historique.juger_cotes_en_attente, une fois le match terminé.
+    resultat: Mapped[str | None] = mapped_column(String(20), index=True)  # gagne|perdu|push|non_verifiable
+    juge_le: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    def vers_dict(self):
+        return {"id": self.id, "run_id": self.run_id, "jour": self.jour,
+                "fixture_id_oddspapi": self.fixture_id_oddspapi,
+                "fixture_id_api_football": self.fixture_id_api_football,
+                "competition_id": self.competition_id, "competition": self.competition,
+                "domicile": self.domicile, "exterieur": self.exterieur, "coup_envoi": self.coup_envoi,
+                "marche": self.marche, "categorie": self.categorie, "ligne": self.ligne,
+                "selection": self.selection, "cote": self.cote,
+                "proba_bet_agent_pct": self.proba_bet_agent_pct, "edge_bet_agent_pct": self.edge_bet_agent_pct,
+                "proba_moteur_pct": self.proba_moteur_pct, "edge_moteur_pct": self.edge_moteur_pct,
+                "modele_moteur": self.modele_moteur, "horodatage": self.horodatage,
+                "resultat": self.resultat, "juge_le": self.juge_le}
 
 
 class HistPrediction(Base):

@@ -137,6 +137,7 @@ def executer_run(run_id, envoyer_telegram=False, rediger=True, depuis_run=None, 
         # fait). Un recalcul séparé du pool (au lieu de réutiliser celui de generer_coupons)
         # pour ne RIEN changer au chemin existant — un échec ici ne doit jamais faire échouer
         # le run réel.
+        pool_comparaison, comparaison = None, None
         if os.getenv("MOTEUR_COMPARAISON_ACTIVE", "").lower() in ("1", "true", "oui", "yes"):
             try:
                 from app.services.comparaison_moteurs import comparer_candidats
@@ -152,6 +153,21 @@ def executer_run(run_id, envoyer_telegram=False, rediger=True, depuis_run=None, 
                           f"({c['modele_moteur']}, {c['calibration']}) — {c['decision_moteur']}")
             except Exception as e:  # jamais faire échouer le vrai run pour une comparaison
                 print(f"   ⚠️ Comparaison parallèle moteur indisponible ({pipeline.masquer_secrets(str(e))[:150]}).")
+
+        # Capture PROSPECTIVE des cotes dans hist_cotes (10/10/2026, demande explicite :
+        # "rendre possible une vraie mesure future du ROI... Implémente uniquement la capture
+        # prospective des cotes") — à CHAQUE run réel, jamais derrière un indicateur (contrairement
+        # à la comparaison ci-dessus, qui reste simplement journalisée) : ne modifie jamais la
+        # sélection/les probabilités/la calibration déjà figées plus haut, écrit seulement des
+        # lignes supplémentaires. Un échec ici ne doit jamais faire échouer le run réel.
+        try:
+            from app.services.capture_historique import capturer_predictions
+
+            pool_capture = pool_comparaison if pool_comparaison is not None else ae.agent3_calcul_pool_candidats(donnees)
+            n_captures = capturer_predictions(db, run, pool_capture, comparaison=comparaison)
+            print(f"   📸 [Capture historique] {n_captures} cote(s) réelle(s) capturée(s) dans hist_cotes.")
+        except Exception as e:  # jamais faire échouer le vrai run pour une capture
+            print(f"   ⚠️ Capture historique indisponible ({pipeline.masquer_secrets(str(e))[:150]}).")
     except Exception as e:
         db.rollback()
         run = db.get(Run, run_id)
