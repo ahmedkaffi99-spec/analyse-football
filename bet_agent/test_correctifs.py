@@ -2573,5 +2573,58 @@ class TestSelectionAdaptativeNbJambes(unittest.TestCase):
         self.assertNotIn("incompatible avec le seuil de probabilité actuel", sortie)
 
 
+class TestButsAttendusContexteTotalPourMarcheMatchEntier(unittest.TestCase):
+    """Bug réel constaté en production le 08/10/2026 (run 122) : le ticket Telegram citait,
+    pour un marché "Over Under Full Time (3.5)" (match entier), le "À savoir" suivant : "Les
+    buts attendus pour l'équipe extérieure sont de 0.88" — un chiffre d'UNE SEULE équipe,
+    hors sujet pour un marché sur le MATCH ENTIER. Cause : contexte_match ne fournissait
+    jamais le TOTAL (domicile + extérieure), seulement les deux chiffres séparés, laissant
+    l'IA de rédaction deviner (ou confondre) la bonne portée du marché."""
+
+    def test_contexte_buts_attendus_inclut_le_total(self):
+        selection = _selection("A vs B", "Total", "Under", 1.26)
+        selection["contexte"] = {"buts_attendus": {"domicile": 1.12, "exterieur": 0.88, "total": 2.0}}
+        prompt = ae._construire_contexte_prompt([selection])
+        self.assertIn("1.12 pour l'équipe domicile", prompt)
+        self.assertIn("0.88 pour l'équipe extérieure", prompt)
+        self.assertIn("2.0 au TOTAL pour le match entier", prompt)
+
+    def test_total_recalcule_si_absent_anciennes_collectes_archivees(self):
+        # Collectes archivées avant ce correctif (10/10/2026) : "total" absent du contexte,
+        # jamais planté, recalculé à la volée plutôt que de laisser l'IA deviner.
+        selection = _selection("A vs B", "Total", "Under", 1.26)
+        selection["contexte"] = {"buts_attendus": {"domicile": 1.12, "exterieur": 0.88}}
+        prompt = ae._construire_contexte_prompt([selection])
+        self.assertIn("2.0 au TOTAL pour le match entier", prompt)
+
+    def test_contexte_match_expose_le_total_depuis_agent3(self):
+        # agent3_calcul_pool_candidats (la vraie source du contexte en production) doit
+        # calculer "total" lui-même, pas seulement le test ci-dessus avec un contexte à la main.
+        marches = [{"marche": "Over Under Full Time", "handicap": 3.5, "periode": "fulltime",
+                   "selections": [{"selection": "Over", "cote": 1.9}, {"selection": "Under", "cote": 1.9}]}]
+        donnees = {"matchs": [{
+            "match_demande": {"home": "A", "away": "B"},
+            "oddspapi": {"fixture_id": "1", "tous_marches": marches},
+            "api_football": None, "stats_historiques": {}, "stats_detaillees_10_matchs": {},
+            "head_to_head": None, "blessures": None, "predictions_api_football": None,
+        }]}
+        with mock.patch.object(ae, "calculer_xg_depuis_stats_detaillees", return_value=None), \
+                mock.patch.object(ae, "calculer_xg_depuis_stats", return_value=None), \
+                mock.patch.object(ae, "estimer_expected_goals_depuis_marches", return_value=(1.12, 0.88, None, None, None)):
+            pool = ae.agent3_calcul_pool_candidats(donnees)
+        contexte = next(iter(pool.values()))[0]["contexte"]
+        self.assertEqual(contexte["buts_attendus"]["total"], 2.0)
+
+    def test_consigne_de_redaction_impose_le_bon_mapping_marche_chiffre(self):
+        ae.reinitialiser_budget_ia()
+        texte_ticket = "⚽ A vs B\n   🎯 Marché : Total (3.5) - Under @ 1.26 (edge 1.9% · Moyen)\n" + "x" * 50
+        with mock.patch.object(ae, "appel_llm_petites_taches", return_value=texte_ticket) as appel:
+            self.assertIsNotNone(ae._tache_redaction("donnees", "pronostic", 1))
+        prompt_envoye = appel.call_args[0][0]
+        self.assertIn("marché sur le MATCH ENTIER", prompt_envoye)
+        self.assertIn("JAMAIS le chiffre d'une seule équipe", prompt_envoye)
+        self.assertIn("UNIQUEMENT le chiffre de CETTE équipe", prompt_envoye)
+
+
 if __name__ == "__main__":
     unittest.main()

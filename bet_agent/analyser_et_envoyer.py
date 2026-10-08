@@ -1747,8 +1747,12 @@ def _construire_contexte_prompt(selections_finales):
         lignes = [f"### {s['match']}"]
         buts = ctx.get("buts_attendus") or {}
         if buts.get("domicile") is not None:
+            total = buts.get("total")
+            if total is None:  # anciennes collectes archivées sans "total" (avant le 10/10/2026)
+                total = round(buts["domicile"] + buts["exterieur"], 2)
             lignes.append(f"- Buts attendus (modèle) : {buts['domicile']} pour l'équipe domicile, "
-                          f"{buts['exterieur']} pour l'équipe extérieure")
+                          f"{buts['exterieur']} pour l'équipe extérieure, {total} au TOTAL pour le match entier "
+                          f"(domicile + extérieure)")
         forme = ctx.get("forme") or {}
         for cote in ("domicile", "exterieur"):
             f = forme.get(cote)
@@ -1894,7 +1898,12 @@ def _tache_redaction(donnees_prompt, pronostic_texte, nb_jambes_attendues):
         f"n'y en a pas, OMETS cette ligne]\n"
         f"   📰 À savoir : [UNE phrase courte tirée du CONTEXTE PAR MATCH — absence, forme, confrontation "
         f"directe, prédiction — utile pour ce pari ; si le contexte n'apporte rien de pertinent, OMETS "
-        f"cette ligne]'\n"
+        f"cette ligne. Si tu cites un chiffre de 'Buts attendus', il DOIT correspondre au marché de CETTE "
+        f"sélection, jamais un chiffre d'une autre portée : un marché sur une SEULE équipe (ex: 'Équipe 1'/"
+        f"'Team 1', 'Équipe 2'/'Team 2') cite UNIQUEMENT le chiffre de CETTE équipe ; un marché sur le MATCH "
+        f"ENTIER (ex: 'Total', 'Full Time ... Total', sans mention d'équipe) cite le chiffre TOTAL fourni, "
+        f"JAMAIS le chiffre d'une seule équipe — ne le confonds jamais, même si les deux chiffres figurent "
+        f"dans le même contexte]'\n"
         f"Ligne vide entre chaque bloc match. Ne calcule et n'affiche AUCUNE cote totale ni probabilité "
         f"combinée — ces chiffres sont ajoutés séparément après ton texte, PAR CODE PYTHON, pas par toi. "
         f"AUCUN texte d'intro ni de conclusion en dehors de ce format."
@@ -2215,7 +2224,13 @@ def agent3_calcul_pool_candidats(donnees):
         }
         contexte_match = {
             "contexte_web": extraire_contexte_web(m),
-            "buts_attendus": {"domicile": home_xg, "exterieur": away_xg},
+            # "total" (10/10/2026, bug réel constaté en production : le ticket Telegram citait
+            # "buts attendus pour l'équipe extérieure" en "À savoir" pour justifier un marché
+            # "Full Time ... Total" — le chiffre d'UNE SEULE équipe ne justifie pas un marché
+            # portant sur le MATCH ENTIER) : le total est calculé ici, une fois, pour que
+            # l'IA de rédaction n'ait jamais à deviner la somme ni à confondre un chiffre par
+            # équipe avec le total du match.
+            "buts_attendus": {"domicile": home_xg, "exterieur": away_xg, "total": round(home_xg + away_xg, 2)},
             "head_to_head": m.get("head_to_head"),
             "blessures": m.get("blessures"),
             "predictions_api_football": m.get("predictions_api_football"),
