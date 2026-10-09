@@ -65,7 +65,10 @@ def test_aucune_cote_fabriquee_candidat_sans_cote_ignore():
 
 def test_meme_candidat_revu_le_meme_jour_pas_de_doublon():
     with SessionLocal() as db:
-        run1 = _run(db)
+        # Horaire fixe loin de minuit UTC (sinon run1/+30min peuvent tomber sur deux jours
+        # différents selon l'heure réelle d'exécution du test — constaté le 09/10/2026).
+        debut = datetime.now(timezone.utc).replace(hour=12, minute=0, second=0, microsecond=0)
+        run1 = _run(db, lance_le=debut)
         pick = _pick("Total", "Over", 1.9)
         pool = {"H vs A": [_candidat("H vs A", pick)]}
         capturer_predictions(db, run1, pool)
