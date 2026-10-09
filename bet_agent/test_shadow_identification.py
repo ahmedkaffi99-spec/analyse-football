@@ -33,6 +33,15 @@ def test_faux_positif_pays_exclu():
     assert candidats == []
 
 
+def test_faux_positif_sous_chaine_meme_pays_exclu():
+    # Constaté réellement le 09/10/2026 (run GitHub Actions) : "Northern Premier League
+    # Premier" (ligue semi-pro anglaise) matchait à tort "premier league" par sous-chaîne.
+    candidats = identifier_candidats(
+        [_fixture_op("Northern Premier League Premier", "England", "Alfreton Town FC", "Bury FC")],
+        [_fixture_af("Alfreton Town FC", "Bury FC")])
+    assert candidats == []
+
+
 def test_match_sans_cote_reelle_exclu():
     candidats = identifier_candidats(
         [_fixture_op("Premier League", "England", "Arsenal", "Chelsea", has_odds=False)],

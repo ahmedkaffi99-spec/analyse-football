@@ -26,6 +26,19 @@ CINQ_GRANDS_CHAMPIONNATS = [(kw, pays) for pays, kws in cd.LIGUES_DOMESTIQUES_MA
                            if pays in PAYS_CINQ_GRANDS for kw in kws]
 
 
+def _est_le_vrai_grand_championnat(fx):
+    """Correspondance EXACTE (pas une sous-chaîne) du nom de tournoi — cd._correspond_au_filtre
+    fait un simple "mot_cle in nom_tournoi", qui accepte à tort des compétitions mineures dont
+    le nom CONTIENT le mot-clé (constaté réellement le 09/10/2026 : "Northern Premier League
+    Premier", une ligue semi-professionnelle anglaise, matchait "premier league"). Les 5
+    grands championnats ont un nom de tournoi OddsPapi exact et stable — jamais une variante
+    à deviner."""
+    nom_tournoi = (fx.get("tournamentName") or "").strip().lower()
+    pays = (fx.get("categoryName") or "").strip().lower()
+    return any(nom_tournoi == mot_cle and pays == pays_attendu
+              for mot_cle, pays_attendu in CINQ_GRANDS_CHAMPIONNATS)
+
+
 def identifier_candidats(fixtures_oddspapi, fixtures_api_football, max_par_championnat=1):
     """Pure (aucun appel réseau ici) : prend des listes déjà récupérées. Un candidat par
     championnat au maximum (le premier match Pre-Game avec cotes réelles ET une
@@ -35,7 +48,7 @@ def identifier_candidats(fixtures_oddspapi, fixtures_api_football, max_par_champ
     for fx in fixtures_oddspapi:
         if not fx.get("hasOdds") or fx.get("statusName") != "Pre-Game":
             continue
-        if not cd._correspond_au_filtre(fx, CINQ_GRANDS_CHAMPIONNATS):
+        if not _est_le_vrai_grand_championnat(fx):
             continue
         pays = (fx.get("categoryName") or "").lower()
         if pays in pays_vus:
