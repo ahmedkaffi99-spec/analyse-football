@@ -1,0 +1,36 @@
+# Workflow DÉDIÉ et isolé (demande explicite du 09/10/2026) : exécute UNIQUEMENT
+# bet_agent/diagnostic_odds_api_football.py --executer, rien d'autre — pas de collecte, pas de
+# coupon, pas de Telegram, pas d'écriture en base. Sert uniquement à comparer, sur 3 matchs
+# réels déjà connus, les cotes 1xBet d'OddsPapi (déjà capturées en production, codées en dur
+# dans le script) à ce que renvoie réellement l'endpoint /odds d'API-Football — exactement 4
+# appels API-Football (1x /odds/bookmakers + 3x /odds), 0 appel OddsPapi.
+#
+# Lancé manuellement seulement (workflow_dispatch), jamais sur un cron — ce n'est pas une tâche
+# récurrente, seulement un test ponctuel d'audit.
+name: Diagnostic — OddsPapi vs API-Football (/odds)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  comparer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONUNBUFFERED: "1"
+      API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: bet_agent/requirements.txt
+      - run: pip install -r bet_agent/requirements.txt
+
+      - name: Comparer OddsPapi (référence déjà connue) vs API-Football /odds (4 appels réels)
+        working-directory: bet_agent
+        run: python diagnostic_odds_api_football.py --executer
