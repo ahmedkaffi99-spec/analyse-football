@@ -1,0 +1,37 @@
+# Workflow DÉDIÉ et isolé (demande explicite du 09/10/2026) : identifie UNIQUEMENT des
+# matchs candidats sur les 5 grands championnats (Premier League, La Liga, Serie A,
+# Bundesliga, Ligue 1) pour la phase shadow OddsPapi vs API-Football — AUCUN appel /odds,
+# donc AUCUNE cote récupérée ici. Exactement 4 appels réels si lancé (1 OddsPapi /v4/fixtures
+# + 3 API-Football /fixtures, même fonction que la production).
+#
+# Étape intermédiaire explicitement demandée : présenter la liste des matchs identifiés et
+# obtenir une confirmation DISTINCTE avant tout appel /odds (le test comparatif lui-même).
+name: Shadow — identification 5 grands championnats (0 cote)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  identifier:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONUNBUFFERED: "1"
+      ODDSPAPI_KEY: ${{ secrets.ODDSPAPI_KEY }}
+      API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+      API_FOOTBALL_QUOTA_PAR_MINUTE: ${{ secrets.API_FOOTBALL_QUOTA_PAR_MINUTE }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: bet_agent/requirements.txt
+      - run: pip install -r bet_agent/requirements.txt
+
+      - name: Identifier (0 cote) les candidats des 5 grands championnats
+        working-directory: bet_agent
+        run: python shadow_identification.py --executer
