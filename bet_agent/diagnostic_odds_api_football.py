@@ -115,17 +115,18 @@ def recuperer_odds_api_football(fixture_id, bookmaker_id=None):
     return data, r.status_code
 
 
-def extraire_marches_api_football(reponse_odds):
-    """reponse_odds : un élément de data['response'] (1 fixture). Renvoie {nom_bookmaker:
-    {nom_pari: {valeur: cote}}} — aucune traduction/mapping vers le vocabulaire OddsPapi ici
-    (fait à la main dans le rapport, pour ne jamais masquer une différence de granularité)."""
-    resultat = {}
+def extraire_marches_af_bookmaker(reponse_odds, nom_bookmaker):
+    """reponse_odds : un élément de data['response'] (1 fixture). Renvoie {nom_pari EXACT:
+    {valeur: cote}} pour le SEUL bookmaker demandé — aucune traduction/mapping vers le
+    vocabulaire OddsPapi ici (fait à la main dans le rapport, pour ne jamais masquer une
+    différence de granularité entre les deux fournisseurs)."""
+    if not nom_bookmaker:
+        return {}
     for bm in reponse_odds.get("bookmakers", []):
-        paris = {}
-        for bet in bm.get("bets", []):
-            paris[bet.get("name")] = {v.get("value"): v.get("odd") for v in bet.get("values", [])}
-        resultat[bm.get("name")] = paris
-    return resultat
+        if bm.get("name") == nom_bookmaker:
+            return {bet.get("name"): {v.get("value"): v.get("odd") for v in bet.get("values", [])}
+                   for bet in bm.get("bets", [])}
+    return {}
 
 
 def executer_comparaison():
@@ -158,10 +159,11 @@ def executer_comparaison():
                   "match trop éloigné, ou aucune cote suivie pour cette rencontre).")
             continue
         for rep in reponses:
-            marches_af = extraire_marches_api_football(rep)
+            marches_af = extraire_marches_af_bookmaker(rep, bookmaker_1xbet["name"] if bookmaker_1xbet else None)
             print(f"   Mise à jour API-Football (\"update\") : {rep.get('update')}")
-            print(f"   Bookmaker(s) renvoyé(s) : {list(marches_af.keys())}")
-            print(f"   Marchés 1xBet trouvés : {len(marches_af.get(bookmaker_1xbet['name'] if bookmaker_1xbet else '', {}))}")
+            print(f"   {len(marches_af)} marché(s) 1xBet renvoyés par API-Football, noms EXACTS :")
+            for nom_pari, valeurs in sorted(marches_af.items()):
+                print(f"      \"{nom_pari}\" : {valeurs}")
 
         print("   --- Référence OddsPapi/1xBet (déjà capturée en production) ---")
         for marche, valeurs in m["cotes_oddspapi"].items():
