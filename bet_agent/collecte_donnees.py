@@ -1461,7 +1461,15 @@ def collecter_donnees():
                   "manuel(s), au cas où ils ne suffiraient pas à eux seuls (jamais à la place).")
             matchs_a_traiter = matchs_a_traiter + supplement
 
-    tous_fixtures_af = recuperer_fixtures_api_football()
+    # Appelé seulement s'il y a au moins un candidat à traiter (constaté le 09/10/2026 : quand
+    # OddsPapi est indisponible/quota épuisé, matchs_a_traiter est vide et ces 3 appels
+    # API-Football (hier/aujourd'hui/demain) étaient dépensés pour un résultat jamais utilisé,
+    # la boucle ci-dessous ne s'exécutant alors sur aucun match — jamais le contraire : une
+    # panne OddsPapi ne fait ici que RÉDUIRE la consommation API-Football, jamais l'augmenter).
+    tous_fixtures_af = recuperer_fixtures_api_football() if matchs_a_traiter else []
+    if not matchs_a_traiter:
+        print("   ⏭️ Aucun match candidat (OddsPapi indisponible ou sans cote) — API-Football non "
+              "interrogé pour cette liste de fixtures, quota préservé.")
 
     resultats = []
 
