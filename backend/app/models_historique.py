@@ -77,7 +77,18 @@ class HistCote(Base):
     bet_agent lors d'un run réel. jour+fixture_id_oddspapi+marche+ligne+selection est UNIQUE :
     le même candidat revu plusieurs fois dans la même journée (le cron tourne plusieurs fois
     par jour) n'est capturé qu'une seule fois — premier vu, jamais écrasé (voir
-    capture_historique.capturer_predictions, insertion ON CONFLICT DO NOTHING)."""
+    capture_historique.capturer_predictions, insertion ON CONFLICT DO NOTHING).
+
+    DÉRIVE DE SCHÉMA CONFIRMÉE (audit du 10/10/2026, lecture directe information_schema sur
+    Supabase) : la table réelle "hist_cotes" porte aussi "match_id" (entier, FK vers
+    hist_matchs.match_id) et "bookmaker" (varchar) — AUCUN des deux n'est déclaré ici ni écrit
+    par capture_historique.py. Origine confirmée : migration "hist_cotes_capture_prospective_
+    alter" (2026-10-08) a élargi un ANCIEN schéma jamais utilisé (0 ligne à l'époque, voir le
+    commit "Capture prospective des cotes réelles dans hist_cotes (ROI futur)") vers le schéma
+    de capture actuel, sans jamais retirer ces deux colonnes devenues mortes. Ne pas les ajouter
+    ici : les ajouter formaliserait des colonnes jamais alimentées plutôt que de les retirer.
+    Aucune migration de table de production n'est faite par cet audit — colonnes laissées en
+    l'état, simplement documentées pour que personne ne les suppose actives par erreur."""
 
     __tablename__ = "hist_cotes"
     __table_args__ = (UniqueConstraint("jour", "fixture_id_oddspapi", "marche", "ligne", "selection",
