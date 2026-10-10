@@ -2240,6 +2240,7 @@ def agent3_calcul_pool_candidats(donnees):
           f"(TOUS les marchés modélisables sont transmis à l'IA, sans présélection Python)")
 
     pool = {}
+    fixture_par_cle_pool = {}  # clé de pool déjà utilisée -> fixture_id_oddspapi du match qui l'occupe
     for m in matchs_exploitables:
         af = m["api_football"]
         home_demande = m["match_demande"]["home"]
@@ -2366,10 +2367,34 @@ def agent3_calcul_pool_candidats(donnees):
         # fixture_id_api_football/competition (10/10/2026) : uniquement pour la capture
         # prospective hist_cotes (backend/app/services/capture_historique.py) — identité du
         # match, jamais utilisés par la sélection ni Telegram.
-        pool[nom_match] = [
+        # Collision de nom (bug réel découvert en audit du 10/10/2026, JAMAIS silencieux depuis
+        # ce correctif) : "nom_match" (home vs away, sans date ni compétition) sert de clé au
+        # pool. Deux matchs RÉELLEMENT DIFFÉRENTS (fixture_id_oddspapi distincts — ex: deux clubs
+        # de même nom dans des championnats différents, ou une équipe réserve) peuvent produire
+        # exactement le même nom_match ; avant ce correctif, le second écrasait silencieusement
+        # le premier dans le pool et toutes ses jambes disparaissaient sans trace. Le MÊME match
+        # réel revu deux fois (même fixture_id, ex. doublon de collecte) continue d'écraser sans
+        # avertissement : c'est la même donnée, pas une perte.
+        # "match"/"home_nom"/"away_nom" (affichage Telegram, rediger_ticket_sans_ia,
+        # comparer_candidat) restent TOUJOURS le nom_match brut, inchangés dans tous les cas —
+        # seule la CLÉ DE POOL interne (jamais affichée) se désambiguïse, pour que le second
+        # match reste sélectionnable au lieu de disparaître.
+        fixture_id = m["oddspapi"]["fixture_id"]
+        cle_pool = nom_match
+        # fixture_id absent (None) : impossible de prouver qu'il s'agit du même match réel que
+        # celui déjà présent -> toujours traité comme une collision potentielle (jamais supposé
+        # être un doublon par défaut, pour ne jamais risquer d'effacer un match différent).
+        if cle_pool in pool and (fixture_id is None or fixture_par_cle_pool.get(cle_pool) != fixture_id):
+            cle_pool = f"{nom_match} ({fixture_id or f'#{len(pool)}'})"
+            print(f"   ⚠️ Collision de nom détectée : deux matchs réels différents partagent le nom "
+                  f"'{nom_match}' (fixture_id_oddspapi {fixture_par_cle_pool.get(nom_match)!r} puis "
+                  f"{fixture_id!r}) — le second est conservé sous une clé de pool distincte, jamais "
+                  f"écrasé silencieusement.")
+        fixture_par_cle_pool[cle_pool] = fixture_id
+        pool[cle_pool] = [
             {
                 "match": nom_match, "home_nom": home_nom, "away_nom": away_nom,
-                "fixture_id_oddspapi": m["oddspapi"]["fixture_id"], "pick": c, "contexte": contexte_match,
+                "fixture_id_oddspapi": fixture_id, "pick": c, "contexte": contexte_match,
                 "af_home_id": af.get("home_id") if af else None, "af_away_id": af.get("away_id") if af else None,
                 "competition_id": af.get("league_id") if af else None, "date_iso": m["oddspapi"].get("start_time"),
                 "fixture_id_api_football": af.get("fixture_id_api_football") if af else None,
