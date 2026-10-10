@@ -25,6 +25,7 @@ if _RACINE_DEPOT not in sys.path:
 
 from moteur_central.choix_moteur import choisir_par_marche  # noqa: E402
 from moteur_central.config import ConfigCentrale  # noqa: E402
+from moteur_central.contrat_adapter import convertir as convertir_contrat  # noqa: E402
 from moteur_central.metriques import calculer_metriques  # noqa: E402
 from moteur_central.score_central import CandidatCentral  # noqa: E402
 from moteur_central.shadow import calculer_shadow  # noqa: E402
@@ -88,13 +89,19 @@ def construire_candidats(pool, comparaison, historique_par_moteur_et_marche, cfg
 
 
 def _combo_vers_json(combo):
+    """Métadonnées du coupon (genere/nb_jambes/cote_totale/score_moyen) inchangées — seul le
+    format de chaque jambe change : schéma commun de moteur_central/contrat_adapter.py (Lot 3,
+    Phase 1 du plan de bascule du 10/10/2026) au lieu d'un sous-ensemble de champs choisi à la
+    main. Aucune Prediction réelle n'est fournie ici (voir contrat_adapter.py : le câblage
+    actuel n'en porte jamais) — convertir() décrit alors le candidat depuis CandidatCentral
+    seul, jamais un modèle inventé. "retenu"/"raisons" restent None/non fournis : ce lot ne
+    porte pas de décision de sélection individuelle, seulement la composition déjà faite par
+    selectionner()."""
     if not combo.get("genere"):
         return {"genere": False, "raison": combo.get("raison")}
     return {"genere": True, "nb_jambes": combo["nb_jambes"], "cote_totale": combo["cote_totale"],
             "score_moyen": combo["score_moyen"],
-            "jambes": [{"match": j.match, "marche": j.marche, "selection": j.selection, "cote": j.cote,
-                       "moteur_responsable": j.moteur_responsable, "proba_pct": j.proba_pct}
-                      for j in combo["jambes"]]}
+            "jambes": [convertir_contrat(j) for j in combo["jambes"]]}
 
 
 def calculer_et_journaliser_shadow(db, run, pool, comparaison, cote_min=1.3, cote_max=3.0, cfg=None):

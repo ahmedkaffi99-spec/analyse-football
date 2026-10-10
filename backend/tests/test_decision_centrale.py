@@ -10,8 +10,14 @@ from app.database import SessionLocal
 from app.models import Run
 from app.models_historique import HistCote, HistDecisionCentrale
 from app.services import historique as hist
-from app.services.decision_centrale import calculer_et_journaliser_shadow, construire_candidats
+from app.services.decision_centrale import (
+    _combo_vers_json,
+    calculer_et_journaliser_shadow,
+    construire_candidats,
+)
 from moteur_central.config import ConfigCentrale
+from moteur_central.contrat_adapter import CLES_SCHEMA_COMMUN
+from moteur_central.score_central import CandidatCentral
 
 HOME_ID, AWAY_ID = 100, 200
 
@@ -97,6 +103,91 @@ def test_shadow_une_seule_ligne_par_run_grace_a_la_contrainte_unique():
         calculer_et_journaliser_shadow(db, run, pool, [], cote_min=1.3, cote_max=3.0)
         lignes = list(db.scalars(select(HistDecisionCentrale).where(HistDecisionCentrale.run_id == run.id)))
         assert len(lignes) == 1
+
+
+class TestComboVersJsonContratCommun:
+    """Non-régression Phase 1 du plan de bascule (10/10/2026) : _combo_vers_json() utilise
+    désormais moteur_central.contrat_adapter.convertir() pour chaque jambe au lieu d'un
+    sous-ensemble de champs choisi à la main — les métadonnées du coupon et les champs déjà
+    lus ailleurs (runs.py) doivent rester strictement inchangés."""
+
+    def _combo(self, **overrides):
+        candidat = CandidatCentral(match="H vs A", marche="resultat", selection="1", cote=1.8,
+                                   moteur_responsable="bet_agent", proba_pct=58.0)
+        base = {"genere": True, "jambes": [candidat], "cote_totale": 1.8, "score_moyen": 0.58, "nb_jambes": 1}
+        base.update(overrides)
+        return base
+
+    def test_combo_non_genere_inchange(self):
+        resultat = _combo_vers_json({"genere": False, "raison": "pas assez de candidats"})
+        assert resultat == {"genere": False, "raison": "pas assez de candidats"}
+
+    def test_metadonnees_du_coupon_inchangees(self):
+        resultat = _combo_vers_json(self._combo())
+        assert resultat["genere"] is True
+        assert resultat["nb_jambes"] == 1
+        assert resultat["cote_totale"] == 1.8
+        assert resultat["score_moyen"] == 0.58
+
+    def test_runs_py_lit_toujours_nb_jambes_et_genere_sans_casser(self):
+        # Reproduit exactement l'accès fait par backend/app/services/runs.py:188-190 : seul
+        # ['nb_jambes'] et ['genere'] sont lus pour le log console, jamais le contenu de
+        # 'jambes' — ce test prouve que ce chemin de lecture reste valide après le changement.
+        resultat = _combo_vers_json(self._combo())
+        texte = f"{resultat['nb_jambes'] if resultat['genere'] else 'non généré'} jambe(s)"
+        assert texte == "1 jambe(s)"
+
+    def test_chaque_jambe_porte_toutes_les_cles_du_schema_commun(self):
+        resultat = _combo_vers_json(self._combo())
+        for jambe in resultat["jambes"]:
+            assert set(jambe.keys()) == set(CLES_SCHEMA_COMMUN)
+
+    def test_champs_deja_existants_preserves_dans_le_nouveau_format(self):
+        # Les champs que l'ancien format exposait à la main (match, marche, selection, cote,
+        # moteur_responsable, proba_pct) doivent être retrouvables avec la même valeur, même si
+        # le nom de clé pour la cote change ("odds" au lieu de "cote" — voir contrat_adapter.py).
+        resultat = _combo_vers_json(self._combo())
+        jambe = resultat["jambes"][0]
+        assert jambe["market"] == "resultat"
+        assert jambe["selection"] == "1"
+        assert jambe["odds"] == 1.8
+        assert jambe["source"] == "bet_agent"
+        assert jambe["proba_pct"] == 58.0
+
+    def test_aucune_donnee_perdue_pour_un_candidat_complet(self):
+        candidat = CandidatCentral(match="H vs A", marche="btts", selection="oui", cote=1.9,
+                                   moteur_responsable="moteur", proba_pct=55.0, competition="Ligue Test",
+                                   proba_calibree_pct=52.0, edge_pct=4.2,
+                                   historique_marche={"disponible": True, "n": 40, "win_rate": 0.55},
+                                   fixture_id_oddspapi="fx-1", raisons=["edge positif"])
+        resultat = _combo_vers_json(self._combo(jambes=[candidat]))
+        jambe = resultat["jambes"][0]
+        assert jambe["competition"] == "Ligue Test"
+        assert jambe["proba_calibree_pct"] == 52.0
+        assert jambe["edge_pct"] == 4.2
+        assert jambe["fixture_id_oddspapi"] == "fx-1"
+        assert jambe["historique_marche"] == {"disponible": True, "n": 40, "win_rate": 0.55}
+        assert jambe["reasons"] == ["edge positif"]
+
+    def test_jambes_json_serialisables(self):
+        import json
+
+        candidat = CandidatCentral(match="H vs A", marche="btts", selection="oui", cote=1.9,
+                                   moteur_responsable="moteur", proba_pct=55.0)
+        resultat = _combo_vers_json(self._combo(jambes=[candidat]))
+        json.dumps(resultat)  # lève si une valeur n'est pas sérialisable — ne doit jamais lever
+
+
+def test_shadow_journalise_avec_le_nouveau_format_de_jambe():
+    with SessionLocal() as db:
+        run = _run(db)
+        pool = {"H vs A": [_candidat("H vs A", _pick("Total", "Over", 1.9))]}
+        ligne = calculer_et_journaliser_shadow(db, run, pool, [], cote_min=1.3, cote_max=3.0)
+
+        assert ligne.coupon_bet_agent is not None
+        if ligne.coupon_bet_agent["genere"]:
+            for jambe in ligne.coupon_bet_agent["jambes"]:
+                assert set(jambe.keys()) == set(CLES_SCHEMA_COMMUN)
 
 
 def test_shadow_utilise_lhistorique_hist_cotes_deja_juge_pour_le_score():
