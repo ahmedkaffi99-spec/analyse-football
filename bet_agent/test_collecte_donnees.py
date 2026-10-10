@@ -226,7 +226,7 @@ class TestBasculeFournisseurCotesApiFootball:
         cd.recuperer_marches_pour_fixture_api_football(1)
         assert cd._appels_odds_api_football_consommes == avant + 1
 
-    def test_bascule_appelle_la_bonne_fonction_selon_le_flag(self, monkeypatch):
+    def test_bascule_appelle_la_bonne_fonction_selon_le_flag(self, monkeypatch, tmp_path):
         """Vérifie le point d'intégration dans collecter_donnees() lui-même : le flag décide
         strictement laquelle des deux fonctions est appelée, jamais les deux."""
         appels_oddspapi, appels_api_football = [], []
@@ -235,6 +235,10 @@ class TestBasculeFournisseurCotesApiFootball:
             "statusName": "Pre-Game", "startTime": "2099-01-01T00:00:00Z",
             "tournamentName": "Ligue 1", "categoryName": "France", "fixtureId": "fxLENSAUX",
         }
+        # Isole la sortie JSON réelle de collecter_donnees() dans tmp_path — sans ça, ce test
+        # écrit un vrai bet_agent/donnees_collectees.json (constaté le 10/10/2026 : atterrit
+        # même à la racine du dépôt selon le cwd de pytest, détecté par le stop-hook git).
+        monkeypatch.setattr(cd, "SORTIE_JSON", str(tmp_path / "donnees_collectees.json"))
         monkeypatch.setattr(cd, "MATCHS_MANUELS_ENV", "", raising=False)
         monkeypatch.setattr(cd, "SELECTION_MANUELLE_ACTIVE", False, raising=False)
         monkeypatch.setattr(cd, "MATCHS_MANUELS_DATES", set(), raising=False)
