@@ -2180,6 +2180,25 @@ class TestMelangeModeleMarche(unittest.TestCase):
             self.assertLess(c["proba_modele_pct"], 90)
             self.assertLessEqual(c["edge_pct"], ae.EDGE_MAX_PLAUSIBLE)
 
+    def test_double_chance_avec_une_jambe_manquante_ne_depasse_pas_100_pourcent(self):
+        # Bug réel découvert en audit (2026-10-10) : probabilites_sans_marge() normalise la
+        # probabilité "sans marge" d'un Double Chance en supposant les 3 sélections (1X/X2/12)
+        # présentes (somme_cible=2.0, voir son docstring) — mais une seule sélection suspendue
+        # ou absente côté OddsPapi (favori écrasant : 1X à cote 1.20, "12" non quoté) suffit à
+        # casser cette hypothèse : total = 1/cote(1X) + 1/cote(X2) seulement, sans le terme du
+        # "12" manquant, qui normalise habituellement la somme à 2 pour refléter l'overround du
+        # bookmaker. Résultat mathématiquement impossible : p_marche(1X) = 161% ici, et donc
+        # (via le mélange POIDS_MARCHE à 65%) une probabilité finale de pari à 138% transmise
+        # telle quelle au pool (agent3_calcul_pool_candidats → evaluer_marches_toutes), capable
+        # de passer le filtre PROBA_MIN_FORTE (70%) de la sélection automatique
+        # (selectionner_combo_cote_cible) et donc d'atterrir dans un coupon réel.
+        marches = [{"marche": "Double Chance Full Time", "handicap": 0.0, "periode": "fulltime",
+                    "selections": [{"selection": "1X", "cote": 1.20}, {"selection": "X2", "cote": 5.0}]}]
+        candidats = ae.evaluer_marches_toutes(marches, 2.6, 0.5)
+        pick_1x = next(c for c in candidats if c["selection"] == "1X")
+        self.assertLessEqual(pick_1x["proba_modele_pct"], 100.0)
+        self.assertLessEqual(pick_1x["proba_marche_pct"], 100.0)
+
     def test_petites_cotes_exclues_mais_plus_les_cartons(self):
         # Demande explicite du 30/09/2026 ("ne limite les marchés") : Total Cartons n'est plus
         # exclu — seule la cote plancher (COTE_MIN_JAMBE) filtre encore.

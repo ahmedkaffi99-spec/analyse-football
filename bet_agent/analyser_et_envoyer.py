@@ -796,7 +796,18 @@ def probabilites_sans_marge(marches):
         somme_cible = 2.0 if "double chance" in nom.lower() else 1.0
         total = sum(1 / c for _, c in cotes)
         for selection, cote in cotes:
-            probas.setdefault((cle_marche, selection), somme_cible * (1 / cote) / total)
+            # min(1.0, ...) : bug réel découvert en audit (2026-10-10) — la normalisation à
+            # somme_cible=2.0 pour Double Chance suppose les 3 sélections (1X/X2/12) présentes
+            # et cotées de façon cohérente ; une seule sélection suspendue/absente côté OddsPapi
+            # (favori écrasant, ex. 1X à cote 1.20 sans "12" quoté) casse cette hypothèse et
+            # peut produire une "probabilité" de marché > 1 mathématiquement impossible, qui se
+            # propage ensuite (mélange POIDS_MARCHE) jusqu'à un proba_modele_pct > 100% capable
+            # de passer le filtre PROBA_MIN_FORTE de la sélection automatique
+            # (voir TestMelangeModeleMarche.test_double_chance_avec_une_jambe_manquante_ne_
+            # depasse_pas_100_pourcent). Une probabilité est par définition bornée à [0, 1] —
+            # ce plafond ne change rien quand les 3 jambes sont présentes et cohérentes (le
+            # résultat non plafonné est déjà < 1 dans ce cas).
+            probas.setdefault((cle_marche, selection), min(1.0, somme_cible * (1 / cote) / total))
     return probas
 
 
