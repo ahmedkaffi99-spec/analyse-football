@@ -190,6 +190,94 @@ def test_shadow_journalise_avec_le_nouveau_format_de_jambe():
                 assert set(jambe.keys()) == set(CLES_SCHEMA_COMMUN)
 
 
+def _assert_coupon_bien_structure(coupon):
+    """Vérifie la forme d'un coupon journalisé telle que produite par _combo_vers_json() :
+    soit non généré avec une raison textuelle non vide, soit généré avec des métadonnées
+    cohérentes et des jambes portant exactement le schéma commun."""
+    assert isinstance(coupon, dict)
+    assert "genere" in coupon
+    if not coupon["genere"]:
+        assert isinstance(coupon.get("raison"), str)
+        assert coupon["raison"] != ""
+        return
+    assert isinstance(coupon["jambes"], list)
+    assert coupon["nb_jambes"] == len(coupon["jambes"])
+    assert isinstance(coupon["cote_totale"], float)
+    assert isinstance(coupon["score_moyen"], float)
+    for jambe in coupon["jambes"]:
+        assert set(jambe.keys()) == set(CLES_SCHEMA_COMMUN)
+
+
+def test_shadow_journalise_reellement_les_3_coupons_avec_metadonnees_coherentes():
+    """Bout-en-bout : 2 candidats bet_agent (2 matchs distincts, cotes 1.3 chacune -> cote
+    combinée 1.69, dans [1.3, 3.0]) suffisent pour que selectionner() génère réellement un
+    coupon bet_agent à 2 jambes ; aucune comparaison moteur fournie -> coupon_moteur non
+    généré. On vérifie les VRAIES valeurs journalisées, jamais déduites."""
+    with SessionLocal() as db:
+        run = _run(db)
+        pool = {
+            "H vs A": [_candidat("H vs A", _pick("Total", "Over", 1.3))],
+            "B vs C": [_candidat("B vs C", _pick("Total", "Over", 1.3), af_home_id=300, af_away_id=400,
+                                 home_nom="B", away_nom="C")],
+        }
+        ligne = calculer_et_journaliser_shadow(db, run, pool, [], cote_min=1.3, cote_max=3.0)
+
+        # 1. les 3 coupons sont bien journalisés sur la ligne retournée.
+        for coupon in (ligne.coupon_bet_agent, ligne.coupon_moteur, ligne.coupon_central):
+            assert coupon is not None
+            _assert_coupon_bien_structure(coupon)
+
+        # Relit la ligne telle que réellement persistée en base (pas seulement l'objet Python
+        # encore attaché à la session) pour prouver que la journalisation a bien eu lieu.
+        relue = db.get(HistDecisionCentrale, ligne.id)
+        assert relue.coupon_bet_agent is not None
+        assert relue.coupon_moteur is not None
+        assert relue.coupon_central is not None
+
+        # 2 candidats bet_agent valides, cotes dans la cible -> doit être réellement généré.
+        assert ligne.coupon_bet_agent["genere"] is True
+        assert ligne.coupon_bet_agent["nb_jambes"] == 2
+        # 3. cote_totale cohérente avec le produit RÉEL des cotes des jambes retournées.
+        produit_reel = 1.0
+        for jambe in ligne.coupon_bet_agent["jambes"]:
+            produit_reel *= jambe["odds"]
+        assert ligne.coupon_bet_agent["cote_totale"] == round(produit_reel, 3)
+
+        # aucune comparaison moteur fournie -> jamais de coupon moteur généré.
+        assert ligne.coupon_moteur["genere"] is False
+
+
+def test_shadow_pool_vide_ne_leve_aucune_exception_et_journalise_trois_coupons_non_generes():
+    """Cas sans aucun candidat (pool vide, comparaison=[]) : ne doit jamais lever, et les 3
+    coupons doivent être journalisés comme non générés avec une raison textuelle explicite."""
+    with SessionLocal() as db:
+        run = _run(db)
+        ligne = calculer_et_journaliser_shadow(db, run, {}, [], cote_min=1.3, cote_max=3.0)
+
+        for coupon in (ligne.coupon_bet_agent, ligne.coupon_moteur, ligne.coupon_central):
+            assert coupon["genere"] is False
+            assert isinstance(coupon["raison"], str) and coupon["raison"] != ""
+            assert coupon.get("jambes") is None  # jamais de clé "jambes" sur un coupon non généré
+
+
+def test_shadow_candidat_bet_agent_sans_comparaison_moteur_coupon_moteur_non_genere():
+    """Au moins un candidat bet_agent fourni mais aucune comparaison moteur (comparaison=[]) :
+    coupon_moteur doit rester non généré, et coupon_bet_agent doit rester correctement
+    structuré (qu'il soit généré ou non selon le nombre de candidats disponibles)."""
+    with SessionLocal() as db:
+        run = _run(db)
+        pool = {"H vs A": [_candidat("H vs A", _pick("Total", "Over", 1.9))]}
+        ligne = calculer_et_journaliser_shadow(db, run, pool, [], cote_min=1.3, cote_max=3.0)
+
+        assert ligne.coupon_moteur["genere"] is False
+        assert isinstance(ligne.coupon_moteur["raison"], str) and ligne.coupon_moteur["raison"] != ""
+        _assert_coupon_bien_structure(ligne.coupon_bet_agent)
+        # un seul candidat bet_agent -> en-dessous du minimum de 2 jambes -> jamais généré,
+        # mais la structure (raison textuelle) doit rester correcte malgré tout.
+        assert ligne.coupon_bet_agent["genere"] is False
+        assert isinstance(ligne.coupon_bet_agent["raison"], str) and ligne.coupon_bet_agent["raison"] != ""
+
+
 def test_shadow_utilise_lhistorique_hist_cotes_deja_juge_pour_le_score():
     with SessionLocal() as db:
         run1 = _run(db)
