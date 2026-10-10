@@ -58,6 +58,39 @@ STAT_API_FOOTBALL_PAR_CATEGORIE = {
 # ("NS") ni terminé ("FT"/"AET"/"PEN"/"PST"/"CANC"/"ABD"/"AWD"/"WO"/"TBD").
 STATUTS_EN_DIRECT = ("1H", "HT", "2H", "ET", "BT", "P", "INT", "LIVE")
 
+# Statuts "terminaux mais non réglables normalement" (fixture.status.short, API-Football) —
+# demande explicite du 10/10/2026 (audit global) : avant ce correctif, seul "FT" strict était
+# traité, tout le reste (y compris AET/PEN pourtant bien terminés, et PST/CANC/ABD/SUSP/INT)
+# restait "pas_termine" indéfiniment, biaisant silencieusement tout calcul futur de ROI vers
+# les seuls matchs sans incident.
+# PST (reporté avant coup d'envoi), CANC (annulé), ABD (abandonné en cours) : le match n'a
+# jamais été mené à son terme réglementaire -> remboursement (convention standard du secteur,
+# pas une invention), jamais un score deviné.
+STATUTS_ANNULES = ("PST", "CANC", "ABD")
+# SUSP (suspendu), INT (interrompu) : PEUT encore reprendre -> ni gagné/perdu/remboursé tant
+# que le statut n'évolue pas. Sort de cet état uniquement via jambe_perimee() après un délai
+# configurable, jamais par une hypothèse sur l'issue du match.
+STATUTS_INDETERMINES_PROLONGES = ("SUSP", "INT")
+
+# Délai (jours depuis le coup d'envoi prévu) au-delà duquel une jambe/cote encore sans verdict
+# est explicitement marquée "perime" plutôt que de rester en_attente pour toujours (aucun
+# mécanisme de ce type n'existait avant ce correctif). Configurable (DELAI_PEREMPTION_JOURS),
+# jamais appliqué sans connaître le coup d'envoi réel.
+DELAI_PEREMPTION_JOURS = int(os.getenv("DELAI_PEREMPTION_JOURS", "10"))
+
+
+def jambe_perimee(coup_envoi, maintenant=None, delai_jours=None):
+    """True si plus de `delai_jours` jours se sont écoulés depuis le coup d'envoi SANS verdict
+    (match introuvable, suspendu/interrompu sans reprise...). Sans coup_envoi connu, renvoie
+    TOUJOURS False — jamais une péremption devinée faute de date."""
+    if coup_envoi is None:
+        return False
+    maintenant = maintenant or datetime.now(timezone.utc)
+    if coup_envoi.tzinfo is None:
+        coup_envoi = coup_envoi.replace(tzinfo=timezone.utc)
+    delai = timedelta(days=delai_jours if delai_jours is not None else DELAI_PEREMPTION_JOURS)
+    return maintenant - coup_envoi > delai
+
 
 def recuperer_fixtures_du_jour():
     """Fenêtre large (-1 à +2 jours) pour ne jamais rater un match à cheval sur minuit UTC,
@@ -136,19 +169,49 @@ def trouver_fixture_api_football(home_nom, away_nom, fixtures_af, cd):
     return meilleur if meilleur and meilleur_score >= cd.SEUIL_MATCH_ACCEPTABLE else None
 
 
-def trouver_score_api_football(home_nom, away_nom, fixtures_af, cd):
-    """Renvoie (but_domicile, but_exterieur) — déjà dans le bon ordre — seulement si un match est
-    trouvé ET terminé (statut 'FT' : temps réglementaire, pas de prolongation/tirs au but pour
-    ces compétitions). None si aucun match fiable ou pas encore terminé."""
-    meilleur = trouver_fixture_api_football(home_nom, away_nom, fixtures_af, cd)
-    if not meilleur:
+def score_reglementaire_api_football(fixture):
+    """Score du temps RÉGLEMENTAIRE (90 minutes) — à utiliser pour TOUS les marchés gérés par
+    ce module : aucune catégorie actuelle (grader_pick/grader_pick_stat) n'est un marché "y
+    compris prolongation". Pour un match FT, `goals` EST déjà le score réglementaire. Pour un
+    match AET/PEN, `goals` inclut la prolongation/les tirs au but — on lit alors explicitement
+    `score.fulltime` (le score à l'issue des 90 minutes, tel que documenté par l'API-Football),
+    JAMAIS `goals`, pour ne jamais régler un marché "90 minutes" sur un score qui inclut la
+    prolongation. None si l'information n'est pas fournie (jamais inventé)."""
+    statut = ((fixture.get("fixture") or {}).get("status") or {}).get("short")
+    if statut == "FT":
+        buts = fixture.get("goals") or {}
+    elif statut in ("AET", "PEN"):
+        buts = (fixture.get("score") or {}).get("fulltime") or {}
+    else:
         return None
-    if (meilleur.get("fixture") or {}).get("status", {}).get("short") != "FT":
-        return None
-    buts = meilleur.get("goals") or {}
     if buts.get("home") is None or buts.get("away") is None:
         return None
     return buts["home"], buts["away"]
+
+
+def trouver_score_api_football(home_nom, away_nom, fixtures_af, cd):
+    """Renvoie (etat, score) :
+    - ("termine", (but_dom, but_ext)) : score du temps réglementaire, prêt à juger (FT, ou
+      AET/PEN ramené aux 90 minutes via score_reglementaire_api_football).
+    - ("annule", None) : match officiellement non mené à terme (voir STATUTS_ANNULES) ->
+      remboursement, jamais un score deviné.
+    - ("indetermine", None) : suspendu/interrompu (voir STATUTS_INDETERMINES_PROLONGES), peut
+      encore reprendre -> ni gagné/perdu/remboursé (voir jambe_perimee pour la sortie de cet
+      état après un délai).
+    - ("pas_termine", None) : tout le reste (introuvable, pas commencé, en cours normalement,
+      ou score réglementaire pas encore publié pour un FT/AET/PEN tout juste constaté)."""
+    meilleur = trouver_fixture_api_football(home_nom, away_nom, fixtures_af, cd)
+    if not meilleur:
+        return "pas_termine", None
+    statut = ((meilleur.get("fixture") or {}).get("status") or {}).get("short")
+    if statut in STATUTS_ANNULES:
+        return "annule", None
+    if statut in STATUTS_INDETERMINES_PROLONGES:
+        return "indetermine", None
+    score = score_reglementaire_api_football(meilleur)
+    if score is None:
+        return "pas_termine", None
+    return "termine", score
 
 
 def recuperer_statistiques_finales_api_football(fixture_id_af, domicile):

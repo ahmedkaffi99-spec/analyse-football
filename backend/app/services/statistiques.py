@@ -9,13 +9,16 @@ from app.models import Coupon, Jambe
 
 
 def gain_coupon(coupon):
-    """Gain net pour 1 unité misée. Une jambe remboursée (push) compte pour une cote de 1."""
+    """Gain net pour 1 unité misée. Une jambe remboursée (push) OU annulée (annule : match
+    reporté/annulé/abandonné, correctif du 10/10/2026) compte pour une cote de 1 — dans les
+    deux cas, aucune cote réelle n'a été jouée sur cette jambe, jamais incluse dans le produit
+    des cotes du combiné."""
     if coupon.statut == "perdu":
         return -1.0
     if coupon.statut == "gagne":
         cote = 1.0
         for j in coupon.jambes:
-            if j.resultat != "push":
+            if j.resultat not in ("push", "annule"):
                 cote *= j.cote
         return cote - 1.0
     return None

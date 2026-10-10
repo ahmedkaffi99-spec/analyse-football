@@ -2,6 +2,7 @@
 verifier_resultats.py (grader_pick & co) — même règles que le bilan Telegram du soir."""
 
 from collections import Counter
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 
@@ -12,15 +13,17 @@ VERDICT_VERS_RESULTAT = {"gagne": "gagne", "perdu": "perdu", "push": "push", Non
 
 
 def statut_coupon(resultats):
-    """Un combiné est perdu dès qu'une jambe est perdue ; gagné seulement si toutes les
-    jambes sont gagnées ou remboursées ; incertain si une jambe n'a pas pu être vérifiée."""
+    """Un combiné est perdu dès qu'une jambe est perdue ; gagné seulement si toutes les jambes
+    sont gagnées, remboursées (push) ou annulées (annule) ; incertain si une jambe n'a pas pu
+    être vérifiée OU est périmée (délai de péremption dépassé sans verdict, voir
+    verifier_resultats.jambe_perimee) — jamais compté comme gagné/perdu par défaut."""
     if not resultats:
         return "vide"
     if "perdu" in resultats:
         return "perdu"
     if "en_attente" in resultats:
         return "en_attente"
-    if "non_verifiable" in resultats:
+    if "non_verifiable" in resultats or "perime" in resultats:
         return "incertain"
     return "gagne"
 
@@ -39,22 +42,41 @@ def verifier_jambes(db, jambes):
     fixtures_af = vr.recuperer_fixtures_api_football_du_jour()
     fixtures = None  # OddsPapi, chargé à la demande (repli), une seule fois pour tout le passage
     scores = {}
+    maintenant = datetime.now(timezone.utc)
+
+    def _marquer_non_resolu(jambe):
+        # Péremption (délai dépassé depuis le coup d'envoi, sans verdict) -> "perime", jamais
+        # laissé en_attente pour toujours ; sinon, inchangé ("pas_termine", en_attente reste).
+        coup_envoi = jambe.match.coup_envoi if jambe.match else None
+        if vr.jambe_perimee(coup_envoi, maintenant):
+            jambe.resultat = "perime"
+            compte["perime"] += 1
+        else:
+            compte["pas_termine"] += 1
+
     for jambe in a_juger:
         domicile = jambe.domicile or jambe.libelle_match.split(" vs ")[0]
         exterieur = jambe.libelle_match.split(" vs ")[-1]
         but_dom = but_ext = None
         if vr.trouver_fixture_api_football(domicile, exterieur, fixtures_af, cd):
-            resultat_af = vr.trouver_score_api_football(domicile, exterieur, fixtures_af, cd)
-            if resultat_af is None:
-                compte["pas_termine"] += 1
+            etat, score = vr.trouver_score_api_football(domicile, exterieur, fixtures_af, cd)
+            if etat == "annule":
+                # Match reporté/annulé/abandonné (PST/CANC/ABD) : jamais un score deviné,
+                # remboursement direct — convention standard, pas un gagné/perdu/push normal.
+                jambe.resultat = "annule"
+                compte["annule"] += 1
                 continue
-            but_dom, but_ext = resultat_af
+            if etat != "termine":
+                # "indetermine" (suspendu/interrompu, peut reprendre) ou "pas_termine".
+                _marquer_non_resolu(jambe)
+                continue
+            but_dom, but_ext = score
         else:
             if fixtures is None:
                 fixtures = vr.recuperer_fixtures_du_jour()
             fx = fixtures.get(jambe.fixture_id_oddspapi)
             if not fx or fx.get("statusName") != "Finished":
-                compte["pas_termine"] += 1
+                _marquer_non_resolu(jambe)
                 continue
             if jambe.fixture_id_oddspapi not in scores:
                 scores[jambe.fixture_id_oddspapi] = vr.recuperer_score(jambe.fixture_id_oddspapi)

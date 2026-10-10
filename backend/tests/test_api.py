@@ -200,6 +200,10 @@ def test_verification_api_football_d_abord_sans_appel_oddspapi(client, monkeypat
     appels_oddspapi = []
     monkeypatch.setattr(vr, "recuperer_fixtures_du_jour", lambda: appels_oddspapi.append(1) or {})
     monkeypatch.setattr(vr, "recuperer_score", lambda fid: appels_oddspapi.append(1))
+    # Ce test porte sur l'absence d'appel OddsPapi, pas sur la péremption (voir
+    # test_verification_perime_apres_le_delai pour celle-ci) : délai désactivé ici pour garder
+    # "pas_termine" malgré le coup d'envoi ancien (25/09/2026) de collecte_exemple().
+    monkeypatch.setattr(vr, "DELAI_PEREMPTION_JOURS", 999999)
     monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda: [
         {"teams": {"home": {"name": "RC Lens"}, "away": {"name": "AJ Auxerre"}},
          "fixture": {"status": {"short": "2H"}}, "goals": {"home": 1, "away": 0}}])
@@ -214,9 +218,94 @@ def test_verification_api_football_d_abord_sans_appel_oddspapi(client, monkeypat
     assert resultat["gagne"] == 2 and resultat["perdu"] == 1 and appels_oddspapi == []
 
 
+def test_verification_perime_apres_le_delai_jamais_un_verdict_devine(client, monkeypatch):
+    """Correctif du 10/10/2026 (audit global, TÂCHE A) : avant ce correctif, un match introuvable
+    ou toujours "pas_termine" restait en_attente POUR TOUJOURS. Le coup d'envoi de
+    collecte_exemple() (25/09/2026) est maintenant à plus de DELAI_PEREMPTION_JOURS (défaut 10)
+    du "aujourd'hui" réel -> les 3 jambes doivent devenir "perime", jamais gagne/perdu/push
+    deviné, et le coupon correspondant doit passer "incertain" (jamais "gagne"/"perdu")."""
+    client.post("/api/imports", json={"collecte": collecte_exemple(), "ticket": ticket_exemple()})
+    _, _, vr = pipeline.modules()
+    monkeypatch.setattr(vr, "recuperer_fixtures_du_jour", lambda: {})
+    monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda: [])  # introuvable
+
+    resultat = client.post("/api/coupons/verification").json()
+    assert resultat["perime"] == 3
+    assert resultat["gagne"] == 0 and resultat["perdu"] == 0
+
+    coupons = client.get("/api/coupons").json()
+    for c in coupons:
+        detail = client.get(f"/api/coupons/{c['id']}").json()
+        if detail["jambes"]:
+            assert c["statut"] == "incertain"
+
+
+def test_verification_match_annule_remboursement_jamais_un_score_devine(client, monkeypatch):
+    """PST/CANC/ABD (correctif TÂCHE A) : jamais un score inventé, jamais gagne/perdu — un
+    remboursement explicite ("annule"), distinct de "push" (qui lui vient d'une ligne
+    réellement atteinte)."""
+    client.post("/api/imports", json={"collecte": collecte_exemple(), "ticket": ticket_exemple()})
+    _, _, vr = pipeline.modules()
+    monkeypatch.setattr(vr, "recuperer_fixtures_du_jour", lambda: {})
+    monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda: [
+        {"teams": {"home": {"name": "RC Lens"}, "away": {"name": "AJ Auxerre"}},
+         "fixture": {"status": {"short": "PST"}}, "goals": {"home": None, "away": None}}])
+
+    resultat = client.post("/api/coupons/verification").json()
+    assert resultat["annule"] == 3
+    assert resultat["gagne"] == 0 and resultat["perdu"] == 0
+
+
+def test_verification_match_suspendu_reste_en_attente_tant_que_non_perime(client, monkeypatch):
+    """SUSP/INT (correctif TÂCHE A) : peut encore reprendre -> reste "pas_termine" (en_attente),
+    jamais tranché tant que le délai de péremption n'est pas dépassé."""
+    client.post("/api/imports", json={"collecte": collecte_exemple(), "ticket": ticket_exemple()})
+    _, _, vr = pipeline.modules()
+    monkeypatch.setattr(vr, "DELAI_PEREMPTION_JOURS", 999999)
+    monkeypatch.setattr(vr, "recuperer_fixtures_du_jour", lambda: {})
+    monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda: [
+        {"teams": {"home": {"name": "RC Lens"}, "away": {"name": "AJ Auxerre"}},
+         "fixture": {"status": {"short": "SUSP"}}, "goals": {"home": 1, "away": 0}}])
+
+    resultat = client.post("/api/coupons/verification").json()
+    assert resultat["pas_termine"] == 3
+    assert resultat["gagne"] == 0 and resultat["perdu"] == 0 and resultat["annule"] == 0
+
+
+def test_verification_aet_juge_sur_le_score_reglementaire_pas_le_score_final(client, monkeypatch):
+    """AET (correctif TÂCHE A) : les marchés de ce pipeline (Total, BTTS...) ne sont jamais
+    "y compris prolongation" -> jugés sur score.fulltime (90 minutes), jamais sur goals (qui
+    inclut la prolongation). Ici score.fulltime=1-1 (push sur Total 2.5, perdu sur BTTS Yes
+    puisque 1-1 est bien "les deux marquent"... donc on choisit un cas sans ambiguïté : 1-0
+    au temps réglementaire, puis un but supplémentaire en prolongation (objectif : vérifier
+    qu'on lit bien fulltime=1-0, pas goals=2-0)."""
+    client.post("/api/imports", json={"collecte": collecte_exemple(), "ticket": ticket_exemple()})
+    _, _, vr = pipeline.modules()
+    monkeypatch.setattr(vr, "recuperer_fixtures_du_jour", lambda: {})
+    monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda: [
+        {"teams": {"home": {"name": "RC Lens"}, "away": {"name": "AJ Auxerre"}},
+         "fixture": {"status": {"short": "AET"}},
+         "score": {"fulltime": {"home": 1, "away": 0}},  # score réglementaire : Total(2.5)=1 -> perdu (Over)/gagné (Under)
+         "goals": {"home": 2, "away": 0}}])  # score final (après prolongation) — ne doit PAS être utilisé
+
+    resultat = client.post("/api/coupons/verification").json()
+    # Total Over 2.5 sur un score réglementaire 1-0 (total=1) -> perdu ; si le code utilisait
+    # par erreur `goals` (2-0, total=2), ce serait toujours perdu ici (pas assez discriminant)
+    # -> on vérifie donc directement via le match en base que le score enregistré est 1-0.
+    matchs = client.get("/api/matchs").json()
+    m = next(x for x in matchs if x["domicile"] == "Lens")  # Match.domicile = api_football.home_name
+    assert (m["score_domicile"], m["score_exterieur"]) == (1, 0)
+
+
 def test_statut_coupon():
     assert statut_coupon(["gagne", "push"]) == "gagne"
     assert statut_coupon(["gagne", "en_attente"]) == "en_attente"
     assert statut_coupon(["gagne", "non_verifiable"]) == "incertain"
     assert statut_coupon(["en_attente", "perdu"]) == "perdu"
     assert statut_coupon([]) == "vide"
+    # Correctif du 10/10/2026 (TÂCHE A) : "annule" (remboursement, match jamais mené à terme)
+    # compte comme push/gagne, jamais comme une perte ; "perime" (délai dépassé sans verdict)
+    # compte comme incertain, jamais comme gagne/perdu deviné.
+    assert statut_coupon(["gagne", "annule"]) == "gagne"
+    assert statut_coupon(["gagne", "perime"]) == "incertain"
+    assert statut_coupon(["perdu", "annule"]) == "perdu"

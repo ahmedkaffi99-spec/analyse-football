@@ -199,6 +199,7 @@ def test_juger_cotes_en_attente_match_pas_termine_laisse_en_attente(monkeypatch)
         from app.services import pipeline
 
         _, _, vr = pipeline.modules()
+        monkeypatch.setattr(vr, "DELAI_PEREMPTION_JOURS", 999999)  # pas le sujet de ce test
         monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda: [])
         monkeypatch.setattr(vr, "recuperer_fixtures_du_jour", lambda: {})
 
@@ -206,3 +207,99 @@ def test_juger_cotes_en_attente_match_pas_termine_laisse_en_attente(monkeypatch)
         assert resultat["pas_termine"] == 1
         ligne = db.scalars(select(HistCote)).first()
         assert ligne.resultat is None
+
+
+def _fixture_af(home, away, statut, home_g=None, away_g=None, score_fulltime=None):
+    fixture = {"teams": {"home": {"name": home}, "away": {"name": away}},
+              "fixture": {"status": {"short": statut}}, "goals": {"home": home_g, "away": away_g}}
+    if score_fulltime is not None:
+        fixture["score"] = {"fulltime": {"home": score_fulltime[0], "away": score_fulltime[1]}}
+    return fixture
+
+
+def test_juger_cotes_en_attente_match_annule_remboursement(monkeypatch):
+    """Correctif du 10/10/2026 (TÂCHE A) : PST/CANC/ABD -> "annule", jamais un score deviné."""
+    with SessionLocal() as db:
+        run = _run(db)
+        pick = _pick("Total", "Over", 1.9, ligne=2.5)
+        pool = {"Home FC vs Away FC": [_candidat("Home FC vs Away FC", pick, home_nom="Home FC", away_nom="Away FC")]}
+        capturer_predictions(db, run, pool)
+
+        from app.services import pipeline
+
+        _, _, vr = pipeline.modules()
+        monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour",
+                            lambda: [_fixture_af("Home FC", "Away FC", "CANC")])
+
+        resultat = juger_cotes_en_attente(db)
+        assert resultat["jugees"] == 1
+        ligne = db.scalars(select(HistCote)).first()
+        assert ligne.resultat == "annule"
+        assert ligne.juge_le is not None
+
+
+def test_juger_cotes_en_attente_match_suspendu_reste_en_attente(monkeypatch):
+    """SUSP/INT : peut encore reprendre -> reste non jugé tant que non périmé."""
+    with SessionLocal() as db:
+        run = _run(db)
+        pick = _pick("Total", "Over", 1.9, ligne=2.5)
+        pool = {"Home FC vs Away FC": [_candidat("Home FC vs Away FC", pick, home_nom="Home FC", away_nom="Away FC")]}
+        capturer_predictions(db, run, pool)
+
+        from app.services import pipeline
+
+        _, _, vr = pipeline.modules()
+        monkeypatch.setattr(vr, "DELAI_PEREMPTION_JOURS", 999999)
+        monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour",
+                            lambda: [_fixture_af("Home FC", "Away FC", "SUSP", 1, 0)])
+
+        resultat = juger_cotes_en_attente(db)
+        assert resultat["pas_termine"] == 1
+        ligne = db.scalars(select(HistCote)).first()
+        assert ligne.resultat is None
+
+
+def test_juger_cotes_en_attente_perime_apres_le_delai(monkeypatch):
+    """Correctif du 10/10/2026 (TÂCHE A) : au-delà de DELAI_PEREMPTION_JOURS sans verdict,
+    "perime" explicite, jamais en_attente pour toujours ni un verdict gagne/perdu deviné."""
+    with SessionLocal() as db:
+        run = _run(db, lance_le=datetime.now(timezone.utc) - timedelta(days=20))
+        pick = _pick("Total", "Over", 1.9, ligne=2.5)
+        candidat = _candidat("Home FC vs Away FC", pick, home_nom="Home FC", away_nom="Away FC")
+        candidat["date_iso"] = (datetime.now(timezone.utc) - timedelta(days=20)).isoformat()
+        pool = {"Home FC vs Away FC": [candidat]}
+        capturer_predictions(db, run, pool)
+
+        from app.services import pipeline
+
+        _, _, vr = pipeline.modules()
+        monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda: [])
+        monkeypatch.setattr(vr, "recuperer_fixtures_du_jour", lambda: {})
+
+        resultat = juger_cotes_en_attente(db)
+        assert resultat["jugees"] == 1
+        ligne = db.scalars(select(HistCote)).first()
+        assert ligne.resultat == "perime"
+
+
+def test_juger_cotes_en_attente_aet_utilise_le_score_reglementaire(monkeypatch):
+    """AET : jugé sur score.fulltime (90 minutes), jamais sur goals (score final incluant la
+    prolongation) — aucun marché de ce pipeline n'est "y compris prolongation"."""
+    with SessionLocal() as db:
+        run = _run(db)
+        pick = _pick("Total", "Over", 1.9, ligne=2.5)
+        pool = {"Home FC vs Away FC": [_candidat("Home FC vs Away FC", pick, home_nom="Home FC", away_nom="Away FC")]}
+        capturer_predictions(db, run, pool)
+
+        from app.services import pipeline
+
+        _, _, vr = pipeline.modules()
+        # score.fulltime = 1-0 (total=1, Over 2.5 perdu) ; goals = 3-0 (total=3, Over 2.5
+        # gagné si (par erreur) utilisé) -> le test distingue bien les deux lectures.
+        monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda: [
+            _fixture_af("Home FC", "Away FC", "AET", home_g=3, away_g=0, score_fulltime=(1, 0))])
+
+        resultat = juger_cotes_en_attente(db)
+        assert resultat["jugees"] == 1
+        ligne = db.scalars(select(HistCote)).first()
+        assert ligne.resultat == "perdu"  # confirme la lecture de score.fulltime, pas goals
