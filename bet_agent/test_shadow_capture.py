@@ -1,7 +1,8 @@
 """Tests de normalisation shadow_capture.py — aucun appel réseau (les fonctions capturer_*
 ne sont jamais appelées ici, seulement la normalisation pure)."""
 
-from shadow_capture import CATEGORIES_ODDSPAPI, MAPPING_API_FOOTBALL, _normaliser_selection_api_football
+from shadow_capture import (CATEGORIES_ODDSPAPI, CATEGORIES_SANS_LIGNE, MAPPING_API_FOOTBALL,
+                            _normaliser_ligne_oddspapi, _normaliser_selection_api_football)
 
 
 class TestNormalisationApiFootballStricte:
@@ -43,6 +44,29 @@ class TestNormalisationApiFootballStricte:
 
     def test_categorie_non_mappee_jamais_devinee(self):
         assert _normaliser_selection_api_football("HT/FT Double", "Home/Home") == (None, None)
+
+
+class TestNormalisationLigneOddspapi:
+    """Bug réel découvert le 10/10/2026 (test à 4 matchs) : OddsPapi renvoie handicap=0.0 pour
+    1X2/Double Chance/BTTS (une valeur de remplissage, SANS signification de ligne), alors
+    qu'API-Football ne porte structurellement aucune ligne pour ces mêmes paris (None) — 387
+    paires comparées, mais 0 sur ces 3 catégories, uniquement parce que 0.0 != None."""
+
+    def test_1x2_double_chance_btts_toujours_normalisees_a_none(self):
+        assert _normaliser_ligne_oddspapi("1X2", 0.0) is None
+        assert _normaliser_ligne_oddspapi("DOUBLE_CHANCE", 0.0) is None
+        assert _normaliser_ligne_oddspapi("BTTS", 0.0) is None
+
+    def test_une_ligne_de_handicap_reelle_nest_jamais_effacee(self):
+        # Exigence explicite : ne jamais supprimer une ligne significative d'un handicap ou
+        # d'un total, même quand sa valeur est 0.0 (ex: Asian Handicap pick'em).
+        assert _normaliser_ligne_oddspapi("HANDICAP_ASIATIQUE", 0.0) == 0.0
+        assert _normaliser_ligne_oddspapi("HANDICAP_EUROPEEN", 0.0) == 0.0
+        assert _normaliser_ligne_oddspapi("BUTS_TOTAL", 0.0) == 0.0
+        assert _normaliser_ligne_oddspapi("CORNERS_TOTAL", 2.5) == 2.5
+
+    def test_categories_sans_ligne_couvre_exactement_les_3_cas_reels(self):
+        assert CATEGORIES_SANS_LIGNE == {"1X2", "DOUBLE_CHANCE", "BTTS"}
 
 
 class TestMappingExplicite:

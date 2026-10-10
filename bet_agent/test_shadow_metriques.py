@@ -4,8 +4,9 @@ la logique d'appariement strict et les calculs de couverture/écarts/quota."""
 from datetime import datetime, timedelta, timezone
 
 from shadow_capture import Cotation, RequeteShadow
-from shadow_metriques import (associer_matchs, consommation_quota, couverture_matchs,
-                              mesurer_ecarts, rapport_complet, repartition_par_seuil)
+from shadow_metriques import (associer_matchs, cle_canonique, consommation_quota,
+                              couverture_matchs, detecter_doublons, mesurer_ecarts,
+                              rapport_complet, repartition_par_seuil)
 
 T0 = datetime(2026, 10, 10, 18, 0, 0, tzinfo=timezone.utc)
 
@@ -43,6 +44,32 @@ class TestAssociationStricte:
         paires, non_op, non_af = associer_matchs([op], [af], {})  # pas de correspondance fournie
         assert paires == [] and len(non_op) == 1
 
+    def test_doublon_cote_api_football_jamais_apparie_au_hasard(self):
+        # Corrigé le 10/10/2026 : si 2 cotations API-Football partagent la même clé canonique
+        # pour le match ciblé, l'ambiguïté n'est JAMAIS résolue en prenant la première venue.
+        op = _cotation("oddspapi", fid_op="fx1", cote=2.0)
+        af1 = _cotation("api_football", fid_af=100, cote=2.1)
+        af2 = _cotation("api_football", fid_af=100, cote=2.3)  # même clé canonique, doublon
+        paires, non_op, non_af = associer_matchs([op], [af1, af2], {"fx1": 100})
+        assert paires == []
+        assert len(non_op) == 1
+
+
+class TestCleCanoniqueEtDoublons:
+    def test_cle_canonique_ignore_le_nom_brut(self):
+        c1 = _cotation("oddspapi", marche="BUTS_TOTAL", selection="Over", ligne=2.5)
+        c1.marche_brut = "Over Under Full Time"
+        c2 = _cotation("api_football", marche="BUTS_TOTAL", selection="Over", ligne=2.5)
+        c2.marche_brut = "Goals Over/Under"
+        assert cle_canonique(c1) == cle_canonique(c2)
+
+    def test_detecter_doublons(self):
+        c1 = _cotation("oddspapi", marche="BTTS", selection="Yes")
+        c2 = _cotation("oddspapi", marche="BTTS", selection="Yes")  # doublon exact
+        c3 = _cotation("oddspapi", marche="BTTS", selection="No")
+        doublons = detecter_doublons([c1, c2, c3])
+        assert doublons == {("BTTS", "Yes", None): 2}
+
 
 class TestMesureEcarts:
     def test_ecart_absolu_et_relatif(self):
@@ -64,11 +91,20 @@ class TestMesureEcarts:
 
 
 class TestCouvertureEtQuota:
-    def test_couverture_matchs(self):
+    def test_couverture_matchs_sans_correspondance_ne_ment_pas(self):
+        # Corrigé le 10/10/2026 : comparer directement un fixture_id OddsPapi ("fx1") à un
+        # fixture_id API-Football (100) donnait toujours 0 — maintenant None (honnête) sans
+        # le mapping, plutôt qu'un faux zéro.
+        req_op = [RequeteShadow("oddspapi", "fx1", 200, None, 50, T0)]
+        req_af = [RequeteShadow("api_football", 100, 200, None, 10, T0)]
+        couv = couverture_matchs(["fx1"], req_op, req_af)
+        assert couv["couverts_par_les_deux"] is None
+
+    def test_couverture_matchs_avec_correspondance_traduit_les_identifiants(self):
         req_op = [RequeteShadow("oddspapi", "fx1", 200, None, 50, T0),
                  RequeteShadow("oddspapi", "fx2", None, "timeout", 0, T0)]
-        req_af = [RequeteShadow("api_football", "fx1", 200, None, 10, T0)]
-        couv = couverture_matchs(["fx1", "fx2"], req_op, req_af)
+        req_af = [RequeteShadow("api_football", 100, 200, None, 10, T0)]
+        couv = couverture_matchs(["fx1", "fx2"], req_op, req_af, correspondance_fixtures={"fx1": 100, "fx2": 200})
         assert couv["total_matchs_vises"] == 2
         assert couv["oddspapi_couverts"] == 1
         assert couv["api_football_couverts"] == 1

@@ -50,7 +50,8 @@ def executer():
 
     paires, non_appariees_op, non_appariees_af = associer_matchs(cotations_op, cotations_af, correspondance)
     mesures = mesurer_ecarts(paires)
-    rapport = rapport_complet(mesures, requetes_op, requetes_af, [m["fixture_id_oddspapi"] for m in MATCHS])
+    rapport = rapport_complet(mesures, requetes_op, requetes_af,
+                              [m["fixture_id_oddspapi"] for m in MATCHS], correspondance)
 
     print("\n" + "=" * 70)
     print("RAPPORT AGRÉGÉ (JSON)")

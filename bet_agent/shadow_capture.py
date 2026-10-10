@@ -78,6 +78,21 @@ MAPPING_API_FOOTBALL = {
     "Total Shots": "TIRS_TOTAL",
 }
 
+# Catégories où OddsPapi renvoie systématiquement handicap=0.0 (valeur de remplissage, SANS
+# signification de ligne) alors qu'API-Football ne porte aucune ligne pour ces mêmes paris —
+# confirmé par le test réel du 10/10/2026 (0 paire comparée sur ces 3 catégories avant ce
+# correctif, parce que 0.0 != None). Pour toutes les AUTRES catégories (handicaps, totaux...),
+# 0.0 est une ligne RÉELLE et significative (ex: Asian Handicap pick'em) — jamais normalisée.
+CATEGORIES_SANS_LIGNE = {"1X2", "DOUBLE_CHANCE", "BTTS"}
+
+
+def _normaliser_ligne_oddspapi(categorie, ligne_brute):
+    """None pour les catégories sans ligne significative (même convention qu'API-Football,
+    voir _normaliser_selection_api_football) ; sinon la ligne brute TELLE QUE fournie par
+    OddsPapi, jamais altérée (y compris un véritable 0.0 de handicap/total)."""
+    return None if categorie in CATEGORIES_SANS_LIGNE else ligne_brute
+
+
 _RE_LIGNE = re.compile(r"([+-]?\d+(?:\.\d+)?)")
 
 
@@ -235,7 +250,8 @@ def capturer_oddspapi(fixture_id_oddspapi, championnat, domicile, exterieur):
                 championnat=championnat, domicile=domicile, exterieur=exterieur,
                 bookmaker="1xBet", fournisseur="oddspapi", recu_le_utc=recu_le, maj_api_utc=None,
                 marche=categorie, marche_brut=m["marche"], selection=s["selection"],
-                ligne=m.get("handicap"), cote=float(s["cote"]), marche_id=str(m.get("marche_id"))))
+                ligne=_normaliser_ligne_oddspapi(categorie, m.get("handicap")),
+                cote=float(s["cote"]), marche_id=str(m.get("marche_id"))))
 
     requete = RequeteShadow("oddspapi", fixture_id_oddspapi, 200, None, len(tous_marches), recu_le)
     return requete, cotations
@@ -292,7 +308,8 @@ def capturer_oddspapi_sans_retry(fixture_id_oddspapi, championnat, domicile, ext
                     championnat=championnat, domicile=domicile, exterieur=exterieur,
                     bookmaker="1xBet", fournisseur="oddspapi", recu_le_utc=recu_le, maj_api_utc=None,
                     marche=categorie, marche_brut=nom_marche_brut, selection=selection,
-                    ligne=handicap, cote=float(prix), marche_id=str(market_id)))
+                    ligne=_normaliser_ligne_oddspapi(categorie, handicap),
+                    cote=float(prix), marche_id=str(market_id)))
 
     requete = RequeteShadow("oddspapi", fixture_id_oddspapi, r.status_code, None, nb_marches_brut, recu_le)
     return requete, cotations

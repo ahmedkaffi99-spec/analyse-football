@@ -5,19 +5,33 @@ en mémoire (Cotation/RequeteShadow), jamais sur une nouvelle requête.
 Une paire n'est comparée que si (fixture couple, marché canonique, sélection, ligne) sont
 IDENTIQUES des deux côtés — jamais un rapprochement approximatif (demande explicite)."""
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 
-def _cle_match(cotation):
-    return (cotation.fixture_id_oddspapi, cotation.fixture_id_api_football)
+def cle_canonique(cotation):
+    """(marché canonique, sélection, ligne) — jamais le nom brut ni une ressemblance de nom.
+    La période (mi-temps/match entier) n'est pas un champ séparé de cette clé : chaque
+    catégorie canonique (ex: BUTS_TOTAL) est déjà spécifique au temps réglementaire — un
+    marché de mi-temps reste "non_mappe" (voir shadow_capture.py), jamais confondu."""
+    return (cotation.marche, cotation.selection, cotation.ligne)
+
+
+def detecter_doublons(cotations):
+    """{cle_canonique: n} pour n > 1 — plusieurs cotations identiques (même marché/sélection/
+    ligne) pour le MÊME appel sont un doublon à signaler explicitement, jamais sommées ou
+    moyennées silencieusement."""
+    compte = Counter(cle_canonique(c) for c in cotations)
+    return {cle: n for cle, n in compte.items() if n > 1}
 
 
 def associer_matchs(cotations_oddspapi, cotations_api_football, correspondance_fixtures):
     """correspondance_fixtures : {fixture_id_oddspapi: fixture_id_api_football} — fournie par
     l'appelant (jamais déduite ici par ressemblance de nom d'équipe). Renvoie la liste de
-    paires (cotation_oddspapi, cotation_api_football) dont le marché canonique, la sélection
-    ET la ligne correspondent exactement ; les deux listes de côtes non appariées sont
-    renvoyées séparément pour audit (jamais silencieusement perdues)."""
+    paires (cotation_oddspapi, cotation_api_football) dont la clé canonique (marché, sélection,
+    ligne) correspond EXACTEMENT ; les deux listes de côtes non appariées sont renvoyées
+    séparément pour audit (jamais silencieusement perdues). Si un doublon existe côté
+    API-Football pour une clé donnée, la paire n'est PAS formée (ambiguïté réelle, jamais
+    résolue au hasard) — ce candidat reste dans les deux listes "non appariées"."""
     paires, non_appariees_op, non_appariees_af = [], [], []
     index_af = defaultdict(list)
     for c in cotations_api_football:
@@ -26,13 +40,11 @@ def associer_matchs(cotations_oddspapi, cotations_api_football, correspondance_f
     for c_op in cotations_oddspapi:
         fid_af = correspondance_fixtures.get(c_op.fixture_id_oddspapi)
         candidats = index_af.get(fid_af, []) if fid_af else []
-        trouve = next((c_af for c_af in candidats
-                      if c_af.marche == c_op.marche and c_af.selection == c_op.selection
-                      and c_af.ligne == c_op.ligne), None)
-        if trouve:
-            paires.append((c_op, trouve))
+        trouves = [c_af for c_af in candidats if cle_canonique(c_af) == cle_canonique(c_op)]
+        if len(trouves) == 1:
+            paires.append((c_op, trouves[0]))
         else:
-            non_appariees_op.append(c_op)
+            non_appariees_op.append(c_op)  # 0 correspondance, ou ambiguë (>1) -> jamais au hasard
 
     appariees_af = {id(p[1]) for p in paires}
     non_appariees_af = [c for c in cotations_api_football if id(c) not in appariees_af]
@@ -93,18 +105,29 @@ def _resume_groupe(mesures):
             "ecart_relatif_max": round(max(rel), 4) if rel else None, **repartition_par_seuil(mesures)}
 
 
-def couverture_matchs(matchs_attendus, requetes_oddspapi, requetes_api_football):
+def couverture_matchs(matchs_attendus, requetes_oddspapi, requetes_api_football, correspondance_fixtures=None):
     """matchs_attendus : liste de fixture_id_oddspapi visés. Un match est "couvert" par un
-    fournisseur si sa requête a réussi (statut_http == 200, ou en tout cas aucune erreur) ET
-    renvoyé au moins 1 marché brut."""
+    fournisseur si sa requête a réussi (erreur is None) ET renvoyé au moins 1 marché brut.
+
+    BUG CORRIGÉ le 10/10/2026 : "couverts_par_les_deux" comparait directement un fixture_id
+    OddsPapi à un fixture_id API-Football — deux espaces d'identifiants totalement différents
+    (ex: "id1000001772221292" vs 1557417), l'intersection était donc TOUJOURS vide, quelle que
+    soit la couverture réelle. Nécessite maintenant correspondance_fixtures (le même mapping
+    que associer_matchs) pour traduire les id OddsPapi vers l'espace API-Football avant de
+    comparer. Sans ce mapping, "couverts_par_les_deux" reste None plutôt que de mentir."""
+    correspondance_fixtures = correspondance_fixtures or {}
     reussies_op = {r.fixture_id for r in requetes_oddspapi if r.erreur is None and r.nb_marches_recus > 0}
     reussies_af = {r.fixture_id for r in requetes_api_football if r.erreur is None and r.nb_marches_recus > 0}
     total = len(matchs_attendus)
+
+    reussies_op_traduits = {correspondance_fixtures.get(fid) for fid in reussies_op} - {None}
+    couverts_deux = len(reussies_op_traduits & reussies_af) if correspondance_fixtures else None
+
     return {
         "total_matchs_vises": total,
         "oddspapi_couverts": len(reussies_op), "oddspapi_taux": round(len(reussies_op) / total, 4) if total else None,
         "api_football_couverts": len(reussies_af), "api_football_taux": round(len(reussies_af) / total, 4) if total else None,
-        "couverts_par_les_deux": len(reussies_op & reussies_af),
+        "couverts_par_les_deux": couverts_deux,
     }
 
 
@@ -117,9 +140,9 @@ def marches_par_match(requetes):
     return {str(r.fixture_id): r.nb_marches_recus for r in requetes}
 
 
-def rapport_complet(mesures, requetes_oddspapi, requetes_api_football, matchs_attendus):
+def rapport_complet(mesures, requetes_oddspapi, requetes_api_football, matchs_attendus, correspondance_fixtures=None):
     return {
-        "couverture": couverture_matchs(matchs_attendus, requetes_oddspapi, requetes_api_football),
+        "couverture": couverture_matchs(matchs_attendus, requetes_oddspapi, requetes_api_football, correspondance_fixtures),
         "quota": consommation_quota(requetes_oddspapi, requetes_api_football),
         "marches_par_match_oddspapi": marches_par_match(requetes_oddspapi),
         "marches_par_match_api_football": marches_par_match(requetes_api_football),
