@@ -1,7 +1,7 @@
 """Tests de normalisation shadow_capture.py — aucun appel réseau (les fonctions capturer_*
 ne sont jamais appelées ici, seulement la normalisation pure)."""
 
-from shadow_capture import MAPPING_API_FOOTBALL, _normaliser_selection_api_football
+from shadow_capture import CATEGORIES_ODDSPAPI, MAPPING_API_FOOTBALL, _normaliser_selection_api_football
 
 
 class TestNormalisationApiFootballStricte:
@@ -33,6 +33,10 @@ class TestNormalisationApiFootballStricte:
         assert _normaliser_selection_api_football("BUTS_EQUIPE_DOM", "Over 1.5") == ("Over", 1.5)
         assert _normaliser_selection_api_football("CORNERS_TOTAL", "Under 9.5") == ("Under", 9.5)
 
+    def test_cartons_et_tirs_meme_logique_que_buts_total(self):
+        assert _normaliser_selection_api_football("CARTONS_TOTAL", "Over 4.5") == ("Over", 4.5)
+        assert _normaliser_selection_api_football("TIRS_TOTAL", "Under 22.5") == ("Under", 22.5)
+
     def test_btts(self):
         assert _normaliser_selection_api_football("BTTS", "Yes") == ("Yes", None)
         assert _normaliser_selection_api_football("BTTS", "No") == ("No", None)
@@ -45,9 +49,16 @@ class TestMappingExplicite:
     def test_european_handicap_absent_du_mapping_jamais_invente(self):
         # Confirmé par le test réel du 09/10/2026 : API-Football n'expose pas de handicap à
         # 3 voies pour 1xBet — volontairement absent de MAPPING_API_FOOTBALL (pas un oubli).
+        # L'Asian Handicap n'est jamais considéré comme équivalent (demande explicite).
         assert "European Handicap" not in MAPPING_API_FOOTBALL
+        assert MAPPING_API_FOOTBALL["Asian Handicap"] != "HANDICAP_EUROPEEN"
 
-    def test_tous_les_marches_mappes_couvrent_les_8_categories_testees(self):
+    def test_tous_les_marches_mappes_couvrent_les_10_categories_testees(self):
         attendues = {"1X2", "DOUBLE_CHANCE", "HANDICAP_ASIATIQUE", "BUTS_TOTAL",
-                    "BUTS_EQUIPE_DOM", "BUTS_EQUIPE_EXT", "BTTS", "CORNERS_TOTAL"}
+                    "BUTS_EQUIPE_DOM", "BUTS_EQUIPE_EXT", "BTTS", "CORNERS_TOTAL",
+                    "CARTONS_TOTAL", "TIRS_TOTAL"}
         assert set(MAPPING_API_FOOTBALL.values()) == attendues
+
+    def test_handicap_europeen_present_cote_oddspapi_seulement(self):
+        assert CATEGORIES_ODDSPAPI["European Handicap"] == "HANDICAP_EUROPEEN"
+        assert "HANDICAP_EUROPEEN" not in MAPPING_API_FOOTBALL.values()
