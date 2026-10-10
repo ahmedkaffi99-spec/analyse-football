@@ -88,7 +88,17 @@ class HistCote(Base):
     de capture actuel, sans jamais retirer ces deux colonnes devenues mortes. Ne pas les ajouter
     ici : les ajouter formaliserait des colonnes jamais alimentées plutôt que de les retirer.
     Aucune migration de table de production n'est faite par cet audit — colonnes laissées en
-    l'état, simplement documentées pour que personne ne les suppose actives par erreur."""
+    l'état, simplement documentées pour que personne ne les suppose actives par erreur.
+
+    DÉRIVE DISTINCTE, CORRIGÉE le 10/10/2026 (migration "hist_cotes_elargir_marche_et_
+    selection") : "marche" et "selection" étaient respectivement varchar(40) et varchar(10) en
+    production — plus étroites que ce que ce modèle déclarait déjà (String(120)/String(64)).
+    Incident réel (run #129) : un nom de marché/sélection réel dépassant ces largeurs a fait
+    échouer un INSERT (StringDataRightTruncation), empoisonnant la transaction et faisant
+    perdre un coupon déjà envoyé sur Telegram (voir aussi runs.py:executer_run, le commit
+    déplacé avant les blocs optionnels + les rollback explicites qui corrigent la cascade).
+    Les colonnes réelles sont désormais alignées sur les largeurs déclarées ici — élargissement
+    non destructif, aucune donnée existante perdue."""
 
     __tablename__ = "hist_cotes"
     __table_args__ = (UniqueConstraint("jour", "fixture_id_oddspapi", "marche", "ligne", "selection",
