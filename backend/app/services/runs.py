@@ -129,6 +129,15 @@ def executer_run(run_id, envoyer_telegram=False, rediger=True, depuis_run=None, 
         if envoyer_telegram and textes:
             run.envoye_telegram = bool(ae.agent5_envoyer_coupons(textes))
         run.statut = "termine"
+        # Incident réel du 10/10/2026 (run 129) : un coupon RÉELLEMENT envoyé sur Telegram a
+        # disparu sans trace de la base parce qu'une erreur SQL dans un bloc purement
+        # informatif plus bas (capture historique) a empoisonné la transaction encore ouverte,
+        # faisant échouer le commit final qui aurait dû enregistrer ce coupon déjà envoyé. Le
+        # coupon et le statut du run — déjà corrects et définitifs à ce point — sont donc
+        # commités IMMÉDIATEMENT, avant tout bloc optionnel/informatif ci-dessous : leur échec
+        # éventuel (et le rollback qu'il impose, voir plus bas) ne peut alors plus jamais
+        # remonter jusqu'ici et effacer un coupon déjà envoyé.
+        db.commit()
 
         # Comparaison PARALLÈLE bet_agent/moteur (10/10/2026, demande explicite : "faire
         # fonctionner le nouveau moteur en parallèle... sans modifier le coupon Telegram") —
@@ -153,6 +162,12 @@ def executer_run(run_id, envoyer_telegram=False, rediger=True, depuis_run=None, 
                           f"({c['modele_moteur']}, {c['calibration']}) — {c['decision_moteur']}")
             except Exception as e:  # jamais faire échouer le vrai run pour une comparaison
                 print(f"   ⚠️ Comparaison parallèle moteur indisponible ({pipeline.masquer_secrets(str(e))[:150]}).")
+                # Incident réel du 10/10/2026 (run 129) : sans ce rollback, une erreur SQL ici
+                # laisse la session dans l'état "transaction avortée" (Postgres l'exige après
+                # toute erreur) — TOUT ce qui suit dans la même transaction échoue en cascade, y
+                # compris le commit final qui enregistre le coupon déjà envoyé sur Telegram.
+                # Un échec purement informatif ne doit jamais emporter la persistance réelle.
+                db.rollback()
 
         # Capture PROSPECTIVE des cotes dans hist_cotes (10/10/2026, demande explicite :
         # "rendre possible une vraie mesure future du ROI... Implémente uniquement la capture
@@ -169,6 +184,11 @@ def executer_run(run_id, envoyer_telegram=False, rediger=True, depuis_run=None, 
             print(f"   📸 [Capture historique] {n_captures} cote(s) réelle(s) capturée(s) dans hist_cotes.")
         except Exception as e:  # jamais faire échouer le vrai run pour une capture
             print(f"   ⚠️ Capture historique indisponible ({pipeline.masquer_secrets(str(e))[:150]}).")
+            # Même raison que ci-dessus (incident réel du 10/10/2026, run 129) : une erreur SQL
+            # non suivie d'un rollback ici a fait échouer le commit final qui enregistre le
+            # coupon déjà envoyé sur Telegram — aucune trace du coupon en base malgré l'envoi
+            # réel. Ce rollback isole cet échec purement informatif de la persistance réelle.
+            db.rollback()
 
         # Moteur CENTRAL, mode SHADOW (10/10/2026, demande explicite : "le moteur central
         # calcule ses décisions mais n'envoie rien et ne modifie pas le coupon Telegram") —
@@ -191,6 +211,9 @@ def executer_run(run_id, envoyer_telegram=False, rediger=True, depuis_run=None, 
                       f"jambe(s) (purement informatif, jamais envoyé).")
             except Exception as e:  # jamais faire échouer le vrai run pour le shadow
                 print(f"   ⚠️ Moteur central (shadow) indisponible ({pipeline.masquer_secrets(str(e))[:150]}).")
+                # Même raison que les deux blocs précédents (incident réel du 10/10/2026, run
+                # 129) : isole cet échec purement informatif de la persistance réelle du coupon.
+                db.rollback()
     except Exception as e:
         db.rollback()
         run = db.get(Run, run_id)
