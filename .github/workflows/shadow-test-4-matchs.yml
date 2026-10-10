@@ -1,0 +1,35 @@
+# Workflow DÉDIÉ et isolé (autorisation explicite du 10/10/2026) : exécute UNIQUEMENT
+# shadow_test_4_matchs.py --executer, sur les 4 matchs déjà identifiés et validés (Premier
+# League, Serie A, Bundesliga, Ligue 1). Budget réel MAXIMUM : 1x /v4/markets (catalogue
+# OddsPapi, une fois) + 4x OddsPapi /v4/odds + 4x API-Football /odds = 9 appels, aucun retry
+# automatique. Mode SHADOW strict : aucune cote n'est utilisée pour un coupon, aucun pipeline
+# général n'est touché, aucune configuration de production n'est modifiée.
+name: Shadow — test réel 4 matchs (budget 9 appels max)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  comparer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONUNBUFFERED: "1"
+      ODDSPAPI_KEY: ${{ secrets.ODDSPAPI_KEY }}
+      API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+      API_FOOTBALL_QUOTA_PAR_MINUTE: ${{ secrets.API_FOOTBALL_QUOTA_PAR_MINUTE }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: bet_agent/requirements.txt
+      - run: pip install -r bet_agent/requirements.txt
+
+      - name: Comparer OddsPapi vs API-Football sur les 4 matchs validés (9 appels max)
+        working-directory: bet_agent
+        run: python shadow_test_4_matchs.py --executer
