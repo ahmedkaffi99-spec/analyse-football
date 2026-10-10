@@ -159,9 +159,15 @@ class HistPrediction(Base):
 
 class HistDecisionCentrale(Base):
     """Journal SHADOW du moteur_central/ : un run réel -> une ligne. coupon_bet_agent/
-    coupon_moteur/coupon_central sont le résultat brut de moteur_central.selection.selectionner
-    (JSON), raisons/metriques le détail de choix_moteur.choisir_par_marche — jamais utilisé
-    pour modifier la sélection réelle ni Telegram (voir decision_centrale.py)."""
+    coupon_moteur/coupon_central sont produits par decision_centrale.py::_combo_vers_json() à
+    partir du combo renvoyé par moteur_central.selection.selectionner() (via
+    moteur_central.shadow.calculer_shadow) : genere/nb_jambes/cote_totale/score_moyen viennent
+    directement de selectionner(), mais chaque jambe de "jambes" est désormais produite par
+    moteur_central/contrat_adapter.py:convertir() (schéma commun, toutes les clés de
+    CLES_SCHEMA_COMMUN — match, marché, sélection, cote, source, probabilités brute/calibrée,
+    edge, etc.), pas un sous-ensemble choisi à la main. raisons/metriques restent le détail de
+    choix_moteur.choisir_par_marche — jamais utilisé pour modifier la sélection réelle ni
+    Telegram (voir decision_centrale.py)."""
 
     __tablename__ = "hist_decisions_centrales"
 
