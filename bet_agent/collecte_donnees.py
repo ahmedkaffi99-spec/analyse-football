@@ -109,6 +109,67 @@ ODDSPAPI_KEY = os.getenv("ODDSPAPI_KEY")
 SERPER_API_KEY = os.getenv("SERPER_API_KEY")
 
 # ------------------------------------------------------------
+# FOURNISSEUR DE COTES — bascule minimale et réversible (demande explicite du 10/10/2026,
+# "migration minimale pour publier les coupons aujourd'hui"). Défaut "oddspapi" : AUCUN
+# changement de comportement tant que la variable n'est pas positionnée explicitement.
+# "api_football" ne remplace QUE l'appel per-match aux cotes (recuperer_marches_pour_fixture,
+# celui qui consomme le quota OddsPapi 250/jour) — la sélection des matchs du jour
+# (selectionner_matchs_du_jour) continue de s'appuyer sur le /v4/fixtures OddsPapi (1 appel/run,
+# non concerné par ce quota serré), donc OddsPapi n'est jamais retiré du pipeline par ce
+# bascule. Réutilise l'adaptateur isolé déjà validé (adaptateur_api_football.py, commit
+# 5a31895) — jamais dupliqué ici.
+FOURNISSEUR_COTES = os.getenv("FOURNISSEUR_COTES", "oddspapi").strip().lower()
+TTL_COTES_API_FOOTBALL_SECONDES = int(os.getenv("TTL_COTES_API_FOOTBALL_SECONDES", "120"))
+
+# Marchés dont la conversion API-Football -> vocabulaire interne est VALIDÉE (Phase B, voir
+# adaptateur_api_football.py et son rapport). Asian Handicap est VOLONTAIREMENT absent : la
+# convention de signe entre les deux sélections n'est pas confirmée (limite documentée dans
+# l'adaptateur) — jamais activé, et jamais substitué par l'European Handicap (qu'API-Football
+# n'expose de toute façon pas du tout pour 1xBet).
+MARCHES_API_FOOTBALL_VALIDES = {
+    "Full Time Result", "Double Chance Full Time", "Both Teams To Score",
+    "Over Under Full Time", "Over Under Team 1", "Over Under Team 2",
+    "Corners - Over Under Full Time", "Yellow Cards - Over Under Full Time",
+    "Shots - Over Under Full Time",
+}
+
+_appels_odds_api_football_consommes = 0  # compteur réel, jamais estimé — voir rapport de run
+
+
+def recuperer_marches_pour_fixture_api_football(fixture_id_api_football):
+    """Équivalent de recuperer_marches_pour_fixture() mais source API-Football — actif
+    uniquement si FOURNISSEUR_COTES=api_football. Réutilise exclusivement
+    adaptateur_api_football.capturer_api_football_adapte (jamais dupliqué). Ne renvoie QUE les
+    marchés de MARCHES_API_FOOTBALL_VALIDES ; une cote périmée (au-delà de
+    TTL_COTES_API_FOOTBALL_SECONDES) n'est jamais renvoyée comme actuelle (le match retombe
+    alors dans le chemin "aucun marché exploitable", déjà géré sans cote)."""
+    global _appels_odds_api_football_consommes
+    import adaptateur_api_football as adf  # import local : zéro appel réseau si jamais appelée
+
+    _respecter_rate_limit_api_football()  # même limiteur que les autres appels API-Football
+    _appels_odds_api_football_consommes += 1
+    resultat = adf.capturer_api_football_adapte(fixture_id_api_football,
+                                                ttl_secondes=TTL_COTES_API_FOOTBALL_SECONDES)
+
+    if resultat.quota_epuise:
+        print("      ⚠️ API-Football odds : 429 (quota/limite de débit) — aucun marché inventé, aucun retry.")
+        return None
+    if resultat.erreur:
+        print(f"      ⚠️ API-Football odds indisponible : {resultat.erreur}")
+        return None
+    if resultat.perime:
+        age = f"{resultat.age_secondes:.0f}s" if resultat.age_secondes is not None else "inconnu"
+        print(f"      ⚠️ API-Football odds périmées (âge {age} > {TTL_COTES_API_FOOTBALL_SECONDES}s) — "
+              f"jamais présentées comme actuelles.")
+        return None
+
+    if resultat.marches_indisponibles:
+        print(f"      → Marchés API-Football indisponibles pour ce match : "
+              f"{', '.join(resultat.marches_indisponibles)}")
+    marches_valides = [m for m in resultat.marches if m["marche"] in MARCHES_API_FOOTBALL_VALIDES]
+    return marches_valides if marches_valides else None
+
+# ------------------------------------------------------------
 # SÉLECTION MANUELLE — active ce mode si tu as déjà vérifié toi-même quels matchs
 # ont des marchés ouverts sur 1xbet (évite de perdre des matchs sans marché après
 # coup, comme observé le 22/08 : Premier League sélectionnée automatiquement mais
@@ -1511,7 +1572,16 @@ def collecter_donnees():
                 fx_af, score_af = trouver_fixture_api_football(home_demande, away_demande, proches)
                 donnees_af = _donnees_api_football(fx_af) if fx_af else None
                 print(f"      {'✓ API-Football corrigé : ' + donnees_af['fixture_date'] if donnees_af else '⚠️ Aucun match API-Football à cette date — stats ignorées plutôt que fausses.'}")
-            tous_marches = recuperer_marches_pour_fixture(fixture_id_oddspapi)
+            if FOURNISSEUR_COTES == "api_football":
+                if donnees_af and donnees_af.get("fixture_id_api_football"):
+                    tous_marches = recuperer_marches_pour_fixture_api_football(
+                        donnees_af["fixture_id_api_football"])
+                else:
+                    print("      ⚠️ Pas de fixture API-Football identifié — aucune cote "
+                          "(FOURNISSEUR_COTES=api_football).")
+                    tous_marches = None
+            else:
+                tous_marches = recuperer_marches_pour_fixture(fixture_id_oddspapi)
             if tous_marches:
                 print(f"      ✓ {len(tous_marches)} marchés 1xbet collectés")
             else:

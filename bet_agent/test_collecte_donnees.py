@@ -145,3 +145,115 @@ class TestResilienceCollecterDonneesPanneOddsPapi:
         cd.collecter_donnees()
 
         assert appels_api_football == [1]
+
+
+class TestBasculeFournisseurCotesApiFootball:
+    """Migration minimale, réversible (FOURNISSEUR_COTES, demande explicite du 10/10/2026) :
+    par défaut ("oddspapi"), zéro changement de comportement. Réutilise uniquement
+    adaptateur_api_football.capturer_api_football_adapte (jamais dupliqué ici)."""
+
+    def test_defaut_reste_oddspapi_zero_changement(self):
+        assert cd.FOURNISSEUR_COTES == "oddspapi"
+
+    def _resultat(self, **kwargs):
+        from adaptateur_api_football import ResultatAdaptateur
+        return ResultatAdaptateur(**kwargs)
+
+    def test_marches_valides_renvoyes(self, monkeypatch):
+        marches = [{"marche_id": "1", "marche": "Full Time Result", "type": "", "handicap": None,
+                   "periode": None, "selections": [{"selection": "1", "cote": 2.0}]},
+                  {"marche_id": "2", "marche": "Asian Handicap", "type": "", "handicap": -1.25,
+                   "periode": None, "selections": [{"selection": "1", "cote": 1.9}]}]
+        resultat = self._resultat(marches=marches)
+        import adaptateur_api_football as adf
+        monkeypatch.setattr(adf, "capturer_api_football_adapte", lambda *a, **k: resultat)
+        monkeypatch.setattr(cd, "_respecter_rate_limit_api_football", lambda: None)
+
+        tous = cd.recuperer_marches_pour_fixture_api_football(12345)
+
+        assert tous is not None
+        noms = {m["marche"] for m in tous}
+        assert noms == {"Full Time Result"}  # Asian Handicap jamais activé, même renvoyé par l'adaptateur
+
+    def test_asian_handicap_jamais_active_meme_si_seul_marche_disponible(self, monkeypatch):
+        marches = [{"marche_id": "2", "marche": "Asian Handicap", "type": "", "handicap": -1.25,
+                   "periode": None, "selections": [{"selection": "1", "cote": 1.9}]}]
+        resultat = self._resultat(marches=marches)
+        import adaptateur_api_football as adf
+        monkeypatch.setattr(adf, "capturer_api_football_adapte", lambda *a, **k: resultat)
+        monkeypatch.setattr(cd, "_respecter_rate_limit_api_football", lambda: None)
+
+        assert cd.recuperer_marches_pour_fixture_api_football(1) is None
+
+    def test_cote_perimee_jamais_presentee_comme_actuelle(self, monkeypatch):
+        resultat = self._resultat(perime=True, age_secondes=999.0,
+                                  marches_perimes=[{"marche": "Full Time Result"}])
+        import adaptateur_api_football as adf
+        monkeypatch.setattr(adf, "capturer_api_football_adapte", lambda *a, **k: resultat)
+        monkeypatch.setattr(cd, "_respecter_rate_limit_api_football", lambda: None)
+
+        assert cd.recuperer_marches_pour_fixture_api_football(1) is None
+
+    def test_429_jamais_de_marche_invente_et_jamais_de_retry(self, monkeypatch):
+        appels = []
+        resultat = self._resultat(quota_epuise=True, erreur="quota_api_football_epuise_ou_limite_debit")
+        import adaptateur_api_football as adf
+
+        def _capture(*a, **k):
+            appels.append(1)
+            return resultat
+
+        monkeypatch.setattr(adf, "capturer_api_football_adapte", _capture)
+        monkeypatch.setattr(cd, "_respecter_rate_limit_api_football", lambda: None)
+
+        assert cd.recuperer_marches_pour_fixture_api_football(1) is None
+        assert len(appels) == 1  # jamais de retry automatique sur un 429
+
+    def test_erreur_reseau_jamais_de_marche_invente(self, monkeypatch):
+        resultat = self._resultat(erreur="timeout")
+        import adaptateur_api_football as adf
+        monkeypatch.setattr(adf, "capturer_api_football_adapte", lambda *a, **k: resultat)
+        monkeypatch.setattr(cd, "_respecter_rate_limit_api_football", lambda: None)
+
+        assert cd.recuperer_marches_pour_fixture_api_football(1) is None
+
+    def test_compteur_appels_incremente_meme_en_echec(self, monkeypatch):
+        import adaptateur_api_football as adf
+        monkeypatch.setattr(adf, "capturer_api_football_adapte",
+                            lambda *a, **k: self._resultat(erreur="timeout"))
+        monkeypatch.setattr(cd, "_respecter_rate_limit_api_football", lambda: None)
+        avant = cd._appels_odds_api_football_consommes
+        cd.recuperer_marches_pour_fixture_api_football(1)
+        assert cd._appels_odds_api_football_consommes == avant + 1
+
+    def test_bascule_appelle_la_bonne_fonction_selon_le_flag(self, monkeypatch):
+        """Vérifie le point d'intégration dans collecter_donnees() lui-même : le flag décide
+        strictement laquelle des deux fonctions est appelée, jamais les deux."""
+        appels_oddspapi, appels_api_football = [], []
+        fixture_avec_cotes = {
+            "participant1Name": "Lens", "participant2Name": "Auxerre", "hasOdds": True,
+            "statusName": "Pre-Game", "startTime": "2099-01-01T00:00:00Z",
+            "tournamentName": "Ligue 1", "categoryName": "France", "fixtureId": "fxLENSAUX",
+        }
+        monkeypatch.setattr(cd, "MATCHS_MANUELS_ENV", "", raising=False)
+        monkeypatch.setattr(cd, "SELECTION_MANUELLE_ACTIVE", False, raising=False)
+        monkeypatch.setattr(cd, "MATCHS_MANUELS_DATES", set(), raising=False)
+        monkeypatch.setattr(cd, "COMPLEMENT_AUTOMATIQUE_ACTIF", False, raising=False)
+        monkeypatch.setattr(cd, "FILTRE_LIGUES_UNIQUES", None, raising=False)
+        fixture_af = {"teams": {"home": {"name": "Lens", "id": 1}, "away": {"name": "Auxerre", "id": 2}},
+                     "league": {"id": 10, "name": "Ligue 1", "season": 2026},
+                     "fixture": {"id": 999, "date": "2099-01-01T00:00:00+00:00"}}
+        monkeypatch.setattr(cd, "_telecharger_fixtures_oddspapi", lambda: [fixture_avec_cotes])
+        monkeypatch.setattr(cd, "recuperer_fixtures_api_football", lambda: [fixture_af])
+        monkeypatch.setattr(cd, "assez_tot_avant_coup_envoi", lambda *a, **k: True)
+        monkeypatch.setattr(cd, "collecter_contexte_serper", lambda *a, **k: None)
+        monkeypatch.setattr(cd, "recuperer_marches_pour_fixture",
+                            lambda *a, **k: appels_oddspapi.append(1) or [])
+        monkeypatch.setattr(cd, "recuperer_marches_pour_fixture_api_football",
+                            lambda *a, **k: appels_api_football.append(1) or [])
+
+        monkeypatch.setattr(cd, "FOURNISSEUR_COTES", "api_football")
+        cd.collecter_donnees()
+
+        assert appels_api_football == [1]
+        assert appels_oddspapi == []
