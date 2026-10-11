@@ -340,9 +340,11 @@ def valider(proposition, catalogue, profils, signatures_existantes=(), selection
     profil suivant ce que le profil précédent a déjà choisi") : sélections déjà VERROUILLÉES
     d'un profil composé avant cet appel (agent pilote : un profil par appel, l'appelant passe
     l'historique accumulé ; stratège déterministe : les profils précédents de la MÊME
-    proposition, accumulés ci-dessous au fil de la boucle). Deux effets : (1) un pari déjà
-    utilisé ailleurs (même match, même marché, même sélection) est refusé pour un profil
-    suivant — chaque profil doit proposer des paris différents ; (2) la diversité de catégorie
+    proposition, accumulés ci-dessous au fil de la boucle). Deux effets : (1) un MATCH déjà
+    utilisé ailleurs est refusé pour un profil suivant, quel que soit le marché ou la sélection
+    choisis sur ce match (règles 5 et 6 de la mission du 11/10/2026 : un même match ne doit
+    jamais apparaître dans plusieurs coupons, même via un marché différent — chaque profil doit
+    proposer des matchs différents) ; (2) la diversité de catégorie
     (_categories_peu_variees/_categories_dominantes) se mesure sur le run ENTIER, pas profil
     par profil isolément.
 
@@ -350,8 +352,8 @@ def valider(proposition, catalogue, profils, signatures_existantes=(), selection
     oublies les profils et leur diversité, travaille comme si c'était le premier profil") : True
     retire l'effet (2) ci-dessus — chaque profil est jugé pour la diversité de catégorie comme
     s'il était seul (deja_presents=() au lieu de l'historique accumulé) — mais PAS l'effet (1) :
-    le refus d'un pari EXACTEMENT identique (même match+marché+sélection) à un profil précédent
-    reste actif dans tous les cas, jamais désactivable."""
+    le refus d'un MATCH déjà utilisé par un profil précédent reste actif dans tous les cas,
+    jamais désactivable."""
     acceptes, problemes, calculs, signatures = {}, [], [], list(signatures_existantes)
     toutes_selections_verrouillees = list(selections_precedentes)
     par_profil = {c.get("profil"): c for c in (proposition.get("coupons") or []) if isinstance(c, dict)}
@@ -368,8 +370,7 @@ def valider(proposition, catalogue, profils, signatures_existantes=(), selection
             calculs.append(f"{cle} : abstention acceptée.")
             continue
 
-        dejas_utilises = {(s["match"], s["pick"]["marche"], s["pick"]["selection"])
-                          for s in toutes_selections_verrouillees}
+        matchs_deja_utilises = {s["match"] for s in toutes_selections_verrouillees}
         erreurs, selections, par_match, ids_vus = [], [], {}, set()
         for jambe in jambes:
             cid = str((jambe or {}).get("id", "")).strip().upper()
@@ -382,11 +383,10 @@ def valider(proposition, catalogue, profils, signatures_existantes=(), selection
             ids_vus.add(cid)
             selection = dict(catalogue[cid], pick=dict(catalogue[cid]["pick"]),
                              raison_ia=str(jambe.get("raison") or "").strip())
-            cle_pick = (selection["match"], selection["pick"]["marche"], selection["pick"]["selection"])
-            if cle_pick in dejas_utilises:
-                erreurs.append(f"{cid} : « {selection['pick']['marche']} → {selection['pick']['selection']} » "
-                               f"sur {selection['match']} déjà choisi dans un autre profil ce run — choisis un "
-                               "autre pari ou un autre match pour ce profil")
+            if selection["match"] in matchs_deja_utilises:
+                erreurs.append(f"{cid} : {selection['match']} déjà utilisé dans un autre profil ce run "
+                               "(même avec un marché ou une sélection différents) — choisis un autre match "
+                               "pour ce profil")
                 continue
             probleme = incoherence_raison(selection["raison_ia"], selection["pick"])
             if probleme:

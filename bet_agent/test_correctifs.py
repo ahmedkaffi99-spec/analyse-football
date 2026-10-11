@@ -677,10 +677,11 @@ def _fixture(p1, p2, tournoi, pays, depart="2099-01-01T15:00:00Z"):
 
 
 class TestSelectionTreveInternationale(unittest.TestCase):
-    """FILTRE_LIGUES_UNIQUES est vide par défaut depuis le 02/10/2026 (demande explicite de
-    désactivation du filtre multi-ligues) — ces tests patchent explicitement les 5 grands
-    championnats pour continuer à verrouiller le mécanisme de filtre/secours lui-même, qui
-    reste utilisable si réactivé."""
+    """FILTRE_LIGUES_UNIQUES cible les 5 grands championnats par défaut depuis le 11/10/2026
+    (restriction stricte, voir ACTIVER_SECOURS_HORS_FILTRE) — ces tests patchent explicitement
+    ACTIVER_SECOURS_HORS_FILTRE=True pour continuer à verrouiller le mécanisme de secours
+    lui-même (compétitions internationales pendant une trêve), désactivé par défaut mais
+    toujours disponible si réactivé explicitement."""
 
     FILTRE_5_GRANDS = [
         ("ligue 1", "france"), ("premier league", "england"), ("serie a", "italy"),
@@ -694,7 +695,8 @@ class TestSelectionTreveInternationale(unittest.TestCase):
             _fixture("Espagne", "Portugal", "UEFA Nations League", "International"),
             _fixture("Obscur FC", "Autre FC", "Division 5", "Nowhere"),
         ]
-        with mock.patch.object(cd, "FILTRE_LIGUES_UNIQUES", self.FILTRE_5_GRANDS):
+        with mock.patch.object(cd, "FILTRE_LIGUES_UNIQUES", self.FILTRE_5_GRANDS), \
+                mock.patch.object(cd, "ACTIVER_SECOURS_HORS_FILTRE", True):
             matchs = cd.selectionner_matchs_du_jour(fixtures)
         self.assertEqual(sorted(matchs), [("Espagne", "Portugal"), ("France", "Italie")])
 
@@ -719,7 +721,8 @@ class TestSelectionTreveInternationale(unittest.TestCase):
             _fixture("Coree du Sud", "Venezuela", "International Friendlies", "International"),
             _fixture("Obscur FC", "Autre FC", "Division 5", "Nowhere"),
         ]
-        with mock.patch.object(cd, "FILTRE_LIGUES_UNIQUES", self.FILTRE_5_GRANDS):
+        with mock.patch.object(cd, "FILTRE_LIGUES_UNIQUES", self.FILTRE_5_GRANDS), \
+                mock.patch.object(cd, "ACTIVER_SECOURS_HORS_FILTRE", True):
             matchs = cd.selectionner_matchs_du_jour(fixtures)
         self.assertEqual(sorted(matchs), sorted([
             ("Ukraine", "Irlande du Nord"), ("Saint Lucia", "Guadeloupe"),
@@ -737,7 +740,8 @@ class TestSelectionTreveInternationale(unittest.TestCase):
             _fixture("Aluminij Kidricevo", "NK Varazdin", "Club Friendly", "Slovenia"),
             _fixture("Obscur FC", "Autre FC", "Division 5", "Nowhere"),
         ]
-        with mock.patch.object(cd, "FILTRE_LIGUES_UNIQUES", self.FILTRE_5_GRANDS):
+        with mock.patch.object(cd, "FILTRE_LIGUES_UNIQUES", self.FILTRE_5_GRANDS), \
+                mock.patch.object(cd, "ACTIVER_SECOURS_HORS_FILTRE", True):
             matchs = cd.selectionner_matchs_du_jour(fixtures)
         self.assertIn(("Coree du Sud", "Venezuela"), matchs)
         self.assertNotIn(("Aluminij Kidricevo", "NK Varazdin"), matchs)
@@ -751,7 +755,8 @@ class TestSelectionTreveInternationale(unittest.TestCase):
             _fixture("Zamalek", "TP Mazembe", "CAF Confederation Cup", "Africa"),
             _fixture("Obscur FC", "Autre FC", "Division 5", "Nowhere"),
         ]
-        with mock.patch.object(cd, "FILTRE_LIGUES_UNIQUES", self.FILTRE_5_GRANDS):
+        with mock.patch.object(cd, "FILTRE_LIGUES_UNIQUES", self.FILTRE_5_GRANDS), \
+                mock.patch.object(cd, "ACTIVER_SECOURS_HORS_FILTRE", True):
             matchs = cd.selectionner_matchs_du_jour(fixtures)
         self.assertEqual(sorted(matchs), sorted([
             ("Qatar", "Bahrain"), ("Al Ahly", "Wydad AC"), ("Zamalek", "TP Mazembe"),
@@ -767,14 +772,15 @@ class TestPrioriteCompetitionsReconnuesSansFiltre(unittest.TestCase):
     """Bug réel trouvé le 03/10/2026 : en sélection automatique (aucune liste manuelle), des
     clubs totalement obscurs (Comoros, J3 League japonaise, K3 League coréenne...) étaient
     choisis plutôt que des équipes nationales/compétitions reconnues disponibles le même jour
-    — FILTRE_LIGUES_UNIQUES étant vide par défaut depuis le 02/10/2026, FILTRE_LIGUES_SECOURS
-    (Ligue des Nations, Gold Cup, 2es divisions majeures...) n'était alors JAMAIS consulté, y
-    compris pour trier la sélection automatique elle-même (est_prioritaire ne regardait que
-    les 5 grands championnats + coupes d'Europe). FILTRE_LIGUES_SECOURS doit maintenant
-    toujours compter comme "prioritaire", filtre actif ou non."""
+    — quand FILTRE_LIGUES_UNIQUES est vide (comportement "sans filtre actif" testé ici
+    explicitement ; le défaut réel du pipeline cible les 5 grands championnats depuis le
+    11/10/2026, voir TestSelectionTreveInternationale), FILTRE_LIGUES_SECOURS (Ligue des
+    Nations, Gold Cup, 2es divisions majeures...) n'était alors JAMAIS consulté, y compris pour
+    trier la sélection automatique elle-même (est_prioritaire ne regardait que les 5 grands
+    championnats + coupes d'Europe). FILTRE_LIGUES_SECOURS doit toujours compter comme
+    "prioritaire", filtre actif ou non."""
 
     def test_nations_league_prioritaire_sur_club_obscur_sans_filtre_actif(self):
-        self.assertEqual(cd.FILTRE_LIGUES_UNIQUES, [])  # confirme le défaut réel du pipeline
         fixtures = [
             _fixture("Fomboni Club", "15 de Agosto", "CAF Champions League", "Comoros",
                      "2099-01-01T01:00:00Z"),
@@ -783,7 +789,8 @@ class TestPrioriteCompetitionsReconnuesSansFiltre(unittest.TestCase):
             _fixture("Ukraine", "Northern Ireland", "UEFA Nations League", "International",
                      "2099-01-01T20:00:00Z"),
         ]
-        matchs = cd.selectionner_matchs_du_jour(fixtures)
+        with mock.patch.object(cd, "FILTRE_LIGUES_UNIQUES", []):  # "sans filtre actif" explicite
+            matchs = cd.selectionner_matchs_du_jour(fixtures)
         # La Ligue des Nations passe AVANT le club japonais obscur malgré un coup d'envoi
         # bien plus tardif (startTime n'est le critère de tri qu'À L'INTÉRIEUR d'un même
         # groupe prioritaire/non-prioritaire, jamais entre les deux groupes).
@@ -1074,30 +1081,40 @@ class TestCouponsJoursCreux(unittest.TestCase):
     def test_pas_plus_de_deux_paris_par_match_ni_coupons_identiques(self):
         pool = {m: [_selection(m, c, "Over", 1.3 + 0.1 * i) for i, c in enumerate(("Total", "BTTS", "Total Équipe 1"))]
                 for m in ("A vs B", "C vs D", "E vs F")}
-        # 3 profils patchés explicitement : PROFILS_COUPON n'en définit qu'un seul par défaut
-        # depuis le 26/09/2026, mais la composition automatique doit rester générique à N
-        # profils et ne jamais proposer deux coupons identiques.
+        # 3 profils patchés explicitement (construire_profils_dynamiques, pas PROFILS_COUPON —
+        # remplacé le 11/10/2026 par la génération dynamique en sélection automatique) : la
+        # composition doit rester générique à N profils, ne jamais proposer deux coupons
+        # identiques, ET (règle 5/6 du 11/10/2026) ne jamais réutiliser un match déjà pris par
+        # un coupon précédent CE run — avec seulement 3 matchs distincts au total, au plus un
+        # seul des 3 profils peut donc être rempli.
         profils = [
             {"cle": "profil1", "nom": "🛡️ COUPON 1", "cote_min": 5.0, "cote_max": 10.0, "nb_jambes": 8},
             {"cle": "profil2", "nom": "⚖️ COUPON 2", "cote_min": 10.0, "cote_max": 50.0, "nb_jambes": 8},
             {"cle": "profil3", "nom": "🔥 COUPON 3", "cote_min": 50.0, "cote_max": 100.0, "nb_jambes": 8},
         ]
         with mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=pool), \
-                mock.patch.object(ae, "PROFILS_COUPON", profils), \
+                mock.patch.object(ae, "construire_profils_dynamiques", return_value=profils), \
                 mock.patch.object(ae, "UTILISER_STRATEGE_IA", False):
             resultats = ae.generer_coupons({"matchs": []})
         signatures = []
+        tous_les_matchs_utilises = []
         for item in resultats:
             sel = item["selections"]
             if not sel:
                 continue
-            self.assertEqual(len(sel), 3)  # 3 matchs × 1 pari max, au lieu de 8
             par_match = {}
             for s in sel:
                 par_match[s["match"]] = par_match.get(s["match"], 0) + 1
-            self.assertLessEqual(max(par_match.values()), 1)
+            self.assertLessEqual(max(par_match.values()), 1)  # jamais 2 paris sur le même match DANS un coupon
             signatures.append(frozenset((s["match"], s["pick"]["marche"]) for s in sel))
-        self.assertEqual(len(signatures), len(set(signatures)))
+            tous_les_matchs_utilises.extend(s["match"] for s in sel)
+        self.assertEqual(len(signatures), len(set(signatures)))  # jamais deux coupons identiques
+        # Règle 5/6 (11/10/2026) : AUCUN match ne doit apparaître dans plus d'un coupon, sur
+        # l'ensemble des coupons générés CE run — vérifié sur l'union de toutes les sélections,
+        # pas seulement à l'intérieur d'un coupon pris isolément.
+        self.assertEqual(len(tous_les_matchs_utilises), len(set(tous_les_matchs_utilises)),
+                         "un même match apparaît dans plusieurs coupons — violation de la règle d'unicité croisée")
+        self.assertLessEqual(len(tous_les_matchs_utilises), len(pool))  # jamais plus de jambes que de matchs distincts
 
 
 class TestRedactionSansIA(unittest.TestCase):
@@ -1125,7 +1142,9 @@ class TestMatchsVirtuelsEtMarches(unittest.TestCase):
             _fixture("England SRL", "Spain SRL", "UEFA Nations League", "International"),
             _fixture("England", "Spain", "UEFA Nations League", "International"),
         ]
-        self.assertEqual(cd.selectionner_matchs_du_jour(fixtures), [("England", "Spain")])
+        with mock.patch.object(cd, "FILTRE_LIGUES_UNIQUES", []):  # hors des 5 grands championnats
+            matchs = cd.selectionner_matchs_du_jour(fixtures)
+        self.assertEqual(matchs, [("England", "Spain")])
         # Le vrai match ne doit jamais être apparié à sa version virtuelle
         fx, _ = cd.trouver_fixture_oddspapi("Slovenia", "Scotland",
                                             [{"participant1Name": "Slovenia Srl", "participant2Name": "Scotland SRL"}])
@@ -1929,6 +1948,7 @@ class TestCollecteEfficace(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d, \
                 mock.patch.object(cd, "SORTIE_JSON", os.path.join(d, "out.json")), \
                 mock.patch.object(cd, "NB_MATCHS_MAX", 2), \
+                mock.patch.object(cd, "FILTRE_LIGUES_UNIQUES", []), \
                 mock.patch.object(cd, "SELECTION_MANUELLE_ACTIVE", selection_manuelle), \
                 mock.patch.object(cd, "MATCHS_MANUELS_DATES", {"2000-01-01"}), \
                 mock.patch.object(cd, "verifier_quota_oddspapi", return_value=True), \
@@ -2671,11 +2691,22 @@ class TestSelectionAdaptativeNbJambes(unittest.TestCase):
         self.assertNotIn("pas assez de matchs exploitables", sortie)
 
     def test_message_pas_assez_de_matchs_quand_cest_vraiment_le_cas(self):
-        # Seulement 3 matchs exploitables (sous le plafond du profil, 5) : ici, c'est bien un
-        # manque de matchs, le message doit le dire.
+        # Seulement 3 matchs exploitables, mais un profil dont le plafond (5) dépasse ce qui
+        # est réellement disponible : ici, c'est bien un manque de matchs, le message doit le
+        # dire. Profil patché explicitement (construire_profils_dynamiques, pas PROFILS_COUPON
+        # — remplacé le 11/10/2026) : la génération dynamique dimensionne normalement son
+        # plafond au volume réel (jamais plus que jambes_possibles, voir
+        # construire_profils_dynamiques), donc ce scénario précis — un plafond supérieur au
+        # volume réel — ne peut plus se produire par défaut ; il reste testé ici pour
+        # verrouiller la logique de message, utile si un profil est un jour fourni
+        # explicitement (ex. agent_pilote, run ponctuel) avec un plafond non adapté au volume.
         pool = {f"M{i} vs A{i}": [_selection(f"M{i} vs A{i}", "Total", "Over", 1.5)] for i in range(3)}
+        profil_plafond_5 = [{"cle": "jour", "nom": "🏆 COUPON DU JOUR", "cote_min": 1.1, "cote_max": 2.1,
+                             "nb_jambes_min": 2, "nb_jambes": 5}]
         tampon = io.StringIO()
-        with mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=pool), redirect_stdout(tampon):
+        with mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=pool), \
+                mock.patch.object(ae, "construire_profils_dynamiques", return_value=profil_plafond_5), \
+                redirect_stdout(tampon):
             ae.generer_coupons({"matchs": []})
         sortie = tampon.getvalue()
         self.assertIn("pas assez de matchs exploitables", sortie)

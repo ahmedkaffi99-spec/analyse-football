@@ -93,15 +93,21 @@ class TestStratege(unittest.TestCase):
         self.assertLess(texte.index("BTTS"), texte.index("Total (2.5)"))
 
     def test_choix_valide_des_le_premier_tour(self):
-        # P1 (Total) + P4 (BTTS) : catégories différentes, pas de souci de dominance (règle du
-        # 30/09/2026) ; idem P2 (BTTS) + P3 (Total) + P6 (Handicap) pour profil2.
+        # P1 (A vs B, Total) + P4 (C vs D, BTTS) pour profil1 ; profil2 doit porter sur des
+        # matchs ENCORE DIFFÉRENTS (règles 5/6 de la mission du 11/10/2026 : un match ne peut
+        # apparaître que dans un seul coupon, même avec un marché différent) — pool étendu avec
+        # G vs H (P7) et I vs J (P8) pour fournir assez de matchs distincts à profil2.
+        pool = dict(POOL, **{
+            "G vs H": [_sel("G vs H", "Total", "Over", 1.7)],    # P7
+            "I vs J": [_sel("I vs J", "BTTS", "Yes", 1.9)],      # P8
+        })
         reponse = _reponse([
             {"profil": "profil1", "strategie": "Paris solides", "jambes": [{"id": "P1", "raison": "r1"}, {"id": "P4", "raison": "r3"}]},
             {"profil": "profil2", "strategie": "Plus audacieux", "jambes": [
-                {"id": "P2", "raison": "r2"}, {"id": "P3", "raison": "r4"}, {"id": "P6", "raison": "r5"}]},
+                {"id": "P6", "raison": "r2"}, {"id": "P7", "raison": "r4"}, {"id": "P8", "raison": "r5"}]},
         ])
         appel = mock.Mock(return_value="```json\n" + reponse + "\n```")
-        resultat = st.composer_coupons(POOL, PROFILS, appel=appel)
+        resultat = st.composer_coupons(pool, PROFILS, appel=appel)
         self.assertEqual(appel.call_count, 1)
         p1 = resultat["coupons"]["profil1"]
         self.assertEqual([s["pick"]["selection"] for s in p1["selections"]], ["Over", "No"])
@@ -109,16 +115,22 @@ class TestStratege(unittest.TestCase):
         self.assertEqual(p1["strategie"], "Paris solides")
 
     def test_erreurs_renvoyees_a_l_ia_qui_corrige(self):
+        # Pool étendu (voir test_choix_valide_des_le_premier_tour) : profil2 doit porter sur des
+        # matchs différents de profil1 (règles 5/6 de la mission du 11/10/2026).
+        pool = dict(POOL, **{
+            "G vs H": [_sel("G vs H", "Total", "Over", 1.7)],    # P7
+            "I vs J": [_sel("I vs J", "BTTS", "Yes", 1.9)],      # P8
+        })
         mauvaise = _reponse([
             {"profil": "profil1", "strategie": "s", "jambes": [{"id": "P1"}, {"id": "P99"}]},  # id inventé
             {"profil": "profil2", "strategie": "s", "jambes": [{"id": "P1"}, {"id": "P2"}]},    # 2 paris sur A vs B
         ])
         bonne = _reponse([
             {"profil": "profil1", "strategie": "s", "jambes": [{"id": "P1"}, {"id": "P4"}]},
-            {"profil": "profil2", "strategie": "s", "jambes": [{"id": "P2"}, {"id": "P3"}, {"id": "P6"}]},
+            {"profil": "profil2", "strategie": "s", "jambes": [{"id": "P6"}, {"id": "P7"}, {"id": "P8"}]},
         ])
         appel = mock.Mock(side_effect=[mauvaise, bonne])
-        resultat = st.composer_coupons(POOL, PROFILS, appel=appel)
+        resultat = st.composer_coupons(pool, PROFILS, appel=appel)
         self.assertEqual(appel.call_count, 2)
         second_prompt = appel.call_args_list[1].args[0]
         self.assertIn("identifiant inconnu « P99 »", second_prompt)
@@ -186,12 +198,19 @@ class TestStratege(unittest.TestCase):
     def test_integration_generer_coupons_plusieurs_profils(self):
         # Vérifie que le pipeline reste générique à N profils (PROFILS_COUPON n'en définit
         # qu'un seul par défaut depuis le 26/09/2026, mais le code doit supporter plusieurs).
+        # Pool étendu (G vs H, I vs J) : profil2 doit porter sur des matchs différents de
+        # profil1 (règles 5/6 de la mission du 11/10/2026 — un match ne peut apparaître que
+        # dans un seul coupon, même avec un marché différent).
+        pool = dict(POOL, **{
+            "G vs H": [_sel("G vs H", "Total", "Over", 1.7)],    # P7
+            "I vs J": [_sel("I vs J", "BTTS", "Yes", 1.9)],      # P8
+        })
         reponse = _reponse([
             {"profil": "profil1", "strategie": "Stratégie sûre", "jambes": [{"id": "P1", "raison": "r"}, {"id": "P4", "raison": "r"}]},
-            {"profil": "profil2", "strategie": "s", "jambes": [{"id": "P2"}, {"id": "P3"}, {"id": "P6"}]},
+            {"profil": "profil2", "strategie": "s", "jambes": [{"id": "P6"}, {"id": "P7"}, {"id": "P8"}]},
         ])
-        with mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=POOL), \
-                mock.patch.object(ae, "PROFILS_COUPON", PROFILS + [
+        with mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=pool), \
+                mock.patch.object(ae, "construire_profils_dynamiques", return_value=PROFILS + [
                     {"cle": "profil3", "nom": "🔥 COUPON 3", "cote_min": 50.0, "cote_max": 100.0, "nb_jambes": 8}]), \
                 mock.patch.object(ae, "UTILISER_STRATEGE_IA", True), \
                 mock.patch.object(ae, "appel_llm", return_value=reponse), mock.patch.object(ae.time, "sleep"):
@@ -207,7 +226,7 @@ class TestStratege(unittest.TestCase):
         ])
         profil_unique = [{"cle": "coupon", "nom": "🎯 COUPON DU JOUR", "cote_min": 3.0, "cote_max": 50.0, "nb_jambes": 6}]
         with mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=POOL), \
-                mock.patch.object(ae, "PROFILS_COUPON", profil_unique), \
+                mock.patch.object(ae, "construire_profils_dynamiques", return_value=profil_unique), \
                 mock.patch.object(ae, "UTILISER_STRATEGE_IA", True), \
                 mock.patch.object(ae, "appel_llm", return_value=reponse), mock.patch.object(ae.time, "sleep"):
             resultats = ae.generer_coupons({"matchs": []})
@@ -543,11 +562,13 @@ class TestDiversiteEtDoublonsEntreProfils(unittest.TestCase):
 
         self.assertIn("p1", acceptes)
         self.assertNotIn("p2", acceptes)
-        self.assertTrue(any("déjà choisi dans un autre profil" in p for p in problemes), problemes)
+        self.assertTrue(any("déjà utilisé dans un autre profil" in p for p in problemes), problemes)
 
-    def test_meme_match_autre_marche_accepte_dans_le_profil_suivant(self):
-        # A vs B propose Total ET BTTS (P1, P2) : réutiliser le MATCH avec un pari DIFFÉRENT
-        # (P2 au lieu de P1) dans un autre profil reste autorisé.
+    def test_meme_match_autre_marche_refuse_dans_le_profil_suivant(self):
+        # Règles 5 et 6 de la mission du 11/10/2026 : un même match ne doit JAMAIS apparaître
+        # dans plusieurs coupons, même via un marché différent — ce comportement remplace
+        # l'ancienne règle (en vigueur jusqu'au 11/10/2026) qui autorisait la réutilisation du
+        # match avec un pari différent.
         pool = {
             "A vs B": [_sel("A vs B", "Total", "Over", 1.8), _sel("A vs B", "BTTS", "Yes", 1.7)],
             "C vs D": [_sel("C vs D", "Total", "Over", 1.8)],
@@ -558,14 +579,14 @@ class TestDiversiteEtDoublonsEntreProfils(unittest.TestCase):
                    {"cle": "p2", "nom": "y", "cote_min": 0.0, "cote_max": 1000.0, "nb_jambes": 1, "nb_jambes_min": 1}]
         proposition = {"coupons": [
             {"profil": "p1", "strategie": "s", "jambes": [{"id": "P1"}]},  # A vs B, Total Over
-            {"profil": "p2", "strategie": "s", "jambes": [{"id": "P2"}]},  # A vs B, BTTS Yes — match repris, pari différent
+            {"profil": "p2", "strategie": "s", "jambes": [{"id": "P2"}]},  # A vs B, BTTS Yes — même match, marché différent
         ]}
 
         acceptes, problemes, _ = st.valider(proposition, catalogue, profils)
 
-        self.assertEqual(problemes, [])
         self.assertIn("p1", acceptes)
-        self.assertIn("p2", acceptes)
+        self.assertNotIn("p2", acceptes)
+        self.assertTrue(any("déjà utilisé dans un autre profil" in p for p in problemes), problemes)
 
     def test_categorie_dominante_a_l_echelle_du_run_entier(self):
         # profil1 : 1 seul pari "Double Chance" (P1) + 1 BTTS (P4) — pas dominant à lui seul
@@ -641,7 +662,7 @@ class TestDiversiteEtDoublonsEntreProfils(unittest.TestCase):
 
         self.assertIn("p1", acceptes)
         self.assertNotIn("p2", acceptes)
-        self.assertTrue(any("déjà choisi dans un autre profil" in p for p in problemes), problemes)
+        self.assertTrue(any("déjà utilisé dans un autre profil" in p for p in problemes), problemes)
 
 
 class TestCoteTotaleMinimale(unittest.TestCase):
