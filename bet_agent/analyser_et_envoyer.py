@@ -747,8 +747,17 @@ def calc_edge(proba_modele, cote):
 # des stats souvent anciennes) et celle du marché (cote 1xbet sans sa marge). Constaté le
 # 2026-09-26 : seul, le modèle affichait 97,6 % sur un "nul ou victoire extérieure" et des
 # edges de 20-25 % en série — irréaliste face à un bookmaker. Le marché pèse POIDS_MARCHE.
+#
+# Désactivation RÉVERSIBLE (audit du 11/10/2026, "faire évoluer le moteur à partir des
+# rapports historiques") : surchargeable via POIDS_MARCHE_OVERRIDE (env), jamais codée en dur
+# ailleurs dans la logique — même mécanisme que ae.PROBA_MIN_FORTE (SEUIL_PROBA_MIN) juste
+# au-dessus. Valeur par défaut INCHANGÉE (0.65) tant que la variable n'est pas définie : ce
+# correctif ne modifie ni la stratégie de production ni aucune donnée historique de cotes,
+# il prépare seulement un interrupteur pour un futur backtest comparatif (section 4 de
+# l'audit) — mettre POIDS_MARCHE_OVERRIDE=0 annule l'influence du marché (probabilité
+# purement modèle), sans retirer ni le code ni les cotes déjà collectées.
 # ------------------------------------------------------------
-POIDS_MARCHE = 0.65
+POIDS_MARCHE = float(os.getenv("POIDS_MARCHE_OVERRIDE") or 0.65)
 COTE_MIN_JAMBE = 1.20   # en dessous, un pari n'apporte presque rien au combiné mais ajoute un risque
 # Plus aucune catégorie exclue par défaut (demande explicite du 30/09/2026 : "ne limite les
 # marchés") — Total Cartons (modèle peu fiable, points de carton/lignes mixtes) était exclu
