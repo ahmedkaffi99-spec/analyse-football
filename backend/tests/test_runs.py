@@ -112,7 +112,7 @@ class TestEchecBlocOptionnelNeffaceJamaisLeCouponDejaEnvoye:
             with mock.patch.object(pipeline, "modules", return_value=(cd, ae, None)), \
                     mock.patch.object(pipeline, "reinitialiser_caches"), \
                     mock.patch("app.services.capture_historique.capturer_predictions", side_effect=_sql_cassee):
-                executer_run(run_id, envoyer_telegram=True)
+                executer_run(run_id, envoyer_telegram=True, moteur="deterministe")
 
         with SessionLocal() as db:
             run_relu = db.get(Run, run_id)
@@ -132,7 +132,7 @@ class TestEchecBlocOptionnelNeffaceJamaisLeCouponDejaEnvoye:
                     mock.patch.dict("os.environ", {"MOTEUR_COMPARAISON_ACTIVE": "true"}), \
                     mock.patch("app.services.comparaison_moteurs.comparer_candidats", side_effect=_sql_cassee), \
                     mock.patch("app.services.capture_historique.capturer_predictions", return_value=0):
-                executer_run(run_id, envoyer_telegram=True)
+                executer_run(run_id, envoyer_telegram=True, moteur="deterministe")
 
         with SessionLocal() as db:
             run_relu = db.get(Run, run_id)
@@ -150,7 +150,7 @@ class TestEchecBlocOptionnelNeffaceJamaisLeCouponDejaEnvoye:
             with mock.patch.object(pipeline, "modules", return_value=(cd, ae, None)), \
                     mock.patch.object(pipeline, "reinitialiser_caches"), \
                     mock.patch("app.services.capture_historique.capturer_predictions", return_value=0):
-                executer_run(run_id, envoyer_telegram=True)
+                executer_run(run_id, envoyer_telegram=True, moteur="deterministe")
 
         with SessionLocal() as db:
             run_relu = db.get(Run, run_id)
@@ -180,7 +180,7 @@ class TestLeRollbackEstReellementAppele:
                                side_effect=RuntimeError("boum")), \
                     mock.patch.object(Session, "rollback", autospec=True,
                                       side_effect=rollback_original) as rollback_espion:
-                executer_run(run_id, envoyer_telegram=True)
+                executer_run(run_id, envoyer_telegram=True, moteur="deterministe")
         assert rollback_espion.called, (
             "db.rollback() n'a jamais été appelé après l'échec de capturer_predictions — "
             "sans cet appel, l'incident réel du 10/10/2026 (run 129) peut se reproduire sous "
