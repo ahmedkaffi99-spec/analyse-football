@@ -28,10 +28,18 @@ jobs:
       - name: Tests du moteur d'analyse
         run: python -m pytest moteur -q
 
+      - name: Tests du moteur central (shadow)
+        run: python -m pytest moteur_central -q
+
       - name: Tests du pipeline
-        working-directory: bet_agent
-        run: python -m unittest test_correctifs test_agent_strategie test_agent_pilote test_verifier_resultats -v
+        # Audit du 11/10/2026 : "python -m unittest" ne listait que 4 des 11 fichiers
+        # test_*.py de bet_agent/ (ex. test_poids_marche_override.py n'avait jamais tourné en
+        # CI) — pytest découvre et exécute TOUS les fichiers du dossier, aucun oubli possible.
+        run: python -m pytest bet_agent -q
 
       - name: Tests du backend
-        working-directory: backend
-        run: python -m pytest -q
+        run: python -m pytest backend/tests -q
+
+      - name: Tests des scripts d'audit historique
+        # Même audit : ces tests (tests/) n'étaient jamais exécutés par la CI.
+        run: python -m pytest tests -q

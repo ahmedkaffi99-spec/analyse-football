@@ -747,8 +747,17 @@ def calc_edge(proba_modele, cote):
 # des stats souvent anciennes) et celle du marché (cote 1xbet sans sa marge). Constaté le
 # 2026-09-26 : seul, le modèle affichait 97,6 % sur un "nul ou victoire extérieure" et des
 # edges de 20-25 % en série — irréaliste face à un bookmaker. Le marché pèse POIDS_MARCHE.
+#
+# Désactivation RÉVERSIBLE (audit du 11/10/2026, "faire évoluer le moteur à partir des
+# rapports historiques") : surchargeable via POIDS_MARCHE_OVERRIDE (env), jamais codée en dur
+# ailleurs dans la logique — même mécanisme que ae.PROBA_MIN_FORTE (SEUIL_PROBA_MIN) juste
+# au-dessus. Valeur par défaut INCHANGÉE (0.65) tant que la variable n'est pas définie : ce
+# correctif ne modifie ni la stratégie de production ni aucune donnée historique de cotes,
+# il prépare seulement un interrupteur pour un futur backtest comparatif (section 4 de
+# l'audit) — mettre POIDS_MARCHE_OVERRIDE=0 annule l'influence du marché (probabilité
+# purement modèle), sans retirer ni le code ni les cotes déjà collectées.
 # ------------------------------------------------------------
-POIDS_MARCHE = 0.65
+POIDS_MARCHE = float(os.getenv("POIDS_MARCHE_OVERRIDE") or 0.65)
 COTE_MIN_JAMBE = 1.20   # en dessous, un pari n'apporte presque rien au combiné mais ajoute un risque
 # Plus aucune catégorie exclue par défaut (demande explicite du 30/09/2026 : "ne limite les
 # marchés") — Total Cartons (modèle peu fiable, points de carton/lignes mixtes) était exclu
@@ -796,7 +805,18 @@ def probabilites_sans_marge(marches):
         somme_cible = 2.0 if "double chance" in nom.lower() else 1.0
         total = sum(1 / c for _, c in cotes)
         for selection, cote in cotes:
-            probas.setdefault((cle_marche, selection), somme_cible * (1 / cote) / total)
+            # min(1.0, ...) : bug réel découvert en audit (2026-10-10) — la normalisation à
+            # somme_cible=2.0 pour Double Chance suppose les 3 sélections (1X/X2/12) présentes
+            # et cotées de façon cohérente ; une seule sélection suspendue/absente côté OddsPapi
+            # (favori écrasant, ex. 1X à cote 1.20 sans "12" quoté) casse cette hypothèse et
+            # peut produire une "probabilité" de marché > 1 mathématiquement impossible, qui se
+            # propage ensuite (mélange POIDS_MARCHE) jusqu'à un proba_modele_pct > 100% capable
+            # de passer le filtre PROBA_MIN_FORTE de la sélection automatique
+            # (voir TestMelangeModeleMarche.test_double_chance_avec_une_jambe_manquante_ne_
+            # depasse_pas_100_pourcent). Une probabilité est par définition bornée à [0, 1] —
+            # ce plafond ne change rien quand les 3 jambes sont présentes et cohérentes (le
+            # résultat non plafonné est déjà < 1 dans ce cas).
+            probas.setdefault((cle_marche, selection), min(1.0, somme_cible * (1 / cote) / total))
     return probas
 
 
@@ -2229,6 +2249,7 @@ def agent3_calcul_pool_candidats(donnees):
           f"(TOUS les marchés modélisables sont transmis à l'IA, sans présélection Python)")
 
     pool = {}
+    fixture_par_cle_pool = {}  # clé de pool déjà utilisée -> fixture_id_oddspapi du match qui l'occupe
     for m in matchs_exploitables:
         af = m["api_football"]
         home_demande = m["match_demande"]["home"]
@@ -2355,10 +2376,34 @@ def agent3_calcul_pool_candidats(donnees):
         # fixture_id_api_football/competition (10/10/2026) : uniquement pour la capture
         # prospective hist_cotes (backend/app/services/capture_historique.py) — identité du
         # match, jamais utilisés par la sélection ni Telegram.
-        pool[nom_match] = [
+        # Collision de nom (bug réel découvert en audit du 10/10/2026, JAMAIS silencieux depuis
+        # ce correctif) : "nom_match" (home vs away, sans date ni compétition) sert de clé au
+        # pool. Deux matchs RÉELLEMENT DIFFÉRENTS (fixture_id_oddspapi distincts — ex: deux clubs
+        # de même nom dans des championnats différents, ou une équipe réserve) peuvent produire
+        # exactement le même nom_match ; avant ce correctif, le second écrasait silencieusement
+        # le premier dans le pool et toutes ses jambes disparaissaient sans trace. Le MÊME match
+        # réel revu deux fois (même fixture_id, ex. doublon de collecte) continue d'écraser sans
+        # avertissement : c'est la même donnée, pas une perte.
+        # "match"/"home_nom"/"away_nom" (affichage Telegram, rediger_ticket_sans_ia,
+        # comparer_candidat) restent TOUJOURS le nom_match brut, inchangés dans tous les cas —
+        # seule la CLÉ DE POOL interne (jamais affichée) se désambiguïse, pour que le second
+        # match reste sélectionnable au lieu de disparaître.
+        fixture_id = m["oddspapi"]["fixture_id"]
+        cle_pool = nom_match
+        # fixture_id absent (None) : impossible de prouver qu'il s'agit du même match réel que
+        # celui déjà présent -> toujours traité comme une collision potentielle (jamais supposé
+        # être un doublon par défaut, pour ne jamais risquer d'effacer un match différent).
+        if cle_pool in pool and (fixture_id is None or fixture_par_cle_pool.get(cle_pool) != fixture_id):
+            cle_pool = f"{nom_match} ({fixture_id or f'#{len(pool)}'})"
+            print(f"   ⚠️ Collision de nom détectée : deux matchs réels différents partagent le nom "
+                  f"'{nom_match}' (fixture_id_oddspapi {fixture_par_cle_pool.get(nom_match)!r} puis "
+                  f"{fixture_id!r}) — le second est conservé sous une clé de pool distincte, jamais "
+                  f"écrasé silencieusement.")
+        fixture_par_cle_pool[cle_pool] = fixture_id
+        pool[cle_pool] = [
             {
                 "match": nom_match, "home_nom": home_nom, "away_nom": away_nom,
-                "fixture_id_oddspapi": m["oddspapi"]["fixture_id"], "pick": c, "contexte": contexte_match,
+                "fixture_id_oddspapi": fixture_id, "pick": c, "contexte": contexte_match,
                 "af_home_id": af.get("home_id") if af else None, "af_away_id": af.get("away_id") if af else None,
                 "competition_id": af.get("league_id") if af else None, "date_iso": m["oddspapi"].get("start_time"),
                 "fixture_id_api_football": af.get("fixture_id_api_football") if af else None,

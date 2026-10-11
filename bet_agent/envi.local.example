@@ -7,9 +7,13 @@ API_FOOTBALL_KEY=
 # Optionnel : requêtes/minute autorisées par ton plan API-Football (défaut 9, marge de
 # sécurité sous les 10/min du plan gratuit). Plan Pro = 300/min, Ultra = 450/min, Mega = 900/min.
 API_FOOTBALL_QUOTA_PAR_MINUTE=
-ODDS_API_KEY=
 ODDSPAPI_KEY=
 GROQ_API_KEY=
 GEMINI_API_KEY=
+# SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY : NON lues par le pipeline Python (bet_agent/) —
+# utilisées uniquement par la fonction Edge Supabase (edge-functions/api/index.ts, runtime
+# Deno). Laissées ici pour mémoire si tu configures aussi l'Edge Function depuis cette
+# machine, mais inutile de les remplir pour faire tourner collecte_donnees.py/analyser_et_
+# envoyer.py eux-mêmes.
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=

@@ -10,8 +10,14 @@ from app.database import SessionLocal
 from app.models import Run
 from app.models_historique import HistCote, HistDecisionCentrale
 from app.services import historique as hist
-from app.services.decision_centrale import calculer_et_journaliser_shadow, construire_candidats
+from app.services.decision_centrale import (
+    _combo_vers_json,
+    calculer_et_journaliser_shadow,
+    construire_candidats,
+)
 from moteur_central.config import ConfigCentrale
+from moteur_central.contrat_adapter import CLES_SCHEMA_COMMUN
+from moteur_central.score_central import CandidatCentral
 
 HOME_ID, AWAY_ID = 100, 200
 
@@ -97,6 +103,179 @@ def test_shadow_une_seule_ligne_par_run_grace_a_la_contrainte_unique():
         calculer_et_journaliser_shadow(db, run, pool, [], cote_min=1.3, cote_max=3.0)
         lignes = list(db.scalars(select(HistDecisionCentrale).where(HistDecisionCentrale.run_id == run.id)))
         assert len(lignes) == 1
+
+
+class TestComboVersJsonContratCommun:
+    """Non-régression Phase 1 du plan de bascule (10/10/2026) : _combo_vers_json() utilise
+    désormais moteur_central.contrat_adapter.convertir() pour chaque jambe au lieu d'un
+    sous-ensemble de champs choisi à la main — les métadonnées du coupon et les champs déjà
+    lus ailleurs (runs.py) doivent rester strictement inchangés."""
+
+    def _combo(self, **overrides):
+        candidat = CandidatCentral(match="H vs A", marche="resultat", selection="1", cote=1.8,
+                                   moteur_responsable="bet_agent", proba_pct=58.0)
+        base = {"genere": True, "jambes": [candidat], "cote_totale": 1.8, "score_moyen": 0.58, "nb_jambes": 1}
+        base.update(overrides)
+        return base
+
+    def test_combo_non_genere_inchange(self):
+        resultat = _combo_vers_json({"genere": False, "raison": "pas assez de candidats"})
+        assert resultat == {"genere": False, "raison": "pas assez de candidats"}
+
+    def test_metadonnees_du_coupon_inchangees(self):
+        resultat = _combo_vers_json(self._combo())
+        assert resultat["genere"] is True
+        assert resultat["nb_jambes"] == 1
+        assert resultat["cote_totale"] == 1.8
+        assert resultat["score_moyen"] == 0.58
+
+    def test_runs_py_lit_toujours_nb_jambes_et_genere_sans_casser(self):
+        # Reproduit exactement l'accès fait par backend/app/services/runs.py:188-190 : seul
+        # ['nb_jambes'] et ['genere'] sont lus pour le log console, jamais le contenu de
+        # 'jambes' — ce test prouve que ce chemin de lecture reste valide après le changement.
+        resultat = _combo_vers_json(self._combo())
+        texte = f"{resultat['nb_jambes'] if resultat['genere'] else 'non généré'} jambe(s)"
+        assert texte == "1 jambe(s)"
+
+    def test_chaque_jambe_porte_toutes_les_cles_du_schema_commun(self):
+        resultat = _combo_vers_json(self._combo())
+        for jambe in resultat["jambes"]:
+            assert set(jambe.keys()) == set(CLES_SCHEMA_COMMUN)
+
+    def test_champs_deja_existants_preserves_dans_le_nouveau_format(self):
+        # Les champs que l'ancien format exposait à la main (match, marche, selection, cote,
+        # moteur_responsable, proba_pct) doivent être retrouvables avec la même valeur, même si
+        # le nom de clé pour la cote change ("odds" au lieu de "cote" — voir contrat_adapter.py).
+        resultat = _combo_vers_json(self._combo())
+        jambe = resultat["jambes"][0]
+        assert jambe["market"] == "resultat"
+        assert jambe["selection"] == "1"
+        assert jambe["odds"] == 1.8
+        assert jambe["source"] == "bet_agent"
+        assert jambe["proba_pct"] == 58.0
+
+    def test_aucune_donnee_perdue_pour_un_candidat_complet(self):
+        candidat = CandidatCentral(match="H vs A", marche="btts", selection="oui", cote=1.9,
+                                   moteur_responsable="moteur", proba_pct=55.0, competition="Ligue Test",
+                                   proba_calibree_pct=52.0, edge_pct=4.2,
+                                   historique_marche={"disponible": True, "n": 40, "win_rate": 0.55},
+                                   fixture_id_oddspapi="fx-1", raisons=["edge positif"])
+        resultat = _combo_vers_json(self._combo(jambes=[candidat]))
+        jambe = resultat["jambes"][0]
+        assert jambe["competition"] == "Ligue Test"
+        assert jambe["proba_calibree_pct"] == 52.0
+        assert jambe["edge_pct"] == 4.2
+        assert jambe["fixture_id_oddspapi"] == "fx-1"
+        assert jambe["historique_marche"] == {"disponible": True, "n": 40, "win_rate": 0.55}
+        assert jambe["reasons"] == ["edge positif"]
+
+    def test_jambes_json_serialisables(self):
+        import json
+
+        candidat = CandidatCentral(match="H vs A", marche="btts", selection="oui", cote=1.9,
+                                   moteur_responsable="moteur", proba_pct=55.0)
+        resultat = _combo_vers_json(self._combo(jambes=[candidat]))
+        json.dumps(resultat)  # lève si une valeur n'est pas sérialisable — ne doit jamais lever
+
+
+def test_shadow_journalise_avec_le_nouveau_format_de_jambe():
+    with SessionLocal() as db:
+        run = _run(db)
+        pool = {"H vs A": [_candidat("H vs A", _pick("Total", "Over", 1.9))]}
+        ligne = calculer_et_journaliser_shadow(db, run, pool, [], cote_min=1.3, cote_max=3.0)
+
+        assert ligne.coupon_bet_agent is not None
+        if ligne.coupon_bet_agent["genere"]:
+            for jambe in ligne.coupon_bet_agent["jambes"]:
+                assert set(jambe.keys()) == set(CLES_SCHEMA_COMMUN)
+
+
+def _assert_coupon_bien_structure(coupon):
+    """Vérifie la forme d'un coupon journalisé telle que produite par _combo_vers_json() :
+    soit non généré avec une raison textuelle non vide, soit généré avec des métadonnées
+    cohérentes et des jambes portant exactement le schéma commun."""
+    assert isinstance(coupon, dict)
+    assert "genere" in coupon
+    if not coupon["genere"]:
+        assert isinstance(coupon.get("raison"), str)
+        assert coupon["raison"] != ""
+        return
+    assert isinstance(coupon["jambes"], list)
+    assert coupon["nb_jambes"] == len(coupon["jambes"])
+    assert isinstance(coupon["cote_totale"], float)
+    assert isinstance(coupon["score_moyen"], float)
+    for jambe in coupon["jambes"]:
+        assert set(jambe.keys()) == set(CLES_SCHEMA_COMMUN)
+
+
+def test_shadow_journalise_reellement_les_3_coupons_avec_metadonnees_coherentes():
+    """Bout-en-bout : 2 candidats bet_agent (2 matchs distincts, cotes 1.3 chacune -> cote
+    combinée 1.69, dans [1.3, 3.0]) suffisent pour que selectionner() génère réellement un
+    coupon bet_agent à 2 jambes ; aucune comparaison moteur fournie -> coupon_moteur non
+    généré. On vérifie les VRAIES valeurs journalisées, jamais déduites."""
+    with SessionLocal() as db:
+        run = _run(db)
+        pool = {
+            "H vs A": [_candidat("H vs A", _pick("Total", "Over", 1.3))],
+            "B vs C": [_candidat("B vs C", _pick("Total", "Over", 1.3), af_home_id=300, af_away_id=400,
+                                 home_nom="B", away_nom="C")],
+        }
+        ligne = calculer_et_journaliser_shadow(db, run, pool, [], cote_min=1.3, cote_max=3.0)
+
+        # 1. les 3 coupons sont bien journalisés sur la ligne retournée.
+        for coupon in (ligne.coupon_bet_agent, ligne.coupon_moteur, ligne.coupon_central):
+            assert coupon is not None
+            _assert_coupon_bien_structure(coupon)
+
+        # Relit la ligne telle que réellement persistée en base (pas seulement l'objet Python
+        # encore attaché à la session) pour prouver que la journalisation a bien eu lieu.
+        relue = db.get(HistDecisionCentrale, ligne.id)
+        assert relue.coupon_bet_agent is not None
+        assert relue.coupon_moteur is not None
+        assert relue.coupon_central is not None
+
+        # 2 candidats bet_agent valides, cotes dans la cible -> doit être réellement généré.
+        assert ligne.coupon_bet_agent["genere"] is True
+        assert ligne.coupon_bet_agent["nb_jambes"] == 2
+        # 3. cote_totale cohérente avec le produit RÉEL des cotes des jambes retournées.
+        produit_reel = 1.0
+        for jambe in ligne.coupon_bet_agent["jambes"]:
+            produit_reel *= jambe["odds"]
+        assert ligne.coupon_bet_agent["cote_totale"] == round(produit_reel, 3)
+
+        # aucune comparaison moteur fournie -> jamais de coupon moteur généré.
+        assert ligne.coupon_moteur["genere"] is False
+
+
+def test_shadow_pool_vide_ne_leve_aucune_exception_et_journalise_trois_coupons_non_generes():
+    """Cas sans aucun candidat (pool vide, comparaison=[]) : ne doit jamais lever, et les 3
+    coupons doivent être journalisés comme non générés avec une raison textuelle explicite."""
+    with SessionLocal() as db:
+        run = _run(db)
+        ligne = calculer_et_journaliser_shadow(db, run, {}, [], cote_min=1.3, cote_max=3.0)
+
+        for coupon in (ligne.coupon_bet_agent, ligne.coupon_moteur, ligne.coupon_central):
+            assert coupon["genere"] is False
+            assert isinstance(coupon["raison"], str) and coupon["raison"] != ""
+            assert coupon.get("jambes") is None  # jamais de clé "jambes" sur un coupon non généré
+
+
+def test_shadow_candidat_bet_agent_sans_comparaison_moteur_coupon_moteur_non_genere():
+    """Au moins un candidat bet_agent fourni mais aucune comparaison moteur (comparaison=[]) :
+    coupon_moteur doit rester non généré, et coupon_bet_agent doit rester correctement
+    structuré (qu'il soit généré ou non selon le nombre de candidats disponibles)."""
+    with SessionLocal() as db:
+        run = _run(db)
+        pool = {"H vs A": [_candidat("H vs A", _pick("Total", "Over", 1.9))]}
+        ligne = calculer_et_journaliser_shadow(db, run, pool, [], cote_min=1.3, cote_max=3.0)
+
+        assert ligne.coupon_moteur["genere"] is False
+        assert isinstance(ligne.coupon_moteur["raison"], str) and ligne.coupon_moteur["raison"] != ""
+        _assert_coupon_bien_structure(ligne.coupon_bet_agent)
+        # un seul candidat bet_agent -> en-dessous du minimum de 2 jambes -> jamais généré,
+        # mais la structure (raison textuelle) doit rester correcte malgré tout.
+        assert ligne.coupon_bet_agent["genere"] is False
+        assert isinstance(ligne.coupon_bet_agent["raison"], str) and ligne.coupon_bet_agent["raison"] != ""
 
 
 def test_shadow_utilise_lhistorique_hist_cotes_deja_juge_pour_le_score():

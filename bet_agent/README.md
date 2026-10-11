@@ -45,7 +45,7 @@ Chaque jour, le pipeline collecte les matchs et TOUS les marchés/cotes 1xBet (2
 ### IA (LLM)
 | Rôle | Fournisseur / modèle | Repli |
 |---|---|---|
-| **Orchestrateur** (ancien `orchestrateur.py`, **non utilisé** sur GitHub Actions) | Groq · `openai/gpt-oss-120b` | message d'abandon Telegram |
+| **Agent pilote** (`bet_agent/agent_pilote.py`, moteur alternatif activable via l'input `moteur=agent` du workflow `pipeline-quotidien.yml` ; remplace l'ancien `orchestrateur.py` — Groq tool-calling — supprimé le 10/10/2026, code mort non référencé) | DeepSeek (`agent_pilote.py`) | message d'abandon Telegram |
 | **Rédaction** des coupons (3 tâches) | **OpenRouter** (modèles `openrouter/free`, puis 2 autres modèles gratuits ; liste modifiable via `OPENROUTER_MODELES`) | → ticket rédigé en Python si aucun modèle ne répond |
 
 Le LLM **n'invente jamais un chiffre** : cotes, probabilités et edges sont calculés en Python. Il ne fait que décider et rédiger.
@@ -62,9 +62,9 @@ Le LLM **n'invente jamais un chiffre** : cotes, probabilités et edges sont calc
 ## 3. Architecture — les agents
 
 ```
-          GitHub Actions (midi)
+          GitHub Actions (cron horaire, pipeline-quotidien.yml)
                         │
-                 orchestrateur.py  ◄── LLM Groq (tool-calling)
+       backend/app/taches.py run  ◄── --moteur deterministe (défaut) ou agent (DeepSeek)
                         │
         ┌───────────────┼──────────────────────────┐
         ▼               ▼                          ▼
@@ -88,9 +88,12 @@ Le LLM **n'invente jamais un chiffre** : cotes, probabilités et edges sont calc
 | **3b — Stratège IA** | `agent_strategie.py` | IA | **analyse** chaque match (fiabilité, presse, confrontations directes, écart modèle/marché), **planifie** une stratégie par profil et **choisit** les paris dans le catalogue de cotes réelles (par identifiant, jamais de cote inventée) ; Python **vérifie** (paris existants, 2 max par match, cote totale dans la cible) et renvoie ses calculs à l'IA qui corrige (3 allers-retours max) ; l'IA peut **s'abstenir** ; repli automatique (Monte Carlo) si elle échoue |
 | **4 — Rédaction IA** | `analyser_et_envoyer.py` · `agent4_*` | IA | 3 tâches : analyse → pronostic + confiance → ticket pédagogique pour débutant |
 | **5 — Livraison** | `analyser_et_envoyer.py` · `agent5_*` | Livraison | envoi Telegram, sauvegarde `ticket_du_jour.json` |
-| **6 — Vérification** | `verifier_resultats.py` | Contrôle | attend la fin des matchs, récupère les scores, juge chaque jambe, envoie le bilan |
-| **Filet de sécurité** | `relancer_si_echec.py` | — | relance l'orchestrateur si aucun ticket n'a été produit à midi |
-| **Diagnostic** | `diagnostic.py` | — | teste chaque source une par une (clé, quota, réseau) |
+| **6 — Vérification** | `verifier_resultats.py` (bibliothèque, appelée via `backend/app/services/verification.py`) | Contrôle | récupère les scores, juge chaque jambe, envoie le bilan |
+| **Diagnostic** | `diagnostic.py` | — | teste chaque source une par une (clé, quota, réseau) — outil manuel |
+
+`orchestrateur.py` et `relancer_si_echec.py` (ancien entrypoint Termux et son filet de
+sécurité) ont été supprimés le 10/10/2026 : remplacés depuis le passage à GitHub Actions
+par `backend/app/taches.py` + le cron natif du workflow (plus besoin de relance manuelle).
 
 ---
 
@@ -138,12 +141,11 @@ Si l'IA échoue ou s'abstient sur un profil, la composition automatique (Monte C
 
 | Fichier | Rôle | Versionné |
 |---|---|---|
-| `orchestrateur.py` | point d'entrée du run de midi | ✅ |
 | `collecte_donnees.py` | Agents 1-2 | ✅ |
 | `analyser_et_envoyer.py` | Agents 3-4-5 | ✅ |
-| `verifier_resultats.py` | Agent 6 | ✅ |
-| `relancer_si_echec.py` | relance de secours | ✅ |
-| `diagnostic.py` | test des sources | ✅ |
+| `verifier_resultats.py` | Agent 6 (bibliothèque, appelée via `backend/`) | ✅ |
+| `agent_pilote.py` / `agent_strategie.py` | moteur alternatif (`--moteur agent`, DeepSeek) | ✅ |
+| `diagnostic.py` | test des sources (outil manuel) | ✅ |
 | `test_correctifs.py` | tests hors-ligne | ✅ |
 | `MEMOIRE.md` | notes de développement | ✅ |
 | `envi.local` | **clés API** | ❌ (`.gitignore`) |
@@ -158,11 +160,12 @@ pip install -r requirements.txt
 cp envi.local.example envi.local     # puis remplir les clés
 python diagnostic.py                 # vérifier que chaque source répond
 python -m unittest test_correctifs   # tests hors-ligne
-python orchestrateur.py              # run complet (ENVOIE sur Telegram)
-python verifier_resultats.py         # bilan du soir
 ```
 
-En production, ces scripts ne sont plus lancés par cron : GitHub Actions exécute le pipeline via le backend (`python -m app.taches`), voir [`../DEPLOIEMENT.md`](../DEPLOIEMENT.md).
+`orchestrateur.py` (ancien run complet en CLI) a été supprimé le 10/10/2026 ; `verifier_resultats.py`
+n'a plus de point d'entrée CLI depuis le 03/10/2026 (c'est maintenant une bibliothèque pure).
+En production, le pipeline est lancé via le backend (`python -m app.taches run`/`verifier`),
+exécuté par GitHub Actions (cron), voir [`../DEPLOIEMENT.md`](../DEPLOIEMENT.md).
 
 ---
 

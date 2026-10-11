@@ -2,10 +2,15 @@
 10/10/2026, PHASE B de la migration progressive OddsPapi → API-Football).
 
 RÈGLES ABSOLUES :
-- Ce fichier n'est importé par AUCUN module de production (collecte_donnees.py,
-  analyser_et_envoyer.py, runs.py, persistance.py, models.py) — reprend l'isolation déjà
-  appliquée à bet_agent/shadow_*.py. Importer ce fichier ne déclenche AUCUN appel réseau :
-  seule capturer_api_football_adapte() en fait, et seulement si on l'appelle explicitement.
+- CORRECTIF DOCUMENTAIRE (10/10/2026, audit de simplification) : contrairement à l'affirmation
+  d'origine ci-dessous, ce fichier EST importé par un module de production —
+  collecte_donnees.py:recuperer_marches_pour_fixture_api_football() (sous le flag
+  FOURNISSEUR_COTES, voir collecte_donnees.py) — mais ce chemin reste inactif en pratique :
+  FOURNISSEUR_COTES n'est positionné dans AUCUN workflow actuel (défaut "oddspapi"), donc
+  aucun appel réel ne part d'ici tant que cette variable n'est pas explicitement activée.
+  analyser_et_envoyer.py, runs.py, persistance.py et models.py, eux, ne l'importent jamais.
+  Importer ce fichier ne déclenche AUCUN appel réseau : seule capturer_api_football_adapte()
+  en fait, et seulement si on l'appelle explicitement (ou si FOURNISSEUR_COTES=api_football).
 - Réutilise les mappings canoniques déjà validés de shadow_capture.py (MAPPING_API_FOOTBALL,
   CATEGORIES_ODDSPAPI, bookmaker 1xBet id=11, _normaliser_selection_api_football) — jamais
   dupliqués ni réécrits ici.

@@ -8,7 +8,8 @@ from sqlalchemy import select
 from app.models import Coupon
 
 ICONES = {"gagne": "✅", "perdu": "❌", "push": "➖ remboursé", "non_verifiable": "❓ non vérifiable",
-          "en_attente": "⏳"}
+          "en_attente": "⏳", "annule": "🚫 match annulé/reporté (remboursé)",
+          "perime": "⌛ périmé (résultat jamais confirmé)"}
 VERDICTS = {"gagne": "✅ GAGNÉ", "perdu": "❌ PERDU", "incertain": "❓ INCERTAIN (au moins une jambe non vérifiable)"}
 
 
@@ -32,6 +33,10 @@ def construire_message(coupons):
             detail += f" · ➖ {compte['push']} remboursé(s)"
         if compte["non_verifiable"]:
             detail += f" · ❓ {compte['non_verifiable']} non vérifiable(s)"
+        if compte["annule"]:
+            detail += f" · 🚫 {compte['annule']} annulé(s)/remboursé(s)"
+        if compte["perime"]:
+            detail += f" · ⌛ {compte['perime']} périmé(s)"
         sections.append(f"{c.nom} — {VERDICTS.get(c.statut, c.statut)}\n\n" + "\n".join(lignes)
                         + f"\n\n{detail}\n💰 Cote totale : *{c.cote_totale}*")
     jour = coupons[0].jour.isoformat()

@@ -77,7 +77,28 @@ class HistCote(Base):
     bet_agent lors d'un run réel. jour+fixture_id_oddspapi+marche+ligne+selection est UNIQUE :
     le même candidat revu plusieurs fois dans la même journée (le cron tourne plusieurs fois
     par jour) n'est capturé qu'une seule fois — premier vu, jamais écrasé (voir
-    capture_historique.capturer_predictions, insertion ON CONFLICT DO NOTHING)."""
+    capture_historique.capturer_predictions, insertion ON CONFLICT DO NOTHING).
+
+    DÉRIVE DE SCHÉMA CONFIRMÉE (audit du 10/10/2026, lecture directe information_schema sur
+    Supabase) : la table réelle "hist_cotes" porte aussi "match_id" (entier, FK vers
+    hist_matchs.match_id) et "bookmaker" (varchar) — AUCUN des deux n'est déclaré ici ni écrit
+    par capture_historique.py. Origine confirmée : migration "hist_cotes_capture_prospective_
+    alter" (2026-10-08) a élargi un ANCIEN schéma jamais utilisé (0 ligne à l'époque, voir le
+    commit "Capture prospective des cotes réelles dans hist_cotes (ROI futur)") vers le schéma
+    de capture actuel, sans jamais retirer ces deux colonnes devenues mortes. Ne pas les ajouter
+    ici : les ajouter formaliserait des colonnes jamais alimentées plutôt que de les retirer.
+    Aucune migration de table de production n'est faite par cet audit — colonnes laissées en
+    l'état, simplement documentées pour que personne ne les suppose actives par erreur.
+
+    DÉRIVE DISTINCTE, CORRIGÉE le 10/10/2026 (migration "hist_cotes_elargir_marche_et_
+    selection") : "marche" et "selection" étaient respectivement varchar(40) et varchar(10) en
+    production — plus étroites que ce que ce modèle déclarait déjà (String(120)/String(64)).
+    Incident réel (run #129) : un nom de marché/sélection réel dépassant ces largeurs a fait
+    échouer un INSERT (StringDataRightTruncation), empoisonnant la transaction et faisant
+    perdre un coupon déjà envoyé sur Telegram (voir aussi runs.py:executer_run, le commit
+    déplacé avant les blocs optionnels + les rollback explicites qui corrigent la cascade).
+    Les colonnes réelles sont désormais alignées sur les largeurs déclarées ici — élargissement
+    non destructif, aucune donnée existante perdue."""
 
     __tablename__ = "hist_cotes"
     __table_args__ = (UniqueConstraint("jour", "fixture_id_oddspapi", "marche", "ligne", "selection",
@@ -159,9 +180,15 @@ class HistPrediction(Base):
 
 class HistDecisionCentrale(Base):
     """Journal SHADOW du moteur_central/ : un run réel -> une ligne. coupon_bet_agent/
-    coupon_moteur/coupon_central sont le résultat brut de moteur_central.selection.selectionner
-    (JSON), raisons/metriques le détail de choix_moteur.choisir_par_marche — jamais utilisé
-    pour modifier la sélection réelle ni Telegram (voir decision_centrale.py)."""
+    coupon_moteur/coupon_central sont produits par decision_centrale.py::_combo_vers_json() à
+    partir du combo renvoyé par moteur_central.selection.selectionner() (via
+    moteur_central.shadow.calculer_shadow) : genere/nb_jambes/cote_totale/score_moyen viennent
+    directement de selectionner(), mais chaque jambe de "jambes" est désormais produite par
+    moteur_central/contrat_adapter.py:convertir() (schéma commun, toutes les clés de
+    CLES_SCHEMA_COMMUN — match, marché, sélection, cote, source, probabilités brute/calibrée,
+    edge, etc.), pas un sous-ensemble choisi à la main. raisons/metriques restent le détail de
+    choix_moteur.choisir_par_marche — jamais utilisé pour modifier la sélection réelle ni
+    Telegram (voir decision_centrale.py)."""
 
     __tablename__ = "hist_decisions_centrales"
 

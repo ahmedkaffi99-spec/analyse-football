@@ -5,7 +5,7 @@ import os
 import tempfile
 import unittest
 from contextlib import redirect_stdout
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest import mock
 
@@ -198,6 +198,96 @@ class TestPondererAvecH2h(unittest.TestCase):
         # 1.8/1.1 (stats détaillées), pas 9.0/9.0 (moyenne de saison).
         self.assertEqual(candidat["contexte"]["buts_attendus"]["domicile"], 1.8)
         self.assertEqual(candidat["contexte"]["buts_attendus"]["exterieur"], 1.1)
+
+
+def _match_minimal(home, away, fixture_id):
+    return {
+        "match_demande": {"home": home, "away": away}, "api_football": None,
+        "oddspapi": {"fixture_id": fixture_id, "tous_marches": [
+            {"marche": "Over Under Full Time", "handicap": 2.5, "periode": "fulltime",
+             "selections": [{"selection": "Over", "cote": 1.9}, {"selection": "Under", "cote": 1.9}]},
+        ]},
+        "serper": None, "stats_historiques": None, "stats_detaillees_10_matchs": None,
+        "classement": {"home": None, "away": None},
+        "head_to_head": None, "blessures": None, "predictions_api_football": None,
+    }
+
+
+class TestAucunCouponAvecMatchTermine(unittest.TestCase):
+    """Garantie explicite demandée (mission du 10/10/2026) : un match dont le coup d'envoi est
+    déjà passé au moment de l'analyse ne doit jamais atteindre le pool de candidats — vérifié
+    ici en appelant RÉELLEMENT verifier_fraicheur_matchs (pas mocké), chemin local sans appel
+    réseau (collecte "fraîche", MINUTES_COLLECTE_FRAICHE)."""
+
+    def test_match_au_coup_denvoi_passe_est_retire(self):
+        passe = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+        futur = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
+        matchs = [
+            {"match_demande": {"home": "A", "away": "B"}, "api_football": None,
+             "oddspapi": {"fixture_id": "f1", "start_time": passe}},
+            {"match_demande": {"home": "C", "away": "D"}, "api_football": None,
+             "oddspapi": {"fixture_id": "f2", "start_time": futur}},
+        ]
+        date_collecte = datetime.now(timezone.utc).isoformat()
+        restants = ae.verifier_fraicheur_matchs(matchs, date_collecte)
+        noms_restants = {(m["match_demande"]["home"], m["match_demande"]["away"]) for m in restants}
+        self.assertEqual(noms_restants, {("C", "D")})  # le match terminé (A vs B) a disparu
+
+
+class TestCollisionPoolNomMatch(unittest.TestCase):
+    """Bug réel découvert en audit (10/10/2026) : agent3_calcul_pool_candidats construit la clé
+    du pool uniquement à partir de "{home} vs {away}" (pas de date ni d'identifiant de
+    compétition) — deux matchs RÉELLEMENT DIFFÉRENTS partageant ce nom (ex: deux équipes
+    homonymes dans deux championnats différents) s'écrasaient silencieusement dans le pool,
+    le second effaçant toutes les jambes du premier sans aucune trace. Ce correctif désambiguïse
+    la clé de pool par fixture_id_oddspapi, SANS jamais changer le nom affiché (c["match"],
+    utilisé par Telegram/rediger_ticket_sans_ia/comparer_candidat), qui reste "{home} vs
+    {away}" dans tous les cas."""
+
+    def test_deux_matchs_homonymes_sont_tous_les_deux_conserves(self):
+        donnees = {"matchs": [_match_minimal("Deportivo", "Independiente", "fx-A"),
+                              _match_minimal("Deportivo", "Independiente", "fx-B")]}
+        with mock.patch.object(ae, "verifier_fraicheur_matchs", side_effect=lambda ms, *_: ms):
+            pool = ae.agent3_calcul_pool_candidats(donnees)
+        # Les deux matchs réels doivent survivre : 2 entrées dans le pool, pas 1.
+        self.assertEqual(len(pool), 2)
+        fixtures_vus = {candidats[0]["fixture_id_oddspapi"] for candidats in pool.values()}
+        self.assertEqual(fixtures_vus, {"fx-A", "fx-B"})
+        # Le nom AFFICHÉ (c["match"]) reste identique et inchangé pour les deux — jamais la clé
+        # de pool désambiguïsée, jamais une suffixation visible sur Telegram.
+        for candidats in pool.values():
+            self.assertEqual(candidats[0]["match"], "Deportivo vs Independiente")
+            self.assertEqual(candidats[0]["home_nom"], "Deportivo")
+            self.assertEqual(candidats[0]["away_nom"], "Independiente")
+
+    def test_meme_match_reel_revu_deux_fois_reste_une_seule_entree_sans_avertissement(self):
+        # Doublon LÉGITIME : le même fixture_id apparaît deux fois dans donnees["matchs"]
+        # (ex: doublon de collecte) — c'est la même donnée réelle, l'écrasement est correct et
+        # ne doit PAS être traité comme une collision (pas de clé désambiguïsée créée).
+        donnees = {"matchs": [_match_minimal("A", "B", "fx-1"), _match_minimal("A", "B", "fx-1")]}
+        with mock.patch.object(ae, "verifier_fraicheur_matchs", side_effect=lambda ms, *_: ms):
+            pool = ae.agent3_calcul_pool_candidats(donnees)
+        self.assertEqual(len(pool), 1)
+        self.assertIn("A vs B", pool)
+
+    def test_match_sans_fixture_id_reste_conserve_sans_perte(self):
+        # Donnée sans identifiant stable (fixture_id None pour les deux) : la désambiguïsation
+        # retombe sur un compteur plutôt que de risquer une nouvelle collision silencieuse —
+        # les deux matchs doivent malgré tout survivre tous les deux dans le pool.
+        donnees = {"matchs": [_match_minimal("X", "Y", None), _match_minimal("X", "Y", None)]}
+        with mock.patch.object(ae, "verifier_fraicheur_matchs", side_effect=lambda ms, *_: ms):
+            pool = ae.agent3_calcul_pool_candidats(donnees)
+        self.assertEqual(len(pool), 2)
+        for candidats in pool.values():
+            self.assertEqual(candidats[0]["match"], "X vs Y")
+
+    def test_aucune_collision_comportement_totalement_inchange(self):
+        # Cas normal (immense majorité des runs réels) : aucune collision -> la clé de pool
+        # reste EXACTEMENT "{home} vs {away}", comme avant ce correctif.
+        donnees = {"matchs": [_match_minimal("Lyon", "Marseille", "fx-9")]}
+        with mock.patch.object(ae, "verifier_fraicheur_matchs", side_effect=lambda ms, *_: ms):
+            pool = ae.agent3_calcul_pool_candidats(donnees)
+        self.assertEqual(list(pool.keys()), ["Lyon vs Marseille"])
 
 
 class TestMuCornersEtCartonsStatsDetaillees(unittest.TestCase):
@@ -2179,6 +2269,25 @@ class TestMelangeModeleMarche(unittest.TestCase):
         for c in retenus:
             self.assertLess(c["proba_modele_pct"], 90)
             self.assertLessEqual(c["edge_pct"], ae.EDGE_MAX_PLAUSIBLE)
+
+    def test_double_chance_avec_une_jambe_manquante_ne_depasse_pas_100_pourcent(self):
+        # Bug réel découvert en audit (2026-10-10) : probabilites_sans_marge() normalise la
+        # probabilité "sans marge" d'un Double Chance en supposant les 3 sélections (1X/X2/12)
+        # présentes (somme_cible=2.0, voir son docstring) — mais une seule sélection suspendue
+        # ou absente côté OddsPapi (favori écrasant : 1X à cote 1.20, "12" non quoté) suffit à
+        # casser cette hypothèse : total = 1/cote(1X) + 1/cote(X2) seulement, sans le terme du
+        # "12" manquant, qui normalise habituellement la somme à 2 pour refléter l'overround du
+        # bookmaker. Résultat mathématiquement impossible : p_marche(1X) = 161% ici, et donc
+        # (via le mélange POIDS_MARCHE à 65%) une probabilité finale de pari à 138% transmise
+        # telle quelle au pool (agent3_calcul_pool_candidats → evaluer_marches_toutes), capable
+        # de passer le filtre PROBA_MIN_FORTE (70%) de la sélection automatique
+        # (selectionner_combo_cote_cible) et donc d'atterrir dans un coupon réel.
+        marches = [{"marche": "Double Chance Full Time", "handicap": 0.0, "periode": "fulltime",
+                    "selections": [{"selection": "1X", "cote": 1.20}, {"selection": "X2", "cote": 5.0}]}]
+        candidats = ae.evaluer_marches_toutes(marches, 2.6, 0.5)
+        pick_1x = next(c for c in candidats if c["selection"] == "1X")
+        self.assertLessEqual(pick_1x["proba_modele_pct"], 100.0)
+        self.assertLessEqual(pick_1x["proba_marche_pct"], 100.0)
 
     def test_petites_cotes_exclues_mais_plus_les_cartons(self):
         # Demande explicite du 30/09/2026 ("ne limite les marchés") : Total Cartons n'est plus

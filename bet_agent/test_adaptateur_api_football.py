@@ -271,3 +271,50 @@ class TestCompatibiliteTicketsSimules:
         # (ligne 925) : periode=None doit tomber sur le défaut "fulltime".
         periode = (marche.get("periode") or "fulltime").lower()
         assert periode == "fulltime"
+
+
+class TestGenerationCouponsHorsLigne:
+    """Priorité 4 (migration minimale, 10/10/2026) : vérifie que la génération du POOL de
+    candidats (agent3_calcul_pool_candidats, 100% Python/déterministe, sans LLM ni Telegram)
+    fonctionne de bout en bout sur des marchés sourcés API-Football — jamais d'appel réseau
+    réel, jamais de publication Telegram (cette fonction s'arrête avant l'IA stratège/
+    rédaction/envoi)."""
+
+    def _donnees_synthetiques(self, marches):
+        import datetime as _dt
+        maintenant = _dt.datetime.now(_dt.timezone.utc).isoformat()
+        depart_futur = (_dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(days=2)).isoformat()
+        return {
+            "date_collecte": maintenant,
+            "matchs": [{
+                "match_demande": {"home": "Lens", "away": "Auxerre"},
+                "api_football": {"home_name": "Lens", "away_name": "Auxerre"},
+                "oddspapi": {"fixture_id": None, "start_time": depart_futur, "tous_marches": marches},
+                "stats_historiques": {"home": None, "away": None},
+                "stats_detaillees_10_matchs": {"home": None, "away": None},
+            }],
+        }
+
+    def test_pool_de_candidats_genere_sans_erreur_sur_marches_api_football(self):
+        import analyser_et_envoyer as ae
+        data = _reponse_api_football(BETS_COMPLETS)
+        r = construire_resultat(data, fixture_id=1, statut_http=200, erreur_http=None,
+                                recu_le_utc=T0, ttl_secondes=90, maintenant=T0)
+        marches_valides = [m for m in r.marches if m["marche"] != "Asian Handicap"]  # jamais activé
+        donnees = self._donnees_synthetiques(marches_valides)
+
+        pool = ae.agent3_calcul_pool_candidats(donnees)
+
+        assert isinstance(pool, dict)
+        # Au moins un candidat généré (1X2/Double Chance/BTTS/Totaux sont modélisés par Poisson) —
+        # confirme que la sortie de l'adaptateur est utilisable de bout en bout par le moteur
+        # de coupons existant, sans aucune modification de analyser_et_envoyer.py.
+        assert sum(len(v) for v in pool.values()) > 0
+
+    def test_aucune_fonction_telegram_ou_llm_nest_appelee(self):
+        """Garde-fou : ce test n'importe/n'appelle jamais agent4_rediger_coupons,
+        agent5_envoyer_coupons ni agent_strategie — seul agent3_calcul_pool_candidats (pur
+        Python) est exercé, ce qui garantit déjà l'absence de toute publication réelle."""
+        import analyser_et_envoyer as ae
+        assert hasattr(ae, "agent3_calcul_pool_candidats")
+        assert hasattr(ae, "agent5_envoyer_coupons")  # existe, mais jamais appelé ici

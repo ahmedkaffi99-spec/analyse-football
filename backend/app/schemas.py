@@ -97,3 +97,5 @@ class VerificationOut(BaseModel):
     push: int = 0
     non_verifiable: int = 0
     pas_termine: int = 0
+    annule: int = 0  # match reporté/annulé/abandonné (PST/CANC/ABD) -> remboursement, jamais un score deviné
+    perime: int = 0  # délai de péremption dépassé sans verdict -> jamais en_attente indéfiniment

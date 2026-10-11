@@ -131,28 +131,44 @@ def juger_cotes_en_attente(db):
     fixtures_af = vr.recuperer_fixtures_api_football_du_jour()
     fixtures_op = None
     scores = {}
+    maintenant = datetime.now(timezone.utc)
     compte = {"jugees": 0, "pas_termine": 0}
+
+    def _non_resolu(row):
+        # Péremption (délai dépassé depuis le coup d'envoi, sans verdict) -> "perime", jamais
+        # laissé indéfiniment avec resultat=None ; sinon, pas_termine (inchangé).
+        if vr.jambe_perimee(row.coup_envoi, maintenant):
+            row.resultat, row.juge_le = "perime", maintenant
+            compte["jugees"] += 1
+        else:
+            compte["pas_termine"] += 1
+
     for row in a_juger:
         domicile, exterieur = row.domicile, row.exterieur
         but_dom = but_ext = None
         if vr.trouver_fixture_api_football(domicile, exterieur, fixtures_af, cd):
-            resultat_af = vr.trouver_score_api_football(domicile, exterieur, fixtures_af, cd)
-            if resultat_af is None:
-                compte["pas_termine"] += 1
+            etat, score = vr.trouver_score_api_football(domicile, exterieur, fixtures_af, cd)
+            if etat == "annule":
+                # Match reporté/annulé/abandonné : jamais un score deviné, remboursement direct.
+                row.resultat, row.juge_le = "annule", maintenant
+                compte["jugees"] += 1
                 continue
-            but_dom, but_ext = resultat_af
+            if etat != "termine":
+                _non_resolu(row)
+                continue
+            but_dom, but_ext = score
         elif row.fixture_id_oddspapi:
             if fixtures_op is None:
                 fixtures_op = vr.recuperer_fixtures_du_jour()
             fx = fixtures_op.get(row.fixture_id_oddspapi)
             if not fx or fx.get("statusName") != "Finished":
-                compte["pas_termine"] += 1
+                _non_resolu(row)
                 continue
             if row.fixture_id_oddspapi not in scores:
                 scores[row.fixture_id_oddspapi] = vr.recuperer_score(row.fixture_id_oddspapi)
             score = scores[row.fixture_id_oddspapi]
             if score is None:
-                row.resultat, row.juge_le = "non_verifiable", datetime.now(timezone.utc)
+                row.resultat, row.juge_le = "non_verifiable", maintenant
                 compte["jugees"] += 1
                 continue
             p1, p2 = score
@@ -161,7 +177,7 @@ def juger_cotes_en_attente(db):
             else:
                 but_dom, but_ext = p2, p1
         else:
-            compte["pas_termine"] += 1
+            _non_resolu(row)
             continue
 
         type_stat = vr.STAT_API_FOOTBALL_PAR_CATEGORIE.get(row.categorie)
@@ -178,7 +194,7 @@ def juger_cotes_en_attente(db):
             pick = {"categorie": row.categorie, "selection": row.selection, "handicap": row.ligne}
             verdict = vr.grader_pick(pick, but_dom, but_ext)
         row.resultat = VERDICT_VERS_RESULTAT.get(verdict, "non_verifiable")
-        row.juge_le = datetime.now(timezone.utc)
+        row.juge_le = maintenant
         compte["jugees"] += 1
 
     db.commit()
