@@ -87,19 +87,25 @@ une table physique) — non auditées en détail ici (hors périmètre historiqu
 - Qualité fine des statistiques (vérifiée champ par champ sur les 760 lignes, via
   `stats->'home'->>'champ'`) :
 
-  | Champ | Lignes avec valeur / 760 |
-  |---|---|
-  | `possession` | 300 |
-  | `corners` | 300 |
-  | `shots` / `shots_on_target` | 300 |
-  | `yellow_cards` | 294 |
-  | **`xg` (expected goals)** | **0** |
+  | Champ | Lignes avec valeur / 760 | Par saison (/380) |
+  |---|---|---|
+  | `possession` | 300 | **150 (≈39,5 %)** |
+  | `corners` | 300 | **150 (≈39,5 %)** |
+  | `shots` / `shots_on_target` | 300 | **150 (≈39,5 %)** |
+  | `yellow_cards` | 294 | **147 (≈38,7 %)** |
+  | **`xg` (expected goals)** | **0** | **0 (0 %)** |
 
-  Le bloc `stats` JSON est non-NULL sur les 760 lignes, mais les champs internes ne sont
-  renseignés que sur 294-300/380 par saison (≈79 %) — API-Football ne renvoie pas toujours le
-  bloc `statistics` complet. **Aucune valeur de xG n'est fournie par la source réelle** : le champ
-  existe dans le schéma (`moteur/features.py`) mais n'est jamais rempli — conformément à
-  l'instruction de la mission, il ne doit pas être traité comme disponible.
+  **Correctif du 2026-10-11** : une version précédente de cet audit indiquait à tort "≈79 %" en
+  divisant le total combiné des 2 saisons (300) par 380 au lieu de 760 — repris ici après une
+  vérification par saison séparée (`GROUP BY saison`) qui a révélé l'erreur. Le vrai taux par
+  saison est **≈39,5 %**, pas 79 %. Le bloc `stats` JSON est non-NULL sur les 760 lignes, mais les
+  champs internes ne sont renseignés qu'environ 4 matchs sur 10 — vraisemblablement parce que le
+  run de backfill initial (run #1, 07/10/2026, ~75 secondes seulement pour 760 matchs) a été
+  borné par `--limite-appels-stats` (150 par saison, valeur déduite du compte rond mais non
+  confirmée dans les logs bruts, inaccessibles via l'API utilisée). **Aucune valeur de xG n'est
+  fournie par la source réelle** : le champ existe dans le schéma (`moteur/features.py`) mais
+  n'est jamais rempli — conformément à l'instruction de la mission, il ne doit pas être traité
+  comme disponible.
 - Doublons : 0 (vérifié par `GROUP BY home_id, away_id, date HAVING count(*)>1`).
 - Champs manquants : `arbitre` renseigné sur 100 % des lignes (0 NULL) ; aucun match `FT/AET/PEN`
   sans score (0 incohérence statut/score détectée).

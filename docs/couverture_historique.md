@@ -20,8 +20,8 @@ elle est marquée `NON COLLECTÉ` — aucune valeur n'est estimée ou inventée.
 | Championnat | Saison | Matchs importés | Terminés avec score | Avec bloc stats détaillées | xG | Cotes pré-match horodatées |
 |---|---|---|---|---|---|---|
 | Premier League | 2025/2026 | **0** | — | — | — | — |
-| Premier League | 2024/2025 | 380 | 380 (100%) | ~300/380 champs remplis (79%) | 0/380 (0%) | 0 (aucune) |
-| Premier League | 2023/2024 | 380 | 380 (100%) | ~300/380 champs remplis (79%) | 0/380 (0%) | 0 (aucune) |
+| Premier League | 2024/2025 | 380 | 380 (100%) | 150/380 champs remplis (**≈39,5%**) | 0/380 (0%) | 0 (aucune) |
+| Premier League | 2023/2024 | 380 | 380 (100%) | 150/380 champs remplis (**≈39,5%**) | 0/380 (0%) | 0 (aucune) |
 | Premier League | ≤2022/2023 | **0** | — | — | — | — |
 | La Liga | 2025/2026 | 380 | 380 (100%) | 380 (100%) | 0 (0%) | 0 (aucune) |
 | La Liga | 2024/2025 | 380 | 380 (100%) | 380 (100%) | 0 (0%) | 0 (aucune) |
@@ -70,10 +70,10 @@ Pour Premier League 2023/2024 et 2024/2025 (seules saisons disponibles) :
 | Scores finaux | Oui | 760/760 (100%) | `home_score`/`away_score` |
 | Résultat 1X2 | Dérivable | 100% (calcul direct depuis les scores, pas une colonne dédiée) | dérivé |
 | Buts par équipe / total | Oui | 760/760 (100%) | dérivé des scores |
-| Tirs / tirs cadrés | Partiel | 300/380 par saison (≈79%) | `stats.home/away.shots*` |
-| Corners | Partiel | 300/380 par saison (≈79%) | `stats.home/away.corners` |
-| Cartons (jaunes) | Partiel | 294/380 par saison (≈77%) | `stats.home/away.yellow_cards` |
-| Possession | Partiel | 300/380 par saison (≈79%) | `stats.home/away.possession` |
+| Tirs / tirs cadrés | Partiel | 150/380 par saison (≈39,5%) — **corrigé le 2026-10-11, voir note** | `stats.home/away.shots*` |
+| Corners | Partiel | 150/380 par saison (≈39,5%) — **corrigé le 2026-10-11** | `stats.home/away.corners` |
+| Cartons (jaunes) | Partiel | 147/380 par saison (≈38,7%) — **corrigé le 2026-10-11** | `stats.home/away.yellow_cards` |
+| Possession | Partiel | 150/380 par saison (≈39,5%) — **corrigé le 2026-10-11** | `stats.home/away.possession` |
 | xG | **Non** | 0/760 (0%) | champ prévu dans le schéma, jamais rempli par la source réelle (API-Football ne le renvoie pas sur ce plan/ces fixtures) |
 | Identifiant stable + correspondance API | Oui | 100% | `match_id` = fixture_id API-Football, PK |
 | Cotes pré-match horodatées (bookmaker, marché) | **Non** | 0% | aucune table ne relie `hist_matchs` à une cote historique horodatée ; `hist_cotes` ne couvre que le 10/10/2026 en temps réel, jamais de cote rétroactive |
@@ -94,6 +94,6 @@ Sur les 5 championnats × 4 saisons (2022/2023 à 2025/2026), **19 combinaisons 
 maintenant des données réelles** — seule Premier League 2025/2026 manque encore. Couverture
 scores 100% sur toutes les combinaisons collectées (à l'exception du match `AWD` Ligue 1 déjà
 noté, par nature sans score) ; couverture statistiques détaillées quasi complète (99,7-100%) pour
-les 4 nouveaux championnats, nettement meilleure que Premier League (~79%, backfillée plus tôt
+les 4 nouveaux championnats, nettement meilleure que Premier League (**≈39,5%**, backfillée plus tôt
 avec un lot de données différent). **xG et cotes historiques horodatées restent à 0% partout** —
 blocages non résolus par cette collecte, voir `docs/plan_importation.md`.
