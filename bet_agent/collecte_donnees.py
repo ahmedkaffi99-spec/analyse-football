@@ -198,7 +198,14 @@ def recuperer_marches_pour_fixture_api_football(fixture_id_api_football):
 # constaté le 30/09/2026 : liste réduite à UNE SEULE date alors que les matchs couvrent le
 # 13 ET le 14/10, ce qui aurait fait basculer à tort sur l'automatique le second soir).
 # ------------------------------------------------------------
-SELECTION_MANUELLE_ACTIVE = True
+# Désactivée le 13/10/2026 (demande explicite, après confirmation que la sélection
+# automatique API-Football — selectionner_matchs_du_jour_api_football, 5 grands championnats +
+# Ligue des Champions/Europa League — trouve désormais 16 matchs réels aujourd'hui, contre 10
+# figés dans la liste manuelle ci-dessous, dont 1 sans correspondance API-Football). La liste
+# MATCHS_MANUELS reste intacte (jamais supprimée) et sert de nouveau de filet de sécurité
+# uniquement si l'automatique ne trouve rien du tout (voir selectionner_matchs_du_jour_api_
+# football, repli déjà existant).
+SELECTION_MANUELLE_ACTIVE = False
 MATCHS_MANUELS_DATES = {"2026-10-13", "2026-10-14"}
 
 # Si SELECTION_MANUELLE_ACTIVE=True : la liste EXACTE de matchs à collecter, dans
