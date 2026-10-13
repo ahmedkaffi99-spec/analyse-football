@@ -108,6 +108,11 @@ class TestResilienceCollecterDonneesPanneOddsPapi:
             appels_api_football.append(1)
             return []
 
+        # Ce test exerce spécifiquement le chemin "oddspapi" (sélection ET cotes toujours
+        # dépendantes d'OddsPapi) — devenu optionnel depuis que "api_football" est le défaut
+        # (13/10/2026) : fixé explicitement, sinon ce test tournerait dans le nouveau mode où
+        # recuperer_fixtures_api_football() est normalement appelé pour la découverte.
+        monkeypatch.setattr(cd, "FOURNISSEUR_COTES", "oddspapi")
         monkeypatch.setattr(cd, "_telecharger_fixtures_oddspapi", _oddspapi_en_panne)
         monkeypatch.setattr(cd, "recuperer_fixtures_api_football", _api_football_falsifie)
         monkeypatch.setattr(cd, "collecter_contexte_serper", lambda *a, **k: None)
@@ -152,8 +157,11 @@ class TestBasculeFournisseurCotesApiFootball:
     par défaut ("oddspapi"), zéro changement de comportement. Réutilise uniquement
     adaptateur_api_football.capturer_api_football_adapte (jamais dupliqué ici)."""
 
-    def test_defaut_reste_oddspapi_zero_changement(self):
-        assert cd.FOURNISSEUR_COTES == "oddspapi"
+    def test_defaut_est_api_football_depuis_le_13_10_2026(self):
+        # Avant le 13/10/2026 le défaut était "oddspapi" ; demande explicite ("n'utilise pas
+        # oddspapi et utilise tout api football") : "api_football" est désormais le défaut,
+        # "oddspapi" reste disponible via la variable d'environnement explicite.
+        assert cd.FOURNISSEUR_COTES == "api_football"
 
     def _resultat(self, **kwargs):
         from adaptateur_api_football import ResultatAdaptateur
@@ -228,13 +236,18 @@ class TestBasculeFournisseurCotesApiFootball:
 
     def test_bascule_appelle_la_bonne_fonction_selon_le_flag(self, monkeypatch, tmp_path):
         """Vérifie le point d'intégration dans collecter_donnees() lui-même : le flag décide
-        strictement laquelle des deux fonctions est appelée, jamais les deux."""
-        appels_oddspapi, appels_api_football = [], []
-        fixture_avec_cotes = {
-            "participant1Name": "Lens", "participant2Name": "Auxerre", "hasOdds": True,
-            "statusName": "Pre-Game", "startTime": "2099-01-01T00:00:00Z",
-            "tournamentName": "Ligue 1", "categoryName": "France", "fixtureId": "fxLENSAUX",
-        }
+        strictement laquelle des deux fonctions est appelée, jamais les deux. Depuis le
+        13/10/2026 (demande explicite : "n'utilise pas oddspapi et utilise tout api football"),
+        FOURNISSEUR_COTES=api_football désactive aussi OddsPapi pour la DÉCOUVERTE des matchs
+        du jour (plus seulement pour les cotes) — _telecharger_fixtures_oddspapi() ne doit
+        JAMAIS être appelée dans ce mode, même pas pour construire la liste candidate."""
+        appels_oddspapi, appels_api_football, appels_fixtures_oddspapi = [], [], []
+        # Ligue 1 (league_id=61, un des 5 grands championnats de LIGUES_FILTRE_API_FOOTBALL) —
+        # découvert UNIQUEMENT via recuperer_fixtures_api_football ici, jamais via OddsPapi.
+        fixture_af = {"teams": {"home": {"name": "Lens"}, "away": {"name": "Auxerre"}},
+                     "league": {"id": 61, "name": "Ligue 1", "season": 2026},
+                     "fixture": {"id": 999, "date": "2099-01-01T00:00:00+00:00",
+                                 "status": {"short": "NS"}}}
         # Isole la sortie JSON réelle de collecter_donnees() dans tmp_path — sans ça, ce test
         # écrit un vrai bet_agent/donnees_collectees.json (constaté le 10/10/2026 : atterrit
         # même à la racine du dépôt selon le cwd de pytest, détecté par le stop-hook git).
@@ -244,10 +257,8 @@ class TestBasculeFournisseurCotesApiFootball:
         monkeypatch.setattr(cd, "MATCHS_MANUELS_DATES", set(), raising=False)
         monkeypatch.setattr(cd, "COMPLEMENT_AUTOMATIQUE_ACTIF", False, raising=False)
         monkeypatch.setattr(cd, "FILTRE_LIGUES_UNIQUES", None, raising=False)
-        fixture_af = {"teams": {"home": {"name": "Lens", "id": 1}, "away": {"name": "Auxerre", "id": 2}},
-                     "league": {"id": 10, "name": "Ligue 1", "season": 2026},
-                     "fixture": {"id": 999, "date": "2099-01-01T00:00:00+00:00"}}
-        monkeypatch.setattr(cd, "_telecharger_fixtures_oddspapi", lambda: [fixture_avec_cotes])
+        monkeypatch.setattr(cd, "_telecharger_fixtures_oddspapi",
+                            lambda: appels_fixtures_oddspapi.append(1) or [])
         monkeypatch.setattr(cd, "recuperer_fixtures_api_football", lambda: [fixture_af])
         monkeypatch.setattr(cd, "assez_tot_avant_coup_envoi", lambda *a, **k: True)
         monkeypatch.setattr(cd, "collecter_contexte_serper", lambda *a, **k: None)
@@ -261,3 +272,62 @@ class TestBasculeFournisseurCotesApiFootball:
 
         assert appels_api_football == [1]
         assert appels_oddspapi == []
+        assert appels_fixtures_oddspapi == []  # OddsPapi jamais appelé, même pour la découverte
+
+
+def _fixture_af(home, away, league_id, statut="NS", depart="2099-01-01T15:00:00+00:00"):
+    return {"teams": {"home": {"name": home}, "away": {"name": away}},
+            "league": {"id": league_id, "name": "x"},
+            "fixture": {"id": f"{home}-{away}", "date": depart, "status": {"short": statut}}}
+
+
+class TestSelectionMatchsDuJourApiFootball:
+    """Tests dédiés du 13/10/2026 (demande explicite : "n'utilise pas oddspapi et utilise
+    tout api football") : selectionner_matchs_du_jour_api_football ne doit JAMAIS dépendre
+    d'OddsPapi — uniquement des fixtures API-Football, filtrées sur les 5 grands championnats
+    (LIGUES_FILTRE_API_FOOTBALL), le statut "NS" et le délai avant coup d'envoi."""
+
+    def test_filtre_sur_les_5_grands_championnats(self):
+        fixtures = [
+            _fixture_af("Arsenal", "Chelsea", 39),    # Premier League — retenu
+            _fixture_af("Obscur FC", "Autre FC", 999),  # ligue hors filtre — exclu
+        ]
+        matchs = cd.selectionner_matchs_du_jour_api_football(fixtures)
+        assert matchs == [("Arsenal", "Chelsea")]
+
+    def test_match_deja_commence_ou_termine_exclu(self):
+        fixtures = [_fixture_af("Arsenal", "Chelsea", 39, statut="1H"),
+                    _fixture_af("Lyon", "Monaco", 61, statut="FT")]
+        assert cd.selectionner_matchs_du_jour_api_football(fixtures) == []
+
+    def test_delai_avant_coup_envoi_respecte(self, monkeypatch):
+        appels = []
+        monkeypatch.setattr(cd, "assez_tot_avant_coup_envoi",
+                            lambda depart, *a, **k: appels.append(depart) or False)
+        fixtures = [_fixture_af("Arsenal", "Chelsea", 39)]
+        assert cd.selectionner_matchs_du_jour_api_football(fixtures) == []
+        assert appels == ["2099-01-01T15:00:00+00:00"]
+
+    def test_dedoublonnage_par_paire_equipes(self):
+        fixtures = [_fixture_af("Arsenal", "Chelsea", 39), _fixture_af("Arsenal", "Chelsea", 39)]
+        assert cd.selectionner_matchs_du_jour_api_football(fixtures) == [("Arsenal", "Chelsea")]
+
+    def test_equipe_feminine_exclue(self, monkeypatch):
+        monkeypatch.setattr(cd, "est_equipe_feminine_api_football",
+                            lambda nom: nom == "Arsenal W")
+        fixtures = [_fixture_af("Arsenal W", "Chelsea W", 39)]
+        assert cd.selectionner_matchs_du_jour_api_football(fixtures) == []
+
+    def test_equipe_reserve_exclue(self, monkeypatch):
+        monkeypatch.setattr(cd, "contient_indicateur_reserve", lambda nom: "B" in nom)
+        fixtures = [_fixture_af("Arsenal B", "Chelsea", 39)]
+        assert cd.selectionner_matchs_du_jour_api_football(fixtures) == []
+
+    def test_aucune_dependance_a_oddspapi(self, monkeypatch):
+        # Garantie structurelle : cette fonction ne lit jamais fixtures_oddspapi ni aucune
+        # fonction OddsPapi — vérifié en s'assurant qu'aucun attribut OddsPapi du module n'est
+        # lu pendant l'appel (espion sur _telecharger_fixtures_oddspapi, jamais invoqué ici).
+        appels = []
+        monkeypatch.setattr(cd, "_telecharger_fixtures_oddspapi", lambda: appels.append(1) or [])
+        cd.selectionner_matchs_du_jour_api_football([_fixture_af("Arsenal", "Chelsea", 39)])
+        assert appels == []
