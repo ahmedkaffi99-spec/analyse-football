@@ -124,7 +124,14 @@ SERPER_API_KEY = os.getenv("SERPER_API_KEY")
 # Handicap n'est jamais activé via API-Football (convention de signe non confirmée) — ce
 # marché est simplement absent des cotes collectées dans ce mode, jamais deviné ni simulé.
 FOURNISSEUR_COTES = os.getenv("FOURNISSEUR_COTES", "api_football").strip().lower()
-TTL_COTES_API_FOOTBALL_SECONDES = int(os.getenv("TTL_COTES_API_FOOTBALL_SECONDES", "120"))
+# TTL relevé à 6h (21600s), était 120s (demande du 10/10/2026, pensé pour une comparaison
+# ponctuelle à cote fraîche, jamais pour être la source réelle des cotes publiées). Constaté en
+# run réel le 13/10/2026 (run 137/138) : le "update" fourni par API-Football pour CE bookmaker
+# (1xBet) a systématiquement ~3h33-3h34 (12800-12840s) d'âge sur les 10 matchs du jour — avec
+# 120s, AUCUN marché n'était jamais retenu, quel que soit le match (0/10 à chaque run). 6h reste
+# un repli raisonnable pour une cote PRÉ-match (jamais pour un marché live) ; réversible via
+# TTL_COTES_API_FOOTBALL_SECONDES si une mesure plus fine est faite plus tard.
+TTL_COTES_API_FOOTBALL_SECONDES = int(os.getenv("TTL_COTES_API_FOOTBALL_SECONDES", "21600"))
 
 # Marchés dont la conversion API-Football -> vocabulaire interne est VALIDÉE (Phase B, voir
 # adaptateur_api_football.py et son rapport). Asian Handicap est VOLONTAIREMENT absent : la
