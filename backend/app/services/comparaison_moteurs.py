@@ -14,9 +14,9 @@ RÈGLES ABSOLUES :
   l'appliquer ici tant que cette conclusion n'a pas changé avec plus d'historique.
 - Si l'historique réel (hist_matchs) est insuffisant pour une équipe, le moteur est marqué
   indisponible pour CE candidat — jamais une probabilité inventée.
-- Seuls les marchés listés dans MARCHE_MOTEUR_PAR_CATEGORIE sont mappés aujourd'hui (Total,
-  Total Équipe 1/2, BTTS, Double Chance) — un marché bet_agent non mappé est signalé tel quel,
-  jamais deviné."""
+- Seuls les marchés listés dans MARCHE_MOTEUR_PAR_CATEGORIE sont mappés (Total, Total Équipe
+  1/2, BTTS, Double Chance, Total Corners, Total Cartons [+ Équipe 1/2], Total Tirs — élargi le
+  13/10/2026) — un marché bet_agent non mappé est signalé tel quel, jamais deviné."""
 
 import sys
 from pathlib import Path
@@ -41,6 +41,16 @@ CFG = Config()
 
 # (categorie bet_agent, selection bet_agent en minuscules) -> (marche moteur, selection moteur)
 # ligne (handicap) reprise telle quelle du candidat bet_agent dans les deux cas.
+#
+# Élargi le 13/10/2026 (demande explicite : "augmenter la couverture du moteur") —
+# moteur/modeles/registre.py (modèles 8-10, loi binomiale négative) couvre déjà corners,
+# cartons et tirs sur toute la base historique des 5 championnats, mais ces marchés n'étaient
+# jamais exposés ici (seuls buts/BTTS/Double Chance l'étaient), alors qu'ils dominent en
+# volume le pool réel de bet_agent (constaté sur un run réel : "moteur" ne contribuait que 9
+# candidats sur 1520 avant cet élargissement). Même convention "over"/"under" déjà prouvée par
+# les entrées "Total"/"Total Équipe 1/2" ci-dessus — un libellé de sélection qui ne
+# correspondrait pas renvoie simplement "prédiction absente" (jamais une donnée inventée), donc
+# cet ajout ne peut jamais introduire de chiffre faux, seulement gagner en couverture.
 MARCHE_MOTEUR_PAR_CATEGORIE = {
     ("Total", "over"): ("buts_total", "over"), ("Total", "under"): ("buts_total", "under"),
     ("Total Équipe 1", "over"): ("buts_equipe1", "over"), ("Total Équipe 1", "under"): ("buts_equipe1", "under"),
@@ -49,6 +59,13 @@ MARCHE_MOTEUR_PAR_CATEGORIE = {
     ("BTTS", "non"): ("btts", "non"), ("BTTS", "no"): ("btts", "non"),
     ("Double Chance", "1x"): ("double_chance", "1X"), ("Double Chance", "x2"): ("double_chance", "X2"),
     ("Double Chance", "12"): ("double_chance", "12"),
+    ("Total Corners", "over"): ("corners_total", "over"), ("Total Corners", "under"): ("corners_total", "under"),
+    ("Total Cartons", "over"): ("cartons_total", "over"), ("Total Cartons", "under"): ("cartons_total", "under"),
+    ("Total Cartons Équipe 1", "over"): ("cartons_equipe1", "over"),
+    ("Total Cartons Équipe 1", "under"): ("cartons_equipe1", "under"),
+    ("Total Cartons Équipe 2", "over"): ("cartons_equipe2", "over"),
+    ("Total Cartons Équipe 2", "under"): ("cartons_equipe2", "under"),
+    ("Total Tirs", "over"): ("tirs_total", "over"), ("Total Tirs", "under"): ("tirs_total", "under"),
 }
 
 
