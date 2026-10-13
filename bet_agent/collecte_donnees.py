@@ -109,16 +109,21 @@ ODDSPAPI_KEY = os.getenv("ODDSPAPI_KEY")
 SERPER_API_KEY = os.getenv("SERPER_API_KEY")
 
 # ------------------------------------------------------------
-# FOURNISSEUR DE COTES — bascule minimale et réversible (demande explicite du 10/10/2026,
-# "migration minimale pour publier les coupons aujourd'hui"). Défaut "oddspapi" : AUCUN
-# changement de comportement tant que la variable n'est pas positionnée explicitement.
-# "api_football" ne remplace QUE l'appel per-match aux cotes (recuperer_marches_pour_fixture,
-# celui qui consomme le quota OddsPapi 250/jour) — la sélection des matchs du jour
-# (selectionner_matchs_du_jour) continue de s'appuyer sur le /v4/fixtures OddsPapi (1 appel/run,
-# non concerné par ce quota serré), donc OddsPapi n'est jamais retiré du pipeline par ce
-# bascule. Réutilise l'adaptateur isolé déjà validé (adaptateur_api_football.py, commit
-# 5a31895) — jamais dupliqué ici.
-FOURNISSEUR_COTES = os.getenv("FOURNISSEUR_COTES", "oddspapi").strip().lower()
+# FOURNISSEUR DE COTES — réversible via variable d'environnement. Défaut "api_football"
+# depuis le 13/10/2026 (demande explicite : "n'utilise pas oddspapi et utilise tout api
+# football au central") : OddsPapi n'est plus appelé À AUCUNE ÉTAPE dans ce mode — ni la
+# liste de fixtures du jour (sélection automatique via selectionner_matchs_du_jour_api_football,
+# filtrée sur LIGUES_FILTRE_API_FOOTBALL), ni les cotes par match
+# (recuperer_marches_pour_fixture_api_football). Avant cette date, "oddspapi" était le défaut
+# et "api_football" ne remplaçait QUE l'appel aux cotes (bascule minimale du 10/10/2026,
+# commit d19c790) — ce comportement partiel reste disponible en remettant
+# FOURNISSEUR_COTES=oddspapi explicitement (aucun code retiré). Réutilise l'adaptateur isolé
+# déjà validé (adaptateur_api_football.py, commit 5a31895) — jamais dupliqué ici.
+#
+# LIMITE CONNUE, non résolue par ce changement (voir adaptateur_api_football.py) : Asian
+# Handicap n'est jamais activé via API-Football (convention de signe non confirmée) — ce
+# marché est simplement absent des cotes collectées dans ce mode, jamais deviné ni simulé.
+FOURNISSEUR_COTES = os.getenv("FOURNISSEUR_COTES", "api_football").strip().lower()
 TTL_COTES_API_FOOTBALL_SECONDES = int(os.getenv("TTL_COTES_API_FOOTBALL_SECONDES", "120"))
 
 # Marchés dont la conversion API-Football -> vocabulaire interne est VALIDÉE (Phase B, voir
@@ -1206,6 +1211,66 @@ def selectionner_matchs_du_jour(fixtures_oddspapi):
     return matchs
 
 
+# Mêmes 5 championnats que FILTRE_LIGUES_UNIQUES (ci-dessus, convention OddsPapi), mais par
+# league_id API-Football (déjà utilisés dans LIGUES_MAJEURES) — nécessaire pour la sélection
+# automatique du jour quand FOURNISSEUR_COTES=api_football (demande explicite du 13/10/2026 :
+# "n'utilise pas oddspapi et utilise tout api football"), puisqu'API-Football n'a pas le même
+# système d'identifiants qu'OddsPapi (tournamentName/categoryName).
+LIGUES_FILTRE_API_FOOTBALL = {
+    39,   # Premier League (Angleterre)
+    140,  # La Liga (Espagne)
+    135,  # Serie A (Italie)
+    78,   # Bundesliga (Allemagne)
+    61,   # Ligue 1 (France)
+}
+
+
+def selectionner_matchs_du_jour_api_football(fixtures_api_football):
+    """Équivalent de selectionner_matchs_du_jour, mais 100% API-Football (jamais OddsPapi) —
+    actif uniquement quand FOURNISSEUR_COTES=api_football (voir collecter_donnees). Filtre sur
+    LIGUES_FILTRE_API_FOOTBALL (mêmes 5 grands championnats), statut "NS" (Not Started, jamais
+    un match déjà commencé/terminé), délai avant coup d'envoi (assez_tot_avant_coup_envoi, même
+    garde-fou que le chemin OddsPapi), exclusion réserve/jeunes et compétitions féminines,
+    dédoublonnage par paire d'équipes — même esprit que selectionner_matchs_du_jour, source
+    différente. AUCUN repli "secours hors filtre" ici (pas demandé, pas deviné) : si les 5
+    championnats configurés ne jouent pas, la liste est simplement vide."""
+    candidats, vus = [], set()
+    for fx in fixtures_api_football:
+        statut = ((fx.get("fixture") or {}).get("status") or {}).get("short")
+        if statut != "NS":
+            continue
+        league_id = (fx.get("league") or {}).get("id")
+        if league_id not in LIGUES_FILTRE_API_FOOTBALL:
+            continue
+        depart = (fx.get("fixture") or {}).get("date")
+        if not assez_tot_avant_coup_envoi(depart):
+            continue
+        home = (fx.get("teams") or {}).get("home", {}).get("name") or ""
+        away = (fx.get("teams") or {}).get("away", {}).get("name") or ""
+        if contient_indicateur_reserve(home) or contient_indicateur_reserve(away):
+            continue
+        if est_equipe_feminine_api_football(home) or est_equipe_feminine_api_football(away):
+            continue
+        cle = (home, away)
+        if cle in vus:
+            continue
+        vus.add(cle)
+        candidats.append((home, away, depart or ""))
+
+    candidats.sort(key=lambda c: c[2])
+    matchs = [(h, a) for h, a, _ in candidats][:NB_CANDIDATS_A_SONDER]
+    if matchs:
+        print(f"   ✓ {len(matchs)} match(s) sélectionné(s) (API-Football, 5 grands championnats) :")
+        for h, a in matchs:
+            print(f"      • {h} vs {a}")
+        if len(matchs) < NB_MATCHS_MIN:
+            print(f"   ⚠️ Seulement {len(matchs)} match(s) trouvé(s) (objectif minimum : {NB_MATCHS_MIN}).")
+    else:
+        print("   ⚠️ Aucun match trouvé via API-Football dans les 5 grands championnats configurés "
+              "— repli sur MATCHS_MANUELS s'il date d'aujourd'hui")
+    return matchs
+
+
 ECART_MAX_HEURES_FIXTURES = 24
 
 
@@ -1483,13 +1548,25 @@ def collecter_donnees():
     print(f"🚀 Collecte de données brutes pour {NB_MATCHS_MIN} à {NB_MATCHS_MAX} matchs "
           f"(API-Football + stats historiques + OddsPapi + Serper)...")
 
-    print("   → Récupération de la liste des fixtures OddsPapi (1 seul appel)...")
-    try:
-        fixtures_oddspapi = _telecharger_fixtures_oddspapi()
-        print(f"   ✓ {len(fixtures_oddspapi)} fixtures OddsPapi chargées")
-    except Exception as e:
-        print(f"   ⚠️ OddsPapi fixtures indisponible après retries : {_cause_reelle(e)}")
+    # FOURNISSEUR_COTES=api_football (demande explicite du 13/10/2026 : "n'utilise pas
+    # oddspapi et utilise tout api football") : OddsPapi n'est appelé à AUCUNE étape, y
+    # compris cette liste de fixtures — fixtures_oddspapi reste [] pour tout le reste de la
+    # collecte, et tous_fixtures_af est récupéré ICI (au lieu de plus bas) pour servir à la
+    # fois à la sélection automatique (ci-dessous) et à la recherche par match (plus bas).
+    if FOURNISSEUR_COTES == "api_football":
+        print("   ℹ️ FOURNISSEUR_COTES=api_football — OddsPapi désactivé pour cette collecte "
+              "(aucun appel, ni fixtures ni cotes).")
         fixtures_oddspapi = []
+        tous_fixtures_af = recuperer_fixtures_api_football()
+    else:
+        print("   → Récupération de la liste des fixtures OddsPapi (1 seul appel)...")
+        try:
+            fixtures_oddspapi = _telecharger_fixtures_oddspapi()
+            print(f"   ✓ {len(fixtures_oddspapi)} fixtures OddsPapi chargées")
+        except Exception as e:
+            print(f"   ⚠️ OddsPapi fixtures indisponible après retries : {_cause_reelle(e)}")
+            fixtures_oddspapi = []
+        tous_fixtures_af = None  # récupéré plus bas, seulement s'il y a des matchs à traiter
     matchs_manuels_env = _parser_matchs_manuels_env(MATCHS_MANUELS_ENV)
     # Comparée à la date cible du run (DATE_CIBLE_DEBUT) quand elle est fournie, sinon à
     # aujourd'hui — sans ça, une sélection manuelle préparée pour une période future (ex: un
@@ -1513,6 +1590,12 @@ def collecter_donnees():
         print(f"   🎯 Sélection manuelle active — {len(MATCHS_MANUELS)} match(s) fournis directement, "
               f"sélection automatique par ligue ignorée.")
         matchs_a_traiter = MATCHS_MANUELS
+    elif FOURNISSEUR_COTES == "api_football":
+        print("   → Sélection des matchs du jour (source API-Football, 5 grands championnats, "
+              "OddsPapi jamais interrogé)...")
+        matchs_a_traiter = selectionner_matchs_du_jour_api_football(tous_fixtures_af)
+        if not matchs_a_traiter and liste_manuelle_du_jour:
+            matchs_a_traiter = MATCHS_MANUELS
     else:
         print("   → Sélection des matchs du jour (source OddsPapi, indépendante du quota API-Football)...")
         matchs_a_traiter = selectionner_matchs_du_jour(fixtures_oddspapi)
@@ -1525,7 +1608,8 @@ def collecter_donnees():
     # Un run manuel traite désormais UNIQUEMENT les matchs fournis, sans aucun ajout.
     nb_manuels = len(matchs_a_traiter)
     if mode_manuel and COMPLEMENT_AUTOMATIQUE_ACTIF:
-        candidats_auto = selectionner_matchs_du_jour(fixtures_oddspapi)
+        candidats_auto = (selectionner_matchs_du_jour_api_football(tous_fixtures_af or [])
+                          if FOURNISSEUR_COTES == "api_football" else selectionner_matchs_du_jour(fixtures_oddspapi))
         deja_demandes = list(matchs_a_traiter)
 
         def _deja_couvert(home, away):
@@ -1543,7 +1627,10 @@ def collecter_donnees():
     # API-Football (hier/aujourd'hui/demain) étaient dépensés pour un résultat jamais utilisé,
     # la boucle ci-dessous ne s'exécutant alors sur aucun match — jamais le contraire : une
     # panne OddsPapi ne fait ici que RÉDUIRE la consommation API-Football, jamais l'augmenter).
-    tous_fixtures_af = recuperer_fixtures_api_football() if matchs_a_traiter else []
+    # En mode FOURNISSEUR_COTES=api_football, tous_fixtures_af a déjà été récupéré plus haut
+    # (réutilisé pour la sélection ET pour cette boucle — jamais un 2e appel équivalent).
+    if tous_fixtures_af is None:
+        tous_fixtures_af = recuperer_fixtures_api_football() if matchs_a_traiter else []
     if not matchs_a_traiter:
         print("   ⏭️ Aucun match candidat (OddsPapi indisponible ou sans cote) — API-Football non "
               "interrogé pour cette liste de fixtures, quota préservé.")
@@ -1571,39 +1658,46 @@ def collecter_donnees():
             print(f"      ⏭️ Match féminin ({donnees_af['home_name']} vs {donnees_af['away_name']}) — ignoré.")
             continue
 
-        # --- OddsPapi : cotes réelles 1xbet, tous marchés ---
-        fx_op, score_op = trouver_fixture_oddspapi(home_demande, away_demande, fixtures_oddspapi)
+        # --- Cotes réelles 1xbet, tous marchés : OddsPapi (défaut) OU API-Football
+        # (FOURNISSEUR_COTES=api_football, demande explicite du 13/10/2026 : "n'utilise pas
+        # oddspapi et utilise tout api football") — dans ce 2e cas, OddsPapi n'est JAMAIS
+        # appelé pour ce match (ni ici, ni fixtures_oddspapi en amont, qui vaut toujours []).
+        fx_op = None
         tous_marches = None
         fixture_id_oddspapi = None
-        if fx_op:
-            fixture_id_oddspapi = fx_op.get("fixtureId")
-            print(f"      ✓ OddsPapi trouvé (score {score_op:.0f}%) : "
-                  f"{fx_op.get('participant1Name')} vs {fx_op.get('participant2Name')}")
-            if donnees_af and not meme_rencontre_dans_le_temps(donnees_af["fixture_date"], fx_op.get("startTime")):
-                print(f"      ⚠️ API-Football pointe un autre match des mêmes équipes "
-                      f"({donnees_af['fixture_date']} contre {fx_op.get('startTime')} chez OddsPapi) — "
-                      f"nouvelle recherche limitée aux matchs proches de cette date.")
-                proches = [f for f in tous_fixtures_af
-                           if meme_rencontre_dans_le_temps((f.get("fixture") or {}).get("date"), fx_op.get("startTime"))]
-                fx_af, score_af = trouver_fixture_api_football(home_demande, away_demande, proches)
-                donnees_af = _donnees_api_football(fx_af) if fx_af else None
-                print(f"      {'✓ API-Football corrigé : ' + donnees_af['fixture_date'] if donnees_af else '⚠️ Aucun match API-Football à cette date — stats ignorées plutôt que fausses.'}")
-            if FOURNISSEUR_COTES == "api_football":
-                if donnees_af and donnees_af.get("fixture_id_api_football"):
-                    tous_marches = recuperer_marches_pour_fixture_api_football(
-                        donnees_af["fixture_id_api_football"])
-                else:
-                    print("      ⚠️ Pas de fixture API-Football identifié — aucune cote "
-                          "(FOURNISSEUR_COTES=api_football).")
-                    tous_marches = None
+        if FOURNISSEUR_COTES == "api_football":
+            if donnees_af and donnees_af.get("fixture_id_api_football"):
+                fixture_id_oddspapi = donnees_af["fixture_id_api_football"]  # même champ de sortie, source API-Football (voir docstring adaptateur_api_football.py)
+                tous_marches = recuperer_marches_pour_fixture_api_football(donnees_af["fixture_id_api_football"])
             else:
-                tous_marches = recuperer_marches_pour_fixture(fixture_id_oddspapi)
+                print("      ⚠️ Pas de fixture API-Football identifié — aucune cote "
+                      "(FOURNISSEUR_COTES=api_football).")
             if tous_marches:
-                print(f"      ✓ {len(tous_marches)} marchés 1xbet collectés")
+                print(f"      ✓ {len(tous_marches)} marchés API-Football (1xbet) collectés")
             else:
-                print(f"      ⚠️ Aucun marché disponible pour ce fixture")
+                print("      ⚠️ Aucun marché disponible pour ce fixture (API-Football)")
         else:
-            print(f"      ⚠️ Aucune correspondance OddsPapi (meilleur score : {score_op:.0f}%)")
+            fx_op, score_op = trouver_fixture_oddspapi(home_demande, away_demande, fixtures_oddspapi)
+            if fx_op:
+                fixture_id_oddspapi = fx_op.get("fixtureId")
+                print(f"      ✓ OddsPapi trouvé (score {score_op:.0f}%) : "
+                      f"{fx_op.get('participant1Name')} vs {fx_op.get('participant2Name')}")
+                if donnees_af and not meme_rencontre_dans_le_temps(donnees_af["fixture_date"], fx_op.get("startTime")):
+                    print(f"      ⚠️ API-Football pointe un autre match des mêmes équipes "
+                          f"({donnees_af['fixture_date']} contre {fx_op.get('startTime')} chez OddsPapi) — "
+                          f"nouvelle recherche limitée aux matchs proches de cette date.")
+                    proches = [f for f in tous_fixtures_af
+                               if meme_rencontre_dans_le_temps((f.get("fixture") or {}).get("date"), fx_op.get("startTime"))]
+                    fx_af, score_af = trouver_fixture_api_football(home_demande, away_demande, proches)
+                    donnees_af = _donnees_api_football(fx_af) if fx_af else None
+                    print(f"      {'✓ API-Football corrigé : ' + donnees_af['fixture_date'] if donnees_af else '⚠️ Aucun match API-Football à cette date — stats ignorées plutôt que fausses.'}")
+                tous_marches = recuperer_marches_pour_fixture(fixture_id_oddspapi)
+                if tous_marches:
+                    print(f"      ✓ {len(tous_marches)} marchés 1xbet collectés")
+                else:
+                    print(f"      ⚠️ Aucun marché disponible pour ce fixture")
+            else:
+                print(f"      ⚠️ Aucune correspondance OddsPapi (meilleur score : {score_op:.0f}%)")
 
         if not tous_marches and not est_manuel:
             print("      ⏭️ Aucun marché exploitable — match écarté sans autre appel (stats, Elo, presse).")
@@ -1682,7 +1776,12 @@ def collecter_donnees():
             "api_football": donnees_af,
             "oddspapi": {
                 "fixture_id": fixture_id_oddspapi,
-                "start_time": fx_op.get("startTime") if fx_op else None,
+                # FOURNISSEUR_COTES=api_football : fx_op vaut toujours None (OddsPapi jamais
+                # appelé), donc le coup d'envoi vient de l'API-Football déjà résolue — sinon
+                # m["oddspapi"]["start_time"] resterait None et comparaison_moteurs.py
+                # (date_iso) ne pourrait plus jamais interroger moteur/ pour ce match.
+                "start_time": (fx_op.get("startTime") if fx_op
+                               else (donnees_af or {}).get("fixture_date")),
                 "tous_marches": tous_marches,
             },
             "serper": contexte_web,

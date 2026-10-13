@@ -589,6 +589,7 @@ class TestListeManuellePerimee(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             sortie = os.path.join(d, "out.json")
             with mock.patch.object(cd, "SORTIE_JSON", sortie), \
+                    mock.patch.object(cd, "FOURNISSEUR_COTES", "oddspapi"), \
                     mock.patch.object(cd, "SELECTION_MANUELLE_ACTIVE", True), \
                     mock.patch.object(cd, "MATCHS_MANUELS_DATES", {date_liste}), \
                     mock.patch.object(cd, "MATCHS_MANUELS", []), \
@@ -620,6 +621,7 @@ class TestListeManuellePerimee(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             sortie = os.path.join(d, "out.json")
             with mock.patch.object(cd, "SORTIE_JSON", sortie), \
+                    mock.patch.object(cd, "FOURNISSEUR_COTES", "oddspapi"), \
                     mock.patch.object(cd, "SELECTION_MANUELLE_ACTIVE", True), \
                     mock.patch.object(cd, "MATCHS_MANUELS_DATES", {"2026-10-13", "2026-10-14"}), \
                     mock.patch.object(cd, "MATCHS_MANUELS", []), \
@@ -654,6 +656,7 @@ class TestMatchsManuelsEnv(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             sortie = os.path.join(d, "out.json")
             with mock.patch.object(cd, "SORTIE_JSON", sortie), \
+                    mock.patch.object(cd, "FOURNISSEUR_COTES", "oddspapi"), \
                     mock.patch.object(cd, "SELECTION_MANUELLE_ACTIVE", False), \
                     mock.patch.object(cd, "MATCHS_MANUELS_DATES", {"2000-01-01"}), \
                     mock.patch.object(cd, "MATCHS_MANUELS", []), \
@@ -1947,6 +1950,7 @@ class TestCollecteEfficace(unittest.TestCase):
                     "selections": [{"selection": "Over", "cote": 1.9}]}]
         with tempfile.TemporaryDirectory() as d, \
                 mock.patch.object(cd, "SORTIE_JSON", os.path.join(d, "out.json")), \
+                mock.patch.object(cd, "FOURNISSEUR_COTES", "oddspapi"), \
                 mock.patch.object(cd, "NB_MATCHS_MAX", 2), \
                 mock.patch.object(cd, "FILTRE_LIGUES_UNIQUES", []), \
                 mock.patch.object(cd, "SELECTION_MANUELLE_ACTIVE", selection_manuelle), \
@@ -2009,6 +2013,7 @@ class TestComplementAutomatiqueListeManuelle(unittest.TestCase):
         fixtures = [_fixture_op("fA", "Lyon", "Monaco"), _fixture_op("fC", "Lille", "Nantes")]
         with tempfile.TemporaryDirectory() as d, \
                 mock.patch.object(cd, "SORTIE_JSON", os.path.join(d, "out.json")), \
+                mock.patch.object(cd, "FOURNISSEUR_COTES", "oddspapi"), \
                 mock.patch.object(cd, "COMPLEMENT_AUTOMATIQUE_ACTIF", True), \
                 mock.patch.object(cd, "NB_MATCHS_MAX", 5), \
                 mock.patch.object(cd, "MATCHS_MANUELS_ENV", "Lyon - Monaco"), \
@@ -2033,6 +2038,7 @@ class TestComplementAutomatiqueListeManuelle(unittest.TestCase):
         fixtures = [_fixture_op("fA", "Lyon", "Monaco")]
         with tempfile.TemporaryDirectory() as d, \
                 mock.patch.object(cd, "SORTIE_JSON", os.path.join(d, "out.json")), \
+                mock.patch.object(cd, "FOURNISSEUR_COTES", "oddspapi"), \
                 mock.patch.object(cd, "COMPLEMENT_AUTOMATIQUE_ACTIF", True), \
                 mock.patch.object(cd, "NB_MATCHS_MAX", 5), \
                 mock.patch.object(cd, "MATCHS_MANUELS_ENV", "Lyon - Monaco"), \
