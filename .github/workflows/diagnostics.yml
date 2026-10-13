@@ -76,6 +76,15 @@ jobs:
           fixtures = cd.recuperer_fixtures_api_football()
           matchs = cd.selectionner_matchs_du_jour_api_football(fixtures)
           print(f'\\n=== {len(matchs)} match(s) NS trouvé(s) dans les 5 grands championnats (Premier League, La Liga, Serie A, Bundesliga, Ligue 1) ===')
+          print('\\n=== TOUS les fixtures bruts league_id 2 (UCL) ou 3 (UEL), tout statut confondu, jamais filtrés ===')
+          for fx in fixtures:
+              lid = (fx.get('league') or {}).get('id')
+              if lid in (2, 3):
+                  home = (fx.get('teams') or {}).get('home', {}).get('name')
+                  away = (fx.get('teams') or {}).get('away', {}).get('name')
+                  statut = ((fx.get('fixture') or {}).get('status') or {}).get('short')
+                  date = (fx.get('fixture') or {}).get('date')
+                  print(f'   • {home} vs {away} — statut={statut} — date={date} — league_id={lid}')
           "
 
       - name: API-Football — stats détaillées (15 métriques, 10 derniers matchs)
