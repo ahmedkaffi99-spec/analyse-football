@@ -46,6 +46,10 @@ def _pool_deux_matchs():
     }
 
 
+def _pool_n_matchs(n, cote=1.3):
+    return {f"M{i} vs A{i}": [_candidat(f"M{i} vs A{i}", "Total", "Over", cote)] for i in range(n)}
+
+
 def _donnees_minimales():
     return {"nb_matchs_demandes": 2, "nb_matchs_avec_marches": 2, "nb_marches_total": 2, "matchs": []}
 
@@ -54,6 +58,31 @@ class _FauxCollecteDonnees(SimpleNamespace):
     def collecter_donnees(self):
         with open(self.SORTIE_JSON, "w", encoding="utf-8") as f:
             json.dump(_donnees_minimales(), f)
+
+
+_PALIERS_NB_COUPONS_DYNAMIQUE = ((2, 1), (6, 2), (10, 3), (16, 4), (20, 5))
+
+
+def _nb_coupons_dynamique(nb_matchs_eligibles, paliers=_PALIERS_NB_COUPONS_DYNAMIQUE):
+    # Même règle que bet_agent/analyser_et_envoyer.py:nb_coupons_dynamique — réimplémentée ici
+    # (ae est un faux module dans ces tests, pas le vrai bet_agent) pour que
+    # moteur_central_run.executer_moteur_central (qui l'appelle via ae.nb_coupons_dynamique)
+    # dimensionne le nombre de coupons exactement comme en production.
+    nb = 0
+    for seuil, n in paliers:
+        if nb_matchs_eligibles >= seuil:
+            nb = n
+    return nb
+
+
+def _verifier_unicite_matchs_coupons(resultats_profils):
+    # Même garde-fou que bet_agent/analyser_et_envoyer.py:verifier_unicite_matchs_coupons.
+    vus = {}
+    for item in resultats_profils:
+        for c in item["selections"]:
+            if c["match"] in vus and vus[c["match"]] != item["profil"]["cle"]:
+                raise ValueError(f"Doublon de match détecté entre coupons : {c['match']!r}")
+            vus[c["match"]] = item["profil"]["cle"]
 
 
 def _faux_modules(pool):
@@ -67,6 +96,8 @@ def _faux_modules(pool):
         agent4_rediger_coupons=lambda resultats: ["texte du coupon"] * len(resultats),
         agent5_envoyer_coupons=lambda textes: True,  # jamais un vrai envoi Telegram
         agent3_calcul_pool_candidats=lambda donnees: pool,
+        nb_coupons_dynamique=_nb_coupons_dynamique,
+        verifier_unicite_matchs_coupons=_verifier_unicite_matchs_coupons,
     )
     return cd, ae
 
@@ -99,7 +130,7 @@ class TestMoteurCentralEstBienCeluiQuiSexecute:
             assert run_relu.envoye_telegram is True
             coupons = list(db.scalars(select(Coupon).where(Coupon.run_id == run_id)))
             assert len(coupons) == 1
-            assert coupons[0].profil == "central"
+            assert coupons[0].profil == "central_1"
             # Les deux matchs du pool central ont bien été retenus (2 jambes, cote ~1.69).
             assert len(coupons[0].jambes) == 2
             # Compatibilité avec la chaîne existante (instruction 5) : categorie/handicap/
@@ -175,3 +206,47 @@ class TestAucunRepliSilencieuxVersUnAutreMoteur:
             run_relu = db.get(Run, run_id)
             assert run_relu.statut == "erreur"
             assert "depuis-run" in run_relu.detail
+
+
+class TestGenerationDynamiqueMultiCoupons:
+    """13/10/2026, demande explicite : "je veux plusieurs jambes ou plusieurs coupons
+    combiné" — moteur_central/selection.py ne compose nativement qu'un seul coupon par appel ;
+    moteur_central_run.executer_moteur_central boucle en excluant à chaque tour les matchs
+    déjà utilisés (même principe que la génération dynamique de bet_agent du 11/10/2026)."""
+
+    def test_six_matchs_donnent_deux_coupons_sans_recouvrement(self):
+        # 6 matchs éligibles -> palier "6" de nb_coupons_dynamique = 2 coupons.
+        pool = _pool_n_matchs(6)
+        with SessionLocal() as db:
+            run = _run(db)
+            run_id = run.id
+            cd, ae = _faux_modules(pool)
+            with mock.patch.object(pipeline, "modules", return_value=(cd, ae, None)), \
+                    mock.patch.object(pipeline, "reinitialiser_caches"), \
+                    mock.patch("app.services.capture_historique.capturer_predictions", return_value=0):
+                executer_run(run_id, moteur="central")
+
+        with SessionLocal() as db:
+            run_relu = db.get(Run, run_id)
+            assert run_relu.statut == "termine"
+            coupons = list(db.scalars(select(Coupon).where(Coupon.run_id == run_id)))
+            assert len(coupons) == 2
+            assert {c.profil for c in coupons} == {"central_1", "central_2"}
+            matchs_vus = [j.libelle_match for c in coupons for j in c.jambes]
+            assert len(matchs_vus) == len(set(matchs_vus)), (
+                "un même match apparaît dans plusieurs coupons du moteur central")
+
+    def test_deux_matchs_seulement_un_seul_coupon(self):
+        # Comportement inchangé pour un petit pool : un seul coupon (palier "2" = 1).
+        pool = _pool_deux_matchs()
+        with SessionLocal() as db:
+            run = _run(db)
+            run_id = run.id
+            cd, ae = _faux_modules(pool)
+            with mock.patch.object(pipeline, "modules", return_value=(cd, ae, None)), \
+                    mock.patch.object(pipeline, "reinitialiser_caches"), \
+                    mock.patch("app.services.capture_historique.capturer_predictions", return_value=0):
+                executer_run(run_id, moteur="central")
+        with SessionLocal() as db:
+            coupons = list(db.scalars(select(Coupon).where(Coupon.run_id == run_id)))
+            assert len(coupons) == 1
