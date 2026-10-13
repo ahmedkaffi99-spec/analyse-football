@@ -3,15 +3,20 @@
 audit de code avant toute modification, pas deviné du nom).
 
 RÈGLE ABSOLUE (demande explicite) : jamais de repli silencieux vers un autre moteur. Toute
-impossibilité de composer un coupon (pas assez de candidats fiables, contrainte de diversité
-non satisfaite, candidat central introuvable dans le pool d'origine...) lève une exception —
-runs.py:executer_run() la laisse remonter telle quelle (statut "erreur", détail explicite),
-jamais rattrapée ici pour retomber sur bet_agent/analyser_et_envoyer.py.
+impossibilité de composer le PREMIER coupon (pas assez de candidats fiables, contrainte de
+diversité non satisfaite, candidat central introuvable dans le pool d'origine...) lève une
+exception — runs.py:executer_run() la laisse remonter telle quelle (statut "erreur", détail
+explicite), jamais rattrapée ici pour retomber sur bet_agent/analyser_et_envoyer.py.
 
-Différence connue avec "deterministe" (signalée, pas corrigée en silence) : moteur_central/
-selection.py compose UN SEUL coupon par run (pas la génération dynamique multi-coupons du
-11/10/2026, propre au chemin "deterministe") — comportement natif de moteur_central, jamais
-simulé ni étendu ici sans décision séparée."""
+GÉNÉRATION DYNAMIQUE MULTI-COUPONS (13/10/2026, demande explicite : "je veux plusieurs
+jambes ou plusieurs coupons combiné") : moteur_central/selection.py ne compose nativement
+qu'UN SEUL coupon par appel — ce module boucle sur plusieurs appels, en retirant à chaque
+tour les matchs déjà utilisés du pool central (même principe d'exclusion croisée que la
+génération dynamique de bet_agent/analyser_et_envoyer.py du 11/10/2026, réutilise directement
+ae.nb_coupons_dynamique pour dimensionner le nombre de coupons au volume réel de matchs
+éligibles — jamais un chiffre fixé à l'avance). Un échec à partir du 2e coupon (pool restant
+épuisé) n'est PAS une erreur : il arrête simplement la boucle, les coupons déjà composés
+restent valides et sont retournés."""
 
 from pathlib import Path
 import os
@@ -42,8 +47,13 @@ from app.services.decision_centrale import (  # noqa: E402
 COTE_MIN_CENTRAL = float(os.getenv("MOTEUR_CENTRAL_COTE_MIN") or 1.3)
 COTE_MAX_CENTRAL = float(os.getenv("MOTEUR_CENTRAL_COTE_MAX") or 3.0)
 
-PROFIL_CENTRAL = {"cle": "central", "nom": "🧭 COUPON — MOTEUR CENTRAL",
-                  "cote_min": COTE_MIN_CENTRAL, "cote_max": COTE_MAX_CENTRAL}
+MEDAILLES_CENTRAL = ("🥇", "🥈", "🥉", "4️⃣", "5️⃣")
+
+
+def _profil_central(indice):
+    medaille = MEDAILLES_CENTRAL[indice] if indice < len(MEDAILLES_CENTRAL) else "🧭"
+    return {"cle": f"central_{indice + 1}", "nom": f"{medaille} COUPON — MOTEUR CENTRAL #{indice + 1}",
+           "cote_min": COTE_MIN_CENTRAL, "cote_max": COTE_MAX_CENTRAL}
 
 
 def _rejoindre_candidat_bet_agent(pool, candidat_central):
@@ -73,10 +83,11 @@ def _rejoindre_candidat_bet_agent(pool, candidat_central):
 
 
 def executer_moteur_central(db, donnees, ae, cfg=None):
-    """Calcule et sélectionne le coupon RÉEL via moteur_central/ à partir de la collecte déjà
-    faite (donnees). Renvoie resultats_profils au format attendu par enregistrer_coupons/
-    agent4_rediger_coupons (compatible bet_agent). Lève une exception si aucun coupon n'a pu
-    être composé — jamais un résultat vide silencieux ni un repli vers un autre moteur."""
+    """Calcule et sélectionne LE(S) coupon(s) RÉEL(S) via moteur_central/ à partir de la
+    collecte déjà faite (donnees). Renvoie resultats_profils au format attendu par
+    enregistrer_coupons/agent4_rediger_coupons (compatible bet_agent). Lève une exception si
+    AUCUN coupon n'a pu être composé — jamais un résultat vide silencieux ni un repli vers un
+    autre moteur."""
     cfg = cfg or ConfigCentrale.depuis_env()
     pool = ae.agent3_calcul_pool_candidats(donnees)
     if not pool:
@@ -88,16 +99,31 @@ def executer_moteur_central(db, donnees, ae, cfg=None):
     choix = choisir_par_marche(historique["bet_agent"], historique["moteur"], cfg.n_min_decision_moteur)
     pool_central = construire_pool_central(candidats_mo, candidats_ba, choix)
 
-    combo = selectionner(pool_central, COTE_MIN_CENTRAL, COTE_MAX_CENTRAL,
-                         nb_min=cfg.nb_jambes_min, nb_max=cfg.nb_jambes_max,
-                         taille_pool_max=cfg.taille_pool_max)
-    if not combo.get("genere"):
-        raise RuntimeError(f"Moteur central : aucun coupon composé ({combo.get('raison')}) — "
-                           "jamais de repli automatique vers un autre moteur.")
+    nb_matchs_eligibles = len({c.match for c in pool_central})
+    nb_coupons_cible = ae.nb_coupons_dynamique(nb_matchs_eligibles)
+    print(f"   🧮 [Moteur central] {nb_matchs_eligibles} match(s) éligible(s) → "
+          f"{nb_coupons_cible} coupon(s) dynamique(s) visé(s) (pool central : "
+          f"{len(pool_central)} candidat(s), bet_agent={len(candidats_ba)}, moteur={len(candidats_mo)}).")
 
-    selections = [_rejoindre_candidat_bet_agent(pool, c) for c in combo["jambes"]]
-    print(f"   🧭 [Moteur central] {len(selections)} jambe(s) retenue(s), cote totale "
-          f"{combo['cote_totale']}, score moyen {combo['score_moyen']} "
-          f"(pool central : {len(pool_central)} candidat(s), bet_agent={len(candidats_ba)}, "
-          f"moteur={len(candidats_mo)}).")
-    return [{"profil": dict(PROFIL_CENTRAL), "selections": selections}]
+    resultats, matchs_utilises = [], set()
+    for indice in range(max(nb_coupons_cible, 1)):
+        pool_disponible = [c for c in pool_central if c.match not in matchs_utilises]
+        combo = selectionner(pool_disponible, COTE_MIN_CENTRAL, COTE_MAX_CENTRAL,
+                             nb_min=cfg.nb_jambes_min, nb_max=cfg.nb_jambes_max,
+                             taille_pool_max=cfg.taille_pool_max)
+        if not combo.get("genere"):
+            if indice == 0:
+                raise RuntimeError(f"Moteur central : aucun coupon composé ({combo.get('raison')}) — "
+                                   "jamais de repli automatique vers un autre moteur.")
+            print(f"   🧭 [Moteur central] coupon #{indice + 1} impossible ({combo.get('raison')}) — "
+                  f"{len(resultats)} coupon(s) déjà composé(s) conservé(s), arrêt de la génération.")
+            break
+
+        selections = [_rejoindre_candidat_bet_agent(pool, c) for c in combo["jambes"]]
+        matchs_utilises.update(s["match"] for s in selections)
+        print(f"   🧭 [Moteur central] coupon #{indice + 1} : {len(selections)} jambe(s) retenue(s), "
+              f"cote totale {combo['cote_totale']}, score moyen {combo['score_moyen']}.")
+        resultats.append({"profil": _profil_central(indice), "selections": selections})
+
+    ae.verifier_unicite_matchs_coupons(resultats)
+    return resultats
