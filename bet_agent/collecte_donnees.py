@@ -278,16 +278,32 @@ LIGUES_DOMESTIQUES_MAJEURES = {
 # Laisse la liste vide ([]) pour revenir au comportement normal (toutes les grandes
 # ligues + repli sur le reste des matchs avec cotes réelles).
 # ------------------------------------------------------------
-# Désactivé (demande explicite du 02/10/2026, après que le complément automatique a inclus
-# 3 matchs amicaux de CLUB — Aluminij Kidricevo vs NK Varazdin, Gornik Zabrze vs Odra Opole,
-# Zlin vs Prostějov — non demandés par l'utilisateur) : liste vide = comportement normal,
-# aucune restriction de ligue.
-FILTRE_LIGUES_UNIQUES = []
+# Restreint aux 5 championnats configurés (demande explicite du 11/10/2026, "génération
+# dynamique de coupons quotidiens" — remplace le comportement par défaut du 02/10/2026) :
+# Premier League (Angleterre), La Liga (Espagne), Serie A (Italie), Bundesliga (Allemagne),
+# Ligue 1 (France) — exactement les 5 championnats déjà backfillés dans hist_matchs
+# (docs/couverture_historique.md), jamais les 9 LIGUES_MAJEURES ni un repli sur d'autres
+# compétitions (voir ACTIVER_SECOURS_HORS_FILTRE ci-dessous). Remettre à [] pour revenir au
+# comportement précédent (toutes les grandes ligues + repli).
+FILTRE_LIGUES_UNIQUES = [
+    ("premier league", "england"),
+    ("la liga", "spain"),
+    ("serie a", "italy"),
+    ("bundesliga", "germany"),
+    ("ligue 1", "france"),
+]
+
+# Repli SECOURS désactivé tant que FILTRE_LIGUES_UNIQUES cible strictement les 5 championnats
+# (demande explicite du 11/10/2026 : "ne pas inventer de matchs... si le volume est
+# insuffisant, produire moins de coupons ou aucun coupon") — piocher dans les compétitions
+# internationales pour compenser un jour creux des 5 grands championnats irait à l'encontre de
+# cette consigne. Remettre à True pour restaurer le comportement du 02/10/2026 (repli actif).
+ACTIVER_SECOURS_HORS_FILTRE = False
 
 # Compétitions de SECOURS, utilisées seulement quand FILTRE_LIGUES_UNIQUES donne moins de
-# NB_MATCHS_MIN matchs — typiquement pendant une trêve internationale, où les 5 grands
-# championnats s'arrêtent (constaté le 2026-09-26 : 6 matchs seulement, tous de Serie A
-# féminine). Même format (mot-clé du tournoi, pays ou None).
+# NB_MATCHS_MIN matchs ET ACTIVER_SECOURS_HORS_FILTRE=True — typiquement pendant une trêve
+# internationale, où les 5 grands championnats s'arrêtent (constaté le 2026-09-26 : 6 matchs
+# seulement, tous de Serie A féminine). Même format (mot-clé du tournoi, pays ou None).
 FILTRE_LIGUES_SECOURS = [
     # Compétitions d'ÉQUIPES NATIONALES, sans restriction de pays/confédération (demande
     # explicite du 02/10/2026, après un run en pleine trêve internationale où les 22 matchs
@@ -1124,7 +1140,7 @@ def selectionner_matchs_du_jour(fixtures_oddspapi):
         noms_filtre = ", ".join(f"{lg} ({p})" if p else lg for lg, p in FILTRE_LIGUES_UNIQUES)
         print(f"   🎯 Filtre multi-ligues actif : {noms_filtre} — {len(candidats)}/{avant} candidats retenus")
 
-        if len(candidats) < NB_MATCHS_MIN and FILTRE_LIGUES_SECOURS:
+        if len(candidats) < NB_MATCHS_MIN and FILTRE_LIGUES_SECOURS and ACTIVER_SECOURS_HORS_FILTRE:
             deja = {id(fx) for fx in candidats}
             secours = [fx for fx in tous_candidats
                        if id(fx) not in deja and _correspond_au_filtre(fx, FILTRE_LIGUES_SECOURS)]

@@ -104,11 +104,17 @@ COTE_INDIVIDUELLE_MAX_FALLBACK_AUTO = 2.0
 # jour"), après un bilan réel décevant (run #86, 02/10/2026) : 4 des 5 coupons perdus le même
 # jour, la "diversification par le nombre de coupons" n'ayant pas empêché une mauvaise journée
 # généralisée — mieux vaut un seul coupon composé avec le plus grand soin (voir aussi le
-# correctif H2H du même jour) que plusieurs coupons de qualité inégale. La logique MULTI-
-# PROFILS (diversité croisée entre profils, planchers de cote dédiés, paliers de risque) reste
-# dans agent_strategie.py/agent_pilote.py — jamais déclenchée tant que PROFILS_COUPON n'a qu'UN
-# SEUL profil (aucune sélection "déjà verrouillée d'un profil précédent" ne peut exister) — pas
-# supprimée au cas où elle serait utile un autre jour, mais inerte par défaut.
+# correctif H2H du même jour) que plusieurs coupons de qualité inégale.
+#
+# RÉANNULÉ le 11/10/2026 (demande explicite et confirmée, "génération dynamique de coupons
+# quotidiens sans doublons" : "revenir à 4-5 coupons/jour — j'annule ce choix du 03/10") :
+# retour à PLUSIEURS coupons par jour, mais piloté par le volume RÉEL de matchs éligibles
+# (jamais un nombre de matchs ni un nombre de coupons fixé à l'avance) et avec une garantie
+# qui n'existait PAS dans l'ancien système multi-coupons (avant le 03/10/2026) : un même match
+# ne peut plus jamais apparaître dans deux coupons, quel que soit le marché choisi — voir
+# construire_profils_dynamiques et l'exclusion croisée dans generer_coupons. PROFILS_COUPON
+# (ci-dessous) reste le profil du mode MANUEL uniquement (sélection explicite de matchs par
+# l'utilisateur, un seul coupon contenant tous les matchs fournis — comportement inchangé).
 PROFILS_COUPON = [
     # cote_min/cote_max (demande explicite du 03/10/2026 : "notre cote cible est 1.1 à 2.1") :
     # cible de cote TOTALE du coupon pour selectionner_combo_cote_cible (repli 100% Python sans
@@ -116,6 +122,60 @@ PROFILS_COUPON = [
     {"cle": "jour", "nom": "🏆 COUPON DU JOUR (probabilité maximale)",
      "cote_min": 1.1, "cote_max": 2.1, "nb_jambes_min": 2, "nb_jambes": 5},
 ]
+
+# ------------------------------------------------------------------------------------------
+# GÉNÉRATION DYNAMIQUE DU NOMBRE DE COUPONS (11/10/2026) — sélection automatique SEULEMENT
+# (mode_manuel garde PROFILS_COUPON, un seul coupon, comportement inchangé). Le nombre de
+# coupons dépend du nombre de matchs RÉELLEMENT éligibles aujourd'hui (candidats distincts du
+# pool, après tous les filtres déjà appliqués par agent3_calcul_pool_candidats) — jamais fixé
+# à l'avance, jamais un match inventé pour atteindre un palier. "Environ 4 à 5" coupons quand
+# le volume ET la qualité le permettent (demande explicite) ; moins, ou aucun, sinon.
+# ------------------------------------------------------------------------------------------
+NB_JAMBES_MIN_PROFIL_DYNAMIQUE = 2    # même plancher que PROFILS_COUPON, cohérence de stratégie
+NB_JAMBES_MAX_PROFIL_DYNAMIQUE = 5    # même plafond que PROFILS_COUPON
+
+# (matchs éligibles distincts >= seuil) -> nombre de coupons. Choisi pour qu'au plus
+# NB_JAMBES_MAX_PROFIL_DYNAMIQUE matchs distincts soient nécessaires par coupon : avec les
+# coupons retirant leurs matchs du pool des coupons suivants (voir generer_coupons), N coupons
+# pleins nécessitent jusqu'à N*NB_JAMBES_MAX_PROFIL_DYNAMIQUE matchs distincts au total — d'où
+# les seuils 6/10/16/20 ci-dessous (2, puis des paliers de 4-6 matchs par coupon supplémentaire,
+# jamais un chiffre arbitraire sans lien avec NB_JAMBES_MIN/MAX_PROFIL_DYNAMIQUE).
+PALIERS_NB_COUPONS_DYNAMIQUE = ((2, 1), (6, 2), (10, 3), (16, 4), (20, 5))
+
+
+def nb_coupons_dynamique(nb_matchs_eligibles, paliers=PALIERS_NB_COUPONS_DYNAMIQUE):
+    """0 si nb_matchs_eligibles est sous le premier seuil (jamais un coupon avec moins que
+    NB_JAMBES_MIN_PROFIL_DYNAMIQUE matchs disponibles) — jamais plus que le palier le plus
+    haut atteint, jamais un nombre de coupons inventé indépendamment du volume réel."""
+    nb = 0
+    for seuil, n in paliers:
+        if nb_matchs_eligibles >= seuil:
+            nb = n
+    return nb
+
+
+def construire_profils_dynamiques(nb_matchs_eligibles):
+    """0 à 5 profils de coupon, dimensionnés au volume réel de matchs éligibles aujourd'hui.
+    Chaque profil garde EXACTEMENT les mêmes critères de qualité que PROFILS_COUPON (cible de
+    cote 1.1-2.1, plancher de probabilité, filtres déjà appliqués en aval par
+    selectionner_combo_cote_cible) — seul le NOMBRE de profils et leur plafond de jambes
+    individuel varient avec le volume, jamais les autres règles de sélection."""
+    nb = nb_coupons_dynamique(nb_matchs_eligibles)
+    if nb == 0:
+        return []
+    # Budget de jambes par coupon réparti équitablement sur les matchs éligibles, borné à
+    # [NB_JAMBES_MIN_PROFIL_DYNAMIQUE, NB_JAMBES_MAX_PROFIL_DYNAMIQUE] — jamais un coupon plus
+    # grand que ce que permettent les matchs réellement disponibles une fois partagés entre
+    # tous les coupons du jour.
+    budget = max(NB_JAMBES_MIN_PROFIL_DYNAMIQUE,
+                 min(NB_JAMBES_MAX_PROFIL_DYNAMIQUE, nb_matchs_eligibles // nb))
+    medailles = ("🥇", "🥈", "🥉", "4️⃣", "5️⃣")
+    return [
+        {"cle": f"coupon_{i + 1}", "nom": f"{medailles[i]} COUPON #{i + 1} DU JOUR",
+         "cote_min": 1.1, "cote_max": 2.1,
+         "nb_jambes_min": NB_JAMBES_MIN_PROFIL_DYNAMIQUE, "nb_jambes": budget}
+        for i in range(nb)
+    ]
 
 # IA : Groq + Gemini + OpenRouter (2026-09-26). Listes modifiables sans toucher au code via
 # GROQ_MODELES, GEMINI_MODELES et OPENROUTER_MODELES="modele1,modele2".
@@ -2789,30 +2849,51 @@ def generer_coupons(donnees, qualite_marches=None):
     nb_candidats_total = sum(len(v) for v in pool.values())
     print(f"\n   📦 Pool commun : {nb_candidats_total} candidat(s) sur {len(pool)} match(s) distinct(s)")
 
-    # Au plus MAX_JAMBES_PAR_MATCH paris par match : les jours creux (trêve internationale),
-    # les coupons ont moins de jambes plutôt que des paris corrélés sur les mêmes matchs.
-    jambes_possibles = sum(min(len(v), MAX_JAMBES_PAR_MATCH) for v in pool.values())
     # Sélection MANUELLE (demande explicite du 03/10/2026 : "c'est moi qui choisis les équipes
     # ET le nombre de jambes du coupon chaque run") : TOUS les matchs donnés par l'utilisateur
-    # doivent entrer dans le coupon — un seul pari par match (MAX_JAMBES_PAR_MATCH), jamais un
-    # sous-ensemble choisi par la composition automatique selon la fourchette du profil
-    # (nb_jambes_min/nb_jambes). Le nombre de jambes devient simplement le nombre de matchs
-    # manuels qui ont réellement un candidat exploitable (impossible d'en inventer un).
+    # doivent entrer dans UN SEUL coupon — comportement inchangé, jamais la génération
+    # dynamique ci-dessous (qui ne s'applique qu'à la sélection 100% automatique).
     mode_manuel = bool(donnees.get("mode_manuel"))
     combos_deja_proposes = []
     resultats = []
 
+    # Nombre de profils : fixe (PROFILS_COUPON, 1 seul) en mode manuel, DYNAMIQUE sinon —
+    # voir construire_profils_dynamiques (11/10/2026). len(pool) = nombre de matchs
+    # RÉELLEMENT éligibles aujourd'hui (après tous les filtres déjà appliqués en amont),
+    # jamais un chiffre fixé à l'avance.
+    profils = PROFILS_COUPON if mode_manuel else construire_profils_dynamiques(len(pool))
+    if not mode_manuel:
+        print(f"   🧮 {len(pool)} match(s) éligible(s) → {len(profils)} coupon(s) dynamique(s) "
+              f"(0 à {NB_JAMBES_MAX_PROFIL_DYNAMIQUE * 5} matchs auraient permis jusqu'à 5 coupons pleins).")
+
+    # Exclusion CROISÉE entre coupons (demande explicite du 11/10/2026, règle 5/6 : "un même
+    # match ne doit jamais apparaître dans plusieurs coupons, quel que soit le marché" / "au
+    # maximum un marché pour ce match dans l'ensemble des coupons") : chaque match retenu par
+    # un coupon est retiré du pool disponible pour TOUS les coupons suivants de ce run — pas
+    # seulement vérifié après coup, un match déjà utilisé ne peut structurellement plus être
+    # proposé à un autre coupon. matchs_utilises est une clé de "pool" (libellé du match),
+    # jamais un identifiant inventé.
+    matchs_utilises = set()
+
     # L'IA STRATÈGE compose d'abord (analyse, stratégie, choix) ; Python a validé chaque coupon.
+    # Reçoit la même liste "profils" (dynamique ou manuelle) : agent_strategie.valider() gère
+    # déjà sa propre exclusion croisée entre profils (toutes_selections_verrouillees) —
+    # cohérent avec matchs_utilises ci-dessus, pas une seconde logique indépendante.
     strategie_ia = None
     if UTILISER_STRATEGE_IA and pool:
         try:
             import agent_strategie
-            strategie_ia = agent_strategie.composer_coupons(pool, PROFILS_COUPON)
+            strategie_ia = agent_strategie.composer_coupons(pool, profils)
         except Exception as e:
             print(f"   ⚠️ Stratège IA indisponible ({_cause(e)[:150]}) — composition automatique.")
     coupons_ia = (strategie_ia or {}).get("coupons", {})
 
-    for profil in PROFILS_COUPON:
+    for profil in profils:
+        # Pool restreint aux matchs pas encore utilisés par un coupon précédent CE run — voir
+        # matchs_utilises ci-dessus. Recalculé à chaque itération (le pool se réduit).
+        pool_disponible = {m: c for m, c in pool.items() if m not in matchs_utilises}
+        jambes_possibles = sum(min(len(v), MAX_JAMBES_PAR_MATCH) for v in pool_disponible.values())
+
         choix_ia = coupons_ia.get(profil["cle"])
         if choix_ia and choix_ia.get("selections"):
             selections = choix_ia["selections"]
@@ -2820,6 +2901,7 @@ def generer_coupons(donnees, qualite_marches=None):
                   f"{_produit_cotes(selections):.2f} — {choix_ia.get('strategie', '')[:120]}")
             combos_deja_proposes.append(frozenset((c["match"], c["pick"]["marche"], c["pick"]["selection"])
                                                   for c in selections))
+            matchs_utilises.update(c["match"] for c in selections)
             resultats.append({"profil": profil, "selections": selections, "strategie": choix_ia.get("strategie")})
             continue
         if choix_ia and "abstention" in choix_ia:
@@ -2830,10 +2912,10 @@ def generer_coupons(donnees, qualite_marches=None):
         nb_min_force = (os.getenv("NB_JAMBES_MIN") or "").strip()
         if mode_manuel:
             nb_jambes = jambes_possibles
-            if nb_jambes < len(pool):
-                print(f"   ℹ️ [{profil['nom']}] {nb_jambes} jambes (sur {len(pool)} match(s) manuel(s) "
+            if nb_jambes < len(pool_disponible):
+                print(f"   ℹ️ [{profil['nom']}] {nb_jambes} jambes (sur {len(pool_disponible)} match(s) manuel(s) "
                       f"exploitable(s)) — un pari par match, {MAX_JAMBES_PAR_MATCH} max.")
-            combo = selectionner_combo_cote_cible(pool, nb_jambes, profil["cote_min"], profil["cote_max"],
+            combo = selectionner_combo_cote_cible(pool_disponible, nb_jambes, profil["cote_min"], profil["cote_max"],
                                                   exiger_tous_les_matchs=True,
                                                   qualite_marches=qualite_marches) if nb_jambes else None
         else:
@@ -2846,7 +2928,7 @@ def generer_coupons(donnees, qualite_marches=None):
                 nb_jambes = min(nb_cible, jambes_possibles)
                 if nb_jambes < nb_cible:
                     print(f"   ℹ️ [{profil['nom']}] {nb_jambes} jambes au lieu de {nb_cible} "
-                          f"(seulement {len(pool)} match(s) exploitable(s), {MAX_JAMBES_PAR_MATCH} paris max par match)")
+                          f"(seulement {len(pool_disponible)} match(s) exploitable(s), {MAX_JAMBES_PAR_MATCH} paris max par match)")
                 # NB_JAMBES_MIN (demande explicite du 03/10/2026 : "coupon 15 matchs, minimum
                 # 12") : en dessous, aucun coupon plutôt qu'un coupon plus court que demandé.
                 if nb_min_force.isdigit() and nb_jambes < int(nb_min_force):
@@ -2854,7 +2936,7 @@ def generer_coupons(donnees, qualite_marches=None):
                           f"{nb_min_force} — aucun coupon envoyé.")
                     resultats.append({"profil": profil, "selections": []})
                     continue
-                combo = selectionner_combo_cote_cible(pool, nb_jambes, profil["cote_min"], profil["cote_max"],
+                combo = selectionner_combo_cote_cible(pool_disponible, nb_jambes, profil["cote_min"], profil["cote_max"],
                                                       qualite_marches=qualite_marches) if nb_jambes else None
             else:
                 # Recherche ADAPTATIVE du nombre de jambes (demande explicite du 09/10/2026,
@@ -2880,7 +2962,8 @@ def generer_coupons(donnees, qualite_marches=None):
                     continue
                 essais_combos = [c for n in range(plancher, plafond + 1)
                                  for c in [selectionner_combo_cote_cible(
-                                     pool, n, profil["cote_min"], profil["cote_max"], qualite_marches=qualite_marches)]
+                                     pool_disponible, n, profil["cote_min"], profil["cote_max"],
+                                     qualite_marches=qualite_marches)]
                                  if c is not None]
                 combo = max(essais_combos, key=lambda c: _score_cross_jambes(
                     c, profil["cote_min"], profil["cote_max"], qualite_marches)) if essais_combos else None
@@ -2920,8 +3003,27 @@ def generer_coupons(donnees, qualite_marches=None):
         print(f"   {'✓' if dans_cible else '⚠️'} [{profil['nom']}] {len(combo)} jambes, cote totale réelle "
               f"{cote_reelle:.2f} (cible {profil['cote_min']}-{profil['cote_max']}){etat_txt}")
         combos_deja_proposes.append(frozenset((c["match"], c["pick"]["marche"], c["pick"]["selection"]) for c in combo))
+        matchs_utilises.update(c["match"] for c in combo)
         resultats.append({"profil": profil, "selections": combo})
+    verifier_unicite_matchs_coupons(resultats)
     return resultats
+
+
+def verifier_unicite_matchs_coupons(resultats_profils):
+    """Garde-fou FINAL (règle 8, 11/10/2026) : contrôle l'unicité GLOBALE des matchs à travers
+    TOUS les coupons d'un même run, juste avant que generer_coupons ne renvoie son résultat —
+    bloque la génération (lève une exception, jamais une correction silencieuse) si un match
+    apparaît dans plus d'un coupon. Ne devrait JAMAIS se déclencher tant que l'exclusion
+    croisée (matchs_utilises) ci-dessus fonctionne — un filet de sécurité, pas le mécanisme
+    principal, pour qu'aucune régression future ne puisse publier un doublon silencieusement."""
+    vus = {}
+    for item in resultats_profils:
+        for c in item["selections"]:
+            if c["match"] in vus and vus[c["match"]] != item["profil"]["cle"]:
+                raise ValueError(
+                    f"Doublon de match détecté entre coupons : {c['match']!r} apparaît dans "
+                    f"{vus[c['match']]!r} ET {item['profil']['cle']!r} — publication bloquée.")
+            vus[c["match"]] = item["profil"]["cle"]
 
 
 def agent4_rediger_coupons(resultats_profils):

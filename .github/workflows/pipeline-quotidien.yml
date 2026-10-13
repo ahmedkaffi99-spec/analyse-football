@@ -21,12 +21,13 @@ on:
         type: boolean
         default: false
       moteur:
-        description: "Moteur : deterministe (officiel depuis le 03/10/2026 — Python choisit les paris, l'IA ne fait que rédiger), ou agent pilote DeepSeek autonome (choisit aussi les paris lui-même)"
+        description: "Moteur : central (officiel depuis le 11/10/2026 — moteur_central/, arbitrage bet_agent/moteur par marché puis sélection probabilité maximale, AUCUN repli automatique en cas d'échec), deterministe (officiel du 03/10 au 11/10/2026 — Python choisit les paris, l'IA ne fait que rédiger), ou agent pilote DeepSeek autonome (choisit aussi les paris lui-même)"
         type: choice
         options:
+          - central
           - deterministe
           - agent
-        default: deterministe
+        default: central
       depuis_run:
         description: "Reprendre la collecte d'un run du jour (numéro) : analyse + IA seulement (moteur deterministe uniquement)"
         type: string

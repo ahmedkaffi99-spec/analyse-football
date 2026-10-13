@@ -50,20 +50,36 @@ def charger_collecte_du_jour(db, run_source_id, telecharger=telecharger_collecte
     return telecharger(db, source)
 
 
-def executer_run(run_id, envoyer_telegram=False, rediger=True, depuis_run=None, moteur="deterministe",
+def executer_run(run_id, envoyer_telegram=False, rediger=True, depuis_run=None, moteur="central",
                  profils_personnalises=None, ignorer_diversite_croisee=False):
-    """moteur="deterministe" (officiel depuis le 03/10/2026, demande explicite : "diminue le
-    travail de l'IA, seulement en rédaction") : collecte -> calcul Python -> composition
-    automatique Monte Carlo (Python choisit SEUL les paris, voir ae.UTILISER_STRATEGE_IA=false
-    par défaut) -> rédaction LLM du texte final uniquement. Seul moteur supportant
-    --depuis-run (reprise d'une collecte archivée).
+    """moteur="central" (OFFICIEL depuis le 11/10/2026, demande explicite : remplacer
+    "deterministe" par le moteur le plus récemment construit — moteur_central/, confirmé par
+    audit de code, pas deviné du nom) : collecte -> pool bet_agent + comparaison moteur/ ->
+    arbitrage par marché (moteur_central.choix_moteur, sur l'historique hist_cotes JUGÉ) ->
+    sélection moteur_central.selection (probabilité maximale, 2 à 5 jambes) -> rédaction LLM du
+    texte final uniquement (voir backend/app/services/moteur_central_run.py). AUCUN repli
+    silencieux : un échec ou une impossibilité de composer lève une exception, remonte jusqu'à
+    ce bloc try/except ci-dessous qui clôture le run en "erreur" avec le détail exact — jamais
+    une bascule automatique vers "deterministe" ou "agent" (demande explicite). Validation de
+    production INCOMPLÈTE à ce jour (voir docs/bascule_moteur_central.md : arbitrage
+    choix_moteur non exercé en pratique car hist_cotes n'a aucune ligne jugée, moteur/ validé
+    sur 1/20 combinaisons championnat×saison seulement, aucun backtest de la sortie propre de
+    moteur_central) — bascule préparée ET choisie explicitement malgré ces limites connues,
+    jamais affirmée comme sans risque.
+
+    moteur="deterministe" (officiel du 03/10/2026 au 11/10/2026) : collecte -> calcul Python ->
+    composition automatique Monte Carlo (Python choisit SEUL les paris, voir ae.
+    UTILISER_STRATEGE_IA=false par défaut) -> rédaction LLM du texte final uniquement. Seul
+    moteur supportant --depuis-run (reprise d'une collecte archivée). Reste disponible,
+    sélectionnable explicitement.
     moteur="agent" : agent pilote DeepSeek autonome, décide lui-même quand collecter, chercher
     du web, proposer/rédiger/envoyer (bet_agent/agent_pilote.py) — choisit aussi les paris
     lui-même, pas seulement la rédaction. Officiel du 30/09 au 03/10/2026, reste disponible.
 
     profils_personnalises/ignorer_diversite_croisee (01/10/2026, run PONCTUEL demandé
     explicitement — n'affecte jamais le pipeline quotidien par défaut, qui garde ae.
-    PROFILS_COUPON et la diversité croisée) : voir bet_agent.agent_pilote.executer."""
+    PROFILS_COUPON et la diversité croisée) : voir bet_agent.agent_pilote.executer. Sans effet
+    pour moteur="central" (pas de profils configurables, voir moteur_central_run.py)."""
     db = SessionLocal()
     run = db.get(Run, run_id)
     donnees = None
@@ -101,6 +117,11 @@ def executer_run(run_id, envoyer_telegram=False, rediger=True, depuis_run=None, 
                               or "Agent pilote : aucune sélection retenue.")
             return
 
+        if moteur == "central" and depuis_run:
+            raise ValueError("--depuis-run n'est pas encore supporté avec moteur=\"central\" "
+                             "(non exercé par cette mission, jamais deviné) — utiliser "
+                             "moteur=\"deterministe\" pour reprendre une collecte archivée.")
+
         if depuis_run:
             donnees = charger_collecte_du_jour(db, depuis_run)
         else:
@@ -115,6 +136,21 @@ def executer_run(run_id, envoyer_telegram=False, rediger=True, depuis_run=None, 
 
         if not donnees.get("nb_matchs_avec_marches"):
             run.statut, run.detail = "abandonne", "Aucun match avec marchés 1xBet exploitables."
+            return
+
+        if moteur == "central":
+            # AUCUN repli vers "deterministe"/"agent" : une exception ici remonte telle quelle
+            # jusqu'au bloc except ci-dessous (demande explicite du 11/10/2026, instruction 4 —
+            # "ne jamais basculer silencieusement").
+            from app.services.moteur_central_run import executer_moteur_central
+
+            resultats = executer_moteur_central(db, donnees, ae)
+            textes = ae.agent4_rediger_coupons(resultats) if rediger else None
+            enregistrer_coupons(db, run, resultats, index, textes=textes)
+            if envoyer_telegram and textes:
+                run.envoye_telegram = bool(ae.agent5_envoyer_coupons(textes))
+            run.statut = "termine"
+            db.commit()
             return
 
         # Agent 3.5 (raisonnement IA, pas un calcul de plus) : vrais taux de réussite mesurés

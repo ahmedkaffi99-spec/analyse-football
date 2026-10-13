@@ -1,6 +1,6 @@
 """Tâches planifiées, lancées par GitHub Actions (ou à la main) — sans serveur :
 
-    python -m app.taches run [--telegram] [--moteur agent|deterministe] [--sans-redaction] \
+    python -m app.taches run [--telegram] [--moteur central|agent|deterministe] [--sans-redaction] \
 [--si-aucun-ticket-aujourdhui] [--profils-json JSON] [--ignorer-diversite-croisee]
     python -m app.taches verifier [--telegram]
     python -m app.taches live [--telegram] [--run-id N]
@@ -422,12 +422,16 @@ def main(argv=None):
     p_run.add_argument("--depuis-run", type=int,
                        help="reprend la collecte archivée de ce run du jour : analyse et IA seulement "
                             "(moteur deterministe uniquement)")
-    p_run.add_argument("--moteur", choices=["agent", "deterministe"], default="deterministe",
-                       help="deterministe = officiel par défaut (03/10/2026, \"diminue le travail de "
-                            "l'IA, seulement en rédaction\") : Python choisit seul les paris "
-                            "(UTILISER_STRATEGE_IA=false, composition Monte Carlo), l'IA ne fait plus "
-                            "que rédiger le texte final ; agent = agent pilote DeepSeek autonome "
-                            "(choisit aussi les paris lui-même), officiel du 30/09 au 03/10/2026")
+    p_run.add_argument("--moteur", choices=["central", "agent", "deterministe"], default="central",
+                       help="central = officiel par défaut (11/10/2026, moteur le plus récemment "
+                            "construit — moteur_central/) : arbitrage par marché bet_agent/moteur "
+                            "puis sélection probabilité maximale ; AUCUN repli automatique si ce "
+                            "moteur échoue (erreur explicite, run en \"erreur\") ; deterministe = "
+                            "officiel du 03/10 au 11/10/2026 (\"diminue le travail de l'IA, seulement "
+                            "en rédaction\") : Python choisit seul les paris (UTILISER_STRATEGE_IA="
+                            "false, composition Monte Carlo), l'IA ne fait plus que rédiger le texte "
+                            "final ; agent = agent pilote DeepSeek autonome (choisit aussi les paris "
+                            "lui-même), officiel du 30/09 au 03/10/2026")
     p_run.add_argument("--profils-json", type=str, default="",
                        help="JSON d'une liste de profils personnalisés (run PONCTUEL, 01/10/2026) qui "
                             "remplace ae.PROFILS_COUPON pour CE run uniquement ; vide = comportement par "

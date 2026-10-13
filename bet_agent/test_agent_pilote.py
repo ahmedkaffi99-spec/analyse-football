@@ -297,7 +297,7 @@ class TestTroisProfilsMemeRun(unittest.TestCase):
         # Le message renvoyé à l'IA après la tentative refusée mentionne bien la vraie cause.
         messages_4e_appel = appel.call_args_list[4].args[1]
         contenus_outils = [m["content"] for m in messages_4e_appel if m.get("role") == "tool"]
-        self.assertTrue(any("déjà choisi dans un autre profil" in c for c in contenus_outils))
+        self.assertTrue(any("déjà utilisé dans un autre profil" in c for c in contenus_outils))
 
     def test_abstention_sur_un_profil_continue_les_autres(self):
         reponses = [

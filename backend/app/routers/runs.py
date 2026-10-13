@@ -34,7 +34,12 @@ def lancer_run(options: RunCreate, taches: BackgroundTasks, db: Session = Depend
     run = Run(source="api", statut="en_cours")
     db.add(run)
     db.commit()
-    taches.add_task(service_runs.executer_run, run.id, options.envoyer_telegram, options.rediger)
+    # moteur="deterministe" explicite (11/10/2026) : cette API reste hors du périmètre de la
+    # bascule du workflow quotidien vers "central" (demande explicite limitée à
+    # pipeline-quotidien.yml / app.taches run) — comportement de cette route INCHANGÉ, jamais
+    # affecté par le nouveau défaut de executer_run().
+    taches.add_task(service_runs.executer_run, run.id, options.envoyer_telegram, options.rediger,
+                    None, "deterministe")
     return run
 
 
