@@ -295,6 +295,18 @@ class TestSelectionMatchsDuJourApiFootball:
         matchs = cd.selectionner_matchs_du_jour_api_football(fixtures)
         assert matchs == [("Arsenal", "Chelsea")]
 
+    def test_ligue_des_champions_et_europa_league_incluses(self):
+        # Demande explicite du 13/10/2026 : les 5 domestiques font tous relâche pendant les
+        # semaines de coupe d'Europe (0 match trouvé le 13/10/2026 en pratique) — C1/C3
+        # doivent compter comme sources automatiques, pas seulement les 5 domestiques.
+        fixtures = [
+            _fixture_af("Galatasaray", "Barcelona", 2),      # UEFA Champions League — retenu
+            _fixture_af("Real Betis", "FC Porto", 3),        # UEFA Europa League — retenu
+            _fixture_af("Obscur FC", "Autre FC", 848),       # Conference League — PAS demandée, exclue
+        ]
+        matchs = cd.selectionner_matchs_du_jour_api_football(fixtures)
+        assert sorted(matchs) == sorted([("Galatasaray", "Barcelona"), ("Real Betis", "FC Porto")])
+
     def test_match_deja_commence_ou_termine_exclu(self):
         fixtures = [_fixture_af("Arsenal", "Chelsea", 39, statut="1H"),
                     _fixture_af("Lyon", "Monaco", 61, statut="FT")]
