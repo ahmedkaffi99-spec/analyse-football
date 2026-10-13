@@ -1218,12 +1218,16 @@ def selectionner_matchs_du_jour(fixtures_oddspapi):
     return matchs
 
 
-# Mêmes 5 championnats que FILTRE_LIGUES_UNIQUES (ci-dessus, convention OddsPapi), mais par
-# league_id API-Football (déjà utilisés dans LIGUES_MAJEURES) — nécessaire pour la sélection
-# automatique du jour quand FOURNISSEUR_COTES=api_football (demande explicite du 13/10/2026 :
-# "n'utilise pas oddspapi et utilise tout api football"), puisqu'API-Football n'a pas le même
-# système d'identifiants qu'OddsPapi (tournamentName/categoryName).
+# 5 championnats domestiques (même esprit que FILTRE_LIGUES_UNIQUES côté OddsPapi) + Ligue des
+# Champions/Europa League (demande explicite du 13/10/2026, après constat réel : les 5
+# domestiques font tous relâche pendant les semaines de coupe d'Europe — 0 match trouvé le
+# 13/10/2026 — alors que des matchs de clubs européens majeurs ont bien lieu ce jour-là,
+# jusque-là seulement couverts par la liste manuelle codée en dur). IDs déjà utilisés dans
+# LIGUES_MAJEURES, par league_id API-Football (système d'identifiants différent d'OddsPapi,
+# qui utilise tournamentName/categoryName).
 LIGUES_FILTRE_API_FOOTBALL = {
+    2,    # UEFA Champions League
+    3,    # UEFA Europa League
     39,   # Premier League (Angleterre)
     140,  # La Liga (Espagne)
     135,  # Serie A (Italie)
@@ -1235,12 +1239,13 @@ LIGUES_FILTRE_API_FOOTBALL = {
 def selectionner_matchs_du_jour_api_football(fixtures_api_football):
     """Équivalent de selectionner_matchs_du_jour, mais 100% API-Football (jamais OddsPapi) —
     actif uniquement quand FOURNISSEUR_COTES=api_football (voir collecter_donnees). Filtre sur
-    LIGUES_FILTRE_API_FOOTBALL (mêmes 5 grands championnats), statut "NS" (Not Started, jamais
-    un match déjà commencé/terminé), délai avant coup d'envoi (assez_tot_avant_coup_envoi, même
-    garde-fou que le chemin OddsPapi), exclusion réserve/jeunes et compétitions féminines,
-    dédoublonnage par paire d'équipes — même esprit que selectionner_matchs_du_jour, source
-    différente. AUCUN repli "secours hors filtre" ici (pas demandé, pas deviné) : si les 5
-    championnats configurés ne jouent pas, la liste est simplement vide."""
+    LIGUES_FILTRE_API_FOOTBALL (5 championnats domestiques + Ligue des Champions/Europa
+    League), statut "NS" (Not Started, jamais un match déjà commencé/terminé), délai avant
+    coup d'envoi (assez_tot_avant_coup_envoi, même garde-fou que le chemin OddsPapi),
+    exclusion réserve/jeunes et compétitions féminines, dédoublonnage par paire d'équipes —
+    même esprit que selectionner_matchs_du_jour, source différente. AUCUN repli "secours hors
+    filtre" ici (pas demandé, pas deviné) : si aucune des compétitions configurées ne joue, la
+    liste est simplement vide."""
     candidats, vus = [], set()
     for fx in fixtures_api_football:
         statut = ((fx.get("fixture") or {}).get("status") or {}).get("short")
@@ -1267,14 +1272,14 @@ def selectionner_matchs_du_jour_api_football(fixtures_api_football):
     candidats.sort(key=lambda c: c[2])
     matchs = [(h, a) for h, a, _ in candidats][:NB_CANDIDATS_A_SONDER]
     if matchs:
-        print(f"   ✓ {len(matchs)} match(s) sélectionné(s) (API-Football, 5 grands championnats) :")
+        print(f"   ✓ {len(matchs)} match(s) sélectionné(s) (API-Football, 5 grands championnats + C1/C3) :")
         for h, a in matchs:
             print(f"      • {h} vs {a}")
         if len(matchs) < NB_MATCHS_MIN:
             print(f"   ⚠️ Seulement {len(matchs)} match(s) trouvé(s) (objectif minimum : {NB_MATCHS_MIN}).")
     else:
-        print("   ⚠️ Aucun match trouvé via API-Football dans les 5 grands championnats configurés "
-              "— repli sur MATCHS_MANUELS s'il date d'aujourd'hui")
+        print("   ⚠️ Aucun match trouvé via API-Football dans les compétitions configurées "
+              "(5 grands championnats + C1/C3) — repli sur MATCHS_MANUELS s'il date d'aujourd'hui")
     return matchs
 
 
@@ -1598,8 +1603,8 @@ def collecter_donnees():
               f"sélection automatique par ligue ignorée.")
         matchs_a_traiter = MATCHS_MANUELS
     elif FOURNISSEUR_COTES == "api_football":
-        print("   → Sélection des matchs du jour (source API-Football, 5 grands championnats, "
-              "OddsPapi jamais interrogé)...")
+        print("   → Sélection des matchs du jour (source API-Football, 5 grands championnats + "
+              "C1/C3, OddsPapi jamais interrogé)...")
         matchs_a_traiter = selectionner_matchs_du_jour_api_football(tous_fixtures_af)
         if not matchs_a_traiter and liste_manuelle_du_jour:
             matchs_a_traiter = MATCHS_MANUELS
