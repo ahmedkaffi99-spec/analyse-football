@@ -13,6 +13,7 @@ on:
         type: choice
         options:
           - marches-disponibles
+          - matchs-5-grands-championnats
           - api-football-stats-detaillees
           - ia
           - modeles-openrouter-gratuits
@@ -62,6 +63,20 @@ jobs:
         if: inputs.verification == 'marches-disponibles'
         working-directory: bet_agent
         run: python -c "import collecte_donnees; collecte_donnees.collecter_donnees()"
+
+      - name: Matchs du jour dans les 5 grands championnats (API-Football, lecture seule)
+        # Court-circuite la sélection manuelle (toujours active aujourd'hui, voir MATCHS_
+        # MANUELS_DATES) pour compter précisément ce que l'automatique aurait réellement
+        # trouvé — aucune collecte complète, aucune écriture en base, aucun envoi Telegram.
+        if: inputs.verification == 'matchs-5-grands-championnats'
+        working-directory: bet_agent
+        run: |
+          python -c "
+          import collecte_donnees as cd
+          fixtures = cd.recuperer_fixtures_api_football()
+          matchs = cd.selectionner_matchs_du_jour_api_football(fixtures)
+          print(f'\\n=== {len(matchs)} match(s) NS trouvé(s) dans les 5 grands championnats (Premier League, La Liga, Serie A, Bundesliga, Ligue 1) ===')
+          "
 
       - name: API-Football — stats détaillées (15 métriques, 10 derniers matchs)
         if: inputs.verification == 'api-football-stats-detaillees'
