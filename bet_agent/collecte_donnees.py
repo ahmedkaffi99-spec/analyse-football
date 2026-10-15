@@ -1416,7 +1416,6 @@ def trouver_fixture_oddspapi(home_cherche, away_cherche, fixtures_oddspapi):
 
 
 def get_market_names():
-    global MARKET_NAMES_CACHE
     if MARKET_NAMES_CACHE:
         return MARKET_NAMES_CACHE
     try:

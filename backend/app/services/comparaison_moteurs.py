@@ -32,7 +32,7 @@ if _RACINE_DEPOT not in sys.path:
 
 from moteur import cotes as mcotes  # noqa: E402
 from moteur.config import Config  # noqa: E402
-from moteur.features import Historique, construire_features, en_datetime  # noqa: E402
+from moteur.features import Historique, construire_features  # noqa: E402
 from moteur.modeles.registre import predire_match  # noqa: E402
 
 from app.services.historique import charger_matchs
