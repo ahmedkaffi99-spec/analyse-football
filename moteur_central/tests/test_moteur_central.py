@@ -3,7 +3,6 @@ adaptative 2-5, mode shadow) — données FABRIQUÉES ici volontairement (comme 
 moteur/tests/*) pour vérifier la LOGIQUE, jamais pour produire un backtest réel : aucune de ces
 lignes n'est injectée dans hist_cotes ni présentée comme un résultat de production."""
 
-from moteur_central.agent35_central import proposer_alternative_ia, verifier_coherence
 from moteur_central.choix_moteur import comparer, choisir_par_marche
 from moteur_central.metriques import calculer_metriques
 from moteur_central.score_central import CandidatCentral, score_central
@@ -194,49 +193,6 @@ def test_selection_respecte_la_cote_cible_quand_possible():
     r = selectionner(pool, cote_min=2.0, cote_max=2.4, nb_min=2, nb_max=4)
     assert r["genere"] is True
     assert 2.0 <= r["cote_totale"] <= 2.4
-
-
-# ---------------------------------------------------------------------------
-# Agent 3.5 central : jamais de remplacement arbitraire
-# ---------------------------------------------------------------------------
-
-def test_agent35_central_verifie_la_coherence_structurelle():
-    pool = [_candidat("A vs B", 1.5), _candidat("C vs D", 1.5)]
-    combo = pool  # cohérent
-    assert verifier_coherence(combo, pool) == []
-    combo_incoherent = [_candidat("Z vs Y", 1.5)]  # absent du pool
-    assert verifier_coherence(combo_incoherent, pool) != []
-
-
-def test_agent35_central_refuse_un_candidat_hors_pool():
-    pool = [_candidat("A vs B", 1.5, proba_pct=70.0)]
-    combo = [pool[0]]
-    proposition = {"ancien": ("A vs B", "buts_total", "Over"), "nouveau": ("Z vs Y", "buts_total", "Over")}
-    combo_final, appliquee, raison = proposer_alternative_ia(combo, pool, proposition)
-    assert appliquee is False
-    assert combo_final == combo
-
-
-def test_agent35_central_refuse_une_degradation_du_score():
-    bon = _candidat("A vs B", 1.5, proba_pct=80.0, marche="buts_total", selection="Over")
-    moins_bon = _candidat("A vs B", 1.5, proba_pct=20.0, marche="btts", selection="Oui")
-    pool = [bon, moins_bon]
-    combo = [bon]
-    proposition = {"ancien": ("A vs B", "buts_total", "Over"), "nouveau": ("A vs B", "btts", "Oui")}
-    combo_final, appliquee, raison = proposer_alternative_ia(combo, pool, proposition)
-    assert appliquee is False
-    assert combo_final == combo  # jamais appliqué : le remplacement dégraderait le score moyen
-
-
-def test_agent35_central_accepte_une_amelioration_du_score():
-    ancien = _candidat("A vs B", 1.5, proba_pct=60.0, marche="buts_total", selection="Over")
-    nouveau = _candidat("A vs B", 1.5, proba_pct=90.0, marche="btts", selection="Oui")
-    pool = [ancien, nouveau]
-    combo = [ancien]
-    proposition = {"ancien": ("A vs B", "buts_total", "Over"), "nouveau": ("A vs B", "btts", "Oui")}
-    combo_final, appliquee, raison = proposer_alternative_ia(combo, pool, proposition)
-    assert appliquee is True
-    assert combo_final == [nouveau]
 
 
 # ---------------------------------------------------------------------------

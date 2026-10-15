@@ -11,11 +11,14 @@ RÈGLES ABSOLUES :
   analyser_et_envoyer.py, runs.py, persistance.py et models.py, eux, ne l'importent jamais.
   Importer ce fichier ne déclenche AUCUN appel réseau : seule capturer_api_football_adapte()
   en fait, et seulement si on l'appelle explicitement (ou si FOURNISSEUR_COTES=api_football).
-- Réutilise les mappings canoniques déjà validés de shadow_capture.py (MAPPING_API_FOOTBALL,
-  CATEGORIES_ODDSPAPI, bookmaker 1xBet id=11, _normaliser_selection_api_football) — jamais
-  dupliqués ni réécrits ici.
+- Les mappings canoniques (MAPPING_API_FOOTBALL, CATEGORIES_ODDSPAPI, bookmaker 1xBet id=11,
+  _normaliser_selection_api_football) vivaient dans bet_agent/shadow_capture.py (module de
+  capture OddsPapi/API-Football en parallèle, 09/10/2026) — rapatriés ICI le 15/10/2026
+  (simplification : OddsPapi est totalement retiré de la production depuis le 13/10/2026,
+  shadow_capture.py n'avait donc plus aucune raison d'exister à part porter ces mappings
+  encore utiles). Plus aucune fonction de capture réseau OddsPapi dans ce fichier.
 - Ne traduit JAMAIS un marché absent vers un marché différent : HANDICAP_EUROPEEN n'a pas
-  d'équivalent API-Football (confirmé par 2 tests réels, voir shadow_capture.py) et n'est
+  d'équivalent API-Football (confirmé par 2 tests réels) et n'est
   JAMAIS simulé à partir de HANDICAP_ASIATIQUE — invariant vérifié par construction (voir
   _NOMS_ODDSPAPI_PAR_CATEGORIE ci-dessous, qui exclut explicitement ce cas) et par test.
 - Une correspondance ambiguë (même catégorie+ligne+sélection avec deux cotes différentes
@@ -42,13 +45,81 @@ planter, mais avec une perte d'information réelle sur le handicap. À corriger 
 remplacement effectif d'OddsPapi, par exemple via un test réel confirmant la bonne convention
 de signe à appliquer pour fusionner les deux sélections d'une même ligne."""
 
+import re
 import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-from shadow_capture import (API_FOOTBALL_BASE, API_FOOTBALL_BOOKMAKER_1XBET, API_FOOTBALL_KEY,
-                           CATEGORIES_ODDSPAPI, MAPPING_API_FOOTBALL,
-                           _normaliser_selection_api_football, maintenant_utc)
+API_FOOTBALL_KEY = os.getenv("API_FOOTBALL_KEY")
+API_FOOTBALL_BASE = "https://v3.football.api-sports.io"
+API_FOOTBALL_BOOKMAKER_1XBET = 11  # confirmé par appel réel le 09/10/2026, jamais supposé
+
+
+def maintenant_utc():
+    return datetime.now(timezone.utc)
+
+
+# ============================================================
+# IDENTITÉS CANONIQUES DE MARCHÉ — jamais devinées par ressemblance de nom (rapatrié de
+# bet_agent/shadow_capture.py, voir docstring ci-dessus).
+# ============================================================
+
+CATEGORIES_ODDSPAPI = {
+    "Full Time Result": "1X2",
+    "Double Chance Full Time": "DOUBLE_CHANCE",
+    "Asian Handicap": "HANDICAP_ASIATIQUE",
+    "European Handicap": "HANDICAP_EUROPEEN",
+    "Over Under Full Time": "BUTS_TOTAL",
+    "Over Under Team 1": "BUTS_EQUIPE_DOM",
+    "Over Under Team 2": "BUTS_EQUIPE_EXT",
+    "Both Teams To Score": "BTTS",
+    "Corners - Over Under Full Time": "CORNERS_TOTAL",
+    "Yellow Cards - Over Under Full Time": "CARTONS_TOTAL",
+    "Shots - Over Under Full Time": "TIRS_TOTAL",
+}
+
+# nom de pari API-Football EXACT (voir le test réel du 09/10/2026) -> catégorie canonique.
+# Pas d'entrée pour HANDICAP_EUROPEEN : confirmé par le test réel du 09/10/2026 (3 matchs)
+# qu'API-Football n'expose AUCUN pari de handicap à 3 voies pour 1xBet — volontairement
+# laissé sans correspondance, jamais assimilé à l'Asian Handicap (demande explicite du
+# 10/10/2026 : "ne pas considérer l'Asian Handicap comme équivalent à l'European Handicap").
+MAPPING_API_FOOTBALL = {
+    "Match Winner": "1X2",
+    "Double Chance": "DOUBLE_CHANCE",
+    "Asian Handicap": "HANDICAP_ASIATIQUE",
+    "Goals Over/Under": "BUTS_TOTAL",
+    "Total - Home": "BUTS_EQUIPE_DOM",
+    "Total - Away": "BUTS_EQUIPE_EXT",
+    "Both Teams Score": "BTTS",
+    "Corners Over Under": "CORNERS_TOTAL",
+    "Yellow Over/Under": "CARTONS_TOTAL",
+    "Total Shots": "TIRS_TOTAL",
+}
+
+_RE_LIGNE = re.compile(r"([+-]?\d+(?:\.\d+)?)")
+
+
+def _normaliser_selection_api_football(categorie, valeur_brute):
+    """(selection_canonique, ligne) ou (None, None) si non reconnu — jamais deviné."""
+    if categorie == "1X2":
+        return {"Home": "1", "Draw": "X", "Away": "2"}.get(valeur_brute), None
+    if categorie == "DOUBLE_CHANCE":
+        return {"Home/Draw": "1X", "Home/Away": "12", "Draw/Away": "2X"}.get(valeur_brute), None
+    if categorie == "HANDICAP_ASIATIQUE":
+        m = re.match(r"^(Home|Away)\s+([+-]?\d+(?:\.\d+)?)$", valeur_brute)
+        if not m:
+            return None, None
+        return ("1" if m.group(1) == "Home" else "2"), float(m.group(2))
+    if categorie in ("BUTS_TOTAL", "BUTS_EQUIPE_DOM", "BUTS_EQUIPE_EXT", "CORNERS_TOTAL",
+                     "CARTONS_TOTAL", "TIRS_TOTAL"):
+        m = re.match(r"^(Over|Under)\s+(\d+(?:\.\d+)?)$", valeur_brute)
+        if not m:
+            return None, None
+        return m.group(1), float(m.group(2))
+    if categorie == "BTTS":
+        return ({"Yes": "Yes", "No": "No"}).get(valeur_brute), None
+    return None, None
+
 
 # Inverse de CATEGORIES_ODDSPAPI (catégorie canonique -> nom de marché style OddsPapi) —
 # EXCLUT explicitement HANDICAP_EUROPEEN : API-Football n'a jamais produit cette catégorie
@@ -57,7 +128,7 @@ from shadow_capture import (API_FOOTBALL_BASE, API_FOOTBALL_BOOKMAKER_1XBET, API
 _NOMS_ODDSPAPI_PAR_CATEGORIE = {cat: nom for nom, cat in CATEGORIES_ODDSPAPI.items()
                                 if cat != "HANDICAP_EUROPEEN"}
 
-CATEGORIES_SANS_LIGNE = {"1X2", "DOUBLE_CHANCE", "BTTS"}  # même liste que shadow_capture.py
+CATEGORIES_SANS_LIGNE = {"1X2", "DOUBLE_CHANCE", "BTTS"}
 
 
 @dataclass
@@ -240,11 +311,9 @@ def construire_resultat(data, fixture_id, statut_http, erreur_http, recu_le_utc,
 # ============================================================
 
 def capturer_api_football_adapte(fixture_id_api_football, ttl_secondes=90):
-    """1 appel réel GET /odds?fixture=&bookmaker=11 (même endpoint que
-    shadow_capture.capturer_api_football) + construit un ResultatAdaptateur. Jamais de retry
-    automatique ici (symétrique du choix déjà fait pour OddsPapi en budget strict — voir
-    shadow_capture.capturer_oddspapi_sans_retry) : en cas de 429, l'appelant décide s'il
-    réessaie plus tard, ce fichier ne le fait jamais lui-même."""
+    """1 appel réel GET /odds?fixture=&bookmaker=11 + construit un ResultatAdaptateur. Jamais
+    de retry automatique ici : en cas de 429, l'appelant décide s'il réessaie plus tard, ce
+    fichier ne le fait jamais lui-même."""
     import requests  # import local : aucun appel réseau tant que cette fonction n'est pas appelée
 
     recu_le = maintenant_utc()
