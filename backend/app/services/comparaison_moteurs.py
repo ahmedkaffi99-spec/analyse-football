@@ -66,6 +66,8 @@ MARCHE_MOTEUR_PAR_CATEGORIE = {
     ("Total Cartons Équipe 2", "over"): ("cartons_equipe2", "over"),
     ("Total Cartons Équipe 2", "under"): ("cartons_equipe2", "under"),
     ("Total Tirs", "over"): ("tirs_total", "over"), ("Total Tirs", "under"): ("tirs_total", "under"),
+    ("Total Tirs Cadrés", "over"): ("tirs_cadres_total", "over"),
+    ("Total Tirs Cadrés", "under"): ("tirs_cadres_total", "under"),
 }
 
 
