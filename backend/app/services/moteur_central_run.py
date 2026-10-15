@@ -34,7 +34,19 @@ _exclure_bet_agent_marches_surdisperses() retire donc du pool central tout candi
 D'ORIGINE bet_agent sur ces marchés précis (jamais les candidats d'origine "moteur", qui
 restent les seuls éligibles pour tirs/tirs cadrés/corners/cartons) — si aucune prédiction
 moteur n'existe pour ce match (historique insuffisant), ce marché est simplement absent de ce
-match pour ce run, jamais remplacé par le calcul Poisson déjà démontré peu fiable ici."""
+match pour ce run, jamais remplacé par le calcul Poisson déjà démontré peu fiable ici.
+
+CORRECTIF DU CORRECTIF (vérification pas-à-pas du run 146, 15/10/2026, demande explicite :
+"code par code, fonction par fonction, donnée par donnée, calcul par calcul") : le filtre
+ci-dessus comparait `candidat_central.marche` aux préfixes français ("Total Tirs"...), mais
+`.marche` est en réalité `marche_affichage` (voir decision_centrale.construire_candidats) —
+le nom BRUT du bookmaker avec la ligne (ex: "Shots - Over Under Full Time (26.5)"), jamais le
+libellé français. Le log du run 146 le prouve : aucune ligne "candidat(s) bet_agent (Poisson)
+retiré(s)" n'a été imprimée malgré la présence de "Total Tirs"/"Total Corners"/"Total
+Cartons" dans plusieurs matchs — `avant_exclusion == len(pool_central)`, l'exclusion n'a
+retiré STRICTEMENT RIEN. Corrigé en comparant `candidat_central.categorie` (le libellé
+français réel, ex: "Total Tirs" — ajouté au contrat CandidatCentral et renseigné par
+construire_candidats depuis pick["categorie"], jamais deviné) au lieu de `.marche`."""
 
 from pathlib import Path
 import os
@@ -68,8 +80,12 @@ COTE_MAX_CENTRAL = float(os.getenv("MOTEUR_CENTRAL_COTE_MAX") or 3.0)
 MEDAILLES_CENTRAL = ("🥇", "🥈", "🥉", "4️⃣", "5️⃣")
 
 # Marchés où bet_agent utilise Poisson (voir docstring du module) alors que leur variance
-# réelle est surdispersée — préfixes de candidat_central.marche (ex: "Total Tirs (28.5)"),
-# couvrant aussi les variantes par équipe (ex: "Total Cartons Équipe 1 (1.5)").
+# réelle est surdispersée — préfixes de candidat_central.categorie (ex: "Total Tirs", voir
+# pick["categorie"] dans bet_agent/analyser_et_envoyer.py), couvrant aussi les variantes par
+# équipe (ex: "Total Cartons Équipe 1") et cadrés (ex: "Total Tirs Cadrés" via le préfixe
+# "Total Tirs"). JAMAIS candidat_central.marche (voir correctif du 15/10/2026 ci-dessus) :
+# ce champ porte le nom BRUT du bookmaker (ex: "Shots - Over Under Full Time (26.5)"), pas
+# le libellé français, donc ne correspondrait jamais à ces préfixes.
 PREFIXES_MARCHES_SURDISPERSES_BET_AGENT = ("Total Tirs", "Total Corners", "Total Cartons",
                                           "Total Fautes", "Total Hors-jeux")
 
@@ -77,10 +93,12 @@ PREFIXES_MARCHES_SURDISPERSES_BET_AGENT = ("Total Tirs", "Total Corners", "Total
 def _exclure_bet_agent_marches_surdisperses(pool_central):
     """Retire du pool central tout candidat d'origine bet_agent sur un marché surdispersé
     (voir docstring du module) — les candidats d'origine "moteur" (binomiale négative,
-    correcte pour ces marchés) sur ces mêmes marchés restent, eux, dans le pool."""
+    correcte pour ces marchés) sur ces mêmes marchés restent, eux, dans le pool. Un candidat
+    sans categorie connue (jamais censé arriver, voir construire_candidats) n'est jamais
+    exclu par cette règle plutôt que supposé surdispersé."""
     return [c for c in pool_central
-           if not (c.moteur_responsable == "bet_agent"
-                   and c.marche.startswith(PREFIXES_MARCHES_SURDISPERSES_BET_AGENT))]
+           if not (c.moteur_responsable == "bet_agent" and c.categorie
+                   and c.categorie.startswith(PREFIXES_MARCHES_SURDISPERSES_BET_AGENT))]
 
 
 def _profil_central(indice):

@@ -19,6 +19,10 @@ class CandidatCentral:
     cote: float
     moteur_responsable: str                      # "bet_agent" | "moteur"
     proba_pct: float
+    categorie: str | None = None                  # libellé FR du marché (pick["categorie"], ex: "Total Tirs")
+                                                  # — distinct de `marche` (nom brut du bookmaker, ex: "Shots -
+                                                  # Over Under Full Time (26.5)") : voir moteur_central_run.py,
+                                                  # _exclure_bet_agent_marches_surdisperses() en dépend.
     competition: str | None = None
     proba_calibree_pct: float | None = None
     edge_pct: float | None = None
