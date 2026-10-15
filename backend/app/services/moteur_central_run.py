@@ -16,7 +16,25 @@ génération dynamique de bet_agent/analyser_et_envoyer.py du 11/10/2026, réuti
 ae.nb_coupons_dynamique pour dimensionner le nombre de coupons au volume réel de matchs
 éligibles — jamais un chiffre fixé à l'avance). Un échec à partir du 2e coupon (pool restant
 épuisé) n'est PAS une erreur : il arrête simplement la boucle, les coupons déjà composés
-restent valides et sont retournés."""
+restent valides et sont retournés.
+
+EXCLUSION DES MARCHÉS SURDISPERSÉS CALCULÉS PAR bet_agent (15/10/2026, demande explicite :
+"calcul à part chaque marché, tu me dis 10 modèles tu as injecté" — chaque marché doit être
+calculé par le modèle qui lui correspond, pas un seul calcul générique pour tout). Constat
+réel (run 144/145, 14-15/10/2026) : les coupons convergeaient presque tous vers "Total Tirs
+Under", avec un taux de réussite faible (1/6 coupons déjà tranchés) malgré un edge apparent
+élevé. Cause trouvée dans bet_agent/analyser_et_envoyer.py : proba_over() applique une loi de
+POISSON à TOUS les marchés "Total X", y compris tirs/corners/cartons/fautes/hors-jeux — alors
+que moteur/modeles/registre.py (modèles 8-10) utilise délibérément une loi BINOMIALE NÉGATIVE
+pour ces mêmes marchés, documentée explicitement comme nécessaire à cause de leur
+surdispersion réelle (variance mesurée > moyenne, contrairement aux buts). Poisson sous-estime
+cette variance et gonfle artificiellement l'edge apparent du côté "Under" — c'est la cause
+structurelle du biais observé, pas la malchance.
+_exclure_bet_agent_marches_surdisperses() retire donc du pool central tout candidat
+D'ORIGINE bet_agent sur ces marchés précis (jamais les candidats d'origine "moteur", qui
+restent les seuls éligibles pour tirs/tirs cadrés/corners/cartons) — si aucune prédiction
+moteur n'existe pour ce match (historique insuffisant), ce marché est simplement absent de ce
+match pour ce run, jamais remplacé par le calcul Poisson déjà démontré peu fiable ici."""
 
 from pathlib import Path
 import os
@@ -48,6 +66,21 @@ COTE_MIN_CENTRAL = float(os.getenv("MOTEUR_CENTRAL_COTE_MIN") or 1.3)
 COTE_MAX_CENTRAL = float(os.getenv("MOTEUR_CENTRAL_COTE_MAX") or 3.0)
 
 MEDAILLES_CENTRAL = ("🥇", "🥈", "🥉", "4️⃣", "5️⃣")
+
+# Marchés où bet_agent utilise Poisson (voir docstring du module) alors que leur variance
+# réelle est surdispersée — préfixes de candidat_central.marche (ex: "Total Tirs (28.5)"),
+# couvrant aussi les variantes par équipe (ex: "Total Cartons Équipe 1 (1.5)").
+PREFIXES_MARCHES_SURDISPERSES_BET_AGENT = ("Total Tirs", "Total Corners", "Total Cartons",
+                                          "Total Fautes", "Total Hors-jeux")
+
+
+def _exclure_bet_agent_marches_surdisperses(pool_central):
+    """Retire du pool central tout candidat d'origine bet_agent sur un marché surdispersé
+    (voir docstring du module) — les candidats d'origine "moteur" (binomiale négative,
+    correcte pour ces marchés) sur ces mêmes marchés restent, eux, dans le pool."""
+    return [c for c in pool_central
+           if not (c.moteur_responsable == "bet_agent"
+                   and c.marche.startswith(PREFIXES_MARCHES_SURDISPERSES_BET_AGENT))]
 
 
 def _profil_central(indice):
@@ -98,6 +131,12 @@ def executer_moteur_central(db, donnees, ae, cfg=None):
     candidats_ba, candidats_mo = construire_candidats(pool, comparaison, historique, cfg)
     choix = choisir_par_marche(historique["bet_agent"], historique["moteur"], cfg.n_min_decision_moteur)
     pool_central = construire_pool_central(candidats_mo, candidats_ba, choix)
+    avant_exclusion = len(pool_central)
+    pool_central = _exclure_bet_agent_marches_surdisperses(pool_central)
+    if avant_exclusion != len(pool_central):
+        print(f"   🧮 [Moteur central] {avant_exclusion - len(pool_central)} candidat(s) bet_agent "
+              f"(Poisson) retiré(s) sur des marchés surdispersés (tirs/corners/cartons/fautes/"
+              f"hors-jeux) — seules les prédictions moteur (binomiale négative) y restent éligibles.")
 
     nb_matchs_eligibles = len({c.match for c in pool_central})
     nb_coupons_cible = ae.nb_coupons_dynamique(nb_matchs_eligibles)
