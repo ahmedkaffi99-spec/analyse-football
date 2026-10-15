@@ -22,14 +22,11 @@ import requests
 import urllib3
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as DelaiDepasse, as_completed
 
-import collecte_donnees as cd  # uniquement pour NB_MATCHS_MAX (plafond de jambes du profil)
-
 # Voir collecte_donnees.py pour le détail : OddsPapi est intercepté par un boîtier réseau
 # (Fortinet) qui re-signe son certificat avec une CA non reconnue — désactivé uniquement
 # pour ce domaine précis (déjà intercepté de toute façon), jamais pour Telegram/OpenRouter.
 from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
-from unidecode import unidecode
 
 load_dotenv("envi.local")
 

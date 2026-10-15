@@ -40,8 +40,6 @@ from datetime import datetime, timezone
 
 from moteur import contrat as mcontrat
 from moteur import cotes as mcotes
-from moteur.features import VERSION_FEATURES
-from moteur.modeles.registre import VERSION_MODELES
 
 CLES_SCHEMA_COMMUN = (
     "source", "match_id", "model", "model_name", "market", "line", "selection",
