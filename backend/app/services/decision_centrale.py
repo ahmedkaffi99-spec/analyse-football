@@ -70,10 +70,11 @@ def construire_candidats(pool, comparaison, historique_par_moteur_et_marche, cfg
                 continue
             deja_vus.add(cle)
             comp = comparaison_par_cle.get(cle)
+            categorie = pick.get("categorie")
 
             candidats_ba.append(CandidatCentral(
                 match=nom_match, marche=marche, selection=selection, cote=cote, moteur_responsable="bet_agent",
-                proba_pct=pick.get("proba_modele_pct") or 0.0, competition=c.get("competition"),
+                proba_pct=pick.get("proba_modele_pct") or 0.0, categorie=categorie, competition=c.get("competition"),
                 edge_pct=pick.get("edge_pct"),
                 historique_marche=_metriques_marche(historique_par_moteur_et_marche["bet_agent"], marche, cfg.n_min_fiable),
                 fixture_id_oddspapi=c.get("fixture_id_oddspapi")))
@@ -81,7 +82,7 @@ def construire_candidats(pool, comparaison, historique_par_moteur_et_marche, cfg
             if comp and comp.get("proba_moteur_pct") is not None:
                 candidats_mo.append(CandidatCentral(
                     match=nom_match, marche=marche, selection=selection, cote=cote, moteur_responsable="moteur",
-                    proba_pct=comp["proba_moteur_pct"], competition=c.get("competition"),
+                    proba_pct=comp["proba_moteur_pct"], categorie=categorie, competition=c.get("competition"),
                     edge_pct=comp.get("edge_moteur_pct"),
                     historique_marche=_metriques_marche(historique_par_moteur_et_marche["moteur"], marche, cfg.n_min_fiable),
                     fixture_id_oddspapi=c.get("fixture_id_oddspapi")))
