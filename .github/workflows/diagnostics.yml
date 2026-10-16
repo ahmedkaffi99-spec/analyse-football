@@ -18,6 +18,7 @@ on:
           - ia
           - modeles-openrouter-gratuits
           - cotes-match
+          - backtest-k-buts
         default: marches-disponibles
       date_debut:
         description: "Date cible de début (AAAA-MM-JJ) — utilisé seulement par 'marches-disponibles'"
@@ -38,9 +39,11 @@ permissions:
 jobs:
   diagnostic:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 45
     env:
       PYTHONUNBUFFERED: "1"
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       ODDSPAPI_KEY: ${{ secrets.ODDSPAPI_KEY }}
       API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
       API_FOOTBALL_QUOTA_PAR_MINUTE: ${{ secrets.API_FOOTBALL_QUOTA_PAR_MINUTE }}
@@ -140,6 +143,53 @@ jobs:
                   for m in sorted(marches_buts, key=lambda m: (m['marche'], m['handicap'] or 0)):
                       sels = ', '.join(f\"{s['selection']}@{s['cote']}\" for s in m['selections'])
                       print(f\"   {m['marche']:25s} ligne={m['handicap']!s:6s} {sels}\")
+          "
+
+      - name: Backtest réel — meilleur shrinkage_buts (k) sur le marché buts, 5 grands championnats
+        # Réutilise EXACTEMENT moteur/backtest.py (walk-forward, aucune fuite du futur) sur les
+        # vrais matchs en base (historique.charger_matchs) — jamais une estimation manuelle.
+        # Isole le marché "buts_total" (Over/Under but du match) pour chaque valeur de k testée.
+        # Aucune cote historique en base -> seul le Brier/log_loss est mesuré (pas de ROI), ce
+        # qui suffit à comparer les k entre eux : le meilleur est celui qui prédit le mieux les
+        # buts réellement marqués, pas celui qui "gagnerait le plus de paris".
+        if: inputs.verification == 'backtest-k-buts'
+        working-directory: backend
+        run: |
+          python -c "
+          from datetime import datetime, timezone
+
+          from app.database import SessionLocal
+          from app.services.historique import charger_matchs
+          from moteur.backtest import generer_lignes, metriques
+          from moteur.config import Config
+
+          COMPETITIONS = {39: 'Premier League', 61: 'Ligue 1', 78: 'Bundesliga', 135: 'Serie A', 140: 'La Liga'}
+
+          with SessionLocal() as db:
+              matchs = []
+              for comp_id in COMPETITIONS:
+                  matchs.extend(charger_matchs(db, competition_id=comp_id))
+
+          print(f'{len(matchs)} matchs chargés (5 grands championnats, historique complet en base).')
+          debut = min(m['date'] for m in matchs)
+          fin = datetime.now(timezone.utc).isoformat()
+
+          print(f'{\"k (shrinkage_buts)\":>20s} {\"n_predictions\":>14s} {\"brier\":>8s} {\"log_loss\":>10s} {\"win_rate\":>10s}')
+          resultats = []
+          for k in (3, 5, 8, 10, 15, 20, 30, 50):
+              cfg = Config.depuis_env(shrinkage_buts=float(k))
+              lignes = generer_lignes(matchs, {}, cfg, debut, fin, lignes={'buts_total': [1.5, 2.5, 3.5]})
+              m = metriques(lignes, cfg, paris=False)
+              resultats.append((k, m))
+              print(f'{k:>20} {m[\"n_predictions\"]:>14} {m[\"brier\"] if m[\"brier\"] is not None else float(\"nan\"):>8.4f} '
+                    f'{m[\"log_loss\"] if m[\"log_loss\"] is not None else float(\"nan\"):>10.4f} '
+                    f'{m[\"win_rate\"] if m[\"win_rate\"] is not None else float(\"nan\"):>10.4f}')
+
+          valides = [(k, m) for k, m in resultats if m['brier'] is not None]
+          meilleur = min(valides, key=lambda km: km[1]['brier']) if valides else None
+          if meilleur:
+              print(f'\\n=== Meilleur k (Brier le plus bas) : k={meilleur[0]} -> Brier={meilleur[1][\"brier\"]} '
+                    f'(sur {meilleur[1][\"n_predictions\"]} prédictions buts_total) ===')
           "
 
       - name: IA (Groq, Gemini, OpenRouter)
