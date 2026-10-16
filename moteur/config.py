@@ -40,7 +40,8 @@ class Config:
     # de rentabilité, proba_min ne sert plus qu'à exclure une proba strictement négative
     # (jamais possible en pratique, 0.0 est donc un no-op assumé).
     edge_min: float = 0.0
-    edge_max: float = 0.25            # au-delà : suspect (erreur de donnée) plutôt que value
+    edge_max: float = 0.20            # au-delà : suspect (erreur de donnée) plutôt que value —
+    # abaissé de 0.25 à 0.20 (16/10/2026, demande explicite)
     cote_min: float = 1.15
     cote_max: float = 2.00
     calibration_min_n: int = 100      # prédictions hors échantillon pour faire confiance à la calibration
