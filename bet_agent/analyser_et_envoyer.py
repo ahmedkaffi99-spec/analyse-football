@@ -1766,7 +1766,17 @@ def appel_llm_petites_taches(prompt, max_tokens=300):
     """Pour les PETITES tâches (second avis, vérification légère, résumé court) : va directement
     à la course Groq/Gemini/OpenRouter gratuits, sans passer par DeepSeek en priorité — demande
     explicite du 27/09/2026 : réserver le solde payant de DeepSeek à la décision principale du
-    coupon, et donner du vrai travail (pas juste un rôle de secours) à Groq/Gemini/OpenRouter."""
+    coupon, et donner du vrai travail (pas juste un rôle de secours) à Groq/Gemini/OpenRouter.
+
+    N'est PLUS utilisée par _tache_analyse/_tache_pronostic/_tache_redaction depuis le
+    16/10/2026 (demande explicite : "utilise l'API DeepSeek") — constat réel : en mode
+    moteur_central (seul mode de production depuis le 11/10/2026), la sélection des paris est
+    100% Python/statistique (aucun LLM), donc la "décision principale du coupon" que cette
+    réservation visait à protéger n'appelle plus jamais DeepSeek — son solde payant restait
+    intégralement inutilisé alors que la rédaction Telegram (ce qui échoue réellement :
+    OpenRouter qwen 404, Gemini 429) tournait sur des modèles gratuits saturés. Conservée ici
+    pour les tâches qui restent volontairement légères (second avis de l'orchestrateur
+    agentique, agent_strategie.py — voir ses propres appels)."""
     return appel_ia(prompt, max_tokens, json_attendu=False, prioriser_deepseek=False)
 
 
@@ -1911,7 +1921,7 @@ def _tache_analyse(donnees_prompt, nb_matchs):
     )
     print("   🧠 [Tâche 1/3] Analyse des sélections...")
     try:
-        return appel_llm_petites_taches(prompt, max_tokens=2000) or ""
+        return appel_llm(prompt, max_tokens=2000) or ""
     except Exception as e:
         print(f"   ⚠️ Analyse IA indisponible ({_cause(e)}) — on continue sans.")
         return ""
@@ -1932,7 +1942,7 @@ def _tache_pronostic(donnees_prompt, analyse_texte):
     )
     print("   🎯 [Tâche 2/3] Pronostic final...")
     try:
-        return appel_llm_petites_taches(prompt, max_tokens=2000) or ""
+        return appel_llm(prompt, max_tokens=2000) or ""
     except Exception as e:
         print(f"   ⚠️ Pronostic IA indisponible ({_cause(e)}) — on continue sans.")
         return ""
@@ -1990,7 +2000,7 @@ def _tache_redaction(donnees_prompt, pronostic_texte, nb_jambes_attendues):
         if budget_ia_epuise():
             break
         try:
-            candidat = appel_llm_petites_taches(prompt, max_tokens=3000)
+            candidat = appel_llm(prompt, max_tokens=3000)
         except Exception as e:
             print(f"      ⚠️ Tentative {tentative + 1}/3 échouée : {e}")
             pause_ia(5)
