@@ -34,7 +34,11 @@ class Config:
     rho_dixon_coles: float = 0.0      # 0 = Poisson indépendant ; à estimer par backtest
     buts_max: int = 10
     # Sélection
-    proba_min: float = 0.70
+    proba_min: float = 0.0             # plancher supprimé (16/10/2026, demande explicite) —
+    # 0.70 ignorait tout candidat valable à edge positif mais proba < 70% (voir moteur/
+    # selection.py:filtrer) ; sans ce plancher, edge_min/edge_max restent les seuls filtres
+    # de rentabilité, proba_min ne sert plus qu'à exclure une proba strictement négative
+    # (jamais possible en pratique, 0.0 est donc un no-op assumé).
     edge_min: float = 0.0
     edge_max: float = 0.25            # au-delà : suspect (erreur de donnée) plutôt que value
     cote_min: float = 1.15
