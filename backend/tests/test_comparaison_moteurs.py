@@ -150,3 +150,28 @@ class TestCouvertureElargie13Octobre2026:
         }
         for cle, valeur in anciennes.items():
             assert MARCHE_MOTEUR_PAR_CATEGORIE[cle] == valeur
+
+
+class TestCouvertureFautes16Octobre2026:
+    """Demande explicite : "pourquoi tu exclus les marchés corners/tirs/cartons etc — ajoute
+    chaque marché à un modèle". "Total Fautes" était exclu du pool central (bet_agent/Poisson,
+    moteur_central_run.py, 15/10/2026) sans AUCUN modèle moteur de remplacement — ce marché
+    disparaissait purement et simplement des coupons. Modèle 11 (fautes) ajouté dans
+    moteur/modeles/registre.py, même calcul générique que corners/cartons/tirs."""
+
+    def test_total_fautes_mappe(self):
+        assert _marche_moteur("Total Fautes", "Over") == ("fautes_total", "over")
+        assert _marche_moteur("Total Fautes", "Under") == ("fautes_total", "under")
+
+    def test_marches_pre_existants_toujours_mappes(self):
+        # Non-régression : l'ajout de "fautes" ne doit jamais retirer un mapping déjà validé.
+        assert _marche_moteur("Total Tirs", "Over") == ("tirs_total", "over")
+        assert _marche_moteur("Total Cartons", "Over") == ("cartons_total", "over")
+
+    def test_marche_fautes_avec_historique_suffisant_produit_une_vraie_comparaison(self):
+        with SessionLocal() as db:
+            _peupler_historique_suffisant(db)
+            pool = {"H vs A": [_candidat("H vs A", _pick("Total Fautes", "Over", 1.9, 55.0, 2.0, ligne=22.5))]}
+            resultats = comparer_candidats(db, pool)
+        r = resultats[0]
+        assert r["decision_moteur"] != "marché non mappé (voir MARCHE_MOTEUR_PAR_CATEGORIE)"

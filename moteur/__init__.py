@@ -1,5 +1,5 @@
 """Moteur d'analyse statistique football : données historiques -> features chronologiques ->
-10 modèles -> probabilités -> calibration -> cotes/edge -> filtres -> corrélation -> coupon ->
+11 modèles -> probabilités -> calibration -> cotes/edge -> filtres -> corrélation -> coupon ->
 backtest -> rapport.
 
 Code pur (aucun appel réseau, aucune base) : la collecte et la persistance vivent dans le

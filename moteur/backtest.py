@@ -1,6 +1,6 @@
 """Backtest chronologique (walk-forward), sans aucune information future :
 1. features calculées à la date du match (features.Historique ne voit que le passé) ;
-2. prédiction des 10 modèles ;
+2. prédiction des 11 modèles ;
 3. calibration ajustée UNIQUEMENT sur les prédictions des mois précédents ;
 4. cote : dernier relevé STRICTEMENT antérieur au coup d'envoi (sinon : pas de ROI pour cette
    prédiction, seulement Brier/calibration) ;

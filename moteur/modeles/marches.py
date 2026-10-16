@@ -18,7 +18,8 @@ Convention des marchés (marche, ligne, selection) :
 """
 
 ISSUES = ("gagne", "demi_gagne", "rembourse", "demi_perdu", "perdu")
-STATS_PAR_FAMILLE = {"corners": "corners", "cartons": "yellow_cards", "tirs": "shots", "tirs_cadres": "shots_on_target"}
+STATS_PAR_FAMILLE = {"corners": "corners", "cartons": "yellow_cards", "tirs": "shots", "tirs_cadres": "shots_on_target",
+                     "fautes": "fouls"}
 
 
 def _signe(marge):

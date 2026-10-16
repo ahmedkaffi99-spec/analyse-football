@@ -159,6 +159,22 @@ def test_pas_de_modele_comptage_sans_statistiques():
     assert {p.modele for p in preds} == set(range(1, 8))
 
 
+def test_modele_fautes_present_et_valide():
+    # 16/10/2026 : modèle 11 (fautes), même calcul générique (comptage_attendu) que
+    # corners/cartons/tirs — ajouté parce que l'exclusion des candidats bet_agent (Poisson) sur
+    # ce marché (moteur_central_run.py, 15/10/2026) n'avait aucun modèle moteur de remplacement.
+    matchs, _ = championnat()
+    cible = matchs[200]
+    preds = predire_match(construire_features(cible, Historique(matchs)), CFG)
+    fautes = [p for p in preds if p.marche.startswith("fautes_")]
+    assert fautes  # le modèle produit bien des prédictions, pas seulement déclaré
+    assert {p.marche for p in fautes} == {"fautes_total", "fautes_equipe1", "fautes_equipe2"}
+    for p in fautes:
+        assert p.modele == 11
+        assert 0 <= p.probabilite <= 1
+        assert sum(p.issues.values()) == pytest.approx(1.0)
+
+
 def test_buts_attendus_suivent_les_forces_reelles():
     matchs, forces = championnat(n_equipes=8, saisons=(2023, 2024, 2025))
     hist = Historique(matchs)
@@ -174,11 +190,12 @@ def test_buts_attendus_suivent_les_forces_reelles():
 
 def test_issue_reelle():
     m = {"home_score": 2, "away_score": 1,
-         "stats": {"home": {"corners": 6, "yellow_cards": 2}, "away": {"corners": 4, "yellow_cards": 3}}}
+         "stats": {"home": {"corners": 6, "yellow_cards": 2, "fouls": 12}, "away": {"corners": 4, "yellow_cards": 3, "fouls": 11}}}
     assert issue_reelle(m, "resultat", None, "1") == "gagne"
     assert issue_reelle(m, "btts", None, "oui") == "gagne"
     assert issue_reelle(m, "corners_total", 9.5, "over") == "gagne"
     assert issue_reelle(m, "cartons_equipe2", 2.5, "over") == "gagne"
+    assert issue_reelle(m, "fautes_total", 22.5, "over") == "gagne"  # 12+11=23
     assert issue_reelle(m, "tirs_total", 20.5, "over") is None  # statistique absente : jamais inventée
 
 

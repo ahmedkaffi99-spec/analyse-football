@@ -1,4 +1,4 @@
-"""Comparaison PARALLÈLE bet_agent (production, Telegram) vs moteur/ (10 modèles formels,
+"""Comparaison PARALLÈLE bet_agent (production, Telegram) vs moteur/ (11 modèles formels,
 Dixon-Coles + binomiale négative) — demande explicite du 10/10/2026 : "faire fonctionner le
 nouveau moteur en parallèle du pipeline actuel, sans modifier le coupon Telegram".
 
@@ -15,8 +15,9 @@ RÈGLES ABSOLUES :
 - Si l'historique réel (hist_matchs) est insuffisant pour une équipe, le moteur est marqué
   indisponible pour CE candidat — jamais une probabilité inventée.
 - Seuls les marchés listés dans MARCHE_MOTEUR_PAR_CATEGORIE sont mappés (Total, Total Équipe
-  1/2, BTTS, Double Chance, Total Corners, Total Cartons [+ Équipe 1/2], Total Tirs — élargi le
-  13/10/2026) — un marché bet_agent non mappé est signalé tel quel, jamais deviné."""
+  1/2, BTTS, Double Chance, Total Corners, Total Cartons [+ Équipe 1/2], Total Tirs [+ Cadrés],
+  Total Fautes — élargi le 13/10/2026 puis le 16/10/2026) — un marché bet_agent non mappé est
+  signalé tel quel, jamais deviné."""
 
 import sys
 from pathlib import Path
@@ -68,6 +69,12 @@ MARCHE_MOTEUR_PAR_CATEGORIE = {
     ("Total Tirs", "over"): ("tirs_total", "over"), ("Total Tirs", "under"): ("tirs_total", "under"),
     ("Total Tirs Cadrés", "over"): ("tirs_cadres_total", "over"),
     ("Total Tirs Cadrés", "under"): ("tirs_cadres_total", "under"),
+    # Ajouté le 16/10/2026 (modèle 11, voir registre.py) : "fautes" avait un préfixe d'exclusion
+    # Poisson depuis le 15/10/2026 mais aucun modèle moteur de remplacement — ce marché
+    # disparaissait purement et simplement des coupons. "Hors-jeux" reste sans entrée ici :
+    # aucune statistique collectée dans hist_matchs, jamais un modèle inventé sur une donnée
+    # absente.
+    ("Total Fautes", "over"): ("fautes_total", "over"), ("Total Fautes", "under"): ("fautes_total", "under"),
 }
 
 
