@@ -76,6 +76,14 @@ on:
         description: "Moteur central uniquement : cote totale maximale visée pour CE run (vide = défaut, 3.0)"
         type: string
         default: ""
+      central_nb_coupons:
+        description: "Moteur central uniquement : force EXACTEMENT ce nombre de coupons pour CE run (vide = dynamique selon le nombre de matchs éligibles, voir nb_coupons_dynamique)"
+        type: string
+        default: ""
+      central_marches_autorises:
+        description: "Moteur central uniquement : restreint le pool aux categorie listées, séparées par une virgule (ex: \"Total,Total Équipe 1\") (vide = tous les marchés, défaut)"
+        type: string
+        default: ""
 
 concurrency:
   group: pipeline-quotidien
@@ -128,6 +136,8 @@ jobs:
       MOTEUR_CENTRAL_NB_JAMBES_MAX: ${{ inputs.central_nb_jambes_max }}
       MOTEUR_CENTRAL_COTE_MIN: ${{ inputs.central_cote_min }}
       MOTEUR_CENTRAL_COTE_MAX: ${{ inputs.central_cote_max }}
+      MOTEUR_CENTRAL_NB_COUPONS: ${{ inputs.central_nb_coupons }}
+      MOTEUR_CENTRAL_MARCHES_AUTORISES: ${{ inputs.central_marches_autorises }}
     steps:
       - uses: actions/checkout@v4
 

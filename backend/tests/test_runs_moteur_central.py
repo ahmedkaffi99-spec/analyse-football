@@ -250,3 +250,52 @@ class TestGenerationDynamiqueMultiCoupons:
         with SessionLocal() as db:
             coupons = list(db.scalars(select(Coupon).where(Coupon.run_id == run_id)))
             assert len(coupons) == 1
+
+
+class TestRunPonctuelNbCouponsEtMarchesForces:
+    """16/10/2026, demande explicite : "2 coupon et 5 par jambe et marché but total et but
+    equipe 1 seule" — MOTEUR_CENTRAL_NB_COUPONS/MOTEUR_CENTRAL_MARCHES_AUTORISES permettent de
+    contourner respectivement ae.nb_coupons_dynamique et le pool central complet pour UN run."""
+
+    def test_nb_coupons_force_ignore_la_dynamique(self):
+        # 20 matchs éligibles -> palier "20" de nb_coupons_dynamique = 5 coupons normalement ;
+        # MOTEUR_CENTRAL_NB_COUPONS="2" doit forcer exactement 2, jamais 5.
+        pool = _pool_n_matchs(20)
+        with SessionLocal() as db:
+            run = _run(db)
+            run_id = run.id
+            cd, ae = _faux_modules(pool)
+            with mock.patch.object(pipeline, "modules", return_value=(cd, ae, None)), \
+                    mock.patch.object(pipeline, "reinitialiser_caches"), \
+                    mock.patch("app.services.capture_historique.capturer_predictions", return_value=0), \
+                    mock.patch("app.services.moteur_central_run.NB_COUPONS_CENTRAL", "2"):
+                executer_run(run_id, moteur="central")
+        with SessionLocal() as db:
+            coupons = list(db.scalars(select(Coupon).where(Coupon.run_id == run_id)))
+            assert len(coupons) == 2
+
+    def test_marches_autorises_restreint_le_pool(self):
+        # Trois matchs : deux en "Total" (buts) — assez pour composer un coupon à 2 jambes —
+        # et un troisième en "Total Corners" seulement. MOTEUR_CENTRAL_MARCHES_AUTORISES=
+        # ("Total",) doit exclure ce dernier du pool central (jamais un coupon composé avec
+        # "Total Corners" alors que seul "Total" est autorisé pour ce run).
+        pool = {
+            "A vs B": [_candidat("A vs B", "Total", "Over", 1.3)],
+            "E vs F": [_candidat("E vs F", "Total", "Over", 1.3)],
+            "C vs D": [_candidat("C vs D", "Total Corners", "Over", 1.3)],
+        }
+        with SessionLocal() as db:
+            run = _run(db)
+            run_id = run.id
+            cd, ae = _faux_modules(pool)
+            with mock.patch.object(pipeline, "modules", return_value=(cd, ae, None)), \
+                    mock.patch.object(pipeline, "reinitialiser_caches"), \
+                    mock.patch("app.services.capture_historique.capturer_predictions", return_value=0), \
+                    mock.patch("app.services.moteur_central_run.MARCHES_AUTORISES_CENTRAL", ("Total",)), \
+                    mock.patch("app.services.moteur_central_run.NB_COUPONS_CENTRAL", "1"):
+                executer_run(run_id, moteur="central")
+        with SessionLocal() as db:
+            coupons = list(db.scalars(select(Coupon).where(Coupon.run_id == run_id)))
+            assert len(coupons) == 1
+            matchs_vus = {j.libelle_match for c in coupons for j in c.jambes}
+            assert matchs_vus == {"A vs B", "E vs F"}, "le match 'Total Corners' n'aurait jamais dû être éligible"

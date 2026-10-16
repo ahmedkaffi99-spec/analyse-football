@@ -46,7 +46,13 @@ retiré(s)" n'a été imprimée malgré la présence de "Total Tirs"/"Total Corn
 Cartons" dans plusieurs matchs — `avant_exclusion == len(pool_central)`, l'exclusion n'a
 retiré STRICTEMENT RIEN. Corrigé en comparant `candidat_central.categorie` (le libellé
 français réel, ex: "Total Tirs" — ajouté au contrat CandidatCentral et renseigné par
-construire_candidats depuis pick["categorie"], jamais deviné) au lieu de `.marche`."""
+construire_candidats depuis pick["categorie"], jamais deviné) au lieu de `.marche`.
+
+RUN PONCTUEL AVEC NOMBRE DE COUPONS / MARCHÉS FORCÉS (16/10/2026, demande explicite : "2
+coupon et 5 par jambe et marché but total et but equipe 1 seule") : MOTEUR_CENTRAL_NB_COUPONS
+et MOTEUR_CENTRAL_MARCHES_AUTORISES permettent de contourner respectivement
+ae.nb_coupons_dynamique et le pool central complet pour UN run précis — vides par défaut,
+comportement dynamique/complet inchangé tant qu'ils ne sont pas explicitement positionnés."""
 
 from pathlib import Path
 import os
@@ -76,6 +82,25 @@ from app.services.decision_centrale import (  # noqa: E402
 # reste de la configuration du moteur central (voir moteur_central/config.py).
 COTE_MIN_CENTRAL = float(os.getenv("MOTEUR_CENTRAL_COTE_MIN") or 1.3)
 COTE_MAX_CENTRAL = float(os.getenv("MOTEUR_CENTRAL_COTE_MAX") or 3.0)
+
+# Demande explicite (16/10/2026) : forcer EXACTEMENT un nombre de coupons pour UN run ponctuel
+# (plutôt que ae.nb_coupons_dynamique, qui dimensionne selon le volume réel de matchs) et
+# restreindre le pool central à des categorie précises (ex: "Total,Total Équipe 1" pour
+# n'avoir QUE le marché buts du match et buts équipe 1) — vide par défaut : comportement
+# dynamique/complet inchangé tant que ces variables ne sont pas explicitement positionnées.
+NB_COUPONS_CENTRAL = os.getenv("MOTEUR_CENTRAL_NB_COUPONS")
+MARCHES_AUTORISES_CENTRAL = tuple(
+    v.strip() for v in (os.getenv("MOTEUR_CENTRAL_MARCHES_AUTORISES") or "").split(",") if v.strip())
+
+
+def _restreindre_marches_autorises(pool_central):
+    """Si MARCHES_AUTORISES_CENTRAL est renseigné, ne garde que les candidats dont la
+    categorie est EXACTEMENT l'une des valeurs listées (comparaison exacte, pas un préfixe —
+    "Total" ne doit jamais inclure "Total Équipe 1", ce sont deux marchés distincts). Vide
+    (défaut) : aucune restriction, comportement inchangé."""
+    if not MARCHES_AUTORISES_CENTRAL:
+        return pool_central
+    return [c for c in pool_central if c.categorie in MARCHES_AUTORISES_CENTRAL]
 
 MEDAILLES_CENTRAL = ("🥇", "🥈", "🥉", "4️⃣", "5️⃣")
 
@@ -156,10 +181,17 @@ def executer_moteur_central(db, donnees, ae, cfg=None):
               f"(Poisson) retiré(s) sur des marchés surdispersés (tirs/corners/cartons/fautes/"
               f"hors-jeux) — seules les prédictions moteur (binomiale négative) y restent éligibles.")
 
+    avant_restriction = len(pool_central)
+    pool_central = _restreindre_marches_autorises(pool_central)
+    if MARCHES_AUTORISES_CENTRAL:
+        print(f"   🧮 [Moteur central] Restriction explicite aux marchés {MARCHES_AUTORISES_CENTRAL} "
+              f"({avant_restriction} → {len(pool_central)} candidat(s)).")
+
     nb_matchs_eligibles = len({c.match for c in pool_central})
-    nb_coupons_cible = ae.nb_coupons_dynamique(nb_matchs_eligibles)
+    nb_coupons_cible = int(NB_COUPONS_CENTRAL) if NB_COUPONS_CENTRAL else ae.nb_coupons_dynamique(nb_matchs_eligibles)
     print(f"   🧮 [Moteur central] {nb_matchs_eligibles} match(s) éligible(s) → "
-          f"{nb_coupons_cible} coupon(s) dynamique(s) visé(s) (pool central : "
+          f"{nb_coupons_cible} coupon(s) "
+          f"{'FORCÉ(S) explicitement' if NB_COUPONS_CENTRAL else 'dynamique(s)'} visé(s) (pool central : "
           f"{len(pool_central)} candidat(s), bet_agent={len(candidats_ba)}, moteur={len(candidats_mo)}).")
 
     resultats, matchs_utilises = [], set()
