@@ -1674,11 +1674,25 @@ def appel_ia(prompt, max_tokens=2000, json_attendu=False, prioriser_deepseek=Tru
             print(f"   ⚠️ DeepSeek officiel indisponible pour le reste du run ({_cause(e)[:150]}) — repli sur OpenRouter DeepSeek.")
             _deepseek_officiel_indisponible = True
         except DelaiDepasse:
+            # Désactive pour le RESTE DU RUN (pas seulement "cette fois") depuis le 16/10/2026 :
+            # ces 3 tâches de rédaction sont appelées jusqu'à 3 fois par coupon x jusqu'à 5
+            # coupons par run (15 appels), chacun avec le délai DEEPSEEK_DELAI_MAX (900 s par
+            # défaut) tant que ce drapeau n'est pas levé — un DeepSeek simplement LENT (pas
+            # refusé) sur le 1er appel referait attendre 900 s de plus à chacun des 14 appels
+            # suivants, pouvant dépasser le timeout du job GitHub Actions (60 min) et tuer le
+            # run avant d'envoyer les derniers coupons. Un seul délai dépassé suffit donc à
+            # couper court pour le reste du run, comme CleIARefusee ci-dessus.
             derniere_erreur = TimeoutError(f"DeepSeek officiel : pas de réponse complète en {delai:.0f} s")
-            print(f"   ⚠️ DeepSeek officiel (prioritaire) : sans réponse en {delai:.0f} s — repli sur OpenRouter DeepSeek.")
+            print(f"   ⚠️ DeepSeek officiel (prioritaire) : sans réponse en {delai:.0f} s — désactivé pour le "
+                  f"reste du run, repli sur OpenRouter DeepSeek.")
+            _deepseek_officiel_indisponible = True
         except Exception as e:
+            # Même raisonnement que DelaiDepasse ci-dessus : une erreur réseau/serveur sur le
+            # 1er des jusqu'à 15 appels de ce run ne doit pas être retentée 14 fois de plus.
             derniere_erreur = e
-            print(f"   ⚠️ DeepSeek officiel (prioritaire) indisponible cette fois ({_cause(e)[:150]}) — repli sur OpenRouter DeepSeek.")
+            print(f"   ⚠️ DeepSeek officiel (prioritaire) indisponible ({_cause(e)[:150]}) — désactivé pour le "
+                  f"reste du run, repli sur OpenRouter DeepSeek.")
+            _deepseek_officiel_indisponible = True
 
     if prioriser_deepseek and OPENROUTER_API_KEY and not _deepseek_indisponible and "openrouter" not in _fournisseurs_refuses:
         # Aucun plafond dérivé du budget IA partagé (secondes_ia_restantes) : ce budget est là
@@ -1701,11 +1715,17 @@ def appel_ia(prompt, max_tokens=2000, json_attendu=False, prioriser_deepseek=Tru
             print(f"   ⚠️ DeepSeek indisponible pour le reste du run ({_cause(e)[:150]}) — repli sur la course habituelle.")
             _deepseek_indisponible = True
         except DelaiDepasse:
+            # Même raisonnement que le bloc DeepSeek officiel ci-dessus (16/10/2026) : désactivé
+            # pour le reste du run dès le 1er délai dépassé, pas seulement "cette fois".
             derniere_erreur = TimeoutError(f"DeepSeek : pas de réponse complète en {delai:.0f} s")
-            print(f"   ⚠️ DeepSeek (prioritaire) : sans réponse en {delai:.0f} s — repli sur la course habituelle.")
+            print(f"   ⚠️ DeepSeek (prioritaire) : sans réponse en {delai:.0f} s — désactivé pour le reste du "
+                  f"run, repli sur la course habituelle.")
+            _deepseek_indisponible = True
         except Exception as e:
             derniere_erreur = e
-            print(f"   ⚠️ DeepSeek (prioritaire) indisponible cette fois ({_cause(e)[:150]}) — repli sur la course habituelle.")
+            print(f"   ⚠️ DeepSeek (prioritaire) indisponible ({_cause(e)[:150]}) — désactivé pour le reste du "
+                  f"run, repli sur la course habituelle.")
+            _deepseek_indisponible = True
 
     candidats = candidats_ia()
     taille = max(1, IA_EN_PARALLELE)
