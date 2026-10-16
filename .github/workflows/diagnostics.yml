@@ -17,6 +17,7 @@ on:
           - api-football-stats-detaillees
           - ia
           - modeles-openrouter-gratuits
+          - cotes-match
         default: marches-disponibles
       date_debut:
         description: "Date cible de début (AAAA-MM-JJ) — utilisé seulement par 'marches-disponibles'"
@@ -24,6 +25,10 @@ on:
         default: ""
       date_fin:
         description: "Date cible de fin (AAAA-MM-JJ) — utilisé seulement par 'marches-disponibles'"
+        type: string
+        default: ""
+      match_recherche:
+        description: "'cotes-match' uniquement : fragment du nom des 2 équipes (ex: \"Newcastle\") pour retrouver le match du jour dans les fixtures API-Football"
         type: string
         default: ""
 
@@ -48,6 +53,7 @@ jobs:
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
       DATE_CIBLE_DEBUT: ${{ inputs.date_debut }}
       DATE_CIBLE_FIN: ${{ inputs.date_fin }}
+      MATCH_RECHERCHE: ${{ inputs.match_recherche }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -91,6 +97,46 @@ jobs:
         if: inputs.verification == 'api-football-stats-detaillees'
         working-directory: bet_agent
         run: python verifier_stats_detaillees.py
+
+      - name: Cotes 1xBet réelles d'un match (marchés buts uniquement, lecture seule)
+        # Réutilise EXACTEMENT les fonctions de production (recuperer_fixtures_api_football,
+        # recuperer_marches_pour_fixture_api_football -> adaptateur_api_football) — jamais une
+        # requête HTTP dupliquée. Aucune écriture en base, aucun envoi Telegram.
+        if: inputs.verification == 'cotes-match'
+        working-directory: bet_agent
+        run: |
+          python -c "
+          import os
+          import collecte_donnees as cd
+
+          recherche = (os.getenv('MATCH_RECHERCHE') or '').lower()
+          fixtures = cd.recuperer_fixtures_api_football()
+          trouve = None
+          for fx in fixtures:
+              home = ((fx.get('teams') or {}).get('home') or {}).get('name', '')
+              away = ((fx.get('teams') or {}).get('away') or {}).get('name', '')
+              if recherche and recherche in home.lower() + ' ' + away.lower():
+                  trouve = fx
+                  break
+          if not trouve:
+              print(f'Aucun match trouvé pour \\\"{recherche}\\\" parmi {len(fixtures)} fixtures.')
+          else:
+              home = (trouve['teams']['home'] or {}).get('name')
+              away = (trouve['teams']['away'] or {}).get('name')
+              fixture_id = trouve['fixture']['id']
+              print(f'=== {home} vs {away} (fixture_id={fixture_id}) ===')
+              marches = cd.recuperer_marches_pour_fixture_api_football(fixture_id)
+              if not marches:
+                  print('Aucun marché 1xbet exploitable (périmé/indisponible/quota).')
+              else:
+                  marches_buts = [m for m in marches if m['marche'] in (
+                      'Full Time Result', 'Double Chance Full Time', 'Over Under Full Time',
+                      'Over Under Team 1', 'Over Under Team 2', 'Both Teams To Score')]
+                  print(f'{len(marches_buts)} marché(s) buts (sur {len(marches)} marchés 1xbet au total) :')
+                  for m in sorted(marches_buts, key=lambda m: (m['marche'], m['handicap'] or 0)):
+                      sels = ', '.join(f\"{s['selection']}@{s['cote']}\" for s in m['selections'])
+                      print(f\"   {m['marche']:25s} ligne={m['handicap']!s:6s} {sels}\")
+          "
 
       - name: IA (Groq, Gemini, OpenRouter)
         if: inputs.verification == 'ia'
