@@ -182,8 +182,12 @@ jobs:
           resultats = []
           for k in (3, 5, 8, 10, 15, 20, 30, 50):
               cfg = Config.depuis_env(shrinkage_buts=float(k))
+              # predire_match() FUSIONNE ce dict avec LIGNES_DEFAUT (tous les marchés) au lieu de
+              # le remplacer -> filtre explicite sur 'buts_total' après coup, sinon on recalcule
+              # inutilement handicap/corners/cartons/tirs/fautes à chaque k (beaucoup plus lent).
               lignes = generer_lignes(matchs, {}, cfg, debut, fin, lignes={'buts_total': [1.5, 2.5, 3.5]})
-              m = metriques(lignes, cfg, paris=False)
+              lignes_buts = [ln for ln in lignes if ln.marche == 'buts_total']
+              m = metriques(lignes_buts, cfg, paris=False)
               resultats.append((k, m))
               print(f'{k:>20} {m[\"n_predictions\"]:>14} {m[\"brier\"] if m[\"brier\"] is not None else float(\"nan\"):>8.4f} '
                     f'{m[\"log_loss\"] if m[\"log_loss\"] is not None else float(\"nan\"):>10.4f} '
