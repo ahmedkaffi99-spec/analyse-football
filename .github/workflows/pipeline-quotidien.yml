@@ -60,6 +60,22 @@ on:
         description: "Run PONCTUEL : désactive la diversité de catégorie entre profils (traite chaque profil comme le premier) — l'anti-doublon exact reste actif dans tous les cas"
         type: boolean
         default: false
+      central_nb_jambes_min:
+        description: "Moteur central uniquement : nombre MINIMUM de jambes par coupon pour CE run (vide = défaut, 2) — relève aussi la cote totale résultante, voir central_cote_max"
+        type: string
+        default: ""
+      central_nb_jambes_max:
+        description: "Moteur central uniquement : nombre MAXIMUM de jambes par coupon pour CE run (vide = défaut, 5)"
+        type: string
+        default: ""
+      central_cote_min:
+        description: "Moteur central uniquement : cote totale minimale visée pour CE run (vide = défaut, 1.3) — à relever avec central_nb_jambes_min, sinon aucune combinaison ne tombera dans la cible"
+        type: string
+        default: ""
+      central_cote_max:
+        description: "Moteur central uniquement : cote totale maximale visée pour CE run (vide = défaut, 3.0)"
+        type: string
+        default: ""
 
 concurrency:
   group: pipeline-quotidien
@@ -108,6 +124,10 @@ jobs:
       # défaut tant que l'utilisateur ne les active pas explicitement (Settings > Variables).
       MOTEUR_COMPARAISON_ACTIVE: ${{ vars.MOTEUR_COMPARAISON_ACTIVE }}
       MOTEUR_CENTRAL_SHADOW: ${{ vars.MOTEUR_CENTRAL_SHADOW }}
+      MOTEUR_CENTRAL_NB_JAMBES_MIN: ${{ inputs.central_nb_jambes_min }}
+      MOTEUR_CENTRAL_NB_JAMBES_MAX: ${{ inputs.central_nb_jambes_max }}
+      MOTEUR_CENTRAL_COTE_MIN: ${{ inputs.central_cote_min }}
+      MOTEUR_CENTRAL_COTE_MAX: ${{ inputs.central_cote_max }}
     steps:
       - uses: actions/checkout@v4
 
