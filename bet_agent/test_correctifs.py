@@ -1124,7 +1124,7 @@ class TestRedactionSansIA(unittest.TestCase):
     def test_panne_de_tous_les_llm_ne_fait_plus_perdre_le_ticket(self):
         selections = [_selection("A vs B", "Total", "Over", 1.5, edge=12.0, proba=70.0),
                       _selection("C vs D", "BTTS", "Yes", 1.8, edge=25.0, proba=90.0)]
-        with mock.patch.object(ae, "appel_llm_petites_taches", side_effect=ValueError("Tous les modèles ont échoué")), \
+        with mock.patch.object(ae, "appel_llm", side_effect=ValueError("Tous les modèles ont échoué")), \
                 mock.patch.object(ae.time, "sleep"):
             texte = ae.agent4_ia_analyse_pronostic_redaction(selections)
         # Format compact (2026-09-26) : une ligne par match, sans Guide/Où parier/Pourquoi —
@@ -2764,7 +2764,7 @@ class TestButsAttendusContexteTotalPourMarcheMatchEntier(unittest.TestCase):
     def test_consigne_de_redaction_impose_le_bon_mapping_marche_chiffre(self):
         ae.reinitialiser_budget_ia()
         texte_ticket = "⚽ A vs B\n   🎯 Marché : Total (3.5) - Under @ 1.26 (edge 1.9% · Moyen)\n" + "x" * 50
-        with mock.patch.object(ae, "appel_llm_petites_taches", return_value=texte_ticket) as appel:
+        with mock.patch.object(ae, "appel_llm", return_value=texte_ticket) as appel:
             self.assertIsNotNone(ae._tache_redaction("donnees", "pronostic", 1))
         prompt_envoye = appel.call_args[0][0]
         self.assertIn("marché sur le MATCH ENTIER", prompt_envoye)
@@ -2827,7 +2827,7 @@ class TestVerifierFideliteTicket(unittest.TestCase):
         texte_invente = ("⚽ A vs B\n   🎯 Marché : Total (2.5) - Under @ 1.90 "
                          "(edge 1.9% · Confiance : Moyen)\n" + "x" * 50)
         ae.reinitialiser_budget_ia()
-        with mock.patch.object(ae, "appel_llm_petites_taches", return_value=texte_invente), \
+        with mock.patch.object(ae, "appel_llm", return_value=texte_invente), \
                 mock.patch.object(ae.time, "sleep"):
             resultat = ae.agent4_ia_analyse_pronostic_redaction([s])
         self.assertIn("1.26", resultat)   # la vraie cote, pas 1.90
