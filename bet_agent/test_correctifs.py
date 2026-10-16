@@ -564,6 +564,35 @@ class TestDeepSeekPrioritaire(unittest.TestCase):
 
         self.assertEqual(resultat, '{"ok": true}')  # récupéré via Groq après l'échec de DeepSeek
 
+    def test_echec_deepseek_officiel_le_desactive_pour_le_reste_du_run(self):
+        # 16/10/2026 : depuis que _tache_analyse/_tache_pronostic/_tache_redaction appellent
+        # appel_llm() (DeepSeek en priorité) au lieu de appel_llm_petites_taches(), un seul run
+        # peut déclencher jusqu'à 15 appels (3 tâches x jusqu'à 5 coupons). Avant ce correctif,
+        # un échec (timeout ou erreur réseau) de DeepSeek officiel n'était désactivé que "cette
+        # fois" (pas CleIARefusee) — les 14 appels suivants retentaient chacun le délai complet
+        # DEEPSEEK_DELAI_MAX (900 s par défaut), pouvant dépasser le timeout du job GitHub
+        # Actions (60 min) et tuer le run avant d'envoyer les derniers coupons. Un échec doit
+        # désormais désactiver DeepSeek officiel pour tout le reste du run, comme CleIARefusee.
+        appels = []
+
+        def faux_post(url, headers, json, timeout):
+            appels.append(json["model"])
+            if json["model"] == ae.DEEPSEEK_MODELES[0]:
+                raise RuntimeError("panne réseau DeepSeek officiel")
+            return SimpleNamespace(status_code=200, json=lambda: {"choices": [{"message": {"content": '{"ok": true}'}}]})
+
+        with mock.patch.object(ae, "DEEPSEEK_API_KEY", "sk-deepseek-secrete"), \
+                mock.patch.object(ae, "OPENROUTER_API_KEY", "sk-or-secrete"), \
+                mock.patch.object(ae, "GROQ_API_KEY", "gsk-secrete"), \
+                mock.patch.object(ae, "GEMINI_API_KEY", None), \
+                mock.patch.object(ae.requests, "post", side_effect=faux_post):
+            ae.appel_llm("prompt 1", json_attendu=True)
+            self.assertTrue(ae._deepseek_officiel_indisponible)
+            appels.clear()
+            ae.appel_llm("prompt 2", json_attendu=True)
+
+        self.assertNotIn(ae.DEEPSEEK_MODELES[0], appels)  # jamais retenté au 2e appel du run
+
     def test_petites_taches_sautent_deepseek_et_vont_direct_au_gratuit(self):
         # Demande explicite du 27/09/2026 : réserver le solde payant de DeepSeek à la décision
         # principale du coupon, et donner un vrai rôle (pas juste un filet de secours) à
