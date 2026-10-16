@@ -52,7 +52,16 @@ RUN PONCTUEL AVEC NOMBRE DE COUPONS / MARCHÉS FORCÉS (16/10/2026, demande expl
 coupon et 5 par jambe et marché but total et but equipe 1 seule") : MOTEUR_CENTRAL_NB_COUPONS
 et MOTEUR_CENTRAL_MARCHES_AUTORISES permettent de contourner respectivement
 ae.nb_coupons_dynamique et le pool central complet pour UN run précis — vides par défaut,
-comportement dynamique/complet inchangé tant qu'ils ne sont pas explicitement positionnés."""
+comportement dynamique/complet inchangé tant qu'ils ne sont pas explicitement positionnés.
+
+PLAFOND D'EDGE RÉELLEMENT APPLIQUÉ AU POOL CENTRAL (16/10/2026, demande explicite après
+qu'un candidat à 29.9% d'edge se soit retrouvé dans un coupon réel malgré
+EDGE_MAX_PLAUSIBLE=25 dans bet_agent/analyser_et_envoyer.py) : ce seuil bet_agent n'est en
+réalité appliqué QUE par evaluer_marches()/candidat_valide(), jamais appelés par le pipeline
+réel (agent3_calcul_pool_candidats utilise evaluer_marches_toutes(), sans filtre, par design).
+EDGE_MAX_CENTRAL/_exclure_edge_suspect() ci-dessous est donc le premier vrai rejet d'edge
+suspect sur le chemin réellement exécuté — score_central() plafonnait déjà la CONTRIBUTION
+de l'edge au score à 20% mais ne rejetait jamais le candidat lui-même."""
 
 from pathlib import Path
 import os
@@ -81,7 +90,20 @@ from app.services.decision_centrale import (  # noqa: E402
 # jamais recalculées différemment, et réversibles par variable d'environnement comme le
 # reste de la configuration du moteur central (voir moteur_central/config.py).
 COTE_MIN_CENTRAL = float(os.getenv("MOTEUR_CENTRAL_COTE_MIN") or 1.3)
-COTE_MAX_CENTRAL = float(os.getenv("MOTEUR_CENTRAL_COTE_MAX") or 3.0)
+COTE_MAX_CENTRAL = float(os.getenv("MOTEUR_CENTRAL_COTE_MAX") or 1.9)  # abaissé de 3.0 à 1.9
+# (16/10/2026, demande explicite : "cote cible moins de 2") — reste réversible par run via
+# MOTEUR_CENTRAL_COTE_MAX (voir workflow central_cote_max).
+
+# Plafond d'edge RÉELLEMENT appliqué au pool central (16/10/2026, demande explicite : un
+# candidat à edge 29.9% s'est retrouvé dans un coupon réel malgré EDGE_MAX_PLAUSIBLE=25 dans
+# bet_agent/analyser_et_envoyer.py — audit montre que ce seuil n'est appliqué QUE par
+# evaluer_marches()/candidat_valide(), jamais appelés par le pipeline réel
+# (agent3_calcul_pool_candidats utilise evaluer_marches_toutes(), SANS filtre, par design
+# depuis le passage à moteur_central — voir sa docstring "aucun filtré, aucune présélection
+# Python"). score_central() PLAFONNE déjà la contribution de l'edge au score à 20% mais ne
+# REJETTE jamais un candidat au-delà — ce module ajoute donc le vrai rejet, ici, au même
+# niveau que les autres filtres de pool (surdispersion, marchés autorisés).
+EDGE_MAX_CENTRAL = float(os.getenv("MOTEUR_CENTRAL_EDGE_MAX") or 20.0)
 
 # Demande explicite (16/10/2026) : forcer EXACTEMENT un nombre de coupons pour UN run ponctuel
 # (plutôt que ae.nb_coupons_dynamique, qui dimensionne selon le volume réel de matchs) et
@@ -101,6 +123,13 @@ def _restreindre_marches_autorises(pool_central):
     if not MARCHES_AUTORISES_CENTRAL:
         return pool_central
     return [c for c in pool_central if c.categorie in MARCHES_AUTORISES_CENTRAL]
+
+
+def _exclure_edge_suspect(pool_central):
+    """Retire tout candidat dont l'edge dépasse EDGE_MAX_CENTRAL (suspect, voir docstring
+    ci-dessus) — un candidat sans edge connu (c.edge_pct is None) n'est jamais exclu par cette
+    règle plutôt que supposé suspect."""
+    return [c for c in pool_central if c.edge_pct is None or c.edge_pct <= EDGE_MAX_CENTRAL]
 
 MEDAILLES_CENTRAL = ("🥇", "🥈", "🥉", "4️⃣", "5️⃣")
 
@@ -186,6 +215,12 @@ def executer_moteur_central(db, donnees, ae, cfg=None):
     if MARCHES_AUTORISES_CENTRAL:
         print(f"   🧮 [Moteur central] Restriction explicite aux marchés {MARCHES_AUTORISES_CENTRAL} "
               f"({avant_restriction} → {len(pool_central)} candidat(s)).")
+
+    avant_edge = len(pool_central)
+    pool_central = _exclure_edge_suspect(pool_central)
+    if avant_edge != len(pool_central):
+        print(f"   🧮 [Moteur central] {avant_edge - len(pool_central)} candidat(s) retiré(s) "
+              f"pour edge suspect (> {EDGE_MAX_CENTRAL:.0f}%).")
 
     nb_matchs_eligibles = len({c.match for c in pool_central})
     nb_coupons_cible = int(NB_COUPONS_CENTRAL) if NB_COUPONS_CENTRAL else ae.nb_coupons_dynamique(nb_matchs_eligibles)

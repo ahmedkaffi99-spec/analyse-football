@@ -48,8 +48,15 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 ENTREE_JSON = "donnees_collectees.json"
 TICKET_DU_JOUR_JSON = "ticket_du_jour.json"
 SEUIL_EDGE = 5.0  # % — n'accepte un marché que si l'edge calculé dépasse ce seuil
-EDGE_MAX_PLAUSIBLE = 25.0  # % — resserré de 60 à 25 : même un vrai edge dépasse rarement ce niveau
-                            # de façon fiable sur un bookmaker professionnel comme 1xbet
+EDGE_MAX_PLAUSIBLE = 20.0  # % — resserré de 25 à 20 (16/10/2026, demande explicite) : même un
+                            # vrai edge dépasse rarement ce niveau de façon fiable sur un
+                            # bookmaker professionnel comme 1xbet. ATTENTION : ce seuil n'est
+                            # appliqué QUE par evaluer_marches() (candidat_valide), plus jamais
+                            # appelée par le pipeline réel (agent3_calcul_pool_candidats utilise
+                            # evaluer_marches_toutes(), SANS ce filtre, par design depuis le
+                            # passage à moteur_central — voir moteur_central_run.py:
+                            # EDGE_MAX_CENTRAL pour le plafond réellement appliqué au coupon
+                            # Telegram).
 # Configurable (SEUIL_PROBA_MIN), 70 par défaut depuis le 03/10/2026 : sur 349 paris réellement
 # jugés, la tranche 60-70 % annoncée n'en gagnait que 52 % (ROI -17 %), la tranche 50-60 %
 # seulement 35 % ; au-dessus de 70 % le modèle est bien calibré (78-93 % réels, ROI positif).

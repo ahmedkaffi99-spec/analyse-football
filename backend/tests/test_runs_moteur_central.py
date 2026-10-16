@@ -299,3 +299,35 @@ class TestRunPonctuelNbCouponsEtMarchesForces:
             assert len(coupons) == 1
             matchs_vus = {j.libelle_match for c in coupons for j in c.jambes}
             assert matchs_vus == {"A vs B", "E vs F"}, "le match 'Total Corners' n'aurait jamais dû être éligible"
+
+
+class TestEdgeSuspectReellementRejete:
+    """16/10/2026, demande explicite : un candidat à edge 29.9% s'est retrouvé dans un coupon
+    réel malgré EDGE_MAX_PLAUSIBLE=25 dans bet_agent/analyser_et_envoyer.py — ce seuil n'était
+    en réalité jamais appliqué par le pipeline réel (candidat_valide() n'est appelée que par
+    evaluer_marches(), jamais par agent3_calcul_pool_candidats). EDGE_MAX_CENTRAL/
+    _exclure_edge_suspect() doit réellement retirer ce genre de candidat du pool central."""
+
+    def test_candidat_edge_suspect_exclu_du_pool(self):
+        # Trois matchs à edge normal (5.0, sous EDGE_MAX_CENTRAL=20) — assez pour composer un
+        # coupon à 2 jambes — et un quatrième à edge 29.9 (suspect, doit être exclu).
+        pool = {
+            "A vs B": [_candidat("A vs B", "Total", "Over", 1.3, edge=5.0)],
+            "E vs F": [_candidat("E vs F", "Total", "Over", 1.3, edge=5.0)],
+            "G vs H": [_candidat("G vs H", "Total", "Over", 1.3, edge=29.9)],
+        }
+        with SessionLocal() as db:
+            run = _run(db)
+            run_id = run.id
+            cd, ae = _faux_modules(pool)
+            with mock.patch.object(pipeline, "modules", return_value=(cd, ae, None)), \
+                    mock.patch.object(pipeline, "reinitialiser_caches"), \
+                    mock.patch("app.services.capture_historique.capturer_predictions", return_value=0), \
+                    mock.patch("app.services.moteur_central_run.NB_COUPONS_CENTRAL", "1"):
+                executer_run(run_id, moteur="central")
+        with SessionLocal() as db:
+            coupons = list(db.scalars(select(Coupon).where(Coupon.run_id == run_id)))
+            assert len(coupons) == 1
+            matchs_vus = {j.libelle_match for c in coupons for j in c.jambes}
+            assert "G vs H" not in matchs_vus, "le candidat à edge 29.9% aurait dû être rejeté (suspect)"
+            assert matchs_vus == {"A vs B", "E vs F"}
