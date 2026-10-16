@@ -156,6 +156,10 @@ jobs:
         working-directory: backend
         run: |
           python -c "
+          import sys
+          from pathlib import Path
+          sys.path.insert(0, str(Path.cwd().parent))  # moteur/ vit à la racine du dépôt, hors de backend/
+
           from datetime import datetime, timezone
 
           from app.database import SessionLocal
