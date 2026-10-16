@@ -28,7 +28,7 @@ on:
         type: string
         default: ""
       match_recherche:
-        description: "'cotes-match' uniquement : fragment du nom des 2 équipes (ex: \"Newcastle\") pour retrouver le match du jour dans les fixtures API-Football"
+        description: "'cotes-match' uniquement : fragments séparés par une virgule, TOUS requis (ex: \"Newcastle,Aston Villa\") — un seul fragment risque de matcher une équipe réserve/féminine homonyme"
         type: string
         default: ""
 
@@ -109,17 +109,21 @@ jobs:
           import os
           import collecte_donnees as cd
 
-          recherche = (os.getenv('MATCH_RECHERCHE') or '').lower()
+          # Fragments séparés par une virgule : TOUS doivent apparaître (dans le nom de
+          # domicile OU d'extérieur) pour éviter de confondre avec une équipe réserve/féminine
+          # portant un nom proche (ex: \"Newcastle Jets FC W\" pour une recherche \"Newcastle\" seul).
+          fragments = [f.strip().lower() for f in (os.getenv('MATCH_RECHERCHE') or '').split(',') if f.strip()]
           fixtures = cd.recuperer_fixtures_api_football()
           trouve = None
           for fx in fixtures:
               home = ((fx.get('teams') or {}).get('home') or {}).get('name', '')
               away = ((fx.get('teams') or {}).get('away') or {}).get('name', '')
-              if recherche and recherche in home.lower() + ' ' + away.lower():
+              texte = home.lower() + ' ' + away.lower()
+              if fragments and all(f in texte for f in fragments):
                   trouve = fx
                   break
           if not trouve:
-              print(f'Aucun match trouvé pour \\\"{recherche}\\\" parmi {len(fixtures)} fixtures.')
+              print(f'Aucun match trouvé pour {fragments!r} parmi {len(fixtures)} fixtures.')
           else:
               home = (trouve['teams']['home'] or {}).get('name')
               away = (trouve['teams']['away'] or {}).get('name')
