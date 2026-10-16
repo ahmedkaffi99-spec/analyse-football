@@ -1,4 +1,4 @@
-"""Les 10 modèles spécialisés.
+"""Les 11 modèles spécialisés.
 
 Modèles 1 à 7 (buts) : UNE estimation des buts attendus par équipe (force d'attaque × faiblesse
 défensive adverse, relatives à la moyenne de la compétition, rétrécies vers 1 sur petit
@@ -7,10 +7,21 @@ modèle garde sa propre version et sa propre calibration : un même calcul de ba
 la même fiabilité selon le marché (constaté sur les paris réels : Double Chance bien calibrée,
 BTTS non).
 
-Modèles 8 à 10 (corners, cartons, tirs/tirs cadrés) : loi binomiale négative par équipe
+Modèles 8 à 11 (corners, cartons, tirs/tirs cadrés, fautes) : loi binomiale négative par équipe
 (surdispersion mesurée sur la compétition, à date). Aucune prédiction si la couverture des
 statistiques est insuffisante (min_matchs_stats) : jamais de chiffre inventé.
-"""
+
+Modèle 11 (fautes) ajouté le 16/10/2026 (demande explicite : "pourquoi tu exclus les marchés
+corners/tirs/cartons etc — ajoute chaque marché à un modèle") — moteur_central_run.py exclut
+depuis le 15/10/2026 les candidats bet_agent (Poisson, structurellement inadapté à ces marchés
+surdispersés) sur TOUS les marchés tirs/corners/cartons/fautes/hors-jeux, mais "fautes" n'avait
+jusqu'ici aucun modèle moteur de remplacement : il disparaissait purement et simplement des
+coupons, sans substitut. Les fautes ("fouls") sont déjà collectées dans hist_matchs depuis le
+backfill du 13/10/2026 (confirmé : 1249/1249 matchs récents avec cette statistique) — ce modèle
+réutilise exactement le même calcul générique (comptage_attendu) que corners/cartons/tirs,
+aucune logique nouvelle. "Hors-jeux" reste exclu SANS modèle de remplacement : cette statistique
+n'est tout simplement pas collectée dans hist_matchs (0/1249 matchs, confirmé par requête
+réelle) — ajouter un modèle inventerait une donnée absente, jamais fait ici."""
 
 from dataclasses import dataclass
 
@@ -37,6 +48,11 @@ LIGNES_DEFAUT = {
     "tirs_cadres_total": [6.5, 7.5, 8.5, 9.5],
     "tirs_cadres_equipe1": [2.5, 3.5, 4.5],
     "tirs_cadres_equipe2": [2.5, 3.5, 4.5],
+    # Moyenne réelle mesurée (hist_matchs, matchs récents) : 23.1 fautes/match — lignes centrées
+    # dessus, même logique que tirs_total ci-dessus (ordre de grandeur comparable).
+    "fautes_total": [18.5, 20.5, 22.5, 24.5, 26.5],
+    "fautes_equipe1": [8.5, 10.5, 12.5],
+    "fautes_equipe2": [8.5, 10.5, 12.5],
 }
 
 MODELES = {
@@ -51,6 +67,7 @@ MODELES = {
     9: ("cartons", ["cartons_total", "cartons_equipe1", "cartons_equipe2"]),
     10: ("tirs", ["tirs_total", "tirs_equipe1", "tirs_equipe2",
                   "tirs_cadres_total", "tirs_cadres_equipe1", "tirs_cadres_equipe2"]),
+    11: ("fautes", ["fautes_total", "fautes_equipe1", "fautes_equipe2"]),
 }
 MODELE_DU_MARCHE = {m: num for num, (_, liste) in MODELES.items() for m in liste}
 SELECTIONS = {"resultat": ["1", "X", "2"], "double_chance": ["1X", "X2", "12"], "dnb": ["1", "2"],
@@ -130,7 +147,8 @@ def comptage_attendu(features, famille, cfg):
     return (dist_h, dist_a), {"mu_home": round(mu_h, 3), "mu_away": round(mu_a, 3), "dispersion": round(dispersion, 3)}
 
 
-def predire_match(features, cfg, lignes=None, familles_comptage=("corners", "cartons", "tirs", "tirs_cadres")):
+def predire_match(features, cfg, lignes=None,
+                  familles_comptage=("corners", "cartons", "tirs", "tirs_cadres", "fautes")):
     """Toutes les prédictions des 10 modèles pour un match. lignes : {marche: [lignes]} (les
     lignes réellement proposées par les cotes) — par défaut LIGNES_DEFAUT."""
     lignes = {**LIGNES_DEFAUT, **(lignes or {})}
