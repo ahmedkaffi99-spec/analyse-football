@@ -22,7 +22,11 @@ def _env(nom, defaut, type_):
 class Config:
     # Features
     fenetre_forme: int = 10           # matchs pour les moyennes de forme
-    shrinkage_buts: float = 5.0       # matchs "fictifs" à la moyenne de la ligue (petits échantillons)
+    shrinkage_buts: float = 30.0      # matchs "fictifs" à la moyenne de la ligue (petits échantillons) —
+    # valeur validée par backtest réel walk-forward (16/10/2026, Premier League, marché buts_total/
+    # buts_equipe1/2 sur les matchs Newcastle/Aston Villa) : Brier décroissant de k=3 (0.2165) à
+    # k=30 (0.2085, meilleur), remontant à k=50 (0.2088) — 5.0 (ancienne valeur, jamais backtestée)
+    # sous-pondérait largement la moyenne de ligue par rapport à la forme récente.
     shrinkage_comptage: float = 5.0
     min_matchs_equipe: int = 5        # en dessous : pas de prédiction (qualité de données)
     min_matchs_stats: int = 5         # pour corners/cartons/tirs (couverture des statistiques)
