@@ -73,7 +73,11 @@ on:
         type: string
         default: ""
       central_cote_max:
-        description: "Moteur central uniquement : cote totale maximale visée pour CE run (vide = défaut, 3.0)"
+        description: "Moteur central uniquement : cote totale maximale visée pour CE run (vide = défaut, 1.9)"
+        type: string
+        default: ""
+      central_edge_max:
+        description: "Moteur central uniquement : plafond d'edge (%) au-delà duquel un candidat est retiré du pool, suspect (vide = défaut, 20)"
         type: string
         default: ""
       central_nb_coupons:
@@ -136,6 +140,7 @@ jobs:
       MOTEUR_CENTRAL_NB_JAMBES_MAX: ${{ inputs.central_nb_jambes_max }}
       MOTEUR_CENTRAL_COTE_MIN: ${{ inputs.central_cote_min }}
       MOTEUR_CENTRAL_COTE_MAX: ${{ inputs.central_cote_max }}
+      MOTEUR_CENTRAL_EDGE_MAX: ${{ inputs.central_edge_max }}
       MOTEUR_CENTRAL_NB_COUPONS: ${{ inputs.central_nb_coupons }}
       MOTEUR_CENTRAL_MARCHES_AUTORISES: ${{ inputs.central_marches_autorises }}
     steps:
