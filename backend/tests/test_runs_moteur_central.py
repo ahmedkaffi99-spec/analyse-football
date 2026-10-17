@@ -217,10 +217,10 @@ class TestGenerationDynamiqueMultiCoupons:
     déjà utilisés (même principe que la génération dynamique de bet_agent du 11/10/2026)."""
 
     def test_dix_matchs_donnent_deux_coupons_de_cinq_sans_recouvrement(self):
-        # 10 matchs, nb_jambes=5 par défaut (17/10/2026) -> exactement 2 coupons possibles sans
-        # recouvrement (NB_COUPONS_CENTRAL forcé à 2 : déterministe, indépendant des paliers de
-        # nb_coupons_dynamique qui viseraient 3 avec 10 matchs mais échoueraient dès le 3e,
-        # faute de pool restant).
+        # 10 matchs, nb_jambes=5 par défaut (17/10/2026) -> exactement 2 coupons SANS override
+        # (10 // 5 = 2, calcul direct — l'ancien ae.nb_coupons_dynamique aurait visé 3 avec 10
+        # matchs, calibré pour des coupons à 2 jambes, et aurait échoué dès le 3e par manque de
+        # pool : voir le recalibrage du 17/10/2026 dans executer_moteur_central).
         pool = _pool_n_matchs(10)
         with SessionLocal() as db:
             run = _run(db)
@@ -228,8 +228,7 @@ class TestGenerationDynamiqueMultiCoupons:
             cd, ae = _faux_modules(pool)
             with mock.patch.object(pipeline, "modules", return_value=(cd, ae, None)), \
                     mock.patch.object(pipeline, "reinitialiser_caches"), \
-                    mock.patch("app.services.capture_historique.capturer_predictions", return_value=0), \
-                    mock.patch("app.services.moteur_central_run.NB_COUPONS_CENTRAL", "2"):
+                    mock.patch("app.services.capture_historique.capturer_predictions", return_value=0):
                 executer_run(run_id, moteur="central")
 
         with SessionLocal() as db:
@@ -242,6 +241,28 @@ class TestGenerationDynamiqueMultiCoupons:
             matchs_vus = [j.libelle_match for c in coupons for j in c.jambes]
             assert len(matchs_vus) == len(set(matchs_vus)), (
                 "un même match apparaît dans plusieurs coupons du moteur central")
+
+    def test_vingt_six_matchs_donnent_cinq_coupons_jamais_plus(self):
+        # 26 matchs (volume réel observé le 17/10/2026, run 162) -> 26 // 5 = 5 coupons (25
+        # matchs utilisés, 1 non utilisé) — jamais plus que les 5 médailles disponibles, sans
+        # override ni échec en cours de boucle.
+        pool = _pool_n_matchs(26)
+        with SessionLocal() as db:
+            run = _run(db)
+            run_id = run.id
+            cd, ae = _faux_modules(pool)
+            with mock.patch.object(pipeline, "modules", return_value=(cd, ae, None)), \
+                    mock.patch.object(pipeline, "reinitialiser_caches"), \
+                    mock.patch("app.services.capture_historique.capturer_predictions", return_value=0):
+                executer_run(run_id, moteur="central")
+        with SessionLocal() as db:
+            run_relu = db.get(Run, run_id)
+            assert run_relu.statut == "termine"
+            coupons = list(db.scalars(select(Coupon).where(Coupon.run_id == run_id)))
+            assert len(coupons) == 5
+            assert all(len(c.jambes) == 5 for c in coupons)
+            matchs_vus = [j.libelle_match for c in coupons for j in c.jambes]
+            assert len(matchs_vus) == 25 == len(set(matchs_vus))
 
     def test_moins_de_cinq_matchs_termine_en_erreur(self):
         # nb_jambes_min=5 par défaut (17/10/2026) : un pool de 2 matchs ne peut plus produire

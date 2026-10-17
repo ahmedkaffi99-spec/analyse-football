@@ -54,6 +54,16 @@ et MOTEUR_CENTRAL_MARCHES_AUTORISES permettent de contourner respectivement
 ae.nb_coupons_dynamique et le pool central complet pour UN run précis — vides par défaut,
 comportement dynamique/complet inchangé tant qu'ils ne sont pas explicitement positionnés.
 
+NOMBRE DE COUPONS RECALIBRÉ POUR UNE TAILLE DE JAMBES FIXE (17/10/2026, demande explicite :
+"si 26 [matchs] diffuse sur 3 à 5 coupons et min 5 jambes") : depuis que nb_jambes_min=
+nb_jambes_max=5 par défaut (ConfigCentrale), ae.nb_coupons_dynamique (calibré pour des coupons
+à taille VARIABLE 2-5 jambes) ne reflète plus le nombre de matchs réellement nécessaires par
+coupon — son palier "10 matchs -> 3 coupons" suppose des coupons à 2 jambes (6 matchs
+suffiraient), jamais 3 coupons à 5 jambes qui en demandent 15. Quand la taille est FIXE, ce
+module calcule directement nb_matchs_eligibles // nb_jambes_min (jamais plus que les 5
+médailles disponibles) : avec 26 matchs, ça donne 5 coupons complets (25 matchs utilisés, 1
+non utilisé) — jamais un coupon visé puis avorté en cours de boucle par manque de pool.
+
 PLAFOND D'EDGE RÉELLEMENT APPLIQUÉ AU POOL CENTRAL (16/10/2026, demande explicite après
 qu'un candidat à 29.9% d'edge se soit retrouvé dans un coupon réel malgré
 EDGE_MAX_PLAUSIBLE=25 dans bet_agent/analyser_et_envoyer.py) : ce seuil bet_agent n'est en
@@ -228,7 +238,18 @@ def executer_moteur_central(db, donnees, ae, cfg=None):
               f"pour edge suspect (> {EDGE_MAX_CENTRAL:.0f}%).")
 
     nb_matchs_eligibles = len({c.match for c in pool_central})
-    nb_coupons_cible = int(NB_COUPONS_CENTRAL) if NB_COUPONS_CENTRAL else ae.nb_coupons_dynamique(nb_matchs_eligibles)
+    if NB_COUPONS_CENTRAL:
+        nb_coupons_cible = int(NB_COUPONS_CENTRAL)
+    elif cfg.nb_jambes_min == cfg.nb_jambes_max:
+        # Taille de jambes FIXE (ex: 5/5, défaut depuis le 17/10/2026) : ae.nb_coupons_dynamique
+        # est calibré pour une taille VARIABLE (2 à 5) et sous-estime donc le nombre de matchs
+        # réellement nécessaires par coupon à taille fixe (ex: son palier "10 matchs -> 3
+        # coupons" suppose des coupons à 2 jambes, 6 matchs suffiraient, pas 3 coupons à 5
+        # jambes qui en demandent 15) — calcul direct : autant de coupons COMPLETS que le pool
+        # le permet (division entière), jamais plus que MEDAILLES_CENTRAL (5).
+        nb_coupons_cible = min(len(MEDAILLES_CENTRAL), nb_matchs_eligibles // cfg.nb_jambes_min)
+    else:
+        nb_coupons_cible = ae.nb_coupons_dynamique(nb_matchs_eligibles)
     print(f"   🧮 [Moteur central] {nb_matchs_eligibles} match(s) éligible(s) → "
           f"{nb_coupons_cible} coupon(s) "
           f"{'FORCÉ(S) explicitement' if NB_COUPONS_CENTRAL else 'dynamique(s)'} visé(s) (pool central : "
