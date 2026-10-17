@@ -89,10 +89,15 @@ from app.services.decision_centrale import (  # noqa: E402
 # par decision_centrale.calculer_et_journaliser_shadow — reprises ici pour le chemin RÉEL,
 # jamais recalculées différemment, et réversibles par variable d'environnement comme le
 # reste de la configuration du moteur central (voir moteur_central/config.py).
-COTE_MIN_CENTRAL = float(os.getenv("MOTEUR_CENTRAL_COTE_MIN") or 1.3)
-COTE_MAX_CENTRAL = float(os.getenv("MOTEUR_CENTRAL_COTE_MAX") or 1.9)  # abaissé de 3.0 à 1.9
-# (16/10/2026, demande explicite : "cote cible moins de 2") — reste réversible par run via
-# MOTEUR_CENTRAL_COTE_MAX (voir workflow central_cote_max).
+COTE_MIN_CENTRAL = float(os.getenv("MOTEUR_CENTRAL_COTE_MIN") or 3.5)
+COTE_MAX_CENTRAL = float(os.getenv("MOTEUR_CENTRAL_COTE_MAX") or 15.0)
+# Remontés (17/10/2026, demande explicite) depuis 1.3/1.9 — ces bornes ciblaient un coupon à
+# 2 jambes ; depuis que nb_jambes_min=nb_jambes_max=5 (ConfigCentrale, 17/10/2026), un coupon à
+# 5 jambes dépasse presque toujours 1.9 au total même avec des cotes individuelles modestes
+# (1.3^5 ≈ 3.71, 1.8^5 ≈ 18.9) — 3.5/15.0 couvre la plage réaliste pour 5 jambes à cote
+# individuelle ~1.3-1.8, sans jamais bloquer la génération (la cible ne sert qu'au tie-break du
+# score dans moteur_central/selection.py, jamais à rejeter une combinaison). Réversible par run
+# via MOTEUR_CENTRAL_COTE_MIN/MAX (voir workflow central_cote_min/central_cote_max).
 
 # Plafond d'edge RÉELLEMENT appliqué au pool central (16/10/2026, demande explicite : un
 # candidat à edge 29.9% s'est retrouvé dans un coupon réel malgré EDGE_MAX_PLAUSIBLE=25 dans
