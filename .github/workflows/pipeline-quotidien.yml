@@ -69,11 +69,11 @@ on:
         type: string
         default: ""
       central_cote_min:
-        description: "Moteur central uniquement : cote totale minimale visée pour CE run (vide = défaut, 1.3) — à relever avec central_nb_jambes_min, sinon aucune combinaison ne tombera dans la cible"
+        description: "Moteur central uniquement : cote totale minimale visée pour CE run (vide = défaut, 3.5, calibré pour 5 jambes) — à relever avec central_nb_jambes_min, sinon aucune combinaison ne tombera dans la cible"
         type: string
         default: ""
       central_cote_max:
-        description: "Moteur central uniquement : cote totale maximale visée pour CE run (vide = défaut, 1.9)"
+        description: "Moteur central uniquement : cote totale maximale visée pour CE run (vide = défaut, 15.0, calibré pour 5 jambes)"
         type: string
         default: ""
       central_edge_max:
