@@ -365,6 +365,17 @@ def calculer_xg_depuis_stats(stats_home, stats_away):
 # bruitée pour être fiable") sans jamais agir dessus au-delà du rejet pur sous 3 matchs.
 NB_MATCHS_PLEINE_CONFIANCE = 10  # = NB_DERNIERS_MATCHS_DETAILLES (collecte_donnees.py)
 
+# Lissage additif ("matchs fictifs" vers le prior, 17/10/2026, demande explicite après
+# investigation Handicap/BTTS) — remplace l'ancien lissage à ratio plafonné
+# (poids_donnee = min(nb_matchs, 10)/10) qui atteignait PILE 100% de confiance dès 10 matchs —
+# soit la quasi-totalité des cas réels, puisque 10 est précisément le nombre de matchs
+# collectés par défaut (NB_MATCHS_PLEINE_CONFIANCE ci-dessus) : ÇA NE LISSAIT JAMAIS RIEN EN
+# PRATIQUE. Même principe que moteur/config.py:shrinkage_buts (k matchs fictifs toujours
+# présents, jamais 100% de confiance brute même avec l'échantillon complet) — valeur par
+# défaut à valider par un vrai backtest (voir diagnostics.yml:backtest-k-lissage-buts),
+# réversible par variable d'environnement comme le reste de la configuration du moteur.
+K_LISSAGE_BUTS = float(os.getenv("BET_AGENT_K_LISSAGE_BUTS") or 5.0)
+
 # Priors neutres (moyennes raisonnables, toutes ligues confondues) — un point de départ quand
 # l'échantillon réel est trop petit pour parler fort, jamais une vérité universelle.
 BUTS_PRIOR = 1.3
@@ -376,14 +387,15 @@ TIRS_CADRES_PRIOR = 4.0
 HORS_JEUX_PRIOR = 2.0
 
 
-def _lisser_vers_prior(valeur, nb_matchs, prior, nb_matchs_pleine_confiance=NB_MATCHS_PLEINE_CONFIANCE):
-    """poids_donnee = min(nb_matchs, plein)/plein : à 10 matchs (ou plus), la moyenne réelle
-    compte quasi à 100% ; à 3 matchs (le minimum accepté), elle ne compte plus que pour 30%, le
-    reste tiré vers le prior. Réduit le bruit des petits échantillons sans jamais les rejeter."""
+def _lisser_vers_prior(valeur, nb_matchs, prior, k=K_LISSAGE_BUTS):
+    """(valeur*nb_matchs + k*prior) / (nb_matchs+k) : lissage additif — k "matchs fictifs" au
+    prior, toujours présents, jamais 100% de confiance brute même avec l'échantillon complet
+    (voir K_LISSAGE_BUTS ci-dessus pour pourquoi l'ancien lissage à ratio plafonné ne lissait
+    jamais rien en pratique). nb_matchs=None (vieux format sans métadonnée) : comportement
+    inchangé, aucun lissage tenté plutôt que deviné."""
     if valeur is None or nb_matchs is None:
         return valeur
-    poids_donnee = min(nb_matchs, nb_matchs_pleine_confiance) / nb_matchs_pleine_confiance
-    return poids_donnee * valeur + (1 - poids_donnee) * prior
+    return (valeur * nb_matchs + k * prior) / (nb_matchs + k)
 
 
 # Les deux FORMES de calcul partagées par toutes les statistiques "VRAIES stats des 10

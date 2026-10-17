@@ -171,6 +171,20 @@ class TestPondererAvecH2h(unittest.TestCase):
         away = {"buts_marques_moyenne": 1.2, "buts_encaisses_moyenne": 1.6}
         self.assertEqual(ae.calculer_xg_depuis_stats_detaillees(home, away), (1.8, 1.1))
 
+    def test_echantillon_complet_dix_matchs_reste_lisse(self):
+        # 17/10/2026, demande explicite après investigation Handicap/BTTS (43-44% de réussite
+        # réelle alors que le modèle les jugeait valables) : l'ANCIEN lissage à ratio plafonné
+        # (poids_donnee=min(n,10)/10) atteignait PILE 100% de confiance dès 10 matchs — soit la
+        # quasi-totalité des cas réels (NB_MATCHS_PLEINE_CONFIANCE=10=nombre de matchs collectés
+        # par défaut) : AUCUN lissage réel en pratique. Avec le lissage additif, même 10 matchs
+        # (l'échantillon complet) doit rester mesurablement tiré vers BUTS_PRIOR, jamais brut.
+        home = {"buts_marques_moyenne": 3.0, "buts_encaisses_moyenne": 0.2, "matchs_avec_donnees": 10}
+        away = {"buts_marques_moyenne": 1.2, "buts_encaisses_moyenne": 1.6, "matchs_avec_donnees": 10}
+        mu_home, mu_away = ae.calculer_xg_depuis_stats_detaillees(home, away)
+        brut_home, brut_away = (3.0 + 1.6) / 2, (1.2 + 0.2) / 2
+        self.assertNotEqual((mu_home, mu_away), (round(brut_home, 2), round(brut_away, 2)))
+        self.assertLess(abs(mu_home - ae.BUTS_PRIOR), abs(brut_home - ae.BUTS_PRIOR))
+
     def test_prioritaire_sur_stats_historiques_de_saison_dans_le_pool(self):
         # Les deux sources sont disponibles : stats_detaillees_10_matchs (forme récente) doit
         # l'emporter sur stats_historiques (moyenne de saison, potentiellement périmée).
