@@ -22,6 +22,7 @@ on:
           - backtest-k-comptage
           - backtest-k-lissage-buts
           - backtest-handicap-calibration
+          - elo-real-madrid-sevilla
         default: marches-disponibles
       date_debut:
         description: "Date cible de début (AAAA-MM-JJ) — utilisé seulement par 'marches-disponibles'"
@@ -459,6 +460,46 @@ jobs:
               moy_reel = sum(y for _, y in pts_f) / len(pts_f)
               print(f'   {nom_f:28s} : n={len(pts_f):>5} proba_moyenne={moy_proba:.3f} frequence_reelle={moy_reel:.3f} '
                     f'ecart={moy_reel - moy_proba:+.3f} brier={calib.brier(pts_f):.4f}')
+          "
+
+      - name: Elo réel Real Madrid vs Sevilla (signal absent de bet_agent, présent dans moteur/)
+        # Demande explicite ("creuse l'écart modèle/marché, H2H et forme récente") : le modèle
+        # bet_agent de production (forme 10 derniers matchs + H2H plafonné à 40%) donne 57,3% à
+        # Real Madrid, le marché 1xBet 78,7% (cote 1,27) — H2H réduit l'écart mais n'explique pas
+        # tout. moteur/features.py calcule déjà un Elo walk-forward (jamais de fuite, avantage
+        # domicile inclus) mais bet_agent (le pipeline RÉEL qui compose les coupons) ne l'utilise
+        # PAS du tout — ce diagnostic calcule le vrai Elo de ces deux équipes à la date du match
+        # pour vérifier si ce signal, absent en production, capturerait l'écart de qualité que
+        # la forme récente seule rate.
+        if: inputs.verification == 'elo-real-madrid-sevilla'
+        working-directory: backend
+        run: |
+          python -c "
+          import sys
+          from pathlib import Path
+          sys.path.insert(0, str(Path.cwd().parent))
+
+          from datetime import datetime, timezone
+
+          from app.database import SessionLocal
+          from app.services.historique import charger_matchs
+          from moteur.features import Historique, en_datetime
+
+          with SessionLocal() as db:
+              matchs = charger_matchs(db, competition_id=140)
+          print(f'{len(matchs)} matchs La Liga chargés.')
+
+          hist = Historique(matchs)
+          t = en_datetime('2026-10-18T19:00:00+00:00')
+          match_fictif = {'match_id': -1, 'date': '2026-10-18T19:00:00+00:00', 'home_id': 541, 'away_id': 536}
+          elo_home, elo_away = hist.elo(match_fictif)
+          print(f'Elo AVANT le match (jamais de fuite) : Real Madrid={elo_home:.1f}  Sevilla={elo_away:.1f}  ecart={elo_home-elo_away:+.1f}')
+
+          # Probabilité implicite Elo seul (même formule logistique que _calculer_elo, sans
+          # repasser par un calcul de buts) : juste pour comparer l'ordre de grandeur au marché.
+          ELO_AVANTAGE_DOMICILE = 60  # doit matcher moteur/features.py
+          p_home_elo = 1 / (1 + 10 ** ((elo_away - elo_home - ELO_AVANTAGE_DOMICILE) / 400))
+          print(f'Probabilité implicite Elo seul (1 vs pas-1) : {p_home_elo*100:.1f}%  (marché 1xBet : 78,7%)')
           "
 
       - name: IA (Groq, Gemini, OpenRouter)
