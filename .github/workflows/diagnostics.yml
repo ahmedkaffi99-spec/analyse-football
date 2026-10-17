@@ -209,18 +209,15 @@ jobs:
       - name: Backtest réel — meilleur shrinkage_comptage (k) par marché, INDÉPENDANT
         # Demande explicite : "tous calcul apart indépendant ne calcul pas ensemble les tir
         # corner et jaune etc" puis "fait les backtest avec un seule match real betis vs
-        # barcelona" — corners/cartons/tirs/tirs_cadres/fautes partagent AUJOURD'HUI un seul
-        # shrinkage_comptage (5.0, jamais backtesté, voir moteur/config.py) alors que
-        # buts_attendus() vient d'être validé séparément à k=30. Hors-jeux exclu : aucune
-        # donnée réelle (0 match sur 1249, voir moteur/modeles/registre.py). La Liga ENTIÈRE
-        # reste chargée (moyennes de ligue requises, voir moteur/features.py:_moyennes_ligue)
-        # — seule l'ÉVALUATION finale est restreinte aux matchs Real Betis (id=543) / Barcelona
-        # (id=529). Pour chaque k testé, generer_lignes calcule TOUTES les familles en une
-        # passe (Config n'a qu'UN champ shrinkage_comptage, partagé) — mais chaque famille est
-        # ensuite ISOLÉE et mesurée séparément (Brier propre, jamais mélangé à une autre
-        # famille) : c'est ça, ici, qui est "indépendant" — pas le calcul en lui-même (déjà
-        # séparé par famille dans predire_match), mais la MESURE qui recommande un k propre à
-        # chaque famille.
+        # barcelona" — 17/10/2026, résultat de ce backtest : corners/tirs/tirs_cadres/fautes
+        # préfèrent un k BIEN PLUS BAS que l'ancien défaut partagé (5.0), cartons un k plus haut
+        # -> Config a désormais un champ shrinkage_comptage_<famille> PAR FAMILLE (plus un seul
+        # champ partagé, voir moteur/config.py). Hors-jeux exclu : aucune donnée réelle (0 match
+        # sur 1249, voir moteur/modeles/registre.py). La Liga ENTIÈRE reste chargée (moyennes de
+        # ligue requises, voir moteur/features.py:_moyennes_ligue) — seule l'ÉVALUATION finale
+        # est restreinte aux matchs Real Betis (id=543) / Barcelona (id=529). Pour chaque
+        # (famille, k) testé, un seul champ Config change à la fois — jamais les 5 familles
+        # testées avec la même valeur comme avant ce correctif.
         if: inputs.verification == 'backtest-k-comptage'
         working-directory: backend
         run: |
@@ -256,10 +253,12 @@ jobs:
 
           grille_k = (3, 5, 8, 10, 15, 20, 30)
           resultats = {famille: [] for famille in FAMILLES}
-          for k in grille_k:
-              cfg = Config.depuis_env(shrinkage_comptage=float(k))
-              lignes = generer_lignes(matchs, {}, cfg, debut, fin)
-              for famille, marches_famille in FAMILLES.items():
+          for famille, marches_famille in FAMILLES.items():
+              for k in grille_k:
+                  # Un seul champ Config change par appel (shrinkage_comptage_<famille>) :
+                  # les 4 autres familles restent à leur valeur par défaut déjà validée.
+                  cfg = Config.depuis_env(**{f'shrinkage_comptage_{famille}': float(k)})
+                  lignes = generer_lignes(matchs, {}, cfg, debut, fin)
                   lignes_f = [ln for ln in lignes if ln.marche in marches_famille and ln.match_id in matchs_cibles]
                   m = metriques(lignes_f, cfg, paris=False)
                   resultats[famille].append((k, m))
