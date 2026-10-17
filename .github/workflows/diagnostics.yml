@@ -21,6 +21,7 @@ on:
           - backtest-k-buts
           - backtest-k-comptage
           - backtest-k-lissage-buts
+          - backtest-handicap-calibration
         default: marches-disponibles
       date_debut:
         description: "Date cible de début (AAAA-MM-JJ) — utilisé seulement par 'marches-disponibles'"
@@ -370,6 +371,94 @@ jobs:
               meilleur = min(valides, key=lambda kn: kn[2]) if valides else None
               if meilleur:
                   print(f'   -> Meilleur k pour {nom} : k={meilleur[0]} (Brier={meilleur[2]}, {meilleur[1]} prédictions)')
+          "
+
+      - name: Backtest réel — biais favori/outsider sur Handicap, par tranche de probabilité
+        # Demande explicite, après investigation "Handicap Asiatique" (17/10/2026) : l'échantillon
+        # production réel (categorie='Handicap', 48 jambes déjà tranchées) montre un calibrage TRÈS
+        # inégal selon la tranche de confiance annoncée — 55-70 % (n=20) : 45 % réel pour 63,7 %
+        # annoncé (18,7 pts de surconfiance) ; 70-100 % (n=20) : 75 % réel pour 77,3 % annoncé (2,3
+        # pts, quasi parfait) ; <45 % (n=5, trop petit) : 0 % réel pour 32,3 % annoncé. Hypothèse à
+        # vérifier sur un VRAI grand échantillon (5 grands championnats, walk-forward, k=10 déjà fixé
+        # en production, voir K_LISSAGE_BUTS) plutôt que sur 48 jambes : le biais gros-favori-bien-
+        # calibré / favori-moyen-surconfiant est-il structurel (modèle Poisson/Dixon-Coles) ou
+        # spécifique à l'échantillon bet_agent (bruit, petit n) ? Teste aussi plusieurs lignes de
+        # handicap par match (-2.5 à +2.5) pour couvrir autant les gros favoris que les outsiders.
+        if: inputs.verification == 'backtest-handicap-calibration'
+        working-directory: backend
+        run: |
+          python -c "
+          import sys
+          from pathlib import Path
+          RACINE = Path.cwd().parent
+          sys.path.insert(0, str(RACINE))
+          sys.path.insert(0, str(RACINE / 'bet_agent'))
+
+          from app.database import SessionLocal
+          from app.services.historique import charger_matchs
+          from moteur.features import Historique, en_datetime, est_termine
+          from moteur import calibration as calib
+
+          import analyser_et_envoyer as ae
+          import verifier_resultats as vr
+
+          COMPETITIONS = {39: 'Premier League', 140: 'La Liga', 135: 'Serie A', 78: 'Bundesliga', 61: 'Ligue 1'}
+          LIGNES_HANDICAP = (-2.5, -2.0, -1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5)
+
+          def stats_dix_derniers(hist, equipe_id, t):
+              vues = hist.equipe_avant(equipe_id, t, n=10)
+              if len(vues) < 5:
+                  return None
+              buts_pour = [v['buts_pour'] for v in vues]
+              buts_contre = [v['buts_contre'] for v in vues]
+              return {'buts_marques_moyenne': sum(buts_pour) / len(buts_pour),
+                      'buts_encaisses_moyenne': sum(buts_contre) / len(buts_contre),
+                      'matchs_avec_donnees': len(vues)}
+
+          points = []  # (proba, issue 0/1, ligne, favori_bool)
+          with SessionLocal() as db:
+              for comp_id, nom in COMPETITIONS.items():
+                  matchs = charger_matchs(db, competition_id=comp_id)
+                  print(f'{len(matchs)} matchs {nom} chargés.')
+                  hist = Historique(matchs)
+                  termines = sorted((m for m in matchs if est_termine(m)), key=lambda m: en_datetime(m['date']))
+                  for m in termines:
+                      t = en_datetime(m['date'])
+                      sd_h, sd_a = stats_dix_derniers(hist, m['home_id'], t), stats_dix_derniers(hist, m['away_id'], t)
+                      if not sd_h or not sd_a:
+                          continue
+                      xg = ae.calculer_xg_depuis_stats_detaillees(sd_h, sd_a)
+                      if not xg:
+                          continue
+                      mu_h, mu_a = xg
+                      hg, ag = m['home_score'], m['away_score']
+                      for ligne in LIGNES_HANDICAP:
+                          p_hcp = ae.proba_handicap_couvert(mu_h, mu_a, ligne)
+                          issue_hcp = vr.juger_handicap(ligne, '1', hg, ag)
+                          if issue_hcp == 'push':
+                              continue
+                          points.append((p_hcp, 1 if issue_hcp == 'gagne' else 0, ligne))
+
+          print(f'\\n{len(points)} prédictions handicap (domicile, 11 lignes x 5 championnats).')
+          seul_proba = [(p, y) for p, y, _ in points]
+          print('\\n=== Calibration par tranche de probabilité annoncée (biais favori/outsider) ===')
+          for ligne_cal in calib.tableau_fiabilite(seul_proba):
+              print(f'   {ligne_cal[\"tranche\"]:>8s} : n={ligne_cal[\"n\"]:>5} proba_moyenne={ligne_cal[\"proba_moyenne\"]:.3f} '
+                    f'frequence_reelle={ligne_cal[\"frequence_reelle\"]:.3f} ecart={ligne_cal[\"ecart\"]:+.3f}')
+          print(f'   Brier global : {calib.brier(seul_proba):.4f}')
+
+          print('\\n=== Calibration par ampleur de la ligne de handicap (famille) ===')
+          FAMILLES_LIGNE = {'grosse ligne (|l|>=2)': lambda l: abs(l) >= 2.0,
+                             'ligne moyenne (1<=|l|<2)': lambda l: 1.0 <= abs(l) < 2.0,
+                             'petite ligne (|l|<1)': lambda l: abs(l) < 1.0}
+          for nom_f, cond in FAMILLES_LIGNE.items():
+              pts_f = [(p, y) for p, y, l in points if cond(l)]
+              if not pts_f:
+                  continue
+              moy_proba = sum(p for p, _ in pts_f) / len(pts_f)
+              moy_reel = sum(y for _, y in pts_f) / len(pts_f)
+              print(f'   {nom_f:28s} : n={len(pts_f):>5} proba_moyenne={moy_proba:.3f} frequence_reelle={moy_reel:.3f} '
+                    f'ecart={moy_reel - moy_proba:+.3f} brier={calib.brier(pts_f):.4f}')
           "
 
       - name: IA (Groq, Gemini, OpenRouter)
