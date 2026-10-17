@@ -111,7 +111,9 @@ def _run(db):
 
 class TestMoteurCentralEstBienCeluiQuiSexecute:
     def test_coupon_central_genere_sans_moteur_concurrent(self):
-        pool = _pool_deux_matchs()
+        # 5 matchs : nb_jambes_min=nb_jambes_max=5 par défaut (17/10/2026) — un seul coupon
+        # possible, à exactement 5 jambes.
+        pool = _pool_n_matchs(5)
         with SessionLocal() as db:
             run = _run(db)
             run_id = run.id
@@ -131,8 +133,8 @@ class TestMoteurCentralEstBienCeluiQuiSexecute:
             coupons = list(db.scalars(select(Coupon).where(Coupon.run_id == run_id)))
             assert len(coupons) == 1
             assert coupons[0].profil == "central_1"
-            # Les deux matchs du pool central ont bien été retenus (2 jambes, cote ~1.69).
-            assert len(coupons[0].jambes) == 2
+            # Les 5 matchs du pool central ont bien été retenus (5 jambes, cote ~3.713).
+            assert len(coupons[0].jambes) == 5
             # Compatibilité avec la chaîne existante (instruction 5) : categorie/handicap/
             # guide/onglet sont bien récupérés depuis le pool bet_agent d'origine, pas perdus.
             jambe = coupons[0].jambes[0]
@@ -141,7 +143,7 @@ class TestMoteurCentralEstBienCeluiQuiSexecute:
             assert jambe.guide == "guide Total"
 
     def test_moteur_explicite_central_identique_au_defaut(self):
-        pool = _pool_deux_matchs()
+        pool = _pool_n_matchs(5)
         with SessionLocal() as db:
             run = _run(db)
             run_id = run.id
@@ -214,16 +216,20 @@ class TestGenerationDynamiqueMultiCoupons:
     moteur_central_run.executer_moteur_central boucle en excluant à chaque tour les matchs
     déjà utilisés (même principe que la génération dynamique de bet_agent du 11/10/2026)."""
 
-    def test_six_matchs_donnent_deux_coupons_sans_recouvrement(self):
-        # 6 matchs éligibles -> palier "6" de nb_coupons_dynamique = 2 coupons.
-        pool = _pool_n_matchs(6)
+    def test_dix_matchs_donnent_deux_coupons_de_cinq_sans_recouvrement(self):
+        # 10 matchs, nb_jambes=5 par défaut (17/10/2026) -> exactement 2 coupons possibles sans
+        # recouvrement (NB_COUPONS_CENTRAL forcé à 2 : déterministe, indépendant des paliers de
+        # nb_coupons_dynamique qui viseraient 3 avec 10 matchs mais échoueraient dès le 3e,
+        # faute de pool restant).
+        pool = _pool_n_matchs(10)
         with SessionLocal() as db:
             run = _run(db)
             run_id = run.id
             cd, ae = _faux_modules(pool)
             with mock.patch.object(pipeline, "modules", return_value=(cd, ae, None)), \
                     mock.patch.object(pipeline, "reinitialiser_caches"), \
-                    mock.patch("app.services.capture_historique.capturer_predictions", return_value=0):
+                    mock.patch("app.services.capture_historique.capturer_predictions", return_value=0), \
+                    mock.patch("app.services.moteur_central_run.NB_COUPONS_CENTRAL", "2"):
                 executer_run(run_id, moteur="central")
 
         with SessionLocal() as db:
@@ -232,12 +238,15 @@ class TestGenerationDynamiqueMultiCoupons:
             coupons = list(db.scalars(select(Coupon).where(Coupon.run_id == run_id)))
             assert len(coupons) == 2
             assert {c.profil for c in coupons} == {"central_1", "central_2"}
+            assert all(len(c.jambes) == 5 for c in coupons)
             matchs_vus = [j.libelle_match for c in coupons for j in c.jambes]
             assert len(matchs_vus) == len(set(matchs_vus)), (
                 "un même match apparaît dans plusieurs coupons du moteur central")
 
-    def test_deux_matchs_seulement_un_seul_coupon(self):
-        # Comportement inchangé pour un petit pool : un seul coupon (palier "2" = 1).
+    def test_moins_de_cinq_matchs_termine_en_erreur(self):
+        # nb_jambes_min=5 par défaut (17/10/2026) : un pool de 2 matchs ne peut plus produire
+        # aucun coupon (avant ce changement, 2 matchs suffisaient) — erreur explicite, jamais
+        # un coupon tronqué à moins de jambes que demandé.
         pool = _pool_deux_matchs()
         with SessionLocal() as db:
             run = _run(db)
@@ -248,8 +257,11 @@ class TestGenerationDynamiqueMultiCoupons:
                     mock.patch("app.services.capture_historique.capturer_predictions", return_value=0):
                 executer_run(run_id, moteur="central")
         with SessionLocal() as db:
+            run_relu = db.get(Run, run_id)
+            assert run_relu.statut == "erreur"
+            assert "aucun coupon composé" in run_relu.detail
             coupons = list(db.scalars(select(Coupon).where(Coupon.run_id == run_id)))
-            assert len(coupons) == 1
+            assert coupons == []
 
 
 class TestRunPonctuelNbCouponsEtMarchesForces:
@@ -275,15 +287,12 @@ class TestRunPonctuelNbCouponsEtMarchesForces:
             assert len(coupons) == 2
 
     def test_marches_autorises_restreint_le_pool(self):
-        # Trois matchs : deux en "Total" (buts) — assez pour composer un coupon à 2 jambes —
-        # et un troisième en "Total Corners" seulement. MOTEUR_CENTRAL_MARCHES_AUTORISES=
-        # ("Total",) doit exclure ce dernier du pool central (jamais un coupon composé avec
-        # "Total Corners" alors que seul "Total" est autorisé pour ce run).
-        pool = {
-            "A vs B": [_candidat("A vs B", "Total", "Over", 1.3)],
-            "E vs F": [_candidat("E vs F", "Total", "Over", 1.3)],
-            "C vs D": [_candidat("C vs D", "Total Corners", "Over", 1.3)],
-        }
+        # Cinq matchs en "Total" (buts) — assez pour composer un coupon à 5 jambes (défaut
+        # 17/10/2026) — et un sixième en "Total Corners" seulement. MOTEUR_CENTRAL_
+        # MARCHES_AUTORISES=("Total",) doit exclure ce dernier du pool central (jamais un
+        # coupon composé avec "Total Corners" alors que seul "Total" est autorisé pour ce run).
+        pool = _pool_n_matchs(5)
+        pool["C vs D"] = [_candidat("C vs D", "Total Corners", "Over", 1.3)]
         with SessionLocal() as db:
             run = _run(db)
             run_id = run.id
@@ -298,7 +307,7 @@ class TestRunPonctuelNbCouponsEtMarchesForces:
             coupons = list(db.scalars(select(Coupon).where(Coupon.run_id == run_id)))
             assert len(coupons) == 1
             matchs_vus = {j.libelle_match for c in coupons for j in c.jambes}
-            assert matchs_vus == {"A vs B", "E vs F"}, "le match 'Total Corners' n'aurait jamais dû être éligible"
+            assert "C vs D" not in matchs_vus, "le match 'Total Corners' n'aurait jamais dû être éligible"
 
 
 class TestEdgeSuspectReellementRejete:
@@ -309,13 +318,10 @@ class TestEdgeSuspectReellementRejete:
     _exclure_edge_suspect() doit réellement retirer ce genre de candidat du pool central."""
 
     def test_candidat_edge_suspect_exclu_du_pool(self):
-        # Trois matchs à edge normal (5.0, sous EDGE_MAX_CENTRAL=20) — assez pour composer un
-        # coupon à 2 jambes — et un quatrième à edge 29.9 (suspect, doit être exclu).
-        pool = {
-            "A vs B": [_candidat("A vs B", "Total", "Over", 1.3, edge=5.0)],
-            "E vs F": [_candidat("E vs F", "Total", "Over", 1.3, edge=5.0)],
-            "G vs H": [_candidat("G vs H", "Total", "Over", 1.3, edge=29.9)],
-        }
+        # Cinq matchs à edge normal (5.0, sous EDGE_MAX_CENTRAL=20) — assez pour composer un
+        # coupon à 5 jambes (défaut 17/10/2026) — et un sixième à edge 29.9 (suspect, exclu).
+        pool = _pool_n_matchs(5)
+        pool["G vs H"] = [_candidat("G vs H", "Total", "Over", 1.3, edge=29.9)]
         with SessionLocal() as db:
             run = _run(db)
             run_id = run.id
@@ -330,4 +336,3 @@ class TestEdgeSuspectReellementRejete:
             assert len(coupons) == 1
             matchs_vus = {j.libelle_match for c in coupons for j in c.jambes}
             assert "G vs H" not in matchs_vus, "le candidat à edge 29.9% aurait dû être rejeté (suspect)"
-            assert matchs_vus == {"A vs B", "E vs F"}
