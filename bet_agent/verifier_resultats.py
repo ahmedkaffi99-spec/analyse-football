@@ -300,6 +300,20 @@ def juger_total(handicap, selection, total):
     return "gagne" if gagne else "perdu"
 
 
+def juger_resultat(selection, home_g, away_g):
+    """Full Time Result (1X2) — 17/10/2026, demande explicite : cette categorie n'avait AUCUNE
+    branche de jugement (toujours 'non_verifiable', même score final connu) — ajoutée en même
+    temps que sa modélisation Python (voir analyser_et_envoyer._evaluer_marches_brut)."""
+    sel_norm = re.sub(r"[^a-z0-9]", "", selection.lower())
+    if sel_norm in ("1", "home"):
+        return "gagne" if home_g > away_g else "perdu"
+    if sel_norm in ("x", "draw"):
+        return "gagne" if home_g == away_g else "perdu"
+    if sel_norm in ("2", "away"):
+        return "gagne" if away_g > home_g else "perdu"
+    return None
+
+
 def juger_btts(selection, home_g, away_g):
     sel = selection.lower()
     both = home_g > 0 and away_g > 0
@@ -382,6 +396,8 @@ def grader_pick(pick, home_g, away_g):
         # Corners/cartons/fautes/tirs/hors-jeux : jugés par grader_pick_stat (statistiques
         # finales API-Football), jamais ici (grader_pick ne reçoit que des buts).
         return None
+    if categorie == "Full Time Result":
+        return juger_resultat(selection, home_g, away_g)
     if categorie == "BTTS":
         return juger_btts(selection, home_g, away_g)
     if categorie == "Double Chance":

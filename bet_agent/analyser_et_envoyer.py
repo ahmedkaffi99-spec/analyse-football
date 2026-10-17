@@ -1169,6 +1169,31 @@ def _evaluer_marches_brut(marches, mu_home, mu_away, mu_corners=None, mu_cartons
                     if _edge_calculable(edge, 1 - p_yes):
                         candidats.append(_candidat(marche["marche"], handicap, s, 1 - p_yes, edge, "BTTS"))
 
+        # --- Full Time Result (1X2) ---
+        # 17/10/2026, demande explicite ("investigue Double Chance et 1x2") : ce marché n'a
+        # JAMAIS été modélisé ici malgré proba_1x2() déjà calculée plus haut (utilisée pour
+        # Double Chance/Draw No Bet, jamais pour lui-même) — tout pick "Full Time Result"
+        # venait donc du marché brut SANS edge Python (proba_modele_pct/edge_pct=None, vérifié
+        # en base : les 8 jambes existantes ont toutes les deux à NULL), choisi par l'IA sans
+        # aucun garde-fou quantitatif. Même bug côté vérification : grader_pick n'avait aucune
+        # branche pour cette categorie -> toujours "non_verifiable", même quand le score final
+        # était parfaitement connu (voir verifier_resultats.juger_resultat, ajouté en même
+        # temps que ce correctif).
+        elif nom == "full time result":
+            for s in selections:
+                sel_norm = re.sub(r"[^a-z0-9]", "", s["selection"].lower())
+                if sel_norm in ("1", "home"):
+                    proba = p_home
+                elif sel_norm in ("x", "draw"):
+                    proba = p_draw
+                elif sel_norm in ("2", "away"):
+                    proba = p_away
+                else:
+                    continue
+                edge = calc_edge(proba, s["cote"])
+                if _edge_calculable(edge, proba):
+                    candidats.append(_candidat(marche["marche"], handicap, s, proba, edge, "Full Time Result"))
+
         # --- Double Chance ---
         # "12" (ni nul) n'est plus banni (demande explicite du 01/10/2026 : "il peut
         # sélectionner 12 [...] si le taux de réussite est élevé") — modélisé comme les deux
