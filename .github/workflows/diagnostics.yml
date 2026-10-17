@@ -20,6 +20,7 @@ on:
           - cotes-match
           - backtest-k-buts
           - backtest-k-comptage
+          - backtest-k-lissage-buts
         default: marches-disponibles
       date_debut:
         description: "Date cible de début (AAAA-MM-JJ) — utilisé seulement par 'marches-disponibles'"
@@ -280,6 +281,95 @@ jobs:
           print('\\n=== Résumé : meilleur k par famille, INDÉPENDANT (Real Betis vs Barcelona) ===')
           for famille, (k, m) in meilleurs.items():
               print(f'   {famille:12s} k={k:>3} (Brier={m[\"brier\"]})')
+          "
+
+      - name: Backtest réel — meilleur K_LISSAGE_BUTS pour bet_agent (Handicap + BTTS)
+        # Demande explicite, après investigation Handicap (43%) et BTTS (44% de réussite réelle
+        # sur les jambes déjà tranchées, voir hist_matchs) : ces deux marchés utilisent le xG de
+        # bet_agent (calculer_xg_depuis_stats_detaillees -> _lisser_vers_prior), COMPLÈTEMENT
+        # séparé de moteur/config.py (déjà backtesté). L'ancien lissage à ratio plafonné
+        # saturait à 100% de confiance dès 10 matchs — la quasi-totalité des cas réels, donc
+        # AUCUN lissage en pratique. Corrigé en lissage additif (K_LISSAGE_BUTS, 17/10/2026) —
+        # ce backtest calcule les VRAIES moyennes des 10 derniers matchs (tout lieu confondu,
+        # comme bet_agent les utilise) depuis hist_matchs en walk-forward (moteur.features.
+        # Historique, aucune fuite du futur), appelle ae.calculer_xg_depuis_stats_detaillees +
+        # ae.proba_btts/proba_handicap_couvert RÉELLEMENT (jamais réimplémentées), et juge
+        # chaque prédiction avec vr.juger_btts/juger_handicap (déjà utilisées en production).
+        if: inputs.verification == 'backtest-k-lissage-buts'
+        working-directory: backend
+        run: |
+          python -c "
+          import sys
+          from pathlib import Path
+          RACINE = Path.cwd().parent
+          sys.path.insert(0, str(RACINE))
+          sys.path.insert(0, str(RACINE / 'bet_agent'))
+
+          from app.database import SessionLocal
+          from app.services.historique import charger_matchs
+          from moteur.features import Historique, en_datetime, est_termine
+          from moteur import calibration as calib
+
+          import analyser_et_envoyer as ae
+          import verifier_resultats as vr
+
+          with SessionLocal() as db:
+              matchs = charger_matchs(db, competition_id=39)
+
+          print(f'{len(matchs)} matchs Premier League chargés.')
+          hist = Historique(matchs)
+          termines = sorted((m for m in matchs if est_termine(m)), key=lambda m: en_datetime(m['date']))
+
+          def stats_dix_derniers(equipe_id, t):
+              vues = hist.equipe_avant(equipe_id, t, n=10)
+              if len(vues) < 5:
+                  return None
+              buts_pour = [v['buts_pour'] for v in vues]
+              buts_contre = [v['buts_contre'] for v in vues]
+              return {'buts_marques_moyenne': sum(buts_pour) / len(buts_pour),
+                      'buts_encaisses_moyenne': sum(buts_contre) / len(buts_contre),
+                      'matchs_avec_donnees': len(vues)}
+
+          LIGNES_HANDICAP = (-1.0, -0.5, 0.0, 0.5, 1.0)
+          grille_k = (0.0, 3, 5, 8, 10, 15, 20, 30)
+          original_lisser = ae._lisser_vers_prior
+          resultats_btts, resultats_handicap = [], []
+
+          for k in grille_k:
+              ae._lisser_vers_prior = (lambda v, n, p, _o=original_lisser, _k=k: _o(v, n, p, k=_k))
+              points_btts, points_handicap = [], []
+              for m in termines:
+                  t = en_datetime(m['date'])
+                  sd_h, sd_a = stats_dix_derniers(m['home_id'], t), stats_dix_derniers(m['away_id'], t)
+                  if not sd_h or not sd_a:
+                      continue
+                  xg = ae.calculer_xg_depuis_stats_detaillees(sd_h, sd_a)
+                  if not xg:
+                      continue
+                  mu_h, mu_a = xg
+                  hg, ag = m['home_score'], m['away_score']
+                  p_btts = ae.proba_btts(mu_h, mu_a)
+                  issue_btts = vr.juger_btts('oui', hg, ag)
+                  points_btts.append((p_btts, 1 if issue_btts == 'gagne' else 0))
+                  for ligne in LIGNES_HANDICAP:
+                      p_hcp = ae.proba_handicap_couvert(mu_h, mu_a, ligne)
+                      issue_hcp = vr.juger_handicap(ligne, '1', hg, ag)
+                      if issue_hcp == 'push':
+                          continue
+                      points_handicap.append((p_hcp, 1 if issue_hcp == 'gagne' else 0))
+              ae._lisser_vers_prior = original_lisser
+              resultats_btts.append((k, len(points_btts), calib.brier(points_btts) if points_btts else None))
+              resultats_handicap.append((k, len(points_handicap), calib.brier(points_handicap) if points_handicap else None))
+
+          for nom, resultats in (('BTTS', resultats_btts), ('Handicap (5 lignes testées)', resultats_handicap)):
+              print(f'\\n=== {nom} ===')
+              print(f'{\"k\":>6s} {\"n_predictions\":>14s} {\"brier\":>8s}')
+              for k, n, b in resultats:
+                  print(f'{k:>6} {n:>14} {b if b is not None else float(\"nan\"):>8.4f}')
+              valides = [(k, n, b) for k, n, b in resultats if b is not None]
+              meilleur = min(valides, key=lambda kn: kn[2]) if valides else None
+              if meilleur:
+                  print(f'   -> Meilleur k pour {nom} : k={meilleur[0]} (Brier={meilleur[2]}, {meilleur[1]} prédictions)')
           "
 
       - name: IA (Groq, Gemini, OpenRouter)
