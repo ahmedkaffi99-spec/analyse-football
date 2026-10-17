@@ -29,7 +29,10 @@ class ConfigCentrale:
     shadow: bool = False                    # calcule et journalise à chaque run, sans rien envoyer
     n_min_fiable: int = 8                    # seuil "historique jugé digne de confiance" (qualite_marches)
     n_min_decision_moteur: int = 30          # seuil pour trancher bet_agent vs moteur sur un marché (ROI)
-    nb_jambes_min: int = 2
+    nb_jambes_min: int = 5                   # = nb_jambes_max : force EXACTEMENT 5 jambes par
+    # défaut (17/10/2026, demande explicite) — auparavant 2, ce qui laissait selectionner()
+    # choisir la taille la plus proche de la cote cible, souvent 2 jambes depuis l'abaissement
+    # de COTE_MAX_CENTRAL à 1.9 (16/10/2026).
     nb_jambes_max: int = 5
     taille_pool_max: int = 25                # recherche exhaustive au-delà : trop coûteux, voir selection.py
 
