@@ -54,6 +54,13 @@ et MOTEUR_CENTRAL_MARCHES_AUTORISES permettent de contourner respectivement
 ae.nb_coupons_dynamique et le pool central complet pour UN run précis — vides par défaut,
 comportement dynamique/complet inchangé tant qu'ils ne sont pas explicitement positionnés.
 
+MATCHS PERDUS EN ROUTE JOURNALISÉS (18/10/2026, demande explicite : "ne laisse pas un match
+disponible [de côté]") : un match collecté sur 1xBet peut finir sans aucun candidat éligible si
+tous ses marchés tombent sous un filtre (aucun candidat construit, surdispersion sans
+remplaçant moteur, restriction de marchés, edge suspect) — chaque étape où un match disparaît
+est désormais journalisée avec sa raison précise (voir `matchs_perdus` ci-dessous), jamais
+seulement le compte final de candidats.
+
 NOMBRE DE COUPONS RECALIBRÉ POUR UNE TAILLE DE JAMBES FIXE (17/10/2026, demande explicite :
 "si 26 [matchs] diffuse sur 3 à 5 coupons et min 5 jambes") : depuis que nb_jambes_min=
 nb_jambes_max=5 par défaut (ConfigCentrale), ae.nb_coupons_dynamique (calibré pour des coupons
@@ -218,8 +225,19 @@ def executer_moteur_central(db, donnees, ae, cfg=None):
     candidats_ba, candidats_mo = construire_candidats(pool, comparaison, historique, cfg)
     choix = choisir_par_marche(historique["bet_agent"], historique["moteur"], cfg.n_min_decision_moteur)
     pool_central = construire_pool_central(candidats_mo, candidats_ba, choix)
+
+    # Suivi des matchs perdus en route (18/10/2026, demande explicite : "ne laisse pas un
+    # match disponible [de côté]") — un match collecté sur 1xBet (clé de `pool`) peut quand
+    # même finir sans AUCUN candidat éligible si tous ses marchés tombent sous un filtre
+    # différent (aucun candidat moteur/bet_agent construit, surdispersion, restriction de
+    # marchés, edge suspect). Jamais silencieux : chaque étape où un match disparaît est
+    # journalisée avec sa raison, pas seulement le compte final de candidats.
+    matchs_collectes = set(pool)
+    matchs_avant_pool_central = {c.match for c in pool_central}
+
     avant_exclusion = len(pool_central)
     pool_central = _exclure_bet_agent_marches_surdisperses(pool_central)
+    matchs_apres_surdispersion = {c.match for c in pool_central}
     if avant_exclusion != len(pool_central):
         print(f"   🧮 [Moteur central] {avant_exclusion - len(pool_central)} candidat(s) bet_agent "
               f"(Poisson) retiré(s) sur des marchés surdispersés (tirs/corners/cartons/fautes/"
@@ -227,15 +245,32 @@ def executer_moteur_central(db, donnees, ae, cfg=None):
 
     avant_restriction = len(pool_central)
     pool_central = _restreindre_marches_autorises(pool_central)
+    matchs_apres_restriction = {c.match for c in pool_central}
     if MARCHES_AUTORISES_CENTRAL:
         print(f"   🧮 [Moteur central] Restriction explicite aux marchés {MARCHES_AUTORISES_CENTRAL} "
               f"({avant_restriction} → {len(pool_central)} candidat(s)).")
 
     avant_edge = len(pool_central)
     pool_central = _exclure_edge_suspect(pool_central)
+    matchs_apres_edge = {c.match for c in pool_central}
     if avant_edge != len(pool_central):
         print(f"   🧮 [Moteur central] {avant_edge - len(pool_central)} candidat(s) retiré(s) "
               f"pour edge suspect (> {EDGE_MAX_CENTRAL:.0f}%).")
+
+    matchs_perdus = []
+    matchs_perdus += [(m, "aucun candidat construit (historique insuffisant ou marché non mappé)")
+                      for m in sorted(matchs_collectes - matchs_avant_pool_central)]
+    matchs_perdus += [(m, "tous ses candidats étaient bet_agent sur un marché surdispersé, sans remplaçant moteur")
+                      for m in sorted(matchs_avant_pool_central - matchs_apres_surdispersion)]
+    matchs_perdus += [(m, f"aucun candidat sur les marchés autorisés {MARCHES_AUTORISES_CENTRAL}")
+                      for m in sorted(matchs_apres_surdispersion - matchs_apres_restriction)]
+    matchs_perdus += [(m, f"tous ses candidats restants dépassaient l'edge max ({EDGE_MAX_CENTRAL:.0f}%)")
+                      for m in sorted(matchs_apres_restriction - matchs_apres_edge)]
+    if matchs_perdus:
+        print(f"   ⚠️ [Moteur central] {len(matchs_perdus)} match(s) collecté(s) sur 1xBet mais "
+              f"SANS AUCUN candidat éligible, donc exclu(s) du pool :")
+        for match, raison in matchs_perdus:
+            print(f"      • {match} — {raison}")
 
     nb_matchs_eligibles = len({c.match for c in pool_central})
     if NB_COUPONS_CENTRAL:
