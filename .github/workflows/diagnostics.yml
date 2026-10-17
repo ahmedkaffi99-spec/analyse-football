@@ -19,6 +19,7 @@ on:
           - modeles-openrouter-gratuits
           - cotes-match
           - backtest-k-buts
+          - backtest-k-comptage
         default: marches-disponibles
       date_debut:
         description: "Date cible de début (AAAA-MM-JJ) — utilisé seulement par 'marches-disponibles'"
@@ -203,6 +204,76 @@ jobs:
           if meilleur:
               print(f'\\n=== Meilleur k (Brier le plus bas) : k={meilleur[0]} -> Brier={meilleur[1][\"brier\"]} '
                     f'(sur {meilleur[1][\"n_predictions\"]} prédictions buts_total) ===')
+          "
+
+      - name: Backtest réel — meilleur shrinkage_comptage (k) par marché, INDÉPENDANT
+        # Demande explicite : "tous calcul apart indépendant ne calcul pas ensemble les tir
+        # corner et jaune etc" — corners/cartons/tirs/tirs_cadres/fautes partagent AUJOURD'HUI
+        # un seul shrinkage_comptage (5.0, jamais backtesté, voir moteur/config.py) alors que
+        # buts_attendus() vient d'être validé séparément à k=30. Hors-jeux exclu : aucune
+        # donnée réelle (0 match sur 1249, voir moteur/modeles/registre.py). Pour chaque k
+        # testé, generer_lignes calcule TOUTES les familles en une passe (Config n'a qu'UN
+        # champ shrinkage_comptage, partagé) — mais chaque famille est ensuite ISOLÉE et
+        # mesurée séparément (Brier propre, jamais mélangé à une autre famille) : c'est ça,
+        # ici, qui est "indépendant" — pas le calcul en lui-même (déjà séparé par famille dans
+        # predire_match), mais la MESURE qui recommande un k propre à chaque famille.
+        if: inputs.verification == 'backtest-k-comptage'
+        working-directory: backend
+        run: |
+          python -c "
+          import sys
+          from pathlib import Path
+          sys.path.insert(0, str(Path.cwd().parent))
+
+          from datetime import datetime, timezone
+
+          from app.database import SessionLocal
+          from app.services.historique import charger_matchs
+          from moteur.backtest import generer_lignes, metriques
+          from moteur.config import Config
+
+          FAMILLES = {
+              'corners': ('corners_total', 'corners_equipe1', 'corners_equipe2'),
+              'cartons': ('cartons_total', 'cartons_equipe1', 'cartons_equipe2'),
+              'tirs': ('tirs_total', 'tirs_equipe1', 'tirs_equipe2'),
+              'tirs_cadres': ('tirs_cadres_total', 'tirs_cadres_equipe1', 'tirs_cadres_equipe2'),
+              'fautes': ('fautes_total', 'fautes_equipe1', 'fautes_equipe2'),
+          }
+
+          with SessionLocal() as db:
+              matchs = charger_matchs(db, competition_id=39)
+
+          print(f'{len(matchs)} matchs Premier League chargés.')
+          debut = min(m['date'] for m in matchs)
+          fin = datetime.now(timezone.utc).isoformat()
+
+          grille_k = (3, 5, 8, 10, 15, 20, 30)
+          resultats = {famille: [] for famille in FAMILLES}
+          for k in grille_k:
+              cfg = Config.depuis_env(shrinkage_comptage=float(k))
+              lignes = generer_lignes(matchs, {}, cfg, debut, fin)
+              for famille, marches_famille in FAMILLES.items():
+                  lignes_f = [ln for ln in lignes if ln.marche in marches_famille]
+                  m = metriques(lignes_f, cfg, paris=False)
+                  resultats[famille].append((k, m))
+
+          meilleurs = {}
+          for famille, mesures in resultats.items():
+              print(f'\\n=== {famille} ===')
+              print(f'{\"k\":>6s} {\"n_predictions\":>14s} {\"brier\":>8s} {\"log_loss\":>10s}')
+              for k, m in mesures:
+                  print(f'{k:>6} {m[\"n_predictions\"]:>14} {m[\"brier\"] if m[\"brier\"] is not None else float(\"nan\"):>8.4f} '
+                        f'{m[\"log_loss\"] if m[\"log_loss\"] is not None else float(\"nan\"):>10.4f}')
+              valides = [(k, m) for k, m in mesures if m['brier'] is not None]
+              meilleur = min(valides, key=lambda km: km[1]['brier']) if valides else None
+              if meilleur:
+                  meilleurs[famille] = meilleur
+                  print(f'   -> Meilleur k pour {famille} : k={meilleur[0]} (Brier={meilleur[1][\"brier\"]}, '
+                        f'{meilleur[1][\"n_predictions\"]} prédictions)')
+
+          print('\\n=== Résumé : meilleur k par famille, INDÉPENDANT ===')
+          for famille, (k, m) in meilleurs.items():
+              print(f'   {famille:12s} k={k:>3} (Brier={m[\"brier\"]})')
           "
 
       - name: IA (Groq, Gemini, OpenRouter)
