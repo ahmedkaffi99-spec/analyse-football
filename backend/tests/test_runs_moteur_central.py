@@ -357,3 +357,22 @@ class TestEdgeSuspectReellementRejete:
             assert len(coupons) == 1
             matchs_vus = {j.libelle_match for c in coupons for j in c.jambes}
             assert "G vs H" not in matchs_vus, "le candidat à edge 29.9% aurait dû être rejeté (suspect)"
+
+    def test_match_perdu_pour_edge_suspect_journalise_avec_raison(self, capsys):
+        # 18/10/2026, demande explicite : "ne laisse pas un match disponible [de côté]" —
+        # un match collecté (ici "G vs H") mais totalement exclu (edge suspect sur son seul
+        # candidat) doit apparaître dans les logs avec sa raison, pas juste disparaître du
+        # compte final de candidats.
+        pool = _pool_n_matchs(5)
+        pool["G vs H"] = [_candidat("G vs H", "Total", "Over", 1.3, edge=29.9)]
+        with SessionLocal() as db:
+            run = _run(db)
+            run_id = run.id
+            cd, ae = _faux_modules(pool)
+            with mock.patch.object(pipeline, "modules", return_value=(cd, ae, None)), \
+                    mock.patch.object(pipeline, "reinitialiser_caches"), \
+                    mock.patch("app.services.capture_historique.capturer_predictions", return_value=0), \
+                    mock.patch("app.services.moteur_central_run.NB_COUPONS_CENTRAL", "1"):
+                executer_run(run_id, moteur="central")
+        sortie = capsys.readouterr().out
+        assert "G vs H" in sortie and "edge max" in sortie
