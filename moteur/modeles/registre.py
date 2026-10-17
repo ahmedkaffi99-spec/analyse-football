@@ -131,7 +131,7 @@ def comptage_attendu(features, famille, cfg):
     if (moy is None or home["n_matchs_stats"] < cfg.min_matchs_stats or away["n_matchs_stats"] < cfg.min_matchs_stats
             or home[f"{stat}_pour_moy"] is None or away[f"{stat}_pour_moy"] is None):
         return None
-    k, n_h, n_a = cfg.shrinkage_comptage, home["n_matchs_stats"], away["n_matchs_stats"]
+    k, n_h, n_a = getattr(cfg, f"shrinkage_comptage_{famille}"), home["n_matchs_stats"], away["n_matchs_stats"]
 
     def retreci(valeur, n):
         return (valeur * n + k * moy) / (n + k)

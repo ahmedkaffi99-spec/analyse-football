@@ -27,7 +27,17 @@ class Config:
     # buts_equipe1/2 sur les matchs Newcastle/Aston Villa) : Brier décroissant de k=3 (0.2165) à
     # k=30 (0.2085, meilleur), remontant à k=50 (0.2088) — 5.0 (ancienne valeur, jamais backtestée)
     # sous-pondérait largement la moyenne de ligue par rapport à la forme récente.
-    shrinkage_comptage: float = 5.0
+    # Un seul shrinkage_comptage partagé par les 5 familles jusqu'au 17/10/2026 — backtest réel
+    # walk-forward (La Liga, Real Betis/Barcelona) a montré que 4 familles sur 5 préfèrent un k
+    # BIEN PLUS BAS que 5 (moins de poids sur la moyenne de ligue, plus sur la forme récente),
+    # sauf les cartons (dépendent davantage de l'arbitre/de la rivalité, déjà gérés par un
+    # facteur arbitre à part — voir comptage_attendu) qui préfèrent un k plus haut. Un seul
+    # champ partagé ne pouvait être bon pour aucune des 5 — remplacé par un champ par famille.
+    shrinkage_comptage_corners: float = 3.0       # Brier 0.2353 à k=3 (vs 0.2382 à k=30)
+    shrinkage_comptage_cartons: float = 10.0      # Brier 0.2267 à k=10 (vs 0.2278 à k=3)
+    shrinkage_comptage_tirs: float = 3.0          # Brier 0.218 à k=3 (vs 0.2292 à k=30)
+    shrinkage_comptage_tirs_cadres: float = 3.0   # Brier 0.224 à k=3 (vs 0.2336 à k=30)
+    shrinkage_comptage_fautes: float = 3.0        # Brier 0.2075 à k=3 (vs 0.2142 à k=30)
     min_matchs_equipe: int = 5        # en dessous : pas de prédiction (qualité de données)
     min_matchs_stats: int = 5         # pour corners/cartons/tirs (couverture des statistiques)
     # Modèle de buts
