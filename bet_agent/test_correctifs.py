@@ -214,6 +214,30 @@ class TestPondererAvecH2h(unittest.TestCase):
         self.assertEqual(candidat["contexte"]["buts_attendus"]["exterieur"], 1.1)
 
 
+class TestFullTimeResultModeliseEtJugeable(unittest.TestCase):
+    """17/10/2026, demande explicite ("investigue Double Chance et 1x2") : "Full Time Result"
+    n'était JAMAIS modélisé par _evaluer_marches_brut malgré proba_1x2() déjà calculée (utilisée
+    pour Double Chance/Draw No Bet, jamais pour lui-même) — tout pick venait du marché brut sans
+    edge Python (confirmé en base : proba_modele_pct/edge_pct NULL sur les 8 jambes existantes)."""
+
+    def test_candidat_genere_avec_une_vraie_proba_poisson(self):
+        marches = [{"marche": "Full Time Result", "handicap": 0, "periode": "fulltime",
+                   "selections": [{"selection": "1", "cote": 1.8}, {"selection": "X", "cote": 3.5},
+                                  {"selection": "2", "cote": 4.5}]}]
+        candidats = ae._evaluer_marches_brut(marches, mu_home=1.8, mu_away=1.1)
+        self.assertEqual({c["categorie"] for c in candidats}, {"Full Time Result"})
+        p_home, p_draw, p_away = ae.proba_1x2(1.8, 1.1)
+        par_selection = {c["selection"]: c["proba_modele_pct"] for c in candidats}
+        self.assertAlmostEqual(par_selection["1"], round(p_home * 100, 1), places=1)
+        self.assertAlmostEqual(par_selection["X"], round(p_draw * 100, 1), places=1)
+        self.assertAlmostEqual(par_selection["2"], round(p_away * 100, 1), places=1)
+
+    def test_marche_mi_temps_ignore(self):
+        marches = [{"marche": "Full Time Result", "handicap": 0, "periode": "1st half",
+                   "selections": [{"selection": "1", "cote": 1.8}]}]
+        self.assertEqual(ae._evaluer_marches_brut(marches, mu_home=1.8, mu_away=1.1), [])
+
+
 def _match_minimal(home, away, fixture_id):
     return {
         "match_demande": {"home": home, "away": away}, "api_football": None,

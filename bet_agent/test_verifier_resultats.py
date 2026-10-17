@@ -113,6 +113,36 @@ class TestGraderPickStat(unittest.TestCase):
         self.assertIsNone(vr.grader_pick_stat("Total Cartons", 4.5, "Under", 2, None))
 
 
+class TestGraderPickResultat(unittest.TestCase):
+    """17/10/2026, demande explicite ("investigue Double Chance et 1x2") : "Full Time Result"
+    n'avait AUCUNE branche de jugement (toujours "non_verifiable", même score final connu) —
+    ajoutée en même temps que sa modélisation Python (voir analyser_et_envoyer._evaluer_marches_brut)."""
+
+    def test_domicile_gagnant(self):
+        self.assertEqual(vr.juger_resultat("1", 2, 1), "gagne")
+        self.assertEqual(vr.juger_resultat("Home", 2, 1), "gagne")
+        self.assertEqual(vr.juger_resultat("1", 1, 2), "perdu")
+
+    def test_match_nul(self):
+        self.assertEqual(vr.juger_resultat("X", 1, 1), "gagne")
+        self.assertEqual(vr.juger_resultat("Draw", 1, 1), "gagne")
+        self.assertEqual(vr.juger_resultat("X", 2, 1), "perdu")
+
+    def test_exterieur_gagnant(self):
+        self.assertEqual(vr.juger_resultat("2", 0, 1), "gagne")
+        self.assertEqual(vr.juger_resultat("Away", 0, 1), "gagne")
+        self.assertEqual(vr.juger_resultat("2", 1, 1), "perdu")
+
+    def test_selection_non_reconnue_renvoie_none(self):
+        self.assertIsNone(vr.juger_resultat("autre chose", 1, 0))
+
+    def test_grader_pick_route_vers_juger_resultat(self):
+        pick = {"categorie": "Full Time Result", "selection": "1", "handicap": 0}
+        self.assertEqual(vr.grader_pick(pick, 2, 0), "gagne")
+        pick = {"categorie": "Full Time Result", "selection": "2", "handicap": 0}
+        self.assertEqual(vr.grader_pick(pick, 2, 0), "perdu")
+
+
 class TestScoreReglementaireApiFootball(unittest.TestCase):
     """Correctif du 10/10/2026 (audit global, TÂCHE A) : AET/PEN incluent la prolongation/les
     tirs au but dans `goals` — aucun marché géré par ce module n'est "y compris prolongation",
