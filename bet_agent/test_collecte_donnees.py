@@ -8,6 +8,7 @@ from unittest import mock
 import pytest
 
 import collecte_donnees as cd
+import moteur.features as mf
 
 
 def _reponse(status_code, texte="", donnees=None):
@@ -381,3 +382,48 @@ class TestRecupererElo:
 
         cd._cache_historique_elo[140] = SimpleNamespace(elo=elo_qui_plante)
         assert cd.recuperer_elo(541, 536, 140, "2026-10-18T19:00:00+00:00") is None
+
+
+class TestRecupererArbitreCartonsMoyenne:
+    """18/10/2026, demande explicite ("lance les deux", audit Agent 7) : moteur/modeles/
+    registre.py applique déjà un effet arbitre validé mathématiquement mais bet_agent ne
+    l'utilisait pas du tout — même angle mort que l'Elo avant intégration. Réutilise
+    moteur.features.construire_features (jamais une formule réimplémentée ici) et le même
+    cache par ligue que recuperer_elo — jamais un run bloqué par cette étape."""
+
+    def setup_method(self):
+        cd._cache_historique_elo.clear()
+
+    def test_ligue_hors_historique_5_saisons_renvoie_none(self):
+        assert cd.recuperer_arbitre_cartons_moyenne("A. Taylor", 2, "2026-10-18T19:00:00+00:00") is None
+
+    def test_date_absente_renvoie_none(self):
+        assert cd.recuperer_arbitre_cartons_moyenne("A. Taylor", 140, None) is None
+
+    def test_arbitre_absent_renvoie_none(self):
+        assert cd.recuperer_arbitre_cartons_moyenne(None, 140, "2026-10-18T19:00:00+00:00") is None
+        assert cd.recuperer_arbitre_cartons_moyenne("", 140, "2026-10-18T19:00:00+00:00") is None
+
+    def test_historique_suffisant_renvoie_les_trois_champs(self, monkeypatch):
+        cd._cache_historique_elo[140] = SimpleNamespace(elo=lambda m: (1500.0, 1500.0))
+        monkeypatch.setattr(mf, "construire_features", lambda match, hist: {
+            "arbitre_n": 8, "arbitre_cartons_moy": 5.2, "ligue": {"yellow_cards_par_equipe": 2.1},
+        })
+        resultat = cd.recuperer_arbitre_cartons_moyenne("A. Taylor", 140, "2026-10-18T19:00:00+00:00")
+        assert resultat == {"arbitre_n": 8, "arbitre_cartons_moy": 5.2, "moy_ligue_cartons_par_equipe": 2.1}
+
+    def test_historique_arbitre_insuffisant_renvoie_none(self, monkeypatch):
+        cd._cache_historique_elo[140] = SimpleNamespace(elo=lambda m: (1500.0, 1500.0))
+        monkeypatch.setattr(mf, "construire_features", lambda match, hist: {
+            "arbitre_n": 2, "arbitre_cartons_moy": 5.2, "ligue": {"yellow_cards_par_equipe": 2.1},
+        })
+        assert cd.recuperer_arbitre_cartons_moyenne("A. Taylor", 140, "2026-10-18T19:00:00+00:00") is None
+
+    def test_erreur_pendant_le_calcul_renvoie_none_jamais_une_exception(self, monkeypatch):
+        cd._cache_historique_elo[140] = SimpleNamespace(elo=lambda m: (1500.0, 1500.0))
+
+        def plante(match, hist):
+            raise RuntimeError("base indisponible")
+
+        monkeypatch.setattr(mf, "construire_features", plante)
+        assert cd.recuperer_arbitre_cartons_moyenne("A. Taylor", 140, "2026-10-18T19:00:00+00:00") is None

@@ -1033,6 +1033,49 @@ def recuperer_elo(home_id, away_id, league_id, date_match_iso):
         return None
 
 
+def recuperer_arbitre_cartons_moyenne(arbitre, league_id, date_match_iso):
+    """{"arbitre_n": int, "arbitre_cartons_moy": float, "moy_ligue_cartons_par_equipe": float}
+    à la date du match (walk-forward, jamais de fuite), ou None si l'arbitre n'est pas encore
+    assigné (API-Football ne le renvoie souvent qu'à l'approche du coup d'envoi), si son
+    historique est insuffisant (moins de 5 matchs), ou si la base est indisponible — jamais un
+    run bloqué par cette étape (18/10/2026, "lance les deux", audit Agent 7 : réutilise
+    moteur.features.construire_features, déjà validé mathématiquement, jamais une formule
+    réimplémentée ici). Réutilise le même cache par ligue que recuperer_elo (un seul
+    chargement par ligue par run, les deux signaux viennent du même Historique)."""
+    if league_id not in LIGUES_AVEC_HISTORIQUE_ELO or not date_match_iso or not arbitre:
+        return None
+    try:
+        hist = _cache_historique_elo.get(league_id)
+        if hist is None:
+            import sys
+            from pathlib import Path
+            racine_depot = Path(__file__).resolve().parent.parent
+            for dossier in (str(racine_depot), str(racine_depot / "backend")):
+                if dossier not in sys.path:
+                    sys.path.insert(0, dossier)
+            from app.database import SessionLocal
+            from app.services.historique import charger_matchs
+            from moteur.features import Historique
+            with SessionLocal() as db:
+                matchs = charger_matchs(db, competition_id=league_id)
+            hist = Historique(matchs)
+            _cache_historique_elo[league_id] = hist
+        from moteur.features import construire_features
+        match_fictif = {"match_id": -1, "date": date_match_iso, "home_id": 0, "away_id": 0,
+                        "competition_id": league_id, "arbitre": arbitre}
+        f = construire_features(match_fictif, hist)
+        if not f.get("arbitre_n") or f["arbitre_n"] < 5 or not f.get("arbitre_cartons_moy"):
+            return None
+        moy_ligue = f["ligue"].get("yellow_cards_par_equipe")
+        if not moy_ligue:
+            return None
+        return {"arbitre_n": f["arbitre_n"], "arbitre_cartons_moy": round(f["arbitre_cartons_moy"], 2),
+                "moy_ligue_cartons_par_equipe": round(moy_ligue, 2)}
+    except Exception as e:
+        print(f"      ⚠️ Effet arbitre indisponible (ligue {league_id}) : {_cause_reelle(e)}")
+        return None
+
+
 @retry(stop=stop_after_attempt(2), wait=wait_fixed(2))
 def _appel_blessures(fixture_id):
     _respecter_rate_limit_api_football()
@@ -1846,6 +1889,14 @@ def collecter_donnees():
                 print(f"      ✓ Elo {nom_home_stats} vs {nom_away_stats} (historique 5 saisons) : "
                       f"{elo['elo_home']} / {elo['elo_away']}")
 
+        arbitre = None
+        if donnees_af and donnees_af.get("referee"):
+            arbitre = recuperer_arbitre_cartons_moyenne(donnees_af["referee"], donnees_af.get("league_id"),
+                                                         donnees_af.get("fixture_date"))
+            if arbitre:
+                print(f"      ✓ Arbitre {donnees_af['referee']} ({arbitre['arbitre_n']} match(s) analysé(s)) : "
+                      f"{arbitre['arbitre_cartons_moy']} cartons/match en moyenne")
+
         resultats.append({
             "match_demande": {"home": home_demande, "away": away_demande},
             "api_football": donnees_af,
@@ -1865,6 +1916,7 @@ def collecter_donnees():
             "classement": {"home": classement_home, "away": classement_away},
             "head_to_head": head_to_head,
             "elo": elo,
+            "arbitre": arbitre,
             "blessures": blessures,
             "predictions_api_football": predictions,
         })
@@ -1891,6 +1943,7 @@ def collecter_donnees():
         ),
         "nb_matchs_avec_head_to_head": sum(1 for r in resultats if r["head_to_head"]),
         "nb_matchs_avec_elo": sum(1 for r in resultats if r["elo"]),
+        "nb_matchs_avec_arbitre": sum(1 for r in resultats if r["arbitre"]),
         "nb_matchs_avec_blessures": sum(1 for r in resultats if r["blessures"] is not None),
         "nb_matchs_avec_predictions": sum(1 for r in resultats if r["predictions_api_football"]),
         "matchs": resultats,
@@ -1910,6 +1963,7 @@ def collecter_donnees():
           f"API-Football trouvées")
     print(f"   ✓ {sortie['nb_matchs_avec_head_to_head']}/{len(resultats)} matchs avec confrontations directes trouvées")
     print(f"   ✓ {sortie['nb_matchs_avec_elo']}/{len(resultats)} matchs avec Elo (historique 5 saisons) trouvé")
+    print(f"   ✓ {sortie['nb_matchs_avec_arbitre']}/{len(resultats)} matchs avec effet arbitre (arbitre assigné + historique) trouvé")
     print(f"   ✓ {sortie['nb_matchs_avec_blessures']}/{len(resultats)} matchs avec blessures/suspensions vérifiées")
     print(f"   ✓ {sortie['nb_matchs_avec_predictions']}/{len(resultats)} matchs avec prédictions API-Football trouvées")
 

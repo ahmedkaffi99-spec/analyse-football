@@ -191,6 +191,48 @@ class TestProbaEloEtAjustement(unittest.TestCase):
         self.assertEqual(ae._ajuster_avec_elo(None, 1.55, {"elo_home": 1600.0, "elo_away": 1500.0}), (None, 1.55))
 
 
+class TestAjusterCartonsAvecArbitre(unittest.TestCase):
+    """18/10/2026, demande explicite ("lance les deux", après l'audit Agent 7) : moteur/
+    modeles/registre.py applique déjà cet effet arbitre (validé mathématiquement) mais
+    bet_agent ne l'utilisait pas du tout — même angle mort que l'Elo avant intégration.
+    ARBITRE_POIDS_CARTONS=0.6 mesuré par un vrai backtest walk-forward (5 championnats, 6780
+    matchs, 5528 avec effet calculable, NLL minimale à ce poids : 2.0921 contre 2.0965 à
+    poids=0, courbe convexe propre)."""
+
+    def test_arbitre_severe_augmente_mu(self):
+        mu_h, mu_a = 1.8, 1.5
+        arbitre = {"arbitre_n": 10, "arbitre_cartons_moy": 6.0, "moy_ligue_cartons_par_equipe": 2.0}
+        # facteur_brut = sqrt(6.0 / (2*2.0)) = sqrt(1.5) ≈ 1.2247 ; facteur pondéré (0.6) ≈ 1.1348
+        mu_h_adj, mu_a_adj = ae._ajuster_cartons_avec_arbitre(mu_h, mu_a, arbitre)
+        self.assertGreater(mu_h_adj, mu_h)
+        self.assertGreater(mu_a_adj, mu_a)
+        facteur_attendu = 1 + 0.6 * ((6.0 / 4.0) ** 0.5 - 1)
+        self.assertAlmostEqual(mu_h_adj, round(mu_h * facteur_attendu, 2), places=2)
+
+    def test_arbitre_clement_diminue_mu(self):
+        mu_h, mu_a = 1.8, 1.5
+        arbitre = {"arbitre_n": 10, "arbitre_cartons_moy": 1.0, "moy_ligue_cartons_par_equipe": 2.0}
+        mu_h_adj, mu_a_adj = ae._ajuster_cartons_avec_arbitre(mu_h, mu_a, arbitre)
+        self.assertLess(mu_h_adj, mu_h)
+        self.assertLess(mu_a_adj, mu_a)
+
+    def test_poids_zero_ne_change_rien(self):
+        mu_h, mu_a = 1.8, 1.5
+        arbitre = {"arbitre_n": 10, "arbitre_cartons_moy": 6.0, "moy_ligue_cartons_par_equipe": 2.0}
+        self.assertEqual(ae._ajuster_cartons_avec_arbitre(mu_h, mu_a, arbitre, poids=0.0), (mu_h, mu_a))
+
+    def test_historique_arbitre_insuffisant_ne_change_rien(self):
+        mu_h, mu_a = 1.8, 1.5
+        arbitre = {"arbitre_n": 3, "arbitre_cartons_moy": 6.0, "moy_ligue_cartons_par_equipe": 2.0}
+        self.assertEqual(ae._ajuster_cartons_avec_arbitre(mu_h, mu_a, arbitre), (mu_h, mu_a))
+
+    def test_arbitre_absent_ne_change_rien(self):
+        self.assertEqual(ae._ajuster_cartons_avec_arbitre(1.8, 1.5, None), (1.8, 1.5))
+        self.assertEqual(ae._ajuster_cartons_avec_arbitre(1.8, 1.5, {}), (1.8, 1.5))
+        self.assertEqual(ae._ajuster_cartons_avec_arbitre(None, 1.5, {"arbitre_n": 10,
+                          "arbitre_cartons_moy": 6.0, "moy_ligue_cartons_par_equipe": 2.0}), (None, 1.5))
+
+
 class TestCalculerXgDepuisStatsDetailleesCasLimites(unittest.TestCase):
     """Cas limites de calculer_xg_depuis_stats_detaillees (champ manquant, lissage petit
     échantillon, rétrocompatibilité, priorité sur stats_historiques) — déplacés ici le
