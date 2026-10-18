@@ -3,7 +3,17 @@ resultat gagne/perdu) — donne à l'IA de vrais chiffres mesurés (taux de réu
 moyen) pour qu'elle juge elle-même la fiabilité d'un marché par son raisonnement, plutôt qu'une
 liste de marchés bannis codée en dur en Python (voir bet_agent.analyser_et_envoyer.
 agent35_validation_ia). Un marché mal mesuré ici reste simplement absent du dict renvoyé : on
-ne calcule jamais un taux sur trop peu de données (SEUIL_N_MIN)."""
+ne calcule jamais un taux sur trop peu de données (SEUIL_N_MIN).
+
+18/10/2026, bug confirmé en base (audit Agent 2, "Buts Total") : le cron horaire relance le
+pipeline tant qu'aucun coupon n'est parti sur Telegram (ticket_deja_produit_aujourdhui) —
+chaque tentative, même jamais envoyée, persiste quand même un run/coupon/jambes complet. Une
+seule vraie cote perdue (fixture réelle, un seul "Over 3.5" joué) s'est ainsi retrouvée comptée
+9 FOIS dans jambes (4 tentatives le 15/10, 5 le 16/10, toutes envoye_telegram=False) — faussant
+le taux de réussite "Over" mesuré de -15,4 points (46,0% apparent contre 61,9% réel une fois
+dédupliqué par match). Filtrer sur Run.envoye_telegram (seuls les coupons RÉELLEMENT livrés)
+élimine cette pollution à la source, sans dédupliquer artificiellement (une tentative jamais
+envoyée n'a jamais pu influencer un vrai résultat mesuré)."""
 
 from datetime import datetime, timedelta, timezone
 
@@ -25,7 +35,8 @@ def qualite_marches(db, fenetre_jours=FENETRE_JOURS, seuil_n_min=SEUIL_N_MIN):
         select(Jambe.marche, Jambe.resultat, Jambe.edge_pct)
         .join(Coupon, Coupon.id == Jambe.coupon_id)
         .join(Run, Run.id == Coupon.run_id)
-        .where(Jambe.resultat.in_(("gagne", "perdu")), Run.lance_le >= limite)
+        .where(Jambe.resultat.in_(("gagne", "perdu")), Run.lance_le >= limite,
+               Run.envoye_telegram.is_(True))
     ).all()
 
     par_marche = {}

@@ -894,8 +894,16 @@ COTE_MIN_JAMBE = 1.20   # en dessous, un pari n'apporte presque rien au combiné
 # BTTS ajouté le 03/10/2026 : mal calibré dans TOUTES les tranches (35 paris jugés, 48 %
 # réels pour ~63 % annoncés, ROI -21 % ; même au-dessus de 70 % : 3/6). Configurable :
 # MARCHES_EXCLUS="Cat1,Cat2" remplace entièrement cette liste.
+# "Total Tirs" ajouté le 18/10/2026 (audit Agent 8, 10 agents en parallèle) : écart réel qui
+# SURVIT à la déduplication par match (contrairement à de nombreux autres chiffres de cette
+# session faussés par des runs jamais envoyés sur Telegram) — 26 paris réels distincts, tous
+# "Under", 50,0 % réel pour 69,1 % annoncé (-19,1 pts). Cause probable : calculer_mu_tirs_
+# depuis_stats_detaillees -> proba_over() utilise une Poisson PURE, alors que moteur/ modélise
+# déjà les tirs avec une binomiale négative (surdispersion mesurée) — la variance des tirs par
+# match est nettement plus large que celle des buts, une Poisson la sous-estime et gonfle la
+# confiance sur les lignes "Under" extrêmes. Réintégrer une fois ce modèle corrigé.
 CATEGORIES_EXCLUES = tuple(c.strip() for c in os.getenv("MARCHES_EXCLUS", "").split(",") if c.strip()) or (
-    "Handicap Corners", "Handicap Cartons", "BTTS")
+    "Handicap Corners", "Handicap Cartons", "BTTS", "Total Tirs")
 
 
 def est_marche_exclu(nom_marche):
@@ -1319,9 +1327,14 @@ def _evaluer_marches_brut(marches, mu_home, mu_away, mu_corners=None, mu_cartons
         # handicap], et les autres donc") : même modèle que le handicap principal
         # (proba_handicap_couvert), mais avec un mu par équipe SPÉCIFIQUE aux corners/cartons
         # (mu_corners_equipes/mu_cartons_equipes) — jamais mu_home/mu_away (buts), qui n'ont
-        # aucun rapport. Absent (pas de stats détaillées, et pour les corners aucun repli
-        # marché n'est tenté — "jamais fiable", même choix que pour Total Corners), le marché
-        # reste non modélisé, géré uniquement en brut par completer_avec_marches_bruts.
+        # aucun rapport. Correctif du commentaire (18/10/2026, audit Agent 6) : ce marché EST
+        # bien modélisé avec un edge réel la plupart du temps (mu_corners_equipes/
+        # mu_cartons_equipes vient des stats détaillées des 10 derniers matchs, disponibles
+        # dans la majorité des cas) — si `mu_equipes` est None (stats détaillées manquantes
+        # pour ce match précis), le `continue` plus bas ignore ce marché pour CE match
+        # seulement, il n'est jamais "non modélisé" de façon permanente. "Handicap Corners"/
+        # "Handicap Cartons" restent dans CATEGORIES_EXCLUES pour une raison de calibration
+        # réelle mesurée (échantillon trop petit/signal défavorable), pas par absence de calcul.
         elif "handicap" in nom and ("corner" in nom or "card" in nom or "booking" in nom
                                      or "foul" in nom or "shot" in nom or "offside" in nom):
             if "corner" in nom:
