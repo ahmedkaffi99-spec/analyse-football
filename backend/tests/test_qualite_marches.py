@@ -8,8 +8,9 @@ from app.models import Coupon, Jambe, Run
 from app.services.qualite_marches import qualite_marches
 
 
-def _run_avec_jambes(db, jambes, lance_le=None):
-    run = Run(source="api", statut="termine", lance_le=lance_le or datetime.now(timezone.utc))
+def _run_avec_jambes(db, jambes, lance_le=None, envoye_telegram=True):
+    run = Run(source="api", statut="termine", lance_le=lance_le or datetime.now(timezone.utc),
+              envoye_telegram=envoye_telegram)
     db.add(run)
     db.flush()
     coupon = Coupon(run_id=run.id, jour=run.lance_le.date(), profil="jour", nom="Coupon")
@@ -57,3 +58,24 @@ def test_hors_fenetre_ignore():
         _run_avec_jambes(db, [("Marché ancien", "gagne", 1.0)] * 10, lance_le=vieux)
         resultat = qualite_marches(db, fenetre_jours=60, seuil_n_min=8)
     assert "Marché ancien" not in resultat
+
+
+def test_run_jamais_envoye_sur_telegram_est_exclu():
+    # 18/10/2026, bug confirmé en base (audit Agent 2) : le cron horaire relance le pipeline
+    # tant qu'aucun coupon n'est parti sur Telegram — chaque tentative, même jamais envoyée,
+    # persiste quand même un run/coupon/jambes complet. Une tentative jamais livrée à
+    # l'utilisateur ne doit jamais compter dans la qualité mesurée d'un marché.
+    with SessionLocal() as db:
+        _run_avec_jambes(db, [("Marché jamais envoyé", "perdu", -10.0)] * 10, envoye_telegram=False)
+        resultat = qualite_marches(db, seuil_n_min=8)
+    assert "Marché jamais envoyé" not in resultat
+
+
+def test_melange_envoye_et_non_envoye_ne_compte_que_l_envoye():
+    with SessionLocal() as db:
+        # Retentative jamais envoyée (même marché, même jour) : ne doit jamais fausser le taux.
+        _run_avec_jambes(db, [("Marché mixte", "perdu", -10.0)] * 10, envoye_telegram=False)
+        _run_avec_jambes(db, [("Marché mixte", "gagne", 1.0)] * 8, envoye_telegram=True)
+        resultat = qualite_marches(db, seuil_n_min=8)
+    assert resultat["Marché mixte"]["n"] == 8
+    assert resultat["Marché mixte"]["taux_reussite_pct"] == 100.0
