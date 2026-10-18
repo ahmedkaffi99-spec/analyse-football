@@ -1367,6 +1367,12 @@ def _donnees_api_football(fx_af):
         "season": fx_af.get("league", {}).get("season"),
         "fixture_date": fx_af.get("fixture", {}).get("date"),
         "fixture_id_api_football": fx_af.get("fixture", {}).get("id"),
+        # Arbitre (18/10/2026, "lance les deux" — effet arbitre sur les cartons, audit Agent 7) :
+        # API-Football ne l'assigne souvent qu'à l'approche du coup d'envoi — None la plupart
+        # du temps pour un match encore lointain, jamais inventé. Même champ que hist_matchs.
+        # arbitre (moteur/features.py), pour réutiliser recuperer_arbitre_cartons_moyenne tel
+        # quel avec le nom exact renvoyé par API-Football.
+        "referee": fx_af.get("fixture", {}).get("referee"),
     }
 
 

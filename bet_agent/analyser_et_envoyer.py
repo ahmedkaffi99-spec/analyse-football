@@ -902,8 +902,15 @@ COTE_MIN_JAMBE = 1.20   # en dessous, un pari n'apporte presque rien au combiné
 # déjà les tirs avec une binomiale négative (surdispersion mesurée) — la variance des tirs par
 # match est nettement plus large que celle des buts, une Poisson la sous-estime et gonfle la
 # confiance sur les lignes "Under" extrêmes. Réintégrer une fois ce modèle corrigé.
+# BTTS retiré le 18/10/2026 (demande explicite, "lance les deux" — essai borné décidé après
+# l'audit Agent 4) : les 35 paris qui avaient motivé l'exclusion du 03/10/2026 datent TOUS
+# d'avant le correctif de lissage additif (K_LISSAGE_BUTS, commit baf4f5b, 17/10/2026) — aucune
+# donnée de production n'existe depuis. Essai réel borné : réintégré ici pour accumuler de
+# vraies jambes mesurables par qualite_marches() (maintenant fiable, filtré sur
+# envoye_telegram) ; à remesurer après 2 semaines de production avant toute décision
+# définitive. Si le signal négatif revient, remettre "BTTS" dans cette liste.
 CATEGORIES_EXCLUES = tuple(c.strip() for c in os.getenv("MARCHES_EXCLUS", "").split(",") if c.strip()) or (
-    "Handicap Corners", "Handicap Cartons", "BTTS", "Total Tirs")
+    "Handicap Corners", "Handicap Cartons", "Total Tirs")
 
 
 def est_marche_exclu(nom_marche):
