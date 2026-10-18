@@ -144,6 +144,59 @@ class TestPondererAvecH2h(unittest.TestCase):
         # Même avec 50 confrontations, le H2H ne pèse jamais plus de H2H_POIDS_MAX (40%).
         self.assertAlmostEqual(xg_home, round(0.6 * 1.0 + 0.4 * 5.0, 2), places=2)
 
+
+class TestProbaEloEtAjustement(unittest.TestCase):
+    """18/10/2026, demande explicite ("propose une correction : intégrer l'Elo au calcul de
+    bet_agent, avec un poids mesuré par backtest comme pour H2H"), après le constat Real
+    Madrid-Sevilla : Elo seul=86,5% pour Real Madrid vs forme+H2H=57,3%, marché=78,7% — ni la
+    forme sur 10 matchs ni le H2H ne capturent un écart de qualité d'effectif aussi marqué.
+    ELO_POIDS_MAX=0.4 mesuré par un vrai backtest walk-forward (5 championnats, 6972 matchs,
+    Brier multi-classe minimal à ce poids, courbe convexe propre : 0.5957 contre 0.6164 à
+    poids=0)."""
+
+    def test_proba_elo_egalite_donne_50_pour_cent_hors_avantage_domicile(self):
+        # Elo égal : seul l'avantage domicile (60 points) doit jouer.
+        p = ae.proba_elo(1500.0, 1500.0)
+        self.assertGreater(p, 0.5)
+        self.assertAlmostEqual(p, 1 / (1 + 10 ** (-60 / 400)), places=9)
+
+    def test_proba_elo_recompose_l_ecart_elo_connu(self):
+        # Même écart que Real Madrid (1773.4) vs Sevilla (1510.0) du 18/10/2026 : 86,5% mesuré.
+        p = ae.proba_elo(1773.4, 1510.0)
+        self.assertAlmostEqual(p, 0.865, places=3)
+
+    def test_delta_vers_cible_retrouve_la_cible(self):
+        mu_h, mu_a = 1.70, 1.20
+        p_cible = 0.70
+        delta = ae._delta_vers_cible(mu_h, mu_a, p_cible)
+        p_obtenu, _, _ = ae.proba_1x2(mu_h + delta, mu_a - delta)
+        self.assertAlmostEqual(p_obtenu, p_cible, places=3)
+
+    def test_ajuster_avec_elo_preserve_mu_total(self):
+        mu_h, mu_a = 1.70, 1.20
+        elo = {"elo_home": 1773.4, "elo_away": 1510.0}
+        mu_h_ajuste, mu_a_ajuste = ae._ajuster_avec_elo(mu_h, mu_a, elo)
+        self.assertAlmostEqual(mu_h_ajuste + mu_a_ajuste, mu_h + mu_a, places=2)
+        self.assertGreater(mu_h_ajuste, mu_h)   # Elo tire vers le favori (Real Madrid)
+        self.assertLess(mu_a_ajuste, mu_a)
+
+    def test_ajuster_avec_elo_poids_zero_ne_change_rien(self):
+        mu_h, mu_a = 1.70, 1.20
+        elo = {"elo_home": 1900.0, "elo_away": 1400.0}
+        self.assertEqual(ae._ajuster_avec_elo(mu_h, mu_a, elo, poids=0.0), (mu_h, mu_a))
+
+    def test_elo_absent_ne_change_rien(self):
+        self.assertEqual(ae._ajuster_avec_elo(1.5, 1.55, None), (1.5, 1.55))
+        self.assertEqual(ae._ajuster_avec_elo(1.5, 1.55, {}), (1.5, 1.55))
+        self.assertEqual(ae._ajuster_avec_elo(None, 1.55, {"elo_home": 1600.0, "elo_away": 1500.0}), (None, 1.55))
+
+
+class TestCalculerXgDepuisStatsDetailleesCasLimites(unittest.TestCase):
+    """Cas limites de calculer_xg_depuis_stats_detaillees (champ manquant, lissage petit
+    échantillon, rétrocompatibilité, priorité sur stats_historiques) — déplacés ici le
+    18/10/2026 : ils vivaient par erreur dans TestPondererAvecH2h/TestProbaEloEtAjustement,
+    sans rapport avec le H2H ni l'Elo."""
+
     def test_champ_manquant_renvoie_none(self):
         home = {"buts_marques_moyenne": 2.0, "buts_encaisses_moyenne": None}
         away = {"buts_marques_moyenne": 1.2, "buts_encaisses_moyenne": 1.6}

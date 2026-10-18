@@ -143,6 +143,46 @@ class TestGraderPickResultat(unittest.TestCase):
         self.assertEqual(vr.grader_pick(pick, 2, 0), "perdu")
 
 
+class TestJugerDoubleChance(unittest.TestCase):
+    """17/10/2026, bug confirmé en base (audit Agent 1) : la sélection "12" (ni nul),
+    modélisée et choisie depuis le 01/10/2026 (_evaluer_marches_brut), n'avait AUCUNE branche
+    de jugement ici -> toujours "non_verifiable", même sur des matchs terminés depuis des
+    semaines (26 jambes réelles vérifiées en base, toutes bloquées malgré un score final
+    connu) — et donc invisible pour qualite_marches (qui n'agrège que gagne/perdu).
+    Non-régression explicite de "1X" et "X2"/"2X", déjà en production, jamais testées en
+    unitaire avant ce correctif (aucune référence à juger_double_chance dans les tests)."""
+
+    def test_1x_domicile_ou_nul(self):
+        self.assertEqual(vr.juger_double_chance("1X", 2, 1), "gagne")   # domicile gagne
+        self.assertEqual(vr.juger_double_chance("1X", 1, 1), "gagne")   # nul
+        self.assertEqual(vr.juger_double_chance("1X", 0, 1), "perdu")   # extérieur gagne
+
+    def test_x2_nul_ou_exterieur(self):
+        self.assertEqual(vr.juger_double_chance("X2", 0, 1), "gagne")   # extérieur gagne
+        self.assertEqual(vr.juger_double_chance("X2", 1, 1), "gagne")   # nul
+        self.assertEqual(vr.juger_double_chance("X2", 2, 1), "perdu")   # domicile gagne
+
+    def test_2x_alias_de_x2(self):
+        # "2X" (ordre inversé) est un alias déjà géré avant ce correctif — même règle que X2.
+        self.assertEqual(vr.juger_double_chance("2X", 0, 1), "gagne")
+        self.assertEqual(vr.juger_double_chance("2X", 1, 1), "gagne")
+        self.assertEqual(vr.juger_double_chance("2X", 2, 1), "perdu")
+
+    def test_12_ni_nul_corrige(self):
+        self.assertEqual(vr.juger_double_chance("12", 2, 1), "gagne")   # domicile gagne
+        self.assertEqual(vr.juger_double_chance("12", 0, 1), "gagne")   # extérieur gagne
+        self.assertEqual(vr.juger_double_chance("12", 1, 1), "perdu")   # nul
+
+    def test_selection_non_reconnue_renvoie_none(self):
+        self.assertIsNone(vr.juger_double_chance("autre chose", 1, 0))
+
+    def test_grader_pick_route_12_vers_double_chance(self):
+        pick = {"categorie": "Double Chance", "selection": "12", "handicap": 0}
+        self.assertEqual(vr.grader_pick(pick, 2, 0), "gagne")
+        pick = {"categorie": "Double Chance", "selection": "12", "handicap": 0}
+        self.assertEqual(vr.grader_pick(pick, 1, 1), "perdu")
+
+
 class TestScoreReglementaireApiFootball(unittest.TestCase):
     """Correctif du 10/10/2026 (audit global, TÂCHE A) : AET/PEN incluent la prolongation/les
     tirs au but dans `goals` — aucun marché géré par ce module n'est "y compris prolongation",

@@ -327,6 +327,13 @@ def juger_double_chance(selection, home_g, away_g):
         return "gagne" if home_g >= away_g else "perdu"
     if sel_norm in ("x2", "2x"):
         return "gagne" if away_g >= home_g else "perdu"
+    if sel_norm == "12":
+        # 17/10/2026, bug confirmé en base : "12" (ni nul) est modélisé et choisi depuis le
+        # 01/10/2026 (_evaluer_marches_brut, analyser_et_envoyer.py) mais n'avait AUCUNE
+        # branche de jugement ici -> toujours "non_verifiable", même sur des matchs terminés
+        # depuis des semaines (26 jambes réelles vérifiées, toutes bloquées malgré un score
+        # final connu) — et donc invisible pour qualite_marches (qui n'agrège que gagne/perdu).
+        return "gagne" if home_g != away_g else "perdu"
     return None
 
 

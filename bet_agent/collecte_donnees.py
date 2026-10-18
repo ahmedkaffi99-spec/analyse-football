@@ -990,6 +990,49 @@ def recuperer_head_to_head(home_id, away_id, nom_home, nom_away):
     return resultat
 
 
+# Elo (18/10/2026, demande explicite après le constat Real Madrid-Sevilla : Elo seul=86,5%
+# pour Real Madrid vs forme+H2H=57,3%, marché=78,7% — ni la forme sur 10 matchs ni le H2H ne
+# capturent un écart de qualité d'effectif aussi marqué). Réutilise moteur.features.Historique.
+# elo (déjà validé, walk-forward, jamais de fuite) depuis hist_matchs — PAS un recalcul depuis
+# l'API-Football (coûterait des centaines d'appels par match, moins fiable qu'un historique
+# complet déjà en base). Limité aux 5 championnats ayant 5 saisons d'historique en base
+# (LIGUES_AVEC_HISTORIQUE_ELO) : la Ligue des Champions/Europa League n'y sont jamais répliquées.
+LIGUES_AVEC_HISTORIQUE_ELO = {39, 140, 135, 78, 61}  # mêmes league_id que LIGUES_FILTRE_API_FOOTBALL, sans 2/3
+
+_cache_historique_elo = {}  # {league_id: moteur.features.Historique} — un chargement par ligue par run
+
+
+def recuperer_elo(home_id, away_id, league_id, date_match_iso):
+    """{"elo_home": float, "elo_away": float} à la date du match (walk-forward, jamais de
+    fuite), ou None si la compétition n'a pas d'historique 5 saisons en base, ou si la base
+    est indisponible — jamais un run bloqué par cette étape (même principe que le reste des
+    sources API-Football de ce module)."""
+    if league_id not in LIGUES_AVEC_HISTORIQUE_ELO or not date_match_iso:
+        return None
+    try:
+        hist = _cache_historique_elo.get(league_id)
+        if hist is None:
+            import sys
+            from pathlib import Path
+            racine_depot = Path(__file__).resolve().parent.parent
+            for dossier in (str(racine_depot), str(racine_depot / "backend")):
+                if dossier not in sys.path:
+                    sys.path.insert(0, dossier)
+            from app.database import SessionLocal
+            from app.services.historique import charger_matchs
+            from moteur.features import Historique
+            with SessionLocal() as db:
+                matchs = charger_matchs(db, competition_id=league_id)
+            hist = Historique(matchs)
+            _cache_historique_elo[league_id] = hist
+        match_fictif = {"match_id": -1, "date": date_match_iso, "home_id": home_id, "away_id": away_id}
+        elo_home, elo_away = hist.elo(match_fictif)
+        return {"elo_home": round(elo_home, 1), "elo_away": round(elo_away, 1)}
+    except Exception as e:
+        print(f"      ⚠️ Elo indisponible (ligue {league_id}) : {_cause_reelle(e)}")
+        return None
+
+
 @retry(stop=stop_after_attempt(2), wait=wait_fixed(2))
 def _appel_blessures(fixture_id):
     _respecter_rate_limit_api_football()
@@ -1789,6 +1832,14 @@ def collecter_donnees():
             blessures = recuperer_blessures(donnees_af["fixture_id_api_football"], donnees_af.get("home_id"),
                                              donnees_af.get("away_id"), nom_home_stats, nom_away_stats)
 
+        elo = None
+        if donnees_af and donnees_af.get("home_id") and donnees_af.get("away_id"):
+            elo = recuperer_elo(donnees_af["home_id"], donnees_af["away_id"],
+                                 donnees_af.get("league_id"), donnees_af.get("fixture_date"))
+            if elo:
+                print(f"      ✓ Elo {nom_home_stats} vs {nom_away_stats} (historique 5 saisons) : "
+                      f"{elo['elo_home']} / {elo['elo_away']}")
+
         resultats.append({
             "match_demande": {"home": home_demande, "away": away_demande},
             "api_football": donnees_af,
@@ -1807,6 +1858,7 @@ def collecter_donnees():
             "stats_detaillees_10_matchs": {"home": stats_detaillees_home, "away": stats_detaillees_away},
             "classement": {"home": classement_home, "away": classement_away},
             "head_to_head": head_to_head,
+            "elo": elo,
             "blessures": blessures,
             "predictions_api_football": predictions,
         })
@@ -1832,6 +1884,7 @@ def collecter_donnees():
             1 for r in resultats for cote in ("home", "away") if r["classement"][cote]
         ),
         "nb_matchs_avec_head_to_head": sum(1 for r in resultats if r["head_to_head"]),
+        "nb_matchs_avec_elo": sum(1 for r in resultats if r["elo"]),
         "nb_matchs_avec_blessures": sum(1 for r in resultats if r["blessures"] is not None),
         "nb_matchs_avec_predictions": sum(1 for r in resultats if r["predictions_api_football"]),
         "matchs": resultats,
@@ -1850,6 +1903,7 @@ def collecter_donnees():
     print(f"   ✓ {sortie['nb_equipes_avec_classement']}/{len(resultats) * 2} équipes avec classement "
           f"API-Football trouvées")
     print(f"   ✓ {sortie['nb_matchs_avec_head_to_head']}/{len(resultats)} matchs avec confrontations directes trouvées")
+    print(f"   ✓ {sortie['nb_matchs_avec_elo']}/{len(resultats)} matchs avec Elo (historique 5 saisons) trouvé")
     print(f"   ✓ {sortie['nb_matchs_avec_blessures']}/{len(resultats)} matchs avec blessures/suspensions vérifiées")
     print(f"   ✓ {sortie['nb_matchs_avec_predictions']}/{len(resultats)} matchs avec prédictions API-Football trouvées")
 
