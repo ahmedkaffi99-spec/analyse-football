@@ -343,3 +343,41 @@ class TestSelectionMatchsDuJourApiFootball:
         monkeypatch.setattr(cd, "_telecharger_fixtures_oddspapi", lambda: appels.append(1) or [])
         cd.selectionner_matchs_du_jour_api_football([_fixture_af("Arsenal", "Chelsea", 39)])
         assert appels == []
+
+
+class TestRecupererElo:
+    """18/10/2026, demande explicite ("propose une correction : intégrer l'Elo au calcul de
+    bet_agent, avec un poids mesuré par backtest comme pour H2H") : recuperer_elo réutilise
+    moteur.features.Historique.elo (walk-forward, jamais de fuite) depuis hist_matchs — jamais
+    un run bloqué par cette étape (DB indisponible, ligue hors historique 5 saisons, etc.),
+    même principe que le reste des sources API-Football de ce module."""
+
+    def setup_method(self):
+        cd._cache_historique_elo.clear()
+
+    def test_ligue_hors_historique_5_saisons_renvoie_none(self):
+        # Ligue des Champions (2) : hist_matchs n'a que les 5 championnats domestiques.
+        assert cd.recuperer_elo(541, 536, 2, "2026-10-18T19:00:00+00:00") is None
+
+    def test_date_absente_renvoie_none(self):
+        assert cd.recuperer_elo(541, 536, 140, None) is None
+
+    def test_historique_deja_en_cache_est_reutilise_sans_recharger_la_base(self):
+        appels_elo = []
+
+        def elo_bidon(match_fictif):
+            appels_elo.append(match_fictif)
+            return 1773.4, 1510.0
+
+        cd._cache_historique_elo[140] = SimpleNamespace(elo=elo_bidon)
+        resultat = cd.recuperer_elo(541, 536, 140, "2026-10-18T19:00:00+00:00")
+        assert resultat == {"elo_home": 1773.4, "elo_away": 1510.0}
+        assert len(appels_elo) == 1
+        assert appels_elo[0]["home_id"] == 541 and appels_elo[0]["away_id"] == 536
+
+    def test_erreur_pendant_le_calcul_renvoie_none_jamais_une_exception(self):
+        def elo_qui_plante(match_fictif):
+            raise RuntimeError("base indisponible")
+
+        cd._cache_historique_elo[140] = SimpleNamespace(elo=elo_qui_plante)
+        assert cd.recuperer_elo(541, 536, 140, "2026-10-18T19:00:00+00:00") is None

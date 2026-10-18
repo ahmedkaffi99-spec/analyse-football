@@ -492,6 +492,58 @@ def _ponderer_avec_h2h(xg_home, xg_away, h2h):
     return round(max(0.15, xg_home_ajuste), 2), round(max(0.15, xg_away_ajuste), 2)
 
 
+# Intégration de l'Elo (18/10/2026, demande explicite après le constat Real Madrid-Sevilla :
+# Elo seul=86,5% pour Real Madrid vs forme+H2H=57,3%, marché=78,7% — la forme sur 10 matchs,
+# même mélangée au H2H, ne capture pas un écart de qualité d'effectif aussi marqué). Même
+# formule logistique et même ELO_AVANTAGE_DOMICILE que moteur/features.py:_calculer_elo
+# (cohérence obligatoire : l'Elo vient de là, voir collecte_donnees.recuperer_elo). ELO_POIDS_MAX
+# mesuré par un vrai backtest walk-forward (5 grands championnats, 6972 matchs utilisables,
+# Brier multi-classe 1/X/2, grille 0.0 à 1.0) — PAS une estimation : 0.4 minimise le Brier
+# (0.5957, contre 0.6164 à poids=0, une courbe convexe propre, le poids n'est pas à un extrême).
+ELO_AVANTAGE_DOMICILE = 60.0
+ELO_POIDS_MAX = 0.4
+
+
+def proba_elo(elo_home, elo_away):
+    """Probabilité implicite (domicile vs non-domicile) depuis l'écart Elo seul, même formule
+    logistique que moteur/features.py:_calculer_elo (avantage domicile inclus)."""
+    return 1 / (1 + 10 ** (-(elo_home - elo_away + ELO_AVANTAGE_DOMICILE) / 400))
+
+
+def _delta_vers_cible(mu_home, mu_away, p_cible, max_buts=25, iters=18):
+    """Cherche par bissection le delta (mu_total constant) tel que
+    proba_1x2(mu_home+delta, mu_away-delta)[0] == p_cible. Relie l'Elo à l'espace de
+    probabilité déjà utilisé par le modèle plutôt qu'une constante 'buts par point Elo'
+    jamais calibrée."""
+    lo, hi = -min(mu_home, 5.0) + 0.001, min(mu_away, 5.0) - 0.001
+    if lo >= hi:
+        return 0.0
+    for _ in range(iters):
+        mid = (lo + hi) / 2
+        p, _, _ = proba_1x2(mu_home + mid, mu_away - mid, max_buts=max_buts)
+        if p < p_cible:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2
+
+
+def _ajuster_avec_elo(xg_home, xg_away, elo, poids=ELO_POIDS_MAX):
+    """Mélange le xG (déjà ajusté forme + H2H) avec la probabilité implicite Elo, par un
+    déplacement mu_home/mu_away à mu_total CONSTANT (les marchés Total buts ne bougent pas,
+    seul l'équilibre domicile/extérieur change) — poids plafonné, mesuré par backtest
+    (ELO_POIDS_MAX), jamais appliqué en entier."""
+    if not elo or xg_home is None or xg_away is None:
+        return xg_home, xg_away
+    elo_home, elo_away = elo.get("elo_home"), elo.get("elo_away")
+    if elo_home is None or elo_away is None:
+        return xg_home, xg_away
+    p_cible = proba_elo(float(elo_home), float(elo_away))
+    delta_full = _delta_vers_cible(xg_home, xg_away, p_cible)
+    delta = poids * delta_full
+    return round(max(0.15, xg_home + delta), 2), round(max(0.15, xg_away - delta), 2)
+
+
 def calculer_mu_corners_depuis_stats_detaillees(sd_home, sd_away):
     """Corners attendus, domicile et extérieur SÉPARÉMENT, depuis les VRAIES stats des 10
     derniers matchs (API-Football, recuperer_stats_10_derniers_matchs) — réactive Total
@@ -2417,6 +2469,13 @@ def agent3_calcul_pool_candidats(donnees):
             print(f"      → Buts attendus ajustés avec le H2H ({h2h.get('matchs_analyses')} confrontation(s), "
                   f"{h2h.get('buts_home_moyenne')}-{h2h.get('buts_away_moyenne')} buts en moyenne) : "
                   f"{home_xg_avant_h2h}/{away_xg_avant_h2h} → {home_xg}/{away_xg}")
+
+        elo = m.get("elo")
+        home_xg_avant_elo, away_xg_avant_elo = home_xg, away_xg
+        home_xg, away_xg = _ajuster_avec_elo(home_xg, away_xg, elo)
+        if (home_xg, away_xg) != (home_xg_avant_elo, away_xg_avant_elo):
+            print(f"      → Buts attendus ajustés avec l'Elo (domicile={elo.get('elo_home')}, "
+                  f"extérieur={elo.get('elo_away')}) : {home_xg_avant_elo}/{away_xg_avant_elo} → {home_xg}/{away_xg}")
 
         # forme (01/10/2026, demande explicite) : points_par_match_moyenne/clean_sheets_nombre
         # étaient collectés (stats_detaillees_10_matchs, 15 métriques API-Football) mais jamais
