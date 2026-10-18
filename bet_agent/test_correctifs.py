@@ -521,7 +521,11 @@ class TestMuFautesTirsHorsJeuxStatsDetaillees(unittest.TestCase):
             {"marche": "Offsides - Over Under Full Time", "handicap": 3.5, "periode": "fulltime",
              "selections": [{"selection": "Over", "cote": 1.9}, {"selection": "Under", "cote": 1.9}]},
         ]
-        candidats = ae.evaluer_marches_toutes(
+        # _evaluer_marches_brut (pas evaluer_marches_toutes) : ce test vérifie que le MODÈLE
+        # calcule bien un edge réel pour ces 4 marchés, indépendamment de CATEGORIES_EXCLUES
+        # (18/10/2026 : "Total Tirs" y est désormais exclu pour une raison de calibration
+        # réelle mesurée, voir audit Agent 8 — le calcul lui-même reste correct et testé ici).
+        candidats = ae._evaluer_marches_brut(
             marches, 1.5, 1.2,
             mu_fautes_equipes=(11.5, 12.0), mu_tirs_equipes=(13.0, 9.0),
             mu_tirs_cadres_equipes=(5.0, 3.0), mu_hors_jeux_equipes=(2.5, 1.5))
@@ -1929,6 +1933,21 @@ class TestCorrectifsP0(unittest.TestCase):
                     "selections": [{"selection": "Over", "cote": 1.9}, {"selection": "Under", "cote": 1.9}]}]
         categories = {c["categorie"] for c in ae.evaluer_marches_toutes(marches, 1.5, 1.2)}
         self.assertNotIn("BTTS", categories)
+        self.assertIn("Total", categories)
+
+    def test_total_tirs_exclu_du_calcul(self):
+        # 18/10/2026, audit Agent 8 (10 agents en parallèle) : "Total Tirs" écarté après un
+        # écart réel de -19,1 pts qui SURVIT à la déduplication par match (26 paris réels
+        # distincts, tous "Under", 50,0% réel pour 69,1% annoncé) — cause probable : Poisson
+        # pure au lieu d'une binomiale négative (surdispersion) pour ce marché.
+        self.assertIn("Total Tirs", ae.CATEGORIES_EXCLUES)
+        marches = [{"marche": "Total Shots", "handicap": 22.5, "periode": "fulltime",
+                    "selections": [{"selection": "Over", "cote": 1.9}, {"selection": "Under", "cote": 1.9}]},
+                   {"marche": "Over Under Full Time", "handicap": 2.5, "periode": "fulltime",
+                    "selections": [{"selection": "Over", "cote": 1.9}, {"selection": "Under", "cote": 1.9}]}]
+        categories = {c["categorie"] for c in ae.evaluer_marches_toutes(
+            marches, 1.5, 1.2, mu_tirs_equipes=(12.0, 10.0))}
+        self.assertNotIn("Total Tirs", categories)
         self.assertIn("Total", categories)
 
 
