@@ -83,7 +83,7 @@ def evaluer_marches_toutes_poids(marches, mu_home, mu_away, poids_marche):
     marche_sans_marge = ae.probabilites_sans_marge(marches)
     retenus = []
     for c in ae._evaluer_marches_brut(marches, mu_home, mu_away):
-        if c["categorie"] in ae.CATEGORIES_EXCLUES or c["cote"] < ae.COTE_MIN_JAMBE:
+        if c["categorie"] in ae.CATEGORIES_EXCLUES or ae.cote_hors_fourchette(c["cote"]):
             continue
         p_marche = marche_sans_marge.get((c["marche"], c["selection"]))
         if p_marche is None:

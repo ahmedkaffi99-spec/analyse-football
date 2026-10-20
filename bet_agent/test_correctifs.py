@@ -2469,6 +2469,14 @@ class TestVariablesModelesVides(unittest.TestCase):
                 importlib.reload(ae)
 
 
+MARCHES_FOURCHETTE = [
+    {"marche": "Over Under Full Time", "handicap": 4.5, "periode": "fulltime",
+     "selections": [{"selection": "Over", "cote": 9.0}, {"selection": "Under", "cote": 1.08}]},
+    {"marche": "Bookings - Over Under Full Time", "handicap": 5.0, "periode": "fulltime",
+     "selections": [{"selection": "Over", "cote": 3.0}, {"selection": "Under", "cote": 1.35}]},
+]
+
+
 class TestMelangeModeleMarche(unittest.TestCase):
     def test_probabilites_sans_marge(self):
         marches = [
@@ -2515,23 +2523,24 @@ class TestMelangeModeleMarche(unittest.TestCase):
         self.assertLessEqual(pick_1x["proba_modele_pct"], 100.0)
         self.assertLessEqual(pick_1x["proba_marche_pct"], 100.0)
 
-    def test_petites_cotes_gardees_depuis_le_retrait_du_plancher(self):
-        # 20/10/2026, demande explicite ("retire la cote minimale par jambe") : COTE_MIN_JAMBE
-        # vaut 0 par défaut, une petite cote n'est plus écartée ; Total Cartons n'est pas exclu
-        # non plus (30/09/2026, "ne limite les marchés").
-        self.assertEqual(ae.COTE_MIN_JAMBE, 0.0)
-        marches = [
-            {"marche": "Over Under Full Time", "handicap": 4.5, "periode": "fulltime",
-             "selections": [{"selection": "Over", "cote": 9.0}, {"selection": "Under", "cote": 1.08}]},
-            {"marche": "Bookings - Over Under Full Time", "handicap": 5.0, "periode": "fulltime",
-             "selections": [{"selection": "Over", "cote": 3.0}, {"selection": "Under", "cote": 1.35}]},
-        ]
-        retenus = ae.evaluer_marches_toutes(marches, 1.2, 1.0, mu_cartons=3.0)
-        self.assertTrue(any(c["cote"] < 1.2 for c in retenus))
-        with mock.patch.object(ae, "COTE_MIN_JAMBE", 1.2):
-            avec_plancher = ae.evaluer_marches_toutes(marches, 1.2, 1.0, mu_cartons=3.0)
-        self.assertFalse(any(c["cote"] < 1.2 for c in avec_plancher))
+    def test_fourchette_de_cote_par_jambe_1_2_a_1_8(self):
+        # 20/10/2026, demande explicite : "les cotes min 1.2 et max 1.8" par jambe (le plancher
+        # avait été retiré le matin même, puis rétabli avec un plafond). Total Cartons n'est pas
+        # exclu (30/09/2026, "ne limite les marchés").
+        self.assertEqual((ae.COTE_MIN_JAMBE_DEFAUT, ae.COTE_MAX_JAMBE_DEFAUT), (1.2, 1.8))
+        with mock.patch.object(ae, "COTE_MIN_JAMBE", 1.2), mock.patch.object(ae, "COTE_MAX_JAMBE", 1.8):
+            self.assertTrue(ae.cote_hors_fourchette(1.08))
+            self.assertTrue(ae.cote_hors_fourchette(1.81))
+            self.assertFalse(ae.cote_hors_fourchette(1.2))
+            self.assertFalse(ae.cote_hors_fourchette(1.8))
+            retenus = ae.evaluer_marches_toutes(MARCHES_FOURCHETTE, 1.2, 1.0, mu_cartons=3.0)
+        marches = MARCHES_FOURCHETTE
+        self.assertTrue(retenus)
+        self.assertTrue(all(1.2 <= c["cote"] <= 1.8 for c in retenus))
         self.assertTrue(any(c["categorie"] == "Total Cartons" for c in retenus))
+        sans_limite = ae.evaluer_marches_toutes(marches, 1.2, 1.0, mu_cartons=3.0)  # fixture : 0 = pas de limite
+        self.assertTrue(any(c["cote"] < 1.2 or c["cote"] > 1.8 for c in sans_limite))
+
 
 
 def _stats_fixture(team_id_local, corners=6, cartons_j=2, cartons_r=0, fautes=10, tirs_cadres=5,
