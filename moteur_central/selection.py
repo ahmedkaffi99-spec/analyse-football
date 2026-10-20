@@ -18,8 +18,8 @@ from moteur_central.score_central import score_central
 NB_JAMBES_MIN, NB_JAMBES_MAX, TAILLE_POOL_MAX = 2, 5, 25
 
 
-def _score_combo(combo):
-    scores = [score_central(c)[0] for c in combo]
+def _score_combo(combo, scores_par_candidat=None):
+    scores = [(scores_par_candidat[id(c)] if scores_par_candidat else score_central(c)[0]) for c in combo]
     cote = 1.0
     for c in combo:
         cote *= c.cote
@@ -42,7 +42,8 @@ def selectionner(pool, cote_min, cote_max, nb_min=NB_JAMBES_MIN, nb_max=NB_JAMBE
                 "raison": f"seulement {len(pool)} candidat(s) fiable(s) disponibles, minimum {nb_min}",
                 "cote_totale": None, "score_moyen": None, "nb_jambes": 0}
 
-    pool_reduit = sorted(pool, key=lambda c: score_central(c)[0], reverse=True)[:taille_pool_max]
+    scores_par_candidat = {id(c): score_central(c)[0] for c in pool}
+    pool_reduit = sorted(pool, key=lambda c: scores_par_candidat[id(c)], reverse=True)[:taille_pool_max]
 
     meilleur, meilleure_cle = None, None
     cible = (cote_min + cote_max) / 2
@@ -50,7 +51,7 @@ def selectionner(pool, cote_min, cote_max, nb_min=NB_JAMBES_MIN, nb_max=NB_JAMBE
         for combo in itertools.combinations(pool_reduit, taille):
             if not _diversite_ok(combo):
                 continue
-            scores, cote = _score_combo(combo)
+            scores, cote = _score_combo(combo, scores_par_candidat)
             dans_cible = cote_min <= cote <= cote_max
             cle = (dans_cible, -abs(cote - cible) if not dans_cible else 0.0, sum(scores) / len(scores))
             if meilleure_cle is None or cle > meilleure_cle:
@@ -60,6 +61,6 @@ def selectionner(pool, cote_min, cote_max, nb_min=NB_JAMBES_MIN, nb_max=NB_JAMBE
         return {"genere": False, "jambes": [], "raison": "aucune combinaison valide (contrainte de diversité)",
                 "cote_totale": None, "score_moyen": None, "nb_jambes": 0}
 
-    scores, cote = _score_combo(meilleur)
+    scores, cote = _score_combo(meilleur, scores_par_candidat)
     return {"genere": True, "jambes": list(meilleur), "cote_totale": round(cote, 3),
             "score_moyen": round(sum(scores) / len(scores), 4), "nb_jambes": len(meilleur), "raison": None}
