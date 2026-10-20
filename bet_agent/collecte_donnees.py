@@ -134,15 +134,16 @@ FOURNISSEUR_COTES = os.getenv("FOURNISSEUR_COTES", "api_football").strip().lower
 TTL_COTES_API_FOOTBALL_SECONDES = int(os.getenv("TTL_COTES_API_FOOTBALL_SECONDES") or "21600")
 
 # Marchés dont la conversion API-Football -> vocabulaire interne est VALIDÉE (Phase B, voir
-# adaptateur_api_football.py et son rapport). Asian Handicap est VOLONTAIREMENT absent : la
-# convention de signe entre les deux sélections n'est pas confirmée (limite documentée dans
-# l'adaptateur) — jamais activé, et jamais substitué par l'European Handicap (qu'API-Football
-# n'expose de toute façon pas du tout pour 1xBet).
+# adaptateur_api_football.py et son rapport). Asian Handicap activé le 20/10/2026 : la convention
+# de signe entre les deux sélections est confirmée sur des cotes OddsPapi réelles (le seul
+# handicap de la production avait disparu de la collecte depuis le passage à API-Football) ;
+# jamais substitué par l'European Handicap (qu'API-Football n'expose de toute façon pas du tout
+# pour 1xBet).
 MARCHES_API_FOOTBALL_VALIDES = {
     "Full Time Result", "Double Chance Full Time", "Both Teams To Score",
     "Over Under Full Time", "Over Under Team 1", "Over Under Team 2",
     "Corners - Over Under Full Time", "Yellow Cards - Over Under Full Time",
-    "Shots - Over Under Full Time",
+    "Shots - Over Under Full Time", "Asian Handicap",
 }
 
 _appels_odds_api_football_consommes = 0  # compteur réel, jamais estimé — voir rapport de run

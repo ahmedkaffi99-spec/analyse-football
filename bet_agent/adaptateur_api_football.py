@@ -31,19 +31,11 @@ RÈGLES ABSOLUES :
   persistance.enregistrer_collecte (liste de dicts {marche_id, marche, type, handicap,
   periode, selections:[{selection, cote}]}) — AUCUN de ces fichiers n'est modifié ici.
 
-LIMITE CONNUE (à lever explicitement en Phase C, jamais deviné ici) : API-Football encode
-l'Asian Handicap avec une ligne MIRORÉE par sélection ("Home -1.25" / "Away +1.25"), alors
-qu'OddsPapi partage UNE seule valeur de handicap entre les sélections "1" et "2" d'un même
-marché (confirmé par les données réelles du 10/10/2026 : les deux sélections OddsPapi
-partagent exactement la même valeur de ligne, jamais mirorée). Deviner la convention de signe
-pour les fusionner serait une correspondance inventée, explicitement interdite — donc chaque
-(sélection, ligne) Asian Handicap API-Football reste ici un marché à UNE seule sélection,
-jamais fusionné. Conséquence observée (voir test_adaptateur_api_football.py) :
-estimer_expected_goals_depuis_marches() d'analyser_et_envoyer.py ne retrouve alors jamais les
-deux côtés d'une ligne dans le même dict et retombe sur son repli (mu_diff=0.0, 50/50) — sans
-planter, mais avec une perte d'information réelle sur le handicap. À corriger avant tout
-remplacement effectif d'OddsPapi, par exemple via un test réel confirmant la bonne convention
-de signe à appliquer pour fusionner les deux sélections d'une même ligne."""
+Asian Handicap (20/10/2026) : API-Football encode une ligne MIRORÉE par sélection ("Home -1.25"
+/ "Away +1.25"), OddsPapi une seule valeur référencée au domicile. La convention est confirmée
+sur des cotes OddsPapi réelles (voir _normaliser_selection_api_football) : "Home x" -> sélection
+"1" à la ligne x, "Away y" -> sélection "2" à la ligne -y, ce qui fusionne les deux côtés d'une
+même ligne dans UN marché à deux sélections, comme avant avec OddsPapi."""
 
 import re
 import os
@@ -109,7 +101,16 @@ def _normaliser_selection_api_football(categorie, valeur_brute):
         m = re.match(r"^(Home|Away)\s+([+-]?\d+(?:\.\d+)?)$", valeur_brute)
         if not m:
             return None, None
-        return ("1" if m.group(1) == "Home" else "2"), float(m.group(2))
+        ligne = float(m.group(2))
+        # Convention OddsPapi/interne CONFIRMÉE sur données réelles le 20/10/2026 (table cotes,
+        # favori à 1.43 : "1" à handicap -1 = 1.59 / "2" à handicap -1 = 2.11 ; "1" à +1 = 1.02 /
+        # "2" à +1 = 10.5) : UNE seule valeur de handicap par marché, référencée au DOMICILE —
+        # "1" = Home h, "2" = Away (-h). API-Football miroite la ligne par sélection ("Home -1.25"
+        # / "Away +1.25") : on ramène donc "Away y" à la ligne domicile -y pour que les deux côtés
+        # tombent dans le MÊME marché.
+        if m.group(1) == "Home":
+            return "1", ligne
+        return "2", (-ligne if ligne != 0 else 0.0)
     if categorie in ("BUTS_TOTAL", "BUTS_EQUIPE_DOM", "BUTS_EQUIPE_EXT", "CORNERS_TOTAL",
                      "CARTONS_TOTAL", "TIRS_TOTAL"):
         m = re.match(r"^(Over|Under)\s+(\d+(?:\.\d+)?)$", valeur_brute)

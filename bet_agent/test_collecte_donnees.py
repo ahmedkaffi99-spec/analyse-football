@@ -182,9 +182,9 @@ class TestBasculeFournisseurCotesApiFootball:
 
         assert tous is not None
         noms = {m["marche"] for m in tous}
-        assert noms == {"Full Time Result"}  # Asian Handicap jamais activé, même renvoyé par l'adaptateur
+        assert noms == {"Full Time Result", "Asian Handicap"}  # Asian Handicap activé le 20/10/2026
 
-    def test_asian_handicap_jamais_active_meme_si_seul_marche_disponible(self, monkeypatch):
+    def test_asian_handicap_active_depuis_le_20_10_2026(self, monkeypatch):
         marches = [{"marche_id": "2", "marche": "Asian Handicap", "type": "", "handicap": -1.25,
                    "periode": None, "selections": [{"selection": "1", "cote": 1.9}]}]
         resultat = self._resultat(marches=marches)
@@ -192,7 +192,8 @@ class TestBasculeFournisseurCotesApiFootball:
         monkeypatch.setattr(adf, "capturer_api_football_adapte", lambda *a, **k: resultat)
         monkeypatch.setattr(cd, "_respecter_rate_limit_api_football", lambda: None)
 
-        assert cd.recuperer_marches_pour_fixture_api_football(1) is None
+        tous = cd.recuperer_marches_pour_fixture_api_football(1)
+        assert tous is not None and {m["marche"] for m in tous} == {"Asian Handicap"}
 
     def test_cote_perimee_jamais_presentee_comme_actuelle(self, monkeypatch):
         resultat = self._resultat(perime=True, age_secondes=999.0,
