@@ -935,11 +935,17 @@ def calc_edge(proba_modele, cote):
 # purement modèle), sans retirer ni le code ni les cotes déjà collectées.
 # ------------------------------------------------------------
 POIDS_MARCHE = float(os.getenv("POIDS_MARCHE_OVERRIDE") or 0.65)
-# Cote minimale par jambe RETIRÉE le 20/10/2026 (demande explicite : "retire la cote minimale par
-# jambe" — l'IA choisit les paris sans plancher de cote ; c'était 1.20, car un pari en dessous
-# apporte presque rien au combiné mais ajoute un risque). Rétablissable sans code :
-# COTE_MIN_JAMBE=1.2 dans l'environnement du workflow.
-COTE_MIN_JAMBE = float(os.getenv("COTE_MIN_JAMBE") or 0.0)
+# Fourchette de cote PAR JAMBE (demande explicite du 20/10/2026 : "les cotes min 1.2 et max 1.8").
+# Le plancher avait été retiré le matin même (coupon à 10 jambes entre 1.12 et 1.23, edges
+# négatifs) puis rétabli à 1.2, avec un plafond à 1.8. Modifiables sans code dans l'environnement
+# du workflow : COTE_MIN_JAMBE, COTE_MAX_JAMBE (0 = pas de plafond).
+COTE_MIN_JAMBE_DEFAUT, COTE_MAX_JAMBE_DEFAUT = 1.2, 1.8
+COTE_MIN_JAMBE = float(os.getenv("COTE_MIN_JAMBE") or COTE_MIN_JAMBE_DEFAUT)
+COTE_MAX_JAMBE = float(os.getenv("COTE_MAX_JAMBE") or COTE_MAX_JAMBE_DEFAUT)
+
+
+def cote_hors_fourchette(cote):
+    return cote < COTE_MIN_JAMBE or (COTE_MAX_JAMBE > 0 and cote > COTE_MAX_JAMBE)
 # Plus aucune catégorie exclue par défaut (demande explicite du 30/09/2026 : "ne limite les
 # marchés") — Total Cartons (modèle peu fiable, points de carton/lignes mixtes) était exclu
 # jusqu'au 30/09/2026, mais l'IA voit maintenant TOUS les marchés modélisables avec leurs vrais
@@ -1051,7 +1057,7 @@ def evaluer_marches_toutes(marches, mu_home, mu_away, mu_corners=None, mu_carton
     for c in _evaluer_marches_brut(marches, mu_home, mu_away, mu_corners, mu_cartons,
                                     mu_corners_equipes, mu_cartons_equipes, mu_fautes_equipes,
                                     mu_tirs_equipes, mu_tirs_cadres_equipes, mu_hors_jeux_equipes):
-        if c["categorie"] in CATEGORIES_EXCLUES or c["cote"] < COTE_MIN_JAMBE:
+        if c["categorie"] in CATEGORIES_EXCLUES or cote_hors_fourchette(c["cote"]):
             continue
         p_marche = marche_sans_marge.get((c["marche"], c["selection"]))
         if p_marche is None:
