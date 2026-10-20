@@ -314,6 +314,7 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
     import collecte_donnees as cd
     import analyser_et_envoyer as ae
     import agent_strategie as st
+    import agents_familles
 
     cle = os.getenv("DEEPSEEK_API_KEY")
     if not cle:
@@ -353,6 +354,15 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
         if etat["catalogue"] is None:
             etat["pool"] = ae.agent3_calcul_pool_candidats(etat["donnees"])
             etat["catalogue"], etat["catalogue_texte"] = st.construire_catalogue(etat["pool"])
+            # Agents spécialistes par famille de marchés (20/10/2026) : constat réel sur le run 170
+            # — ils n'étaient branchés que dans composer_coupons (moteur déterministe), jamais ici,
+            # donc ABSENTS du moteur agent. Même revue (veto Python + avis IA par famille) avant
+            # que l'IA pilote ne voie le catalogue ; toute défaillance laisse le catalogue intact.
+            if etat["catalogue"] and agents_familles.actif():
+                ecartes, avis = agents_familles.revoir_catalogue(etat["catalogue"], ae.appel_llm)
+                if ecartes or avis:
+                    etat["catalogue"], etat["catalogue_texte"] = st.construire_catalogue(
+                        etat["pool"], ecartes=ecartes, avis=avis)
             # contexte_texte (01/10/2026, correctif réel) : voir_catalogue ne renvoyait QUE les
             # lignes de paris, jamais le contexte par match (buts attendus, confrontations
             # directes, blessures, prédictions, forme, presse) alors que le prompt système
