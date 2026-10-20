@@ -128,3 +128,28 @@ def test_composer_coupons_appelle_les_agents_puis_le_stratege(monkeypatch):
 def test_desactivable_par_variable(monkeypatch):
     monkeypatch.setenv("AGENTS_FAMILLES_ACTIFS", "0")
     assert af.actif() is False
+
+
+def test_les_agents_travaillent_en_parallele(monkeypatch):
+    import threading
+    import time
+    pool = {
+        "A vs B": [_cand("A vs B", "Double Chance", "1X", 1.8, 76.0, 8.0)],
+        "C vs D": [_cand("C vs D", "Total", "Over", 1.7, 74.0, 6.0)],
+        "E vs F": [_cand("E vs F", "Total Corners", "Under", 1.9, 72.0, 5.0)],
+        "G vs H": [_cand("G vs H", "BTTS", "Yes", 1.9, 71.0, 5.0)],
+    }
+    catalogue, _ = st.construire_catalogue(pool)
+    monkeypatch.setattr(ae, "budget_ia_epuise", lambda: False)
+    barriere = threading.Barrier(4, timeout=5)  # les 4 agents doivent être EN VOL en même temps
+    fils, passes = set(), []
+
+    def appel(prompt, max_tokens=0, json_attendu=False):
+        fils.add(threading.current_thread().name)
+        barriere.wait()
+        passes.append(1)
+        time.sleep(0.05)
+        return json.dumps({"ecartes": [], "avis": []})
+
+    af.revoir_catalogue(catalogue, appel=appel)
+    assert len(fils) == 4 and len(passes) == 4  # sans parallélisme, la barrière casserait
