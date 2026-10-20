@@ -1,6 +1,7 @@
 """Les 10 agents spécialistes par famille de marchés (20/10/2026, demande explicite : "ajoute les
 10 agents en production").
 
+Les agents travaillent en parallèle (un appel IA par famille, tous lancés ensemble).
 Chaque agent connaît UNE famille de marchés, ses faits MESURÉS en production (audit des 10
 agents, vrais coupons dédupliqués + backtests walk-forward) et passe en revue les candidats de sa
 famille AVANT que le stratège IA ne compose le coupon :
@@ -15,6 +16,7 @@ run bloqué. Désactivable : AGENTS_FAMILLES_ACTIFS=0."""
 
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor
 
 import analyser_et_envoyer as ae
 
@@ -132,19 +134,35 @@ def revoir_catalogue(catalogue, appel=None):
     if ecartes:
         print(f"   🧑‍⚖️ [Agents familles] {len(ecartes)} pari(s) écarté(s) par veto Python.")
 
+    # Les agents travaillent EN PARALLÈLE (20/10/2026, demande explicite) : un appel IA par
+    # famille présente, tous lancés ensemble ; la fusion des résultats se fait ensuite dans
+    # l'ordre des familles, dans le fil principal (aucun état partagé modifié par les fils).
+    taches = []
     for fid, ids in familles.items():
         restants = [i for i in ids if i not in ecartes]
         if not restants:
             continue
         nom, faits = (next((f[1], f[3]) for f in FAMILLES if f[0] == fid) if fid != "derives"
                       else (FAMILLE_DERIVES[1], FAMILLE_DERIVES[2]))
-        if ae.budget_ia_epuise():
-            print("   ⏱️ [Agents familles] budget IA épuisé — vetos Python seulement pour les familles restantes.")
-            break
+        taches.append((fid, nom, faits, restants))
+    if taches and ae.budget_ia_epuise():
+        print("   ⏱️ [Agents familles] budget IA épuisé — vetos Python seulement.")
+        return ecartes, avis
+
+    def revue(tache):
+        fid, nom, faits, restants = tache
+        texte = appel(_prompt_famille(fid, nom, faits, [_ligne(i, catalogue[i]) for i in restants]),
+                      max_tokens=1500, json_attendu=True)
+        reponse = json.loads(texte) if isinstance(texte, str) else texte
+        return reponse if isinstance(reponse, dict) else {}
+
+    if taches:
+        print(f"   🧑‍⚖️ [Agents familles] {len(taches)} agent(s) spécialiste(s) lancé(s) en parallèle...")
+    with ThreadPoolExecutor(max_workers=max(1, len(taches)), thread_name_prefix="agent-famille") as pool:
+        futurs = [(t, pool.submit(revue, t)) for t in taches]
+    for (fid, nom, faits, restants), futur in futurs:
         try:
-            texte = appel(_prompt_famille(fid, nom, faits, [_ligne(i, catalogue[i]) for i in restants]),
-                          max_tokens=1500, json_attendu=True)
-            reponse = json.loads(texte) if isinstance(texte, str) else texte
+            reponse = futur.result()
             proposes = [e for e in (reponse.get("ecartes") or []) if isinstance(e, dict) and e.get("id") in restants]
         except Exception as e:
             print(f"   ⚠️ [Agent {nom}] réponse inexploitable ({ae._cause(e)[:120]}) — famille inchangée.")
