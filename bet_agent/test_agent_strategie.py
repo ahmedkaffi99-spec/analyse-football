@@ -313,13 +313,48 @@ class TestFraicheurSansAppelSiCollecteRecente(unittest.TestCase):
             self.assertEqual(ae.verifier_fraicheur_matchs(matchs, recente), [])
         appel.assert_not_called()
 
-    def test_collecte_ancienne_revérifie_chez_oddspapi(self):
+    def test_collecte_ancienne_aucun_appel_oddspapi_par_defaut(self):
+        # 20/10/2026, demande explicite ("j'utilise pas oddspapi") : par défaut (FOURNISSEUR_COTES=
+        # api_football) même une collecte ancienne ne déclenche JAMAIS d'appel réseau OddsPapi.
+        matchs = [self._match("2099-01-01T15:00:00Z")]
+        ancienne = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat()
+        with mock.patch.dict("os.environ", {"FOURNISSEUR_COTES": "api_football"}), \
+                mock.patch.object(ae.requests, "get") as appel:
+            self.assertEqual(ae.verifier_fraicheur_matchs(matchs, ancienne), matchs)
+        appel.assert_not_called()
+
+    def test_collecte_ancienne_revérifie_chez_oddspapi_seulement_si_explicitement_demande(self):
         matchs = [self._match("2099-01-01T15:00:00Z")]
         ancienne = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat()
         reponse = mock.Mock(status_code=429, text="quota")
-        with mock.patch.object(ae.requests, "get", return_value=reponse) as appel:
+        with mock.patch.dict("os.environ", {"FOURNISSEUR_COTES": "oddspapi"}), \
+                mock.patch.object(ae.requests, "get", return_value=reponse) as appel:
             ae.verifier_fraicheur_matchs(matchs, ancienne)
         appel.assert_called_once()
+
+
+class TestAucunAppelOddsPapiParDefaut(unittest.TestCase):
+    """20/10/2026 : tous les appels OddsPapi restants sont gardés par fournisseurs.oddspapi_actif()."""
+
+    def test_estimer_heure_fin_ticket_sans_appel(self):
+        with mock.patch.dict("os.environ", {"FOURNISSEUR_COTES": "api_football"}), \
+                mock.patch.object(ae.requests, "get") as appel:
+            self.assertIsNone(ae.estimer_heure_fin_ticket([{"fixture_id_oddspapi": "1"}]))
+        appel.assert_not_called()
+
+    def test_verification_resultats_sans_appel(self):
+        import verifier_resultats as vr
+        with mock.patch.dict("os.environ", {"FOURNISSEUR_COTES": "api_football"}), \
+                mock.patch.object(vr.requests, "get") as appel:
+            self.assertEqual(vr.recuperer_fixtures_du_jour(), {})
+            self.assertIsNone(vr.recuperer_score("123"))
+        appel.assert_not_called()
+
+    def test_oddspapi_actif_seulement_si_explicite(self):
+        from fournisseurs import oddspapi_actif
+        for valeur, attendu in (("", False), ("api_football", False), ("oddspapi", True), (" OddsPapi ", True)):
+            with mock.patch.dict("os.environ", {"FOURNISSEUR_COTES": valeur}):
+                self.assertEqual(oddspapi_actif(), attendu)
 
 
 class TestDiversiteDesMarches(unittest.TestCase):

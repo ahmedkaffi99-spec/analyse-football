@@ -34,6 +34,7 @@ if not VERIFIER_SSL_ODDSPAPI:
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 ODDSPAPI_KEY = os.getenv("ODDSPAPI_KEY")
+from fournisseurs import oddspapi_actif  # noqa: E402
 
 # Corners/cartons/fautes/tirs/hors-jeux : OddsPapi /v4/scores ne renvoie QUE les buts —
 # longtemps non vérifiables du tout (constaté le 03/10/2026 : 442 jambes sur 809, 55% de la
@@ -95,6 +96,8 @@ def jambe_perimee(coup_envoi, maintenant=None, delai_jours=None):
 def recuperer_fixtures_du_jour():
     """Fenêtre large (-1 à +2 jours) pour ne jamais rater un match à cheval sur minuit UTC,
     même logique de sécurité que collecte_donnees.py."""
+    if not oddspapi_actif():
+        return {}  # aucun appel OddsPapi (défaut) : un match introuvable côté API-Football reste en attente
     date_from = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%dT00:00:00Z")
     date_to = (datetime.now(timezone.utc) + timedelta(days=2)).strftime("%Y-%m-%dT00:00:00Z")
     try:
@@ -116,6 +119,8 @@ def recuperer_fixtures_du_jour():
 
 
 def recuperer_score(fixture_id):
+    if not oddspapi_actif():
+        return None
     try:
         r = requests.get("https://api.oddspapi.io/v4/scores",
                           params={"apiKey": ODDSPAPI_KEY, "fixtureId": fixture_id}, timeout=15, verify=VERIFIER_SSL_ODDSPAPI)
