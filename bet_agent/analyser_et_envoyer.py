@@ -42,6 +42,7 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 ODDSPAPI_KEY = os.getenv("ODDSPAPI_KEY")
+from fournisseurs import oddspapi_actif  # noqa: E402
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
@@ -2446,7 +2447,8 @@ def verifier_fraicheur_matchs(matchs_exploitables, date_collecte=None):
     (MINUTES_COLLECTE_FRAICHE) : heure de coup d'envoi locale seulement, aucun appel."""
     if not matchs_exploitables:
         return matchs_exploitables
-    if _collecte_recente(date_collecte):
+    if _collecte_recente(date_collecte) or not oddspapi_actif():
+        # Sans OddsPapi (défaut) : coup d'envoi local seulement, jamais d'appel réseau OddsPapi.
         return _filtrer_coup_envoi_local(matchs_exploitables)
 
     # Respecte DATE_CIBLE_DEBUT/FIN comme la collecte initiale (collecte_donnees.py) : sinon
@@ -3394,6 +3396,8 @@ def estimer_heure_fin_ticket(selections_finales):
     cette heure, au lieu de vérifier toutes les 30 minutes toute la soirée pour rien.
     Renvoie None si l'heure de coup d'envoi est introuvable (verifier_resultats.py vérifiera
     alors dès son premier passage, comme filet de sécurité)."""
+    if not oddspapi_actif():
+        return None  # aucun appel OddsPapi : verifier_resultats vérifiera dès son premier passage
     date_cible_debut = os.getenv("DATE_CIBLE_DEBUT")
     date_cible_fin = os.getenv("DATE_CIBLE_FIN")
     if date_cible_debut and date_cible_fin:

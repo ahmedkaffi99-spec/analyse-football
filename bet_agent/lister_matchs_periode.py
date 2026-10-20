@@ -54,6 +54,10 @@ def main():
     parser.add_argument("--jours", type=int, default=16, help="Nombre de jours à partir d'aujourd'hui")
     args = parser.parse_args()
 
+    from fournisseurs import oddspapi_actif
+    if not oddspapi_actif():
+        print("ℹ️ OddsPapi désactivé (FOURNISSEUR_COTES != oddspapi) : aucun appel, aucun quota consommé.")
+        sys.exit(0)
     if not ODDSPAPI_KEY:
         print("❌ ODDSPAPI_KEY manquante")
         sys.exit(1)
