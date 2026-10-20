@@ -26,6 +26,7 @@ on:
           - backtest-poids-elo
           - backtest-poids-arbitre-cartons
           - backtest-calibration-double-chance
+          - catalogue-par-famille
         default: marches-disponibles
       date_debut:
         description: "Date cible de début (AAAA-MM-JJ) — utilisé seulement par 'marches-disponibles'"
@@ -760,6 +761,68 @@ jobs:
           tableau('Calibration 1X, domicile OUTSIDER (Elo dom+avantage < Elo ext)', 0.4, lambda e: e[4] < 0)
           tableau('Calibration 1X, domicile OUTSIDER, sans Elo', 0.0, lambda e: e[4] < 0)
           tableau('Calibration 1X, domicile FAVORI (Elo dom+avantage >= Elo ext)', 0.4, lambda e: e[4] >= 0)
+          "
+
+      - name: Catalogue par famille de marchés d'un run archivé (pourquoi 5 agents sur 10 sans candidat)
+        # Relit la collecte archivée d'un run (numéro dans 'match_recherche') et recalcule le pool de
+        # candidats avec le code actuel : pour chaque famille, combien de paris modélisés, combien à
+        # >= 70 % de probabilité (seuil du catalogue de l'IA), combien dans la fourchette de cote
+        # 1.2-1.8 — avec et sans cette fourchette, pour isoler la cause.
+        if: inputs.verification == 'catalogue-par-famille'
+        working-directory: backend
+        run: |
+          python -c "
+          import os
+          import sys
+          from pathlib import Path
+          RACINE = Path.cwd().parent
+          sys.path.insert(0, str(RACINE))
+          sys.path.insert(0, str(RACINE / 'bet_agent'))
+
+          from app.database import SessionLocal
+          from app.models import Run
+          from app.services.archives import telecharger_collecte
+
+          import agents_familles as af
+          import analyser_et_envoyer as ae
+
+          run_id = int(os.environ['MATCH_RECHERCHE'])
+          with SessionLocal() as db:
+              donnees = telecharger_collecte(db, db.get(Run, run_id))
+          nb_avec_marches = donnees.get('nb_matchs_avec_marches')
+          print(f'Run {run_id} : {nb_avec_marches} match(s) avec marchés.')
+
+          def bilan(titre):
+              pool = ae.agent3_calcul_pool_candidats(donnees)
+              print(f'\\n=== {titre} ===')
+              familles = {}
+              for match, candidats in pool.items():
+                  for c in candidats:
+                      p = c['pick']
+                      fid, nom, _ = af.famille_de(p['categorie'])
+                      f = familles.setdefault(fid, {'nom': nom, 'total': 0, 'modele': 0, 'p70': 0, 'matchs70': set(), 'cats': {}})
+                      f['total'] += 1
+                      cat = f['cats'].setdefault(p['categorie'], [0, 0, 0])
+                      cat[0] += 1
+                      if p.get('proba_modele_pct') is not None:
+                          f['modele'] += 1
+                          cat[1] += 1
+                          if p['proba_modele_pct'] >= ae.PROBA_MIN_FORTE:
+                              f['p70'] += 1
+                              cat[2] += 1
+                              f['matchs70'].add(match)
+              for fid, f in sorted(familles.items()):
+                  total, modeles, p70, nb70 = f['total'], f['modele'], f['p70'], len(f['matchs70'])
+                  print(f'{fid:12s} total={total:4d} modelises={modeles:4d} proba>=70%={p70:4d} sur {nb70} match(s)')
+                  for cat, (t, m, h) in sorted(f['cats'].items()):
+                      print(f'     {cat:34s} total={t:3d} modelises={m:3d} >=70%={h:3d}')
+              absentes = [f[0] for f in af.FAMILLES if f[0] not in familles] + ([af.FAMILLE_DERIVES[0]] if af.FAMILLE_DERIVES[0] not in familles else [])
+              print('Familles sans AUCUN candidat dans le pool :', absentes or 'aucune')
+
+          print(f'COTE_MIN_JAMBE={ae.COTE_MIN_JAMBE} COTE_MAX_JAMBE={ae.COTE_MAX_JAMBE} PROBA_MIN_FORTE={ae.PROBA_MIN_FORTE} CATEGORIES_EXCLUES={ae.CATEGORIES_EXCLUES}')
+          bilan('Avec la fourchette de cote de production')
+          ae.COTE_MIN_JAMBE, ae.COTE_MAX_JAMBE = 0.0, 0.0
+          bilan('SANS fourchette de cote (cote libre)')
           "
 
       - name: Backtest réel — meilleur poids_arbitre_cartons (effet arbitre dans bet_agent, Agent 7)

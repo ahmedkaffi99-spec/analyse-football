@@ -40,17 +40,11 @@ BETS_COMPLETS = [
     {"id": 10, "name": "Total - Away", "values": [{"value": "Over 1.5", "odd": "1.85"},
                                                    {"value": "Under 1.5", "odd": "1.95"}]},
 ]
-# NB (limite connue, documentée) : API-Football encode l'Asian Handicap avec une ligne
-# MIRORÉE par sélection ("Home -1.25" / "Away +1.25"), alors qu'OddsPapi partage UNE seule
-# valeur de handicap entre "1" et "2" au sein d'un même marché (confirmé par les données
-# réelles du 10/10/2026 : selection "1" et "2" partagent exactement la même valeur de ligne
-# côté OddsPapi, jamais mirorée). Deviner la convention de signe inverse pour les fusionner
-# serait une correspondance inventée — interdit explicitement par la demande. Ce fichier ne
-# fusionne donc JAMAIS les deux côtés d'une ligne Asian Handicap API-Football : chaque
-# (sélection, ligne) reste un marché à une seule sélection, jamais mélangé ni deviné. C'est
-# une limite assumée de la Phase B, à lever explicitement en Phase C si besoin (ex : si un
-# futur test réel confirme la convention de signe à utiliser).
-N_MARCHES_ATTENDUS = 11  # 10 catégories, Asian Handicap scindé en 2 (1 par sélection/ligne)
+# NB (20/10/2026) : API-Football encode l'Asian Handicap avec une ligne MIRORÉE par sélection
+# ("Home -1.25" / "Away +1.25"), OddsPapi une seule valeur référencée au domicile (confirmé sur
+# des cotes réelles de la table cotes : "1" = Home h, "2" = Away -h). L'adaptateur ramène donc
+# "Away y" à la ligne -y : les deux côtés d'une ligne tombent dans UN marché à deux sélections.
+N_MARCHES_ATTENDUS = 10  # 10 catégories, Asian Handicap fusionné (1 marché, 2 sélections)
 
 
 class TestExtractionEtTraduction:
@@ -67,14 +61,14 @@ class TestExtractionEtTraduction:
                         "Yellow Cards - Over Under Full Time", "Shots - Over Under Full Time",
                         "Over Under Team 1", "Over Under Team 2"}
 
-    def test_asian_handicap_scinde_en_deux_marches_un_cote_chacun(self):
-        # Limite connue (voir commentaire au-dessus de BETS_COMPLETS) : jamais de fusion par
-        # inversion de signe devinée -> 2 entrées à 1 sélection chacune pour 1 ligne réelle.
+    def test_asian_handicap_fusionne_les_deux_cotes_dune_ligne_en_un_marche(self):
         cotations, _, _ = extraire_cotations_brutes(_reponse_api_football(BETS_COMPLETS))
         marches, _ = traduire_en_marches_oddspapi(cotations)
         hcp = [m for m in marches if m["marche"] == "Asian Handicap"]
-        assert len(hcp) == 2
-        assert all(len(m["selections"]) == 1 for m in hcp)
+        assert len(hcp) == 1
+        assert {s["selection"] for s in hcp[0]["selections"]} == {"1", "2"}
+        cotes = {s["selection"]: s["cote"] for s in hcp[0]["selections"]}
+        assert cotes == {"1": 1.90, "2": 1.95}  # Home -1.25 @ 1.90 et Away +1.25 @ 1.95
 
     def test_1x2_double_chance_btts_sans_ligne_significative(self):
         cotations, _, _ = extraire_cotations_brutes(_reponse_api_football(BETS_COMPLETS))
@@ -87,7 +81,7 @@ class TestExtractionEtTraduction:
         cotations, _, _ = extraire_cotations_brutes(_reponse_api_football(BETS_COMPLETS))
         marches, _ = traduire_en_marches_oddspapi(cotations)
         hcp = next(m for m in marches if m["marche"] == "Asian Handicap")
-        assert hcp["handicap"] == -1.25
+        assert hcp["handicap"] == -1.25  # ligne référencée au domicile (Home -1.25)
         assert all(m["marche"] != "European Handicap" for m in marches)
 
     def test_european_handicap_jamais_substitue_par_asian(self):
@@ -245,14 +239,10 @@ class TestCompatibiliteTicketsSimules:
         ligne = ae.estimer_ligne_equilibree(r.marches, ["card", "booking"])
         assert ligne == 3.5
 
-    def test_estimer_expected_goals_fonctionne_mais_handicap_degrade(self):
-        # LIMITE CONNUE à lever en Phase C : l'Asian Handicap scindé (voir
-        # test_asian_handicap_scinde_en_deux_marches_un_cote_chacun) ne contient jamais les
-        # deux sélections "1"/"2" dans le MÊME dict marché -> estimer_expected_goals_depuis_
-        # marches ne peut jamais les apparier et retombe en repli (mu_diff=0.0, 50/50) au lieu
-        # d'utiliser le handicap réel. Fonctionne SANS planter (degrade gracieusement), mais
-        # c'est une perte d'information réelle à corriger avant tout remplacement effectif
-        # d'OddsPapi par cet adaptateur.
+    def test_estimer_expected_goals_utilise_le_handicap_reel(self):
+        # Depuis le 20/10/2026 l'Asian Handicap est fusionné (les deux sélections "1"/"2" dans le
+        # MÊME marché, ligne référencée au domicile) : estimer_expected_goals_depuis_marches peut
+        # de nouveau apparier les deux côtés et utiliser le handicap réel (plus de repli 50/50).
         import analyser_et_envoyer as ae
         data = _reponse_api_football(BETS_COMPLETS)
         r = construire_resultat(data, fixture_id=1, statut_http=200, erreur_http=None,
@@ -260,7 +250,7 @@ class TestCompatibiliteTicketsSimules:
         mu_home, mu_away, mu_total, a_total, a_handicap = ae.estimer_expected_goals_depuis_marches(r.marches)
         assert 0.15 <= mu_home <= 6.0 and 0.15 <= mu_away <= 6.0
         assert a_total is True
-        assert a_handicap is False  # repli dégradé, limite connue — pas un crash
+        assert a_handicap is True
 
     def test_periode_absente_traitee_comme_fulltime(self):
         import collecte_donnees as cd
@@ -297,12 +287,28 @@ class TestGenerationCouponsHorsLigne:
             }],
         }
 
+    def test_handicap_asiatique_api_football_donne_des_candidats_modelises(self):
+        # 20/10/2026 : Asian Handicap activé et fusionné (Home -0.5 / Away +0.5 -> UN marché à
+        # deux sélections, ligne référencée au domicile) -> le moteur calcule probabilité et edge
+        # pour les DEUX côtés (ligne demi-entière ; les lignes de quart restent non modélisées).
+        import analyser_et_envoyer as ae
+        bets = [dict(b) for b in BETS_COMPLETS if b["name"] != "Asian Handicap"] + [
+            {"id": 4, "name": "Asian Handicap", "values": [{"value": "Home -0.5", "odd": "1.80"},
+                                                            {"value": "Away +0.5", "odd": "2.05"}]}]
+        r = construire_resultat(_reponse_api_football(bets), fixture_id=1, statut_http=200, erreur_http=None,
+                                recu_le_utc=T0, ttl_secondes=90, maintenant=T0)
+        pool = ae.agent3_calcul_pool_candidats(self._donnees_synthetiques(list(r.marches)))
+        handicaps = [c["pick"] for cs in pool.values() for c in cs if c["pick"]["categorie"].startswith("Handicap")
+                     and c["pick"]["proba_modele_pct"] is not None]
+        assert {p["selection"] for p in handicaps} == {"1", "2"}
+        assert all(p["handicap"] == -0.5 for p in handicaps)
+
     def test_pool_de_candidats_genere_sans_erreur_sur_marches_api_football(self):
         import analyser_et_envoyer as ae
         data = _reponse_api_football(BETS_COMPLETS)
         r = construire_resultat(data, fixture_id=1, statut_http=200, erreur_http=None,
                                 recu_le_utc=T0, ttl_secondes=90, maintenant=T0)
-        marches_valides = [m for m in r.marches if m["marche"] != "Asian Handicap"]  # jamais activé
+        marches_valides = list(r.marches)
         donnees = self._donnees_synthetiques(marches_valides)
 
         pool = ae.agent3_calcul_pool_candidats(donnees)
@@ -342,7 +348,10 @@ class TestNormalisationApiFootballStricte:
 
     def test_handicap_asiatique_extrait_la_ligne(self):
         assert _normaliser_selection_api_football("HANDICAP_ASIATIQUE", "Home -1.25") == ("1", -1.25)
-        assert _normaliser_selection_api_football("HANDICAP_ASIATIQUE", "Away +0.25") == ("2", 0.25)
+        # "Away +0.25" = ligne domicile -0.25 (convention OddsPapi : une valeur, référencée au domicile)
+        assert _normaliser_selection_api_football("HANDICAP_ASIATIQUE", "Away +0.25") == ("2", -0.25)
+        assert _normaliser_selection_api_football("HANDICAP_ASIATIQUE", "Away -1.5") == ("2", 1.5)
+        assert _normaliser_selection_api_football("HANDICAP_ASIATIQUE", "Away 0") == ("2", 0.0)
 
     def test_handicap_asiatique_format_invalide_jamais_devine(self):
         assert _normaliser_selection_api_football("HANDICAP_ASIATIQUE", "Home") == (None, None)
