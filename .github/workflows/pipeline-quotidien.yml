@@ -27,7 +27,7 @@ on:
           - central
           - deterministe
           - agent
-        default: central
+        default: agent
       depuis_run:
         description: "Reprendre la collecte d'un run du jour (numéro) : analyse + IA seulement (moteur deterministe uniquement)"
         type: string
