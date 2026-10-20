@@ -5,6 +5,7 @@ import unittest
 from unittest import mock
 
 import agent_pilote as pilote
+import agents_familles
 import collecte_donnees as cd
 import analyser_et_envoyer as ae
 import agent_strategie as st
@@ -530,3 +531,43 @@ class TestContexteSupplementaireEtRegleDeProbabiliteReelle(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestAgentsFamillesBranchesDansLePilote(unittest.TestCase):
+    """20/10/2026, constat réel (run 170) : les agents de famille n'étaient branchés que dans
+    composer_coupons, jamais dans le moteur agent — voir_catalogue doit les appliquer."""
+
+    def setUp(self):
+        for cle, valeur in (("DEEPSEEK_API_KEY", "cle-test"), ("AGENTS_FAMILLES_ACTIFS", "1")):
+            patcher = mock.patch.dict("os.environ", {cle: valeur})
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def test_voir_catalogue_applique_les_vetos_des_agents_de_famille(self):
+        pool = {
+            "M1 vs A1": [{"match": "M1 vs A1", "pick": _pick("Total", "Total (2.5)", "Over", 1.8)}],
+            "M2 vs A2": [{"match": "M2 vs A2", "pick": dict(_pick("Total", "Total (2.5)", "Under", 1.8),
+                                                            edge_pct=45.0)}],  # edge suspect -> veto
+        }
+        reponses = [
+            _msg_outil("collecter_donnees", {}),
+            _msg_outil("voir_catalogue", {}),
+            _msg_outil("proposer_coupon", {"strategie": "s", "jambes": [{"id": "P1", "raison": "r"}]}),
+            _msg_outil("envoyer_telegram", {}),
+        ]
+        with mock.patch.object(cd, "collecter_donnees", return_value=None), \
+                mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(DONNEES_FACTICES))), \
+                mock.patch.object(ae, "PROFILS_COUPON", [PROFIL_1]), \
+                mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=pool), \
+                mock.patch.object(ae, "budget_ia_epuise", return_value=True), \
+                mock.patch.object(ae, "agent5_envoyer_coupons", return_value=True), \
+                mock.patch.object(pilote, "_appel_api", side_effect=[(r, 65536) for r in reponses]), \
+                mock.patch("agents_familles.revoir_catalogue", wraps=agents_familles.revoir_catalogue) as revue:
+            pilote.executer(mission="test", telegram=True)
+
+        # P2 (edge suspect) a été écarté par le veto Python avant d'être montré à l'IA pilote.
+        self.assertEqual(revue.call_count, 1)
+        catalogue_revu = revue.call_args.args[0]
+        self.assertEqual(sorted(catalogue_revu), ["P1", "P2"])
+        self.assertIsNotNone(agents_familles.veto_python(catalogue_revu["P2"]["pick"]))
+        self.assertIsNone(agents_familles.veto_python(catalogue_revu["P1"]["pick"]))
