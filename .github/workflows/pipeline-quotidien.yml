@@ -56,6 +56,10 @@ on:
         description: "Minimum de jambes pour CE run : en dessous, aucun coupon (vide = pas de minimum)"
         type: string
         default: ""
+      ttl_cotes_secondes:
+        description: "Âge MAXIMUM accepté des cotes API-Football pour CE run, en secondes (vide = 21600, soit 6 h) — à relever (ex: 43200) pour un run de nuit, quand les cotes ne sont plus rafraîchies : les marchés plus vieux que ce seuil sont écartés"
+        type: string
+        default: ""
       ignorer_diversite_croisee:
         description: "Run PONCTUEL : désactive la diversité de catégorie entre profils (traite chaque profil comme le premier) — l'anti-doublon exact reste actif dans tous les cas"
         type: boolean
@@ -131,6 +135,7 @@ jobs:
       IGNORER_DIVERSITE_CROISEE: ${{ inputs.ignorer_diversite_croisee }}
       NB_JAMBES: ${{ inputs.nb_jambes }}
       NB_JAMBES_MIN: ${{ inputs.nb_jambes_min }}
+      TTL_COTES_API_FOOTBALL_SECONDES: ${{ inputs.ttl_cotes_secondes }}
       # Comparaison parallèle bet_agent/moteur + capture hist_cotes + moteur central (shadow) :
       # jamais utilisées pour la sélection ni Telegram (voir runs.py) — vars du dépôt, vides par
       # défaut tant que l'utilisateur ne les active pas explicitement (Settings > Variables).
