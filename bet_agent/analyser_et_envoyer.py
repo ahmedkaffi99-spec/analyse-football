@@ -935,7 +935,11 @@ def calc_edge(proba_modele, cote):
 # purement modèle), sans retirer ni le code ni les cotes déjà collectées.
 # ------------------------------------------------------------
 POIDS_MARCHE = float(os.getenv("POIDS_MARCHE_OVERRIDE") or 0.65)
-COTE_MIN_JAMBE = 1.20   # en dessous, un pari n'apporte presque rien au combiné mais ajoute un risque
+# Cote minimale par jambe RETIRÉE le 20/10/2026 (demande explicite : "retire la cote minimale par
+# jambe" — l'IA choisit les paris sans plancher de cote ; c'était 1.20, car un pari en dessous
+# apporte presque rien au combiné mais ajoute un risque). Rétablissable sans code :
+# COTE_MIN_JAMBE=1.2 dans l'environnement du workflow.
+COTE_MIN_JAMBE = float(os.getenv("COTE_MIN_JAMBE") or 0.0)
 # Plus aucune catégorie exclue par défaut (demande explicite du 30/09/2026 : "ne limite les
 # marchés") — Total Cartons (modèle peu fiable, points de carton/lignes mixtes) était exclu
 # jusqu'au 30/09/2026, mais l'IA voit maintenant TOUS les marchés modélisables avec leurs vrais

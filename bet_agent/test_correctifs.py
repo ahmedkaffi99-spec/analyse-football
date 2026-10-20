@@ -2515,18 +2515,22 @@ class TestMelangeModeleMarche(unittest.TestCase):
         self.assertLessEqual(pick_1x["proba_modele_pct"], 100.0)
         self.assertLessEqual(pick_1x["proba_marche_pct"], 100.0)
 
-    def test_petites_cotes_exclues_mais_plus_les_cartons(self):
-        # Demande explicite du 30/09/2026 ("ne limite les marchés") : Total Cartons n'est plus
-        # exclu — seule la cote plancher (COTE_MIN_JAMBE) filtre encore.
+    def test_petites_cotes_gardees_depuis_le_retrait_du_plancher(self):
+        # 20/10/2026, demande explicite ("retire la cote minimale par jambe") : COTE_MIN_JAMBE
+        # vaut 0 par défaut, une petite cote n'est plus écartée ; Total Cartons n'est pas exclu
+        # non plus (30/09/2026, "ne limite les marchés").
+        self.assertEqual(ae.COTE_MIN_JAMBE, 0.0)
         marches = [
             {"marche": "Over Under Full Time", "handicap": 4.5, "periode": "fulltime",
              "selections": [{"selection": "Over", "cote": 9.0}, {"selection": "Under", "cote": 1.08}]},
             {"marche": "Bookings - Over Under Full Time", "handicap": 5.0, "periode": "fulltime",
              "selections": [{"selection": "Over", "cote": 3.0}, {"selection": "Under", "cote": 1.35}]},
         ]
-        with mock.patch.object(ae, "SEUIL_EDGE", 0.0), mock.patch.object(ae, "PROBA_MIN_FORTE", 0.0):
-            retenus = ae.evaluer_marches(marches, 1.2, 1.0, mu_cartons=3.0)
-        self.assertFalse(any(c["cote"] < ae.COTE_MIN_JAMBE for c in retenus))
+        retenus = ae.evaluer_marches_toutes(marches, 1.2, 1.0, mu_cartons=3.0)
+        self.assertTrue(any(c["cote"] < 1.2 for c in retenus))
+        with mock.patch.object(ae, "COTE_MIN_JAMBE", 1.2):
+            avec_plancher = ae.evaluer_marches_toutes(marches, 1.2, 1.0, mu_cartons=3.0)
+        self.assertFalse(any(c["cote"] < 1.2 for c in avec_plancher))
         self.assertTrue(any(c["categorie"] == "Total Cartons" for c in retenus))
 
 
