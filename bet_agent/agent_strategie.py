@@ -342,6 +342,45 @@ def _categories_dominantes(selections, catalogue, deja_presents=()):
     return erreurs
 
 
+# Diversité par FAMILLE de marchés (20/10/2026, demande explicite) : constat réel sur les runs
+# 170/172 — le catalogue (probabilité >= 70 %) est dominé par les lignes extrêmes de totaux, et le
+# coupon se retrouvait à 5 jambes sur 10 en « Total Équipe 1/2 » (même famille « buts par
+# équipe »), alors que la règle par catégorie (40 %) ne voyait que Total Équipe 1 (4) et Total
+# Équipe 2 (1) séparément. Mêmes familles que les agents spécialistes (agents_familles.py).
+PART_MAX_MEME_FAMILLE = 0.4  # au plus 40% des jambes d'une même famille si une autre existe
+
+
+def _familles_dominantes(selections, catalogue, deja_presents=()):
+    """Comme _categories_dominantes, mais par famille de marchés : une famille ne doit pas dominer
+    le coupon quand une famille DIFFÉRENTE existait dans le catalogue pour un des matchs
+    concernés. Jamais d'erreur si aucune alternative n'existe (pas de coupon bloqué pour rien)."""
+    erreurs = []
+    ids_courants = {id(s) for s in selections}
+    toutes = (*deja_presents, *selections)
+    par_famille = {}
+    for s in toutes:
+        fid, nom, _ = agents_familles.famille_de(s["pick"]["categorie"])
+        par_famille.setdefault(fid, (nom, []))[1].append(s)
+    seuil = math.floor(len(toutes) * PART_MAX_MEME_FAMILLE) if toutes else 0
+    for fid, (nom, groupe) in par_famille.items():
+        if len(groupe) < 2 or len(groupe) <= seuil:
+            continue
+        if not any(id(s) in ids_courants for s in groupe):
+            continue
+        matchs_concernes = {s["match"] for s in groupe}
+        matchs_avec_alt = {
+            c["match"] for c in catalogue.values()
+            if c["match"] in matchs_concernes and agents_familles.famille_de(c["pick"]["categorie"])[0] != fid
+        }
+        if matchs_avec_alt:
+            erreurs.append(
+                f"{len(groupe)}/{len(toutes)} paris sont de la famille « {nom} » (trop dominant, maximum "
+                f"{seuil} recommandé) ; une autre famille de marchés existe dans le catalogue pour "
+                f"{', '.join(sorted(matchs_avec_alt))} — remplace au moins un pari de cette famille par un "
+                "pari d'une autre famille sur l'un de ces matchs")
+    return erreurs
+
+
 def valider(proposition, catalogue, profils, signatures_existantes=(), selections_precedentes=(),
             ignorer_diversite_croisee=False):
     """Contrôle la proposition de l'IA profil par profil. Renvoie
@@ -427,6 +466,7 @@ def valider(proposition, catalogue, profils, signatures_existantes=(), selection
         deja_presents_categorie = () if ignorer_diversite_croisee else toutes_selections_verrouillees
         erreurs.extend(_categories_peu_variees(selections, catalogue, deja_presents=deja_presents_categorie))
         erreurs.extend(_categories_dominantes(selections, catalogue, deja_presents=deja_presents_categorie))
+        erreurs.extend(_familles_dominantes(selections, catalogue, deja_presents=deja_presents_categorie))
 
         nb_jambes_min = profil.get("nb_jambes_min", NB_JAMBES_MIN_DEFAUT)
         if not nb_jambes_min <= len(selections) <= profil["nb_jambes"]:

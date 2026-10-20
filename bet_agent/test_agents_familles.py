@@ -153,3 +153,36 @@ def test_les_agents_travaillent_en_parallele(monkeypatch):
 
     af.revoir_catalogue(catalogue, appel=appel)
     assert len(fils) == 4 and len(passes) == 4  # sans parallélisme, la barrière casserait
+
+
+def _sel(match, categorie, selection="Under", cote=1.5):
+    return {"match": match, "pick": {"categorie": categorie, "marche": "M", "marche_affichage": "M",
+                                      "selection": selection, "cote": cote, "proba_modele_pct": 80.0,
+                                      "edge_pct": 1.0, "handicap": 2.5}}
+
+
+def test_famille_dominante_signalee_quand_une_alternative_existe():
+    # 10 jambes dont 5 en "buts par équipe" (Total Équipe 1 x4 + Total Équipe 2 x1) : chaque
+    # catégorie reste <= 40 % séparément, mais la FAMILLE vaut 50 % (> 40 %).
+    selections = [_sel(f"M{i} vs X{i}", "Total Équipe 1") for i in range(4)]
+    selections.append(_sel("M4 vs X4", "Total Équipe 2"))
+    selections += [_sel(f"M{i} vs X{i}", "Total") for i in range(5, 10)]
+    catalogue = {f"P{i}": s for i, s in enumerate(selections)}
+    catalogue["PALT"] = _sel("M0 vs X0", "Double Chance", "1X")  # alternative d'une autre famille
+    assert st._categories_dominantes(selections, catalogue) == []
+    erreurs = st._familles_dominantes(selections, catalogue)
+    assert len(erreurs) == 1 and "buts par équipe" in erreurs[0].lower()
+
+
+def test_famille_dominante_sans_alternative_ne_bloque_pas():
+    selections = [_sel(f"M{i} vs X{i}", "Total Équipe 1") for i in range(4)]
+    selections += [_sel(f"N{i} vs Y{i}", "Total") for i in range(2)]
+    catalogue = {f"P{i}": s for i, s in enumerate(selections)}  # aucune autre famille disponible
+    assert st._familles_dominantes(selections, catalogue) == []
+
+
+def test_coupon_equilibre_entre_familles_accepte():
+    selections = [_sel("A vs B", "Total"), _sel("C vs D", "Total Équipe 1"), _sel("E vs F", "Total Corners"),
+                  _sel("G vs H", "Double Chance", "1X"), _sel("I vs J", "BTTS", "Yes")]
+    catalogue = {f"P{i}": s for i, s in enumerate(selections)}
+    assert st._familles_dominantes(selections, catalogue) == []
