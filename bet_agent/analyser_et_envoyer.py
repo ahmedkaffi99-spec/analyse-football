@@ -565,6 +565,35 @@ def calculer_mu_cartons_depuis_stats_detaillees(sd_home, sd_away):
     return _mu_direct(sd_home, sd_away, "cartons_jaunes_moyenne", CARTONS_PRIOR)
 
 
+# Effet arbitre sur les cartons (18/10/2026, "lance les deux" après l'audit Agent 7) :
+# moteur/modeles/registre.py applique déjà ce facteur (sqrt(arbitre_cartons_moy / (2*moy_ligue)),
+# amorti, appliqué si arbitre_n>=5) mais bet_agent (le pipeline RÉEL) ne l'utilisait pas du tout —
+# même angle mort que l'Elo avant son intégration. ARBITRE_POIDS_CARTONS mesuré par un vrai
+# backtest walk-forward (5 championnats, 6780 matchs, 5528 avec effet calculable, log-
+# vraisemblance négative d'une Poisson sur le total de cartons réellement observé) — 0.6
+# minimise la NLL (2.0921 contre 2.0965 à poids=0, courbe convexe propre, amélioration réelle
+# mais modeste, pas une estimation).
+ARBITRE_POIDS_CARTONS = 0.6
+
+
+def _ajuster_cartons_avec_arbitre(mu_home, mu_away, arbitre_info, poids=ARBITRE_POIDS_CARTONS):
+    """Multiplie mu_home/mu_away (cartons) par un facteur dérivé de la sévérité moyenne de
+    l'arbitre assigné, mesurée sur ses 30 derniers matchs (walk-forward, jamais de fuite) —
+    même formule que moteur/modeles/registre.py, poids mesuré par backtest. None si l'arbitre
+    est absent/pas encore assigné, ou son historique insuffisant (arbitre_n<5) : mu_home/
+    mu_away inchangés, jamais un chiffre inventé."""
+    if not arbitre_info or mu_home is None or mu_away is None:
+        return mu_home, mu_away
+    n = arbitre_info.get("arbitre_n")
+    cartons_arbitre = arbitre_info.get("arbitre_cartons_moy")
+    moy_ligue = arbitre_info.get("moy_ligue_cartons_par_equipe")
+    if not n or n < 5 or not cartons_arbitre or not moy_ligue:
+        return mu_home, mu_away
+    facteur_brut = (cartons_arbitre / (2 * moy_ligue)) ** 0.5
+    facteur = 1 + poids * (facteur_brut - 1)
+    return round(max(0.15, mu_home * facteur), 2), round(max(0.15, mu_away * facteur), 2)
+
+
 def calculer_mu_fautes_depuis_stats_detaillees(sd_home, sd_away):
     """Fautes commises attendues, domicile et extérieur SÉPARÉMENT, depuis les VRAIES stats des
     10 derniers matchs (API-Football) — demande explicite du 01/10/2026 ("utilise toutes les
@@ -902,8 +931,15 @@ COTE_MIN_JAMBE = 1.20   # en dessous, un pari n'apporte presque rien au combiné
 # déjà les tirs avec une binomiale négative (surdispersion mesurée) — la variance des tirs par
 # match est nettement plus large que celle des buts, une Poisson la sous-estime et gonfle la
 # confiance sur les lignes "Under" extrêmes. Réintégrer une fois ce modèle corrigé.
+# BTTS retiré le 18/10/2026 (demande explicite, "lance les deux" — essai borné décidé après
+# l'audit Agent 4) : les 35 paris qui avaient motivé l'exclusion du 03/10/2026 datent TOUS
+# d'avant le correctif de lissage additif (K_LISSAGE_BUTS, commit baf4f5b, 17/10/2026) — aucune
+# donnée de production n'existe depuis. Essai réel borné : réintégré ici pour accumuler de
+# vraies jambes mesurables par qualite_marches() (maintenant fiable, filtré sur
+# envoye_telegram) ; à remesurer après 2 semaines de production avant toute décision
+# définitive. Si le signal négatif revient, remettre "BTTS" dans cette liste.
 CATEGORIES_EXCLUES = tuple(c.strip() for c in os.getenv("MARCHES_EXCLUS", "").split(",") if c.strip()) or (
-    "Handicap Corners", "Handicap Cartons", "BTTS", "Total Tirs")
+    "Handicap Corners", "Handicap Cartons", "Total Tirs")
 
 
 def est_marche_exclu(nom_marche):
@@ -2543,6 +2579,20 @@ def agent3_calcul_pool_candidats(donnees):
             h = estimer_ligne_equilibree(marches, ["card", "booking"], equipe=1)
             a = estimer_ligne_equilibree(marches, ["card", "booking"], equipe=2)
             cartons_equipes = (h, a) if h is not None and a is not None else None
+
+        # Effet arbitre (18/10/2026, "lance les deux", audit Agent 7) : ajuste mu_cartons_
+        # equipes avec la sévérité moyenne de l'arbitre assigné — None la plupart du temps
+        # (arbitre pas encore assigné par API-Football, ou historique insuffisant), auquel cas
+        # _ajuster_cartons_avec_arbitre renvoie cartons_equipes inchangé.
+        if cartons_equipes:
+            arbitre_info = m.get("arbitre")
+            cartons_equipes_avant_arbitre = cartons_equipes
+            cartons_equipes = _ajuster_cartons_avec_arbitre(cartons_equipes[0], cartons_equipes[1], arbitre_info)
+            if cartons_equipes != cartons_equipes_avant_arbitre:
+                print(f"      → Cartons ajustés avec l'arbitre ({arbitre_info.get('arbitre_n')} match(s), "
+                      f"{arbitre_info.get('arbitre_cartons_moy')} cartons/match en moyenne) : "
+                      f"{cartons_equipes_avant_arbitre} → {cartons_equipes}")
+            mu_cartons = round(sum(cartons_equipes), 2)
 
         # fautes_equipes/tirs_equipes/tirs_cadres_equipes/hors_jeux_equipes (01/10/2026,
         # demande explicite "utilise toutes les données collectées") : mêmes 10 derniers

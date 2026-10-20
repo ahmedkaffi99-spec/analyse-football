@@ -191,6 +191,48 @@ class TestProbaEloEtAjustement(unittest.TestCase):
         self.assertEqual(ae._ajuster_avec_elo(None, 1.55, {"elo_home": 1600.0, "elo_away": 1500.0}), (None, 1.55))
 
 
+class TestAjusterCartonsAvecArbitre(unittest.TestCase):
+    """18/10/2026, demande explicite ("lance les deux", après l'audit Agent 7) : moteur/
+    modeles/registre.py applique déjà cet effet arbitre (validé mathématiquement) mais
+    bet_agent ne l'utilisait pas du tout — même angle mort que l'Elo avant intégration.
+    ARBITRE_POIDS_CARTONS=0.6 mesuré par un vrai backtest walk-forward (5 championnats, 6780
+    matchs, 5528 avec effet calculable, NLL minimale à ce poids : 2.0921 contre 2.0965 à
+    poids=0, courbe convexe propre)."""
+
+    def test_arbitre_severe_augmente_mu(self):
+        mu_h, mu_a = 1.8, 1.5
+        arbitre = {"arbitre_n": 10, "arbitre_cartons_moy": 6.0, "moy_ligue_cartons_par_equipe": 2.0}
+        # facteur_brut = sqrt(6.0 / (2*2.0)) = sqrt(1.5) ≈ 1.2247 ; facteur pondéré (0.6) ≈ 1.1348
+        mu_h_adj, mu_a_adj = ae._ajuster_cartons_avec_arbitre(mu_h, mu_a, arbitre)
+        self.assertGreater(mu_h_adj, mu_h)
+        self.assertGreater(mu_a_adj, mu_a)
+        facteur_attendu = 1 + 0.6 * ((6.0 / 4.0) ** 0.5 - 1)
+        self.assertAlmostEqual(mu_h_adj, round(mu_h * facteur_attendu, 2), places=2)
+
+    def test_arbitre_clement_diminue_mu(self):
+        mu_h, mu_a = 1.8, 1.5
+        arbitre = {"arbitre_n": 10, "arbitre_cartons_moy": 1.0, "moy_ligue_cartons_par_equipe": 2.0}
+        mu_h_adj, mu_a_adj = ae._ajuster_cartons_avec_arbitre(mu_h, mu_a, arbitre)
+        self.assertLess(mu_h_adj, mu_h)
+        self.assertLess(mu_a_adj, mu_a)
+
+    def test_poids_zero_ne_change_rien(self):
+        mu_h, mu_a = 1.8, 1.5
+        arbitre = {"arbitre_n": 10, "arbitre_cartons_moy": 6.0, "moy_ligue_cartons_par_equipe": 2.0}
+        self.assertEqual(ae._ajuster_cartons_avec_arbitre(mu_h, mu_a, arbitre, poids=0.0), (mu_h, mu_a))
+
+    def test_historique_arbitre_insuffisant_ne_change_rien(self):
+        mu_h, mu_a = 1.8, 1.5
+        arbitre = {"arbitre_n": 3, "arbitre_cartons_moy": 6.0, "moy_ligue_cartons_par_equipe": 2.0}
+        self.assertEqual(ae._ajuster_cartons_avec_arbitre(mu_h, mu_a, arbitre), (mu_h, mu_a))
+
+    def test_arbitre_absent_ne_change_rien(self):
+        self.assertEqual(ae._ajuster_cartons_avec_arbitre(1.8, 1.5, None), (1.8, 1.5))
+        self.assertEqual(ae._ajuster_cartons_avec_arbitre(1.8, 1.5, {}), (1.8, 1.5))
+        self.assertEqual(ae._ajuster_cartons_avec_arbitre(None, 1.5, {"arbitre_n": 10,
+                          "arbitre_cartons_moy": 6.0, "moy_ligue_cartons_par_equipe": 2.0}), (None, 1.5))
+
+
 class TestCalculerXgDepuisStatsDetailleesCasLimites(unittest.TestCase):
     """Cas limites de calculer_xg_depuis_stats_detaillees (champ manquant, lissage petit
     échantillon, rétrocompatibilité, priorité sur stats_historiques) — déplacés ici le
@@ -1925,14 +1967,33 @@ class TestCorrectifsP0(unittest.TestCase):
                 "C vs D": [_selection("C vs D", "Total", "Over", 1.5, proba=72.0)]}
         self.assertIsNone(ae.selectionner_combo_cote_cible(pool, 2, 1.0, 100.0))
 
-    def test_btts_exclu_du_calcul(self):
-        self.assertIn("BTTS", ae.CATEGORIES_EXCLUES)
+    def test_btts_reintegre_en_essai_borne(self):
+        # 18/10/2026, demande explicite ("lance les deux", essai borné décidé après l'audit
+        # Agent 4) : les 35 paris qui motivaient l'exclusion du 03/10/2026 datent tous d'avant
+        # le correctif de lissage additif — BTTS n'est plus exclu par défaut, pour accumuler de
+        # vraies jambes mesurables par qualite_marches() (maintenant fiable).
+        self.assertNotIn("BTTS", ae.CATEGORIES_EXCLUES)
         marches = [{"marche": "Both Teams To Score", "handicap": None, "periode": "fulltime",
                     "selections": [{"selection": "Yes", "cote": 1.8}, {"selection": "No", "cote": 2.0}]},
                    {"marche": "Over Under Full Time", "handicap": 2.5, "periode": "fulltime",
                     "selections": [{"selection": "Over", "cote": 1.9}, {"selection": "Under", "cote": 1.9}]}]
         categories = {c["categorie"] for c in ae.evaluer_marches_toutes(marches, 1.5, 1.2)}
-        self.assertNotIn("BTTS", categories)
+        self.assertIn("BTTS", categories)
+        self.assertIn("Total", categories)
+
+    def test_total_tirs_exclu_du_calcul(self):
+        # 18/10/2026, audit Agent 8 (10 agents en parallèle) : "Total Tirs" écarté après un
+        # écart réel de -19,1 pts qui SURVIT à la déduplication par match (26 paris réels
+        # distincts, tous "Under", 50,0% réel pour 69,1% annoncé) — cause probable : Poisson
+        # pure au lieu d'une binomiale négative (surdispersion) pour ce marché.
+        self.assertIn("Total Tirs", ae.CATEGORIES_EXCLUES)
+        marches = [{"marche": "Total Shots", "handicap": 22.5, "periode": "fulltime",
+                    "selections": [{"selection": "Over", "cote": 1.9}, {"selection": "Under", "cote": 1.9}]},
+                   {"marche": "Over Under Full Time", "handicap": 2.5, "periode": "fulltime",
+                    "selections": [{"selection": "Over", "cote": 1.9}, {"selection": "Under", "cote": 1.9}]}]
+        categories = {c["categorie"] for c in ae.evaluer_marches_toutes(
+            marches, 1.5, 1.2, mu_tirs_equipes=(12.0, 10.0))}
+        self.assertNotIn("Total Tirs", categories)
         self.assertIn("Total", categories)
 
     def test_total_tirs_exclu_du_calcul(self):

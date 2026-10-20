@@ -24,6 +24,7 @@ on:
           - backtest-handicap-calibration
           - elo-real-madrid-sevilla
           - backtest-poids-elo
+          - backtest-poids-arbitre-cartons
         default: marches-disponibles
       date_debut:
         description: "Date cible de début (AAAA-MM-JJ) — utilisé seulement par 'marches-disponibles'"
@@ -622,6 +623,95 @@ jobs:
 
           meilleur = min(resultats, key=lambda pr: pr[1])
           print(f'\\n-> Meilleur poids_elo : {meilleur[0]:.1f} (Brier={meilleur[1]:.4f})')
+          "
+
+      - name: Backtest réel — meilleur poids_arbitre_cartons (effet arbitre dans bet_agent, Agent 7)
+        # Demande explicite ("lance les deux", après l'audit Agent 7) : moteur/modeles/
+        # registre.py applique déjà un effet arbitre validé mathématiquement (facteur =
+        # sqrt(arbitre_cartons_moy / (2*moy_ligue)), amorti, appliqué si arbitre_n>=5) mais
+        # bet_agent (le pipeline RÉEL) ne l'utilise pas du tout — même angle mort que l'Elo
+        # avant son intégration. Mécanisme : pour chaque match réel (5 championnats,
+        # walk-forward), mu_cartons (forme 10 derniers matchs, via ae.calculer_mu_cartons_
+        # depuis_stats_detaillees) est multiplié par facteur_pondere = 1 + poids*(facteur_brut-1)
+        # pour poids ∈ [0,1], jugé par la log-vraisemblance négative (NLL) d'une Poisson sur le
+        # total de cartons RÉELLEMENT observé (pas une ligne arbitraire — une vraie fonction de
+        # score propre pour un comptage).
+        if: inputs.verification == 'backtest-poids-arbitre-cartons'
+        working-directory: backend
+        run: |
+          python -c "
+          import math
+          import sys
+          from pathlib import Path
+          RACINE = Path.cwd().parent
+          sys.path.insert(0, str(RACINE))
+          sys.path.insert(0, str(RACINE / 'bet_agent'))
+
+          from app.database import SessionLocal
+          from app.services.historique import charger_matchs
+          from moteur.features import Historique, construire_features, en_datetime, est_termine
+
+          import analyser_et_envoyer as ae
+
+          COMPETITIONS = {39: 'Premier League', 140: 'La Liga', 135: 'Serie A', 78: 'Bundesliga', 61: 'Ligue 1'}
+
+          def nll_poisson(mu, k):
+              if mu <= 0:
+                  mu = 0.01
+              return -(k * math.log(mu) - mu - math.lgamma(k + 1))
+
+          echantillons = []  # (mu_h, mu_a, facteur_brut, total_reel)
+          with SessionLocal() as db:
+              for comp_id, nom in COMPETITIONS.items():
+                  matchs = charger_matchs(db, competition_id=comp_id)
+                  print(f'{len(matchs)} matchs {nom} chargés.')
+                  hist = Historique(matchs)
+                  termines = sorted((m for m in matchs if est_termine(m)), key=lambda m: en_datetime(m['date']))
+                  for m in termines:
+                      stats = m.get('stats') or {}
+                      jh, ja = (stats.get('home') or {}).get('yellow_cards'), (stats.get('away') or {}).get('yellow_cards')
+                      if jh is None or ja is None:
+                          continue
+                      t = en_datetime(m['date'])
+                      vues_h = hist.equipe_avant(m['home_id'], t, n=10)
+                      vues_a = hist.equipe_avant(m['away_id'], t, n=10)
+                      cartons_h = [v['stats_pour'].get('yellow_cards') for v in vues_h if v['stats_pour'].get('yellow_cards') is not None]
+                      cartons_a = [v['stats_pour'].get('yellow_cards') for v in vues_a if v['stats_pour'].get('yellow_cards') is not None]
+                      if len(cartons_h) < 5 or len(cartons_a) < 5:
+                          continue
+                      sd_h = {'cartons_jaunes_moyenne': sum(cartons_h) / len(cartons_h), 'matchs_avec_donnees': len(cartons_h)}
+                      sd_a = {'cartons_jaunes_moyenne': sum(cartons_a) / len(cartons_a), 'matchs_avec_donnees': len(cartons_a)}
+                      mu = ae.calculer_mu_cartons_depuis_stats_detaillees(sd_h, sd_a)
+                      if not mu:
+                          continue
+                      mu_h, mu_a = mu
+
+                      f = construire_features(m, hist)
+                      facteur_brut = 1.0
+                      if f.get('arbitre_n') and f['arbitre_n'] >= 5 and f.get('arbitre_cartons_moy'):
+                          moy_ligue = f['ligue'].get('yellow_cards_par_equipe')
+                          if moy_ligue:
+                              facteur_brut = (f['arbitre_cartons_moy'] / (2 * moy_ligue)) ** 0.5
+
+                      echantillons.append((mu_h, mu_a, facteur_brut, jh + ja))
+
+          print(f'\\n{len(echantillons)} matchs utilisables (5 championnats, forme 10 derniers matchs + arbitre).')
+          avec_arbitre = sum(1 for _, _, fb, _ in echantillons if fb != 1.0)
+          print(f'{avec_arbitre} matchs avec un effet arbitre réellement calculable (arbitre_n>=5).')
+
+          grille_poids = (0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0)
+          resultats = []
+          for poids in grille_poids:
+              nlls = []
+              for mu_h, mu_a, facteur_brut, total_reel in echantillons:
+                  facteur = 1 + poids * (facteur_brut - 1)
+                  nlls.append(nll_poisson((mu_h + mu_a) * facteur, total_reel))
+              nll_moyen = sum(nlls) / len(nlls)
+              resultats.append((poids, nll_moyen))
+              print(f'poids_arbitre={poids:.1f}  nll_moyenne={nll_moyen:.4f}  n={len(nlls)}')
+
+          meilleur = min(resultats, key=lambda pr: pr[1])
+          print(f'\\n-> Meilleur poids_arbitre_cartons : {meilleur[0]:.1f} (NLL={meilleur[1]:.4f})')
           "
 
       - name: IA (Groq, Gemini, OpenRouter)
