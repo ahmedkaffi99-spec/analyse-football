@@ -25,6 +25,7 @@ on:
           - elo-real-madrid-sevilla
           - backtest-poids-elo
           - backtest-poids-arbitre-cartons
+          - backtest-calibration-double-chance
         default: marches-disponibles
       date_debut:
         description: "Date cible de début (AAAA-MM-JJ) — utilisé seulement par 'marches-disponibles'"
@@ -623,6 +624,142 @@ jobs:
 
           meilleur = min(resultats, key=lambda pr: pr[1])
           print(f'\\n-> Meilleur poids_elo : {meilleur[0]:.1f} (Brier={meilleur[1]:.4f})')
+          "
+
+      - name: Backtest réel — calibration Double Chance 1X / 12 / 2X (audit coupons du 16/10)
+        # Constat production (dédupliqué, envoyé sur Telegram) : 1X = 7/21 gagnés (41 % réel pour
+        # ~69 % annoncé) contre 12 = 10/11 et 2X = 7/9. Ce backtest mesure sur l'historique complet
+        # (5 championnats, walk-forward, forme + H2H + Elo comme en production) si le modèle
+        # surestime réellement P(1X) en général, ou seulement quand l'équipe à domicile est
+        # l'outsider (Elo domicile+avantage < Elo extérieur), et quel poids Elo minimise la
+        # log-loss de chaque Double Chance.
+        if: inputs.verification == 'backtest-calibration-double-chance'
+        working-directory: backend
+        run: |
+          python -c "
+          import math
+          import sys
+          from pathlib import Path
+          RACINE = Path.cwd().parent
+          sys.path.insert(0, str(RACINE))
+          sys.path.insert(0, str(RACINE / 'bet_agent'))
+
+          from collections import defaultdict
+
+          from app.database import SessionLocal
+          from app.services.historique import charger_matchs
+          from moteur.features import Historique, en_datetime, est_termine
+
+          import analyser_et_envoyer as ae
+
+          COMPETITIONS = {39: 'Premier League', 140: 'La Liga', 135: 'Serie A', 78: 'Bundesliga', 61: 'Ligue 1'}
+          ELO_AVANTAGE_DOMICILE = 60.0
+          NB_CONFRONTATIONS_H2H = 10
+          MAX_BUTS = 20
+
+          def proba_elo(elo_h, elo_a):
+              return 1 / (1 + 10 ** (-((elo_h - elo_a + ELO_AVANTAGE_DOMICILE)) / 400))
+
+          def delta_vers_cible(mu_h, mu_a, p_cible, iters=18):
+              lo, hi = -min(mu_h, 5.0) + 0.001, min(mu_a, 5.0) - 0.001
+              if lo >= hi:
+                  return 0.0
+              for _ in range(iters):
+                  mid = (lo + hi) / 2
+                  p, _, _ = ae.proba_1x2(mu_h + mid, mu_a - mid, max_buts=MAX_BUTS)
+                  if p < p_cible:
+                      lo = mid
+                  else:
+                      hi = mid
+              return (lo + hi) / 2
+
+          echantillons = []  # (mu_h, mu_a, delta_full, issue, elo_diff)
+          with SessionLocal() as db:
+              for comp_id, nom in COMPETITIONS.items():
+                  matchs = charger_matchs(db, competition_id=comp_id)
+                  print(f'{len(matchs)} matchs {nom} chargés.')
+                  hist = Historique(matchs)
+                  par_paire = defaultdict(list)
+                  for m in matchs:
+                      if est_termine(m):
+                          par_paire[frozenset((m['home_id'], m['away_id']))].append(m)
+                  for paire in par_paire.values():
+                      paire.sort(key=lambda m: en_datetime(m['date']))
+                  termines = sorted((m for m in matchs if est_termine(m)), key=lambda m: en_datetime(m['date']))
+                  for m in termines:
+                      t = en_datetime(m['date'])
+                      vues_h = hist.equipe_avant(m['home_id'], t, n=10)
+                      vues_a = hist.equipe_avant(m['away_id'], t, n=10)
+                      if len(vues_h) < 5 or len(vues_a) < 5:
+                          continue
+                      sd_h = {'buts_marques_moyenne': sum(v['buts_pour'] for v in vues_h) / len(vues_h),
+                              'buts_encaisses_moyenne': sum(v['buts_contre'] for v in vues_h) / len(vues_h),
+                              'matchs_avec_donnees': len(vues_h)}
+                      sd_a = {'buts_marques_moyenne': sum(v['buts_pour'] for v in vues_a) / len(vues_a),
+                              'buts_encaisses_moyenne': sum(v['buts_contre'] for v in vues_a) / len(vues_a),
+                              'matchs_avec_donnees': len(vues_a)}
+                      xg = ae.calculer_xg_depuis_stats_detaillees(sd_h, sd_a)
+                      if not xg:
+                          continue
+                      mu_h, mu_a = xg
+                      confrontations = [c for c in par_paire[frozenset((m['home_id'], m['away_id']))]
+                                        if en_datetime(c['date']) < t][-NB_CONFRONTATIONS_H2H:]
+                      if confrontations:
+                          bh = sum(c['home_score'] if c['home_id'] == m['home_id'] else c['away_score'] for c in confrontations)
+                          ba = sum(c['away_score'] if c['home_id'] == m['home_id'] else c['home_score'] for c in confrontations)
+                          h2h = {'matchs_analyses': len(confrontations), 'buts_home_moyenne': bh / len(confrontations),
+                                 'buts_away_moyenne': ba / len(confrontations)}
+                          mu_h, mu_a = ae._ponderer_avec_h2h(mu_h, mu_a, h2h)
+                      elo_h, elo_a = hist.elo(m)
+                      delta_full = delta_vers_cible(mu_h, mu_a, proba_elo(elo_h, elo_a))
+                      hg, ag = m['home_score'], m['away_score']
+                      issue = 'home' if hg > ag else ('away' if hg < ag else 'draw')
+                      echantillons.append((mu_h, mu_a, delta_full, issue, elo_h + ELO_AVANTAGE_DOMICILE - elo_a))
+
+          print(f'\\n{len(echantillons)} matchs utilisables.')
+
+          def probas(e, poids):
+              mu_h, mu_a, delta_full, issue, _ = e
+              p_h, p_d, p_a = ae.proba_1x2(mu_h + poids * delta_full, mu_a - poids * delta_full, max_buts=MAX_BUTS)
+              return {'1X': p_h + p_d, '12': p_h + p_a, '2X': p_d + p_a}
+
+          def reel(e):
+              return {'1X': e[3] != 'away', '12': e[3] != 'draw', '2X': e[3] != 'home'}
+
+          def logloss(p, y):
+              p = min(max(p, 1e-6), 1 - 1e-6)
+              return -(math.log(p) if y else math.log(1 - p))
+
+          print('\\n=== Log-loss et biais moyen (annoncé - réel) par Double Chance et poids Elo ===')
+          for poids in (0.0, 0.4, 0.7, 1.0):
+              ligne = f'poids_elo={poids:.1f} '
+              for dc in ('1X', '12', '2X'):
+                  ll, pred, obs = 0.0, 0.0, 0.0
+                  for e in echantillons:
+                      p, y = probas(e, poids)[dc], reel(e)[dc]
+                      ll += logloss(p, y); pred += p; obs += 1.0 if y else 0.0
+                  n = len(echantillons)
+                  ligne += f'| {dc}: LL={ll / n:.4f} biais={100 * (pred - obs) / n:+.1f}pts '
+              print(ligne)
+
+          def tableau(titre, poids, filtre):
+              print(f'\\n=== {titre} (poids_elo={poids}) ===')
+              bornes = [(0, .5), (.5, .6), (.6, .7), (.7, .8), (.8, 1.01)]
+              for lo, hi in bornes:
+                  pr, ob, n = 0.0, 0.0, 0
+                  for e in echantillons:
+                      if not filtre(e):
+                          continue
+                      p = probas(e, poids)['1X']
+                      if lo <= p < hi:
+                          pr += p; ob += 1.0 if reel(e)['1X'] else 0.0; n += 1
+                  if n:
+                      print(f'P(1X) {lo:.1f}-{min(hi, 1.0):.1f}: n={n}  annoncé={100 * pr / n:.1f}%  réel={100 * ob / n:.1f}%')
+
+          tableau('Calibration 1X, tous les matchs', 0.4, lambda e: True)
+          tableau('Calibration 1X, domicile OUTSIDER (Elo dom+avantage < Elo ext)', 0.4, lambda e: e[4] < 0)
+          tableau('Calibration 1X, domicile OUTSIDER, sans Elo', 0.0, lambda e: e[4] < 0)
+          tableau('Calibration 1X, domicile FAVORI (Elo dom+avantage >= Elo ext)', 0.4, lambda e: e[4] >= 0)
           "
 
       - name: Backtest réel — meilleur poids_arbitre_cartons (effet arbitre dans bet_agent, Agent 7)

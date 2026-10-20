@@ -111,9 +111,9 @@ def _run(db):
 
 class TestMoteurCentralEstBienCeluiQuiSexecute:
     def test_coupon_central_genere_sans_moteur_concurrent(self):
-        # 5 matchs : nb_jambes_min=nb_jambes_max=5 par défaut (17/10/2026) — un seul coupon
-        # possible, à exactement 5 jambes.
-        pool = _pool_n_matchs(5)
+        # 6 matchs : nb_jambes_min=nb_jambes_max=6 par défaut (20/10/2026, demande explicite :
+        # "un coupon plus de 5 jambes") — un seul coupon possible, à exactement 6 jambes.
+        pool = _pool_n_matchs(6)
         with SessionLocal() as db:
             run = _run(db)
             run_id = run.id
@@ -133,8 +133,8 @@ class TestMoteurCentralEstBienCeluiQuiSexecute:
             coupons = list(db.scalars(select(Coupon).where(Coupon.run_id == run_id)))
             assert len(coupons) == 1
             assert coupons[0].profil == "central_1"
-            # Les 5 matchs du pool central ont bien été retenus (5 jambes, cote ~3.713).
-            assert len(coupons[0].jambes) == 5
+            # Les 6 matchs du pool central ont bien été retenus (6 jambes, cote ~4.827).
+            assert len(coupons[0].jambes) == 6
             # Compatibilité avec la chaîne existante (instruction 5) : categorie/handicap/
             # guide/onglet sont bien récupérés depuis le pool bet_agent d'origine, pas perdus.
             jambe = coupons[0].jambes[0]
@@ -143,7 +143,7 @@ class TestMoteurCentralEstBienCeluiQuiSexecute:
             assert jambe.guide == "guide Total"
 
     def test_moteur_explicite_central_identique_au_defaut(self):
-        pool = _pool_n_matchs(5)
+        pool = _pool_n_matchs(6)
         with SessionLocal() as db:
             run = _run(db)
             run_id = run.id
@@ -216,12 +216,12 @@ class TestGenerationDynamiqueMultiCoupons:
     moteur_central_run.executer_moteur_central boucle en excluant à chaque tour les matchs
     déjà utilisés (même principe que la génération dynamique de bet_agent du 11/10/2026)."""
 
-    def test_dix_matchs_donnent_deux_coupons_de_cinq_sans_recouvrement(self):
-        # 10 matchs, nb_jambes=5 par défaut (17/10/2026) -> exactement 2 coupons SANS override
-        # (10 // 5 = 2, calcul direct — l'ancien ae.nb_coupons_dynamique aurait visé 3 avec 10
-        # matchs, calibré pour des coupons à 2 jambes, et aurait échoué dès le 3e par manque de
-        # pool : voir le recalibrage du 17/10/2026 dans executer_moteur_central).
-        pool = _pool_n_matchs(10)
+    def test_douze_matchs_donnent_deux_coupons_de_six_sans_recouvrement(self):
+        # 12 matchs, nb_jambes=6 par défaut (20/10/2026) -> exactement 2 coupons SANS override
+        # (12 // 6 = 2, calcul direct — ae.nb_coupons_dynamique est calibré pour des coupons à
+        # 2 jambes et viserait plus de coupons que le pool ne permet : voir le recalibrage du
+        # 17/10/2026 dans executer_moteur_central).
+        pool = _pool_n_matchs(12)
         with SessionLocal() as db:
             run = _run(db)
             run_id = run.id
@@ -237,16 +237,15 @@ class TestGenerationDynamiqueMultiCoupons:
             coupons = list(db.scalars(select(Coupon).where(Coupon.run_id == run_id)))
             assert len(coupons) == 2
             assert {c.profil for c in coupons} == {"central_1", "central_2"}
-            assert all(len(c.jambes) == 5 for c in coupons)
+            assert all(len(c.jambes) == 6 for c in coupons)
             matchs_vus = [j.libelle_match for c in coupons for j in c.jambes]
             assert len(matchs_vus) == len(set(matchs_vus)), (
                 "un même match apparaît dans plusieurs coupons du moteur central")
 
-    def test_vingt_six_matchs_donnent_cinq_coupons_jamais_plus(self):
-        # 26 matchs (volume réel observé le 17/10/2026, run 162) -> 26 // 5 = 5 coupons (25
-        # matchs utilisés, 1 non utilisé) — jamais plus que les 5 médailles disponibles, sans
-        # override ni échec en cours de boucle.
-        pool = _pool_n_matchs(26)
+    def test_trente_et_un_matchs_donnent_cinq_coupons_jamais_plus(self):
+        # 31 matchs -> 31 // 6 = 5 coupons (30 matchs utilisés, 1 non utilisé) — jamais plus
+        # que les 5 médailles disponibles, sans override ni échec en cours de boucle.
+        pool = _pool_n_matchs(31)
         with SessionLocal() as db:
             run = _run(db)
             run_id = run.id
@@ -260,12 +259,12 @@ class TestGenerationDynamiqueMultiCoupons:
             assert run_relu.statut == "termine"
             coupons = list(db.scalars(select(Coupon).where(Coupon.run_id == run_id)))
             assert len(coupons) == 5
-            assert all(len(c.jambes) == 5 for c in coupons)
+            assert all(len(c.jambes) == 6 for c in coupons)
             matchs_vus = [j.libelle_match for c in coupons for j in c.jambes]
-            assert len(matchs_vus) == 25 == len(set(matchs_vus))
+            assert len(matchs_vus) == 30 == len(set(matchs_vus))
 
-    def test_moins_de_cinq_matchs_termine_en_erreur(self):
-        # nb_jambes_min=5 par défaut (17/10/2026) : un pool de 2 matchs ne peut plus produire
+    def test_moins_de_six_matchs_termine_en_erreur(self):
+        # nb_jambes_min=6 par défaut (20/10/2026) : un pool de 2 matchs ne peut plus produire
         # aucun coupon (avant ce changement, 2 matchs suffisaient) — erreur explicite, jamais
         # un coupon tronqué à moins de jambes que demandé.
         pool = _pool_deux_matchs()
@@ -308,11 +307,11 @@ class TestRunPonctuelNbCouponsEtMarchesForces:
             assert len(coupons) == 2
 
     def test_marches_autorises_restreint_le_pool(self):
-        # Cinq matchs en "Total" (buts) — assez pour composer un coupon à 5 jambes (défaut
-        # 17/10/2026) — et un sixième en "Total Corners" seulement. MOTEUR_CENTRAL_
+        # Six matchs en "Total" (buts) — assez pour composer un coupon à 6 jambes (défaut
+        # 20/10/2026) — et un septième en "Total Corners" seulement. MOTEUR_CENTRAL_
         # MARCHES_AUTORISES=("Total",) doit exclure ce dernier du pool central (jamais un
         # coupon composé avec "Total Corners" alors que seul "Total" est autorisé pour ce run).
-        pool = _pool_n_matchs(5)
+        pool = _pool_n_matchs(6)
         pool["C vs D"] = [_candidat("C vs D", "Total Corners", "Over", 1.3)]
         with SessionLocal() as db:
             run = _run(db)
@@ -339,9 +338,9 @@ class TestEdgeSuspectReellementRejete:
     _exclure_edge_suspect() doit réellement retirer ce genre de candidat du pool central."""
 
     def test_candidat_edge_suspect_exclu_du_pool(self):
-        # Cinq matchs à edge normal (5.0, sous EDGE_MAX_CENTRAL=20) — assez pour composer un
-        # coupon à 5 jambes (défaut 17/10/2026) — et un sixième à edge 29.9 (suspect, exclu).
-        pool = _pool_n_matchs(5)
+        # Six matchs à edge normal (5.0, sous EDGE_MAX_CENTRAL=20) — assez pour composer un
+        # coupon à 6 jambes (défaut 20/10/2026) — et un septième à edge 29.9 (suspect, exclu).
+        pool = _pool_n_matchs(6)
         pool["G vs H"] = [_candidat("G vs H", "Total", "Over", 1.3, edge=29.9)]
         with SessionLocal() as db:
             run = _run(db)
@@ -363,7 +362,7 @@ class TestEdgeSuspectReellementRejete:
         # un match collecté (ici "G vs H") mais totalement exclu (edge suspect sur son seul
         # candidat) doit apparaître dans les logs avec sa raison, pas juste disparaître du
         # compte final de candidats.
-        pool = _pool_n_matchs(5)
+        pool = _pool_n_matchs(6)
         pool["G vs H"] = [_candidat("G vs H", "Total", "Over", 1.3, edge=29.9)]
         with SessionLocal() as db:
             run = _run(db)
