@@ -144,3 +144,33 @@ def test_moteur_agent_refuse_depuis_run(monkeypatch):
         run = db.query(Run).one()
         assert run.statut == "erreur"
         assert "depuis-run" in run.detail
+
+
+def test_moteur_agent_est_le_defaut_avec_profil_12_a_15_jambes(monkeypatch):
+    # 20/10/2026, demande explicite : "l'IA choisit les paris" + "coupon de 12 à 15 jambes" —
+    # sans --moteur ni --profils-json, le pipeline lance l'agent avec le profil quotidien.
+    monkeypatch.delenv("NB_JAMBES", raising=False)
+    monkeypatch.delenv("NB_JAMBES_MIN", raising=False)
+    appels = []
+    _faux_agent_pilote(monkeypatch, {
+        "donnees": collecte_exemple(), "resultats_profils": [], "textes": None,
+        "envoye": False, "raison_abandon": "test",
+    }, appels=appels)
+
+    assert taches.main(["run"]) == 0
+
+    assert len(appels) == 1
+    (profil,) = appels[0]["profils"]
+    assert profil["nb_jambes_min"] == 12 and profil["nb_jambes"] == 15
+
+
+def test_profil_agent_quotidien_respecte_nb_jambes_du_workflow(monkeypatch):
+    import analyser_et_envoyer as ae
+    monkeypatch.setenv("NB_JAMBES", "8")
+    monkeypatch.setenv("NB_JAMBES_MIN", "6")
+    (profil,) = ae.profils_agent_quotidien()
+    assert (profil["nb_jambes_min"], profil["nb_jambes"]) == (6, 8)
+    monkeypatch.setenv("NB_JAMBES", "10")
+    monkeypatch.setenv("NB_JAMBES_MIN", "20")  # min jamais au-dessus du max
+    (profil,) = ae.profils_agent_quotidien()
+    assert (profil["nb_jambes_min"], profil["nb_jambes"]) == (10, 10)

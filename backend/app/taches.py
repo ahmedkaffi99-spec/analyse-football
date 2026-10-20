@@ -422,8 +422,11 @@ def main(argv=None):
     p_run.add_argument("--depuis-run", type=int,
                        help="reprend la collecte archivée de ce run du jour : analyse et IA seulement "
                             "(moteur deterministe uniquement)")
-    p_run.add_argument("--moteur", choices=["central", "agent", "deterministe"], default="central",
-                       help="central = officiel par défaut (11/10/2026, moteur le plus récemment "
+    p_run.add_argument("--moteur", choices=["central", "agent", "deterministe"], default="agent",
+                       help="agent = OFFICIEL PAR DÉFAUT depuis le 20/10/2026 (demande explicite : "
+                            "l'IA choisit les paris, coupon de 12 à 15 jambes, agents spécialistes par "
+                            "famille de marchés — voir bet_agent/agents_familles.py) ; "
+                            "central = officiel du 11/10 au 20/10/2026 (11/10/2026, moteur le plus récemment "
                             "construit — moteur_central/) : arbitrage par marché bet_agent/moteur "
                             "puis sélection probabilité maximale ; AUCUN repli automatique si ce "
                             "moteur échoue (erreur explicite, run en \"erreur\") ; deterministe = "

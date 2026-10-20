@@ -127,6 +127,26 @@ PROFILS_COUPON = [
      "cote_min": 1.1, "cote_max": 2.1, "nb_jambes_min": 2, "nb_jambes": 5},
 ]
 
+# Profil du moteur "agent" (agent pilote IA) en production depuis le 20/10/2026 (demande
+# explicite : "l'IA choisit les paris" et "coupon de 12 à 15 jambes"). NB_JAMBES_MIN / NB_JAMBES
+# (entrées du workflow, déjà utilisées par le moteur déterministe) les remplacent pour UN run.
+# cote_min/cote_max : cible de cote totale du repli 100 % Python, volontairement très large —
+# 12 jambes à ~1.4 donnent déjà ~56 (seul le plancher absolu COTE_TOTALE_MIN de l'agent compte).
+NB_JAMBES_AGENT_MIN_DEFAUT = 12
+NB_JAMBES_AGENT_MAX_DEFAUT = 15
+
+
+def profils_agent_quotidien():
+    def _entier(nom, defaut):
+        valeur = (os.getenv(nom) or "").strip()
+        return int(valeur) if valeur.isdigit() and int(valeur) > 0 else defaut
+
+    nb_max = _entier("NB_JAMBES", NB_JAMBES_AGENT_MAX_DEFAUT)
+    nb_min = min(_entier("NB_JAMBES_MIN", NB_JAMBES_AGENT_MIN_DEFAUT), nb_max)
+    return [{"cle": "jour", "nom": f"🏆 COUPON DU JOUR ({nb_min}-{nb_max} jambes, probabilité maximale)",
+             "cote_min": 5.0, "cote_max": 100000.0, "nb_jambes_min": nb_min, "nb_jambes": nb_max}]
+
+
 # ------------------------------------------------------------------------------------------
 # GÉNÉRATION DYNAMIQUE DU NOMBRE DE COUPONS (11/10/2026) — sélection automatique SEULEMENT
 # (mode_manuel garde PROFILS_COUPON, un seul coupon, comportement inchangé). Le nombre de
