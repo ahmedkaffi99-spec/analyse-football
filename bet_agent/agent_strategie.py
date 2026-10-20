@@ -30,6 +30,7 @@ import json
 import math
 import re
 
+import agents_familles
 import analyser_et_envoyer as ae
 
 NB_TOURS_MAX = 3
@@ -55,7 +56,7 @@ COTE_TOTALE_MIN = 5.0
 SEUIL_PROBA_CATALOGUE = ae.PROBA_MIN_FORTE
 
 
-def construire_catalogue(pool, seuil_proba=SEUIL_PROBA_CATALOGUE):
+def construire_catalogue(pool, seuil_proba=SEUIL_PROBA_CATALOGUE, ecartes=frozenset(), avis=None):
     """Renvoie ({id: sélection}, texte du catalogue groupé par match) — FILTRÉ et TRIÉ par
     Python (demande explicite du 01/10/2026 : "réduire les tâches de l'IA, augmenter Python") :
     seuls les paris dont la probabilité calculée (Poisson) dépasse seuil_proba sont montrés,
@@ -63,6 +64,10 @@ def construire_catalogue(pool, seuil_proba=SEUIL_PROBA_CATALOGUE):
     PAS dans le catalogue — Python a jugé qu'il n'y avait rien d'assez solide à y proposer.
     Les marchés bruts (proba_modele_pct=None, aucun calcul possible) ne sont jamais montrés :
     on ne demande plus à l'IA de juger ce que Python ne peut pas vérifier lui-même."""
+    # ecartes/avis (20/10/2026, agents spécialistes par famille — voir agents_familles.py) :
+    # les identifiants restent STABLES d'un appel à l'autre (le numéro avance aussi pour un pari
+    # écarté), un pari écarté n'est plus montré à l'IA stratège, un avis s'ajoute à sa ligne.
+    avis = avis or {}
     catalogue, lignes, numero = {}, [], 0
     for match, candidats in pool.items():
         retenus = sorted(
@@ -71,10 +76,15 @@ def construire_catalogue(pool, seuil_proba=SEUIL_PROBA_CATALOGUE):
             key=lambda c: c["pick"]["proba_modele_pct"], reverse=True)
         if not retenus:
             continue
-        lignes.append(f"\n## {match} ({len(retenus)} pari(s) retenu(s) par Python, proba >= {seuil_proba:g}%)")
+        entete_ajoute = False
         for c in retenus:
             numero += 1
             cid = f"P{numero}"
+            if cid in ecartes:
+                continue
+            if not entete_ajoute:
+                lignes.append(f"\n## {match} ({len(retenus)} pari(s) retenu(s) par Python, proba >= {seuil_proba:g}%)")
+                entete_ajoute = True
             catalogue[cid] = c
             p = c["pick"]
             # marche_affichage (ligne du point de vue de l'équipe sélectionnée, celle que
@@ -83,7 +93,8 @@ def construire_catalogue(pool, seuil_proba=SEUIL_PROBA_CATALOGUE):
             # l'IA justifiait son choix avec un signe de ligne qui ne correspond pas à ce que
             # l'utilisateur voit réellement sur 1xBet.
             lignes.append(f"- {cid} : {p.get('marche_affichage') or p['marche']} → {p['selection']} @ {p['cote']} — "
-                          f"probabilité Python {p['proba_modele_pct']}%, edge {p['edge_pct']}%")
+                          f"probabilité Python {p['proba_modele_pct']}%, edge {p['edge_pct']}%"
+                          + (f" — {avis[cid]}" if cid in avis else ""))
     return catalogue, "\n".join(lignes)
 
 
@@ -461,6 +472,12 @@ def composer_coupons(pool, profils, appel=None, nb_tours=NB_TOURS_MAX):
     catalogue, catalogue_texte = construire_catalogue(pool)
     if not catalogue:
         return None
+    if agents_familles.actif():
+        ecartes, avis = agents_familles.revoir_catalogue(catalogue, appel)
+        if ecartes or avis:
+            catalogue, catalogue_texte = construire_catalogue(pool, ecartes=ecartes, avis=avis)
+            if not catalogue:
+                return None
     prompt_base = construire_prompt(pool, profils, catalogue_texte)
     prompt, acceptes, analyse = prompt_base, {}, []
 
