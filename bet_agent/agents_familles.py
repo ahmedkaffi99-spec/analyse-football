@@ -152,7 +152,7 @@ def revoir_catalogue(catalogue, appel=None):
     def revue(tache):
         fid, nom, faits, restants = tache
         texte = appel(_prompt_famille(fid, nom, faits, [_ligne(i, catalogue[i]) for i in restants]),
-                      max_tokens=1500, json_attendu=True)
+                      max_tokens=3000, json_attendu=True)
         reponse = json.loads(texte) if isinstance(texte, str) else texte
         return reponse if isinstance(reponse, dict) else {}
 

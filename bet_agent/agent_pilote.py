@@ -375,6 +375,18 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
             return {"erreur": f"les {len(etat['profils'])} profils ont déjà leur coupon (ou une abstention) — "
                               "appelle envoyer_telegram"}
         profil = etat["profils"][etat["profil_index"]]
+        # Minimum de jambes ADAPTATIF (21/10/2026) : depuis que la sélection ne garde que les matchs
+        # du jour, un jour à 10 matchs ne peut plus donner 12 jambes (un pari par match) — le coupon
+        # prend alors tous les matchs du jour, sans descendre sous NB_JAMBES_PLANCHER_ABSOLU (6,
+        # demande « plus de 5 jambes »). Sous ce plancher, l'agent s'abstient comme avant.
+        nb_matchs_catalogue = len({c["match"] for c in etat["catalogue"].values()})
+        plancher_absolu = int(os.getenv("NB_JAMBES_PLANCHER_ABSOLU") or 6)
+        if profil.get("nb_jambes_min", 1) > nb_matchs_catalogue >= plancher_absolu:
+            profil = dict(profil, nb_jambes_min=nb_matchs_catalogue,
+                          nb_jambes=min(profil["nb_jambes"], nb_matchs_catalogue))
+            etat["profils"][etat["profil_index"]] = profil
+            print(f"   ℹ️ Seulement {nb_matchs_catalogue} match(s) éligible(s) aujourd'hui : minimum de jambes "
+                  f"ramené à {nb_matchs_catalogue} (un pari par match).")
         return {
             "profil_en_cours": f"{etat['profil_index'] + 1}/{len(etat['profils'])}",
             # cote_min/cote_max NON transmis : la cote totale n'est plus une contrainte de
@@ -448,6 +460,12 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
         etat["termine"] = True
         if not telegram:
             return {"envoye": False, "enregistre": True, "note": "envoi désactivé pour ce run (essai)"}
+        if not any(r["selections"] for r in etat["resultats_profils"]) \
+                and (os.getenv("ENVOYER_ABSTENTION_TELEGRAM") or "").strip().lower() not in ("1", "true", "oui"):
+            # 21/10/2026 : les runs d'abstention (168, 171) envoyaient un message Telegram « aucun pari
+            # défendable » qui encombrait le fil sans coupon. Rétablissable : ENVOYER_ABSTENTION_TELEGRAM=1.
+            print("   ℹ️ Aucun coupon composé : aucun message Telegram envoyé (abstention).")
+            return {"envoye": False, "enregistre": True, "note": "abstention : aucun message Telegram"}
         ok = ae.agent5_envoyer_coupons(etat["textes"])
         etat["envoye"] = ok
         return {"envoye": ok}

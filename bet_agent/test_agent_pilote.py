@@ -571,3 +571,54 @@ class TestAgentsFamillesBranchesDansLePilote(unittest.TestCase):
         self.assertEqual(sorted(catalogue_revu), ["P1", "P2"])
         self.assertIsNotNone(agents_familles.veto_python(catalogue_revu["P2"]["pick"]))
         self.assertIsNone(agents_familles.veto_python(catalogue_revu["P1"]["pick"]))
+
+
+class TestMinimumDeJambesAdaptatifEtAbstentionSansTelegram(unittest.TestCase):
+    """21/10/2026 : (1) un jour à peu de matchs ne doit pas condamner le profil 12-15 jambes à
+    l'abstention ; (2) une abstention n'envoie plus de message Telegram."""
+
+    def setUp(self):
+        patcher = mock.patch.dict("os.environ", {"DEEPSEEK_API_KEY": "cle-test", "AGENTS_FAMILLES_ACTIFS": "0"})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _pool(self, n):
+        return {f"M{i} vs A{i}": [{"match": f"M{i} vs A{i}", "pick": _pick("Total", "Total (2.5)", "Over", 1.5)}]
+                for i in range(n)}
+
+    def _executer(self, pool, reponses, profil):
+        with mock.patch.object(cd, "collecter_donnees", return_value=None), \
+                mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(DONNEES_FACTICES))), \
+                mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=pool), \
+                mock.patch.object(ae, "agent5_envoyer_coupons", return_value=True) as envoi, \
+                mock.patch.object(pilote, "_appel_api", side_effect=[(r, 65536) for r in reponses]):
+            resultat = pilote.executer(mission="test", telegram=True, profils=[profil])
+        return resultat, envoi
+
+    def test_minimum_ramene_au_nombre_de_matchs_du_jour(self):
+        profil = {"cle": "jour", "nom": "J", "cote_min": 0.0, "cote_max": 1000.0, "nb_jambes_min": 12, "nb_jambes": 15}
+        jambes = [{"id": f"P{i}", "raison": "r"} for i in range(1, 9)]
+        reponses = [_msg_outil("collecter_donnees", {}), _msg_outil("voir_catalogue", {}),
+                    _msg_outil("proposer_coupon", {"strategie": "s", "jambes": jambes}),
+                    _msg_outil("envoyer_telegram", {})]
+        resultat, envoi = self._executer(self._pool(8), reponses, profil)
+        self.assertEqual(len(resultat["resultats_profils"][0]["selections"]), 8)  # 8 matchs -> 8 jambes
+        envoi.assert_called_once()
+
+    def test_sous_le_plancher_absolu_le_minimum_n_est_pas_abaisse(self):
+        profil = {"cle": "jour", "nom": "J", "cote_min": 0.0, "cote_max": 1000.0, "nb_jambes_min": 12, "nb_jambes": 15}
+        jambes = [{"id": f"P{i}", "raison": "r"} for i in range(1, 4)]
+        reponses = [_msg_outil("collecter_donnees", {}), _msg_outil("voir_catalogue", {}),
+                    _msg_outil("proposer_coupon", {"strategie": "s", "jambes": jambes}),
+                    _msg_outil("abandonner", {"raison": "trop peu de matchs"})]
+        resultat, envoi = self._executer(self._pool(3), reponses, profil)
+        self.assertEqual(resultat["resultats_profils"], [])  # 3 matchs < 6 : le coupon de 3 jambes est refusé
+
+    def test_abstention_n_envoie_aucun_message_telegram(self):
+        profil = {"cle": "jour", "nom": "J", "cote_min": 0.0, "cote_max": 1000.0, "nb_jambes_min": 2, "nb_jambes": 5}
+        reponses = [_msg_outil("collecter_donnees", {}), _msg_outil("voir_catalogue", {}),
+                    _msg_outil("proposer_coupon", {"strategie": "rien de défendable", "jambes": []}),
+                    _msg_outil("envoyer_telegram", {})]
+        resultat, envoi = self._executer(self._pool(3), reponses, profil)
+        envoi.assert_not_called()
+        self.assertFalse(resultat["envoye"])
