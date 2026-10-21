@@ -1330,7 +1330,16 @@ LIGUES_FILTRE_API_FOOTBALL = {
 }
 
 
-def selectionner_matchs_du_jour_api_football(fixtures_api_football):
+# Matchs du JOUR seulement (21/10/2026, question explicite : "pourquoi tu intègres les matchs du
+# 22 octobre, de demain ?") : la fenêtre de fixtures couvre hier/aujourd'hui/demain et la sélection
+# ne filtrait que le statut "NS" puis triait par coup d'envoi — quand les matchs du jour sont
+# déjà commencés (cron de l'après-midi) ou peu nombreux, ceux de demain remplissaient la liste
+# (26 matchs retenus à 17h sur un jour de 10 matchs). Un run ponctuel (DATE_CIBLE_DEBUT/FIN)
+# garde sa propre fenêtre ; MATCHS_UNIQUEMENT_DU_JOUR=0 rétablit l'ancien comportement.
+MATCHS_UNIQUEMENT_DU_JOUR = (os.getenv("MATCHS_UNIQUEMENT_DU_JOUR") or "1").strip().lower() not in ("0", "false", "non", "no")
+
+
+def selectionner_matchs_du_jour_api_football(fixtures_api_football, aujourd_hui=None):
     """Équivalent de selectionner_matchs_du_jour, mais 100% API-Football (jamais OddsPapi) —
     actif uniquement quand FOURNISSEUR_COTES=api_football (voir collecter_donnees). Filtre sur
     LIGUES_FILTRE_API_FOOTBALL (5 championnats domestiques + Ligue des Champions/Europa
@@ -1351,6 +1360,11 @@ def selectionner_matchs_du_jour_api_football(fixtures_api_football):
         depart = (fx.get("fixture") or {}).get("date")
         if not assez_tot_avant_coup_envoi(depart):
             continue
+        if MATCHS_UNIQUEMENT_DU_JOUR and not (DATE_CIBLE_DEBUT and DATE_CIBLE_FIN):
+            jour_match = _date_iso(depart)
+            jour_ref = aujourd_hui or datetime.now(timezone.utc).date()
+            if jour_match is not None and jour_match.astimezone(timezone.utc).date() != jour_ref:
+                continue  # match d'un autre jour (demain) : jamais mélangé aux matchs du jour
         home = (fx.get("teams") or {}).get("home", {}).get("name") or ""
         away = (fx.get("teams") or {}).get("away", {}).get("name") or ""
         if contient_indicateur_reserve(home) or contient_indicateur_reserve(away):

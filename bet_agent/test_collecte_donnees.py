@@ -2,6 +2,7 @@
 indépendants, et une panne OddsPapi (429) peut-elle bloquer/ralentir/gonfler la consommation
 API-Football ? Tests hors-ligne (aucun appel réseau réel) : python -m pytest test_collecte_donnees.py"""
 
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest import mock
 
@@ -345,6 +346,41 @@ class TestSelectionMatchsDuJourApiFootball:
         monkeypatch.setattr(cd, "_telecharger_fixtures_oddspapi", lambda: appels.append(1) or [])
         cd.selectionner_matchs_du_jour_api_football([_fixture_af("Arsenal", "Chelsea", 39)])
         assert appels == []
+
+
+class TestSelectionUniquementDuJour:
+    """21/10/2026, question explicite ("pourquoi tu intègres les matchs du 22 octobre, de demain ?") :
+    la sélection ne filtrait que le statut NS puis triait par coup d'envoi, donc les matchs de demain
+    remplissaient la liste quand ceux du jour avaient commencé ou étaient peu nombreux."""
+
+    JOUR = datetime(2026, 10, 21, tzinfo=timezone.utc).date()
+
+    def _fx(self, home, away, depart):
+        return _fixture_af(home, away, 39, depart=depart)
+
+    def test_les_matchs_de_demain_ne_sont_pas_selectionnes(self, monkeypatch):
+        monkeypatch.setattr(cd, "assez_tot_avant_coup_envoi", lambda *a, **k: True)
+        monkeypatch.setattr(cd, "MATCHS_UNIQUEMENT_DU_JOUR", True)
+        monkeypatch.setattr(cd, "DATE_CIBLE_DEBUT", None)
+        monkeypatch.setattr(cd, "DATE_CIBLE_FIN", None)
+        fixtures = [self._fx("Arsenal", "Chelsea", "2026-10-21T19:00:00+00:00"),
+                    self._fx("Lyon", "Monaco", "2026-10-22T16:45:00+00:00")]
+        matchs = cd.selectionner_matchs_du_jour_api_football(fixtures, aujourd_hui=self.JOUR)
+        assert matchs == [("Arsenal", "Chelsea")]
+
+    def test_run_ponctuel_avec_dates_cibles_garde_sa_fenetre(self, monkeypatch):
+        monkeypatch.setattr(cd, "assez_tot_avant_coup_envoi", lambda *a, **k: True)
+        monkeypatch.setattr(cd, "MATCHS_UNIQUEMENT_DU_JOUR", True)
+        monkeypatch.setattr(cd, "DATE_CIBLE_DEBUT", "2026-10-22")
+        monkeypatch.setattr(cd, "DATE_CIBLE_FIN", "2026-10-22")
+        fixtures = [self._fx("Lyon", "Monaco", "2026-10-22T16:45:00+00:00")]
+        assert cd.selectionner_matchs_du_jour_api_football(fixtures, aujourd_hui=self.JOUR) == [("Lyon", "Monaco")]
+
+    def test_interrupteur_pour_retablir_l_ancien_comportement(self, monkeypatch):
+        monkeypatch.setattr(cd, "assez_tot_avant_coup_envoi", lambda *a, **k: True)
+        monkeypatch.setattr(cd, "MATCHS_UNIQUEMENT_DU_JOUR", False)
+        fixtures = [self._fx("Lyon", "Monaco", "2026-10-22T16:45:00+00:00")]
+        assert cd.selectionner_matchs_du_jour_api_football(fixtures, aujourd_hui=self.JOUR) == [("Lyon", "Monaco")]
 
 
 class TestRecupererElo:
