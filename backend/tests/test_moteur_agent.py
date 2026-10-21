@@ -174,3 +174,31 @@ def test_profil_agent_quotidien_respecte_nb_jambes_du_workflow(monkeypatch):
     monkeypatch.setenv("NB_JAMBES_MIN", "20")  # min jamais au-dessus du max
     (profil,) = ae.profils_agent_quotidien()
     assert (profil["nb_jambes_min"], profil["nb_jambes"]) == (10, 10)
+
+
+def test_moteur_agent_coupon_deja_envoye_sauvegarde_meme_si_la_collecte_plante(monkeypatch):
+    # 21/10/2026 (runs 176/177) : la persistance de la collecte plantait (marche_id trop long)
+    # APRÈS l'envoi Telegram : le coupon envoyé était perdu (run en erreur, aucune jambe) et le
+    # garde-fou "un ticket par jour" en renvoyait un second. Le coupon doit être sauvegardé et
+    # le run marqué envoyé quoi qu'il arrive à la persistance de la collecte.
+    from app.services import runs as runs_service
+    profil = _profil_unique()
+    selections = profils_exemple()[0]["selections"]
+    _faux_agent_pilote(monkeypatch, {
+        "donnees": collecte_exemple(), "resultats_profils": [{"profil": profil, "selections": selections}],
+        "textes": ["ticket envoyé"], "envoye": True, "raison_abandon": None,
+    })
+
+    def collecte_qui_plante(db, run, donnees):
+        raise RuntimeError("value too long for type character varying(32)")
+
+    monkeypatch.setattr(runs_service, "enregistrer_collecte", collecte_qui_plante)
+
+    assert taches.main(["run", "--telegram", "--moteur", "agent"]) == 0
+
+    with SessionLocal() as db:
+        run = db.query(Run).one()
+        assert run.statut == "termine"
+        assert run.envoye_telegram is True
+        assert len(run.coupons) == 1 and len(run.coupons[0].jambes) == len(selections)
+        assert run.coupons[0].texte == "ticket envoyé"
