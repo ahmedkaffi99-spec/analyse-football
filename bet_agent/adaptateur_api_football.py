@@ -244,7 +244,7 @@ def traduire_en_marches_oddspapi(cotations_brutes):
         if not selections_valides:
             continue
         marches.append({
-            "marche_id": f"api_football:{categorie}:{ligne}",
+            "marche_id": f"af:{categorie}:{ligne}",  # cotes.marche_id = VARCHAR(32) : "api_football:HANDICAP_ASIATIQUE:-1.25" (37) faisait échouer tout le run
             "marche": _NOMS_ODDSPAPI_PAR_CATEGORIE[categorie],
             "type": "",
             "handicap": ligne,

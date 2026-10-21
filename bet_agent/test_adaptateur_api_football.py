@@ -393,3 +393,18 @@ class TestMappingExplicite:
     def test_handicap_europeen_present_cote_oddspapi_seulement(self):
         assert CATEGORIES_ODDSPAPI["European Handicap"] == "HANDICAP_EUROPEEN"
         assert "HANDICAP_EUROPEEN" not in MAPPING_API_FOOTBALL.values()
+
+
+class TestMarcheIdTientDansLaColonne:
+    """Régression du 21/10/2026 : l'activation de l'Asian Handicap a produit des marche_id de 37
+    caractères ("api_football:HANDICAP_ASIATIQUE:-1.25") alors que cotes.marche_id est un
+    VARCHAR(32) — DataError, donc AUCUN coupon produit ce jour-là (runs 175 à 177)."""
+
+    def test_tous_les_marche_id_font_au_plus_32_caracteres(self):
+        from adaptateur_api_football import MAPPING_API_FOOTBALL
+        cotations = [{"categorie": cat, "selection": "1", "ligne": ligne, "cote": 1.5, "marche_id": "1"}
+                     for cat in set(MAPPING_API_FOOTBALL.values()) if cat != "HANDICAP_EUROPEEN"
+                     for ligne in (None, -10.25, 10.5, 35.5, -6.0)]
+        marches, _ = traduire_en_marches_oddspapi(cotations)
+        assert marches
+        assert max(len(m["marche_id"]) for m in marches) <= 32
