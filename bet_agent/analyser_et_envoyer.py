@@ -14,6 +14,12 @@ du 01/10/2026 : "il peut sélectionner 12 et n'importe quelle cote si le taux de
 
 import os
 import re
+import sys
+# Noyau de calcul partagé (moteur/) : racine du dépôt ajoutée au chemin si le module est lancé seul.
+_RACINE_DEPOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _RACINE_DEPOT not in sys.path:
+    sys.path.append(_RACINE_DEPOT)
+from moteur.modeles import lois as _lois, marches as _marches  # noqa: E402
 import json
 import math
 import time
@@ -952,6 +958,41 @@ def proba_handicap_couvert(mu_home, mu_away, handicap_home, max_buts=25, dispers
     return (proba_bas + proba_haut) / 2
 
 
+def _distribution_comptage(mu, dispersion=1.0):
+    """Loi (Poisson, ou binomiale négative si dispersion > 1) d'un comptage de moyenne mu — celle de
+    moteur/, bornes adaptatives et renormalisation."""
+    return _lois.distribution(mu, mu * dispersion if dispersion and dispersion > 1 else None)
+
+
+def issues_total(ligne, mu, selection, dispersion=1.0):
+    """Distribution EXACTE des 5 issues (gagné, demi-gagné, remboursé, demi-perdu, perdu) d'un
+    Over/Under sur un total de moyenne mu. Même règle que la vérification des résultats."""
+    resultat = dict.fromkeys(_marches.ISSUES, 0.0)
+    for k, p in enumerate(_distribution_comptage(mu, dispersion)):
+        resultat[_marches.issue_total(k, ligne, selection)] += p
+    return resultat
+
+
+def issues_handicap(mu_pour, mu_contre, handicap, dispersion=1.0):
+    """Distribution exacte des 5 issues d'un handicap asiatique pour l'équipe de moyenne mu_pour
+    (handicap appliqué à CETTE équipe)."""
+    resultat = dict.fromkeys(_marches.ISSUES, 0.0)
+    d_pour, d_contre = _distribution_comptage(mu_pour, dispersion), _distribution_comptage(mu_contre, dispersion)
+    for i, pi in enumerate(d_pour):
+        for j, pj in enumerate(d_contre):
+            resultat[_marches.issue_ligne(i - j, handicap)] += pi * pj
+    return resultat
+
+
+def proba_equivalente(issues, cote):
+    """Probabilité « équivalente » p telle que p*cote - 1 = espérance exacte du pari. Remplace
+    l'ancienne approximation p_gain + 0.5*p_remboursement (EV fausse dès que cote != 2, audit C3) ;
+    identique à p_gain sur un marché binaire (ligne demie)."""
+    if not cote or cote <= 1:
+        return None
+    return (_marches.esperance(issues, cote) + 1) / cote
+
+
 def calc_edge(proba_modele, cote):
     if not cote or cote <= 1:
         return None
@@ -1313,17 +1354,15 @@ def _evaluer_marches_brut(marches, mu_home, mu_away, mu_corners=None, mu_cartons
             else:
                 continue
 
-            proba_over_calc = proba_over(handicap, mu_cible, dispersion=DISPERSION_PAR_CATEGORIE.get(categorie, 1.0))
+            disp = DISPERSION_PAR_CATEGORIE.get(categorie, 1.0)
             for s in selections:
                 sel = s["selection"].lower()
-                if "over" in sel:
-                    edge = calc_edge(proba_over_calc, s["cote"])
-                    if _edge_calculable(edge, proba_over_calc):
-                        candidats.append(_candidat(marche["marche"], handicap, s, proba_over_calc, edge, categorie))
-                elif "under" in sel:
-                    edge = calc_edge(1 - proba_over_calc, s["cote"])
-                    if _edge_calculable(edge, 1 - proba_over_calc):
-                        candidats.append(_candidat(marche["marche"], handicap, s, 1 - proba_over_calc, edge, categorie))
+                if "over" in sel or "under" in sel:
+                    cote_s = s["cote"]
+                    proba = proba_equivalente(issues_total(handicap, mu_cible, "over" if "over" in sel else "under", disp), cote_s)
+                    edge = calc_edge(proba, cote_s) if proba is not None else None
+                    if _edge_calculable(edge, proba):
+                        candidats.append(_candidat(marche["marche"], handicap, s, proba, edge, categorie))
 
         # --- Both Teams To Score ---
         elif "both teams to score" in nom or "btts" in nom:
@@ -1423,12 +1462,13 @@ def _evaluer_marches_brut(marches, mu_home, mu_away, mu_corners=None, mu_cartons
             for s in selections:
                 sel = s["selection"].lower()
                 if "home" in sel or sel == "1":
-                    proba = proba_handicap_couvert(mu_home, mu_away, handicap)
+                    issues = issues_handicap(mu_home, mu_away, handicap)
                 elif "away" in sel or sel == "2":
-                    proba = proba_handicap_couvert(mu_away, mu_home, -handicap)
+                    issues = issues_handicap(mu_away, mu_home, -handicap)
                 else:
                     continue
-                edge = calc_edge(proba, s["cote"])
+                proba = proba_equivalente(issues, s["cote"])
+                edge = calc_edge(proba, s["cote"]) if proba is not None else None
                 if _edge_calculable(edge, proba):
                     candidats.append(_candidat(marche["marche"], handicap, s, proba, edge, "Handicap"))
 
@@ -1468,12 +1508,13 @@ def _evaluer_marches_brut(marches, mu_home, mu_away, mu_corners=None, mu_cartons
             for s in selections:
                 sel = s["selection"].lower()
                 if "home" in sel or sel == "1":
-                    proba = proba_handicap_couvert(mu_h, mu_a, handicap, dispersion=disp)
+                    issues = issues_handicap(mu_h, mu_a, handicap, disp)
                 elif "away" in sel or sel == "2":
-                    proba = proba_handicap_couvert(mu_a, mu_h, -handicap, dispersion=disp)
+                    issues = issues_handicap(mu_a, mu_h, -handicap, disp)
                 else:
                     continue
-                edge = calc_edge(proba, s["cote"])
+                proba = proba_equivalente(issues, s["cote"])
+                edge = calc_edge(proba, s["cote"]) if proba is not None else None
                 if _edge_calculable(edge, proba):
                     candidats.append(_candidat(marche["marche"], handicap, s, proba, edge, categorie))
 

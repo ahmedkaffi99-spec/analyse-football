@@ -44,3 +44,38 @@ class TestSurdispersion:
     def test_categories_mesurees(self):
         assert ae.DISPERSION_PAR_CATEGORIE["Total Tirs"] > ae.DISPERSION_PAR_CATEGORIE["Total Tirs Cadrés"] > 1
         assert "Total" not in ae.DISPERSION_PAR_CATEGORIE and "Total Cartons" not in ae.DISPERSION_PAR_CATEGORIE
+
+
+class TestEspéranceExacteDesRemboursements:
+    """Audit C3 : l'ancienne règle p_gain + 0.5*p_remboursement faussait l'EV dès que cote != 2."""
+
+    def test_ligne_demie_identique_a_l_ancien_calcul(self):
+        for ligne, mu in ((2.5, 2.7), (9.5, 10.0), (24.5, 25.0)):
+            for sel in ("over", "under"):
+                i = ae.issues_total(ligne, mu, sel)
+                ancien = ae.proba_over(ligne, mu) if sel == "over" else 1 - ae.proba_over(ligne, mu)
+                assert abs(ae.proba_equivalente(i, 1.5) - ancien) < 1e-3
+
+    def test_handicap_demi_identique_a_l_ancien_calcul(self):
+        i = ae.issues_handicap(1.6, 1.1, -0.5)
+        assert abs(ae.proba_equivalente(i, 1.9) - ae.proba_handicap_couvert(1.6, 1.1, -0.5)) < 1e-3
+
+    def test_issues_somment_a_un(self):
+        for h in (-1.0, -0.5, 0.0, 0.5, 1.0):
+            assert abs(sum(ae.issues_handicap(1.5, 1.2, h).values()) - 1) < 1e-9
+        assert abs(sum(ae.issues_total(3.0, 2.7, "over").values()) - 1) < 1e-9
+
+    def test_ev_exacte_avec_remboursement(self):
+        # Over 3.0 : gagne si >3, rembourse si ==3. EV = P(>3)*(c-1) - P(<3)
+        i = ae.issues_total(3.0, 2.7, "over")
+        assert i["rembourse"] > 0.1 and i["demi_gagne"] == 0
+        cote = 1.5
+        ev_directe = i["gagne"] * (cote - 1) - i["perdu"]
+        p = ae.proba_equivalente(i, cote)
+        assert abs((p * cote - 1) - ev_directe) < 1e-9
+        # l'ancienne approximation donnait une EV différente (cote != 2)
+        ancien = i["gagne"] + 0.5 * i["rembourse"]
+        assert abs((ancien * cote - 1) - ev_directe) > 0.01
+
+    def test_cote_invalide(self):
+        assert ae.proba_equivalente(ae.issues_total(2.5, 2.7, "over"), 1.0) is None
