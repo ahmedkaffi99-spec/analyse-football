@@ -107,13 +107,30 @@ def executer_run(run_id, envoyer_telegram=False, rediger=True, depuis_run=None, 
                                                    ignorer_diversite_croisee=ignorer_diversite_croisee,
                                                    contexte_supplementaire=bilan)
             donnees = resultat_agent.get("donnees")
-            index = enregistrer_collecte(db, run, donnees) if donnees is not None else {}
-            if donnees is not None:
-                db.commit()
             resultats = resultat_agent.get("resultats_profils") or []
+            envoye = bool(resultat_agent.get("envoye"))
+            # Le coupon est DÉJÀ parti sur Telegram quand on arrive ici : on le note tout de suite.
+            # Constat réel du 21/10/2026 (runs 176 et 177) : un plantage de la persistance de la
+            # collecte (marche_id trop long) faisait perdre le coupon déjà envoyé (run en
+            # "erreur", envoye_telegram faux, aucune jambe en base) et le garde-fou "un ticket par
+            # jour" renvoyait un 2e coupon trois heures plus tard.
+            if envoye:
+                run.envoye_telegram = True
+                db.commit()
+            index = {}
+            if donnees is not None:
+                try:
+                    index = enregistrer_collecte(db, run, donnees)
+                    db.commit()
+                except Exception as e:
+                    db.rollback()
+                    run = db.get(Run, run_id)
+                    index = {}
+                    print(f"   ⚠️ Collecte non enregistrée ({type(e).__name__}) — le coupon est quand même "
+                          f"sauvegardé : {pipeline.masquer_secrets(str(e))[:150]}")
             if any(item["selections"] for item in resultats):
                 enregistrer_coupons(db, run, resultats, index, textes=resultat_agent.get("textes"))
-                run.envoye_telegram = bool(resultat_agent.get("envoye"))
+                run.envoye_telegram = envoye
                 run.statut = "termine"
             else:
                 run.statut = "abandonne"
