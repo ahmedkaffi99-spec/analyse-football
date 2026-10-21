@@ -22,15 +22,15 @@ Supabase (lecture seule). Aucune modification de `main`, aucune écriture Supaba
 |---|---|---|---|
 | C1 | Critique | Sommes de Poisson figées à 25 événements : pour fautes/tirs (μ≈22–26) P(Over 25,5 \| μ=26) = 0,0 ⇒ tout « Under » surestimé. Cause réelle du Total Tirs à 50 % réel / 69 % annoncé | **Corrigé (PR #81)** |
 | C2 | Majeur | Surdispersion ignorée en production (Poisson pur pour corners/tirs/fautes). Mesure : variance/moyenne des totaux = corners 1,16 ; tirs 1,34 ; cadrés 1,10 ; fautes 1,23 ; buts 0,98 ; cartons 0,98 | **Corrigé (PR #81)** : binomiale négative |
-| C3 | Majeur | Push compté comme `p_gain + 0,5·p_push` : l'EV réelle d'un remboursement est `p_gain·c + p_push − 1`. Écart = `p_push·(0,5c − 1)` (≠ 0 dès que c ≠ 2). Touche les lignes entières/quart (handicap, totaux) | À corriger (phase 1) — `moteur/modeles/marches.esperance` est déjà exact |
-| C4 | Majeur | xG de forme = moyenne tous lieux confondus ⇒ **aucun avantage du terrain** (réel : 1,45 vs 1,22 but sur 7 110 matchs) ; seul l'Elo (poids 0,4) en apporte | Backtest lancé (`backtest-avantage-domicile`) |
+| C3 | Majeur | Push compté comme `p_gain + 0,5·p_push` : l'EV réelle d'un remboursement est `p_gain·c + p_push − 1`. Écart = `p_push·(0,5c − 1)` (≠ 0 dès que c ≠ 2). Touche les lignes entières/quart (handicap, totaux) | **Corrigé (phase 1)** : `issues_total`/`issues_handicap` + `proba_equivalente` (EV exacte, via `moteur/`) |
+| C4 | Majeur | xG de forme = moyenne tous lieux confondus ⇒ **aucun avantage du terrain** (réel : 1,45 vs 1,22 but sur 7 110 matchs) ; seul l'Elo (poids 0,4) en apporte | **Hypothèse rejetée** (backtest 6 997 matchs) : meilleur Brier 0,5957 à facteur domicile 1,00 / Elo 0,4 ; un facteur 1,04 donne 0,5968, 1,12 donne 0,6010. Gonflement du nul : 0,5957 → 0,5957 (nul). Aucun changement |
 | C5 | Majeur | Probabilité affichée = 0,35·modèle + 0,65·marché sans marge ⇒ l' « edge » stocké est un edge **rétréci**, pas une EV : moyenne annoncée entre −7 % et +20 % selon la catégorie, indépendante du rendement réel | À redéfinir (phase 4) |
 | C6 | Majeur | Production couvre Ligue des champions/Europa/autres (ex. Galatasaray, Viking FK, LASK) mais `moteur/` ne sait prédire que les 5 championnats de `hist_matchs` (priors de ligue indisponibles) | Conception : modèles indépendants de la compétition + priors par défaut |
 | C7 | Moyen | 36 % des jambes `non_verifiable` (corners/cartons sans stats finales, catégories sans règle de jugement) : le suivi de performance est aveugle sur un tiers des paris | À traiter (phase 3) |
 | C8 | Moyen | Jugement des résultats dupliqué : `verifier_resultats.juger_resultat` et `moteur.modeles.registre.issue_reelle` (deux implémentations des mêmes règles) | À unifier |
 | C9 | Moyen | Trois chaînes de repli pour les buts attendus (stats saison, 10 derniers matchs, estimation depuis les cotes) avec des sémantiques différentes ; la dernière est circulaire (utilise les cotes pour estimer ce qu'on compare aux cotes) | À encadrer |
 | C10 | Mineur | Code mort : `_edge_calculable(edge, proba)` ignore `proba` ; constantes Elo dupliquées (`moteur/features.py`, `analyser_et_envoyer.py`) | À nettoyer |
-| C11 | Mineur | Lissage : priors fixes (buts 1,3 ; ligue réelle 1,45/1,22) ⇒ biais domicile/extérieur sur petit échantillon | À mesurer avec C4 |
+| C11 | Mineur | Lissage : priors fixes (buts 1,3 ; ligue réelle 1,45/1,22) ⇒ biais domicile/extérieur sur petit échantillon | **Corrigé** : priors recalés sur les moyennes mesurées (tirs 12,7 ; cadrés 4,4 ; fautes 11,9 ; corners 4,8 ; cartons 2,1 ; buts 1,335). Biais de mu avant correction : tirs −0,54, cadrés −0,29, fautes −0,56 par match |
 
 Vérifié correct : `issue_ligne`/`issue_total`/handicap référencé domicile (`moteur/modeles/marches.py`),
 Poisson indépendant (nul réel 26,4 % vs 25,8 % prédit : **pas** de Dixon-Coles nécessaire),
@@ -60,3 +60,20 @@ BTTS, Double Chance sont sur-estimés. Échantillons petits : à confirmer, pas 
 3. Le backtest (`moteur/`) ne teste pas ce qui tourne en production (`bet_agent`) : **la cohérence backtest ↔ production n'est pas garantie**. Les ~12 backtests de `diagnostics.yml` réimplémentent en ligne le modèle de production.
 4. Aucune interface commune pour un « modèle de marché » : données requises, paramètres, validation sont implicites.
 5. Contrainte de données : pas d'historique de cotes ⇒ pas de backtest ROI rétrospectif crédible au-delà de 3 jours. L'EV ne peut être validée qu'en avant (forward) à partir de `jambes`.
+
+## 5. Résultats des backtests d'audit (6 996 matchs, walk-forward, fonctions de production)
+
+Dispersion conditionnelle (variance résiduelle / mu autour du mu prédit) : corners 1,16 ; tirs 1,35 ;
+tirs cadrés 1,12 ; fautes 1,22 ; cartons 1,01 — identique à la dispersion des totaux, les constantes
+de la PR #81 sont donc correctes. Brier Over/Under : binomiale négative ≈ Poisson (écart < 0,0003),
+mais la **calibration des queues** est meilleure en binomiale négative (tirs 0,7–0,8 : annoncé 70,3 %
+contre réel 65,6 % en Poisson). Cartons : Poisson bien calibré à tous les niveaux (84,9 % annoncé /
+84,8 % réel). Le Total Tirs peut être **réintégré à l'essai** une fois le biais de prior corrigé et
+revalidé (non fait : à décider).
+
+## 6. Non vérifiables (476 jambes) — première analyse
+
+Catégories : Total Corners 108, Total 52, Double Chance 49, Total Cartons 34, Total Équipe 1 31, Total
+Équipe 2 26, Handicap Corners 22, BTTS 19... Ce sont presque toutes des catégories **dont la règle de
+jugement existe** : le blocage est l'appariement du match / la récupération du score final (matchs de
+sélections nationales, amicaux, match introuvable), pas une règle manquante. À instrumenter en phase 3.
