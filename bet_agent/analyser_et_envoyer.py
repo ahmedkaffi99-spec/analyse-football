@@ -210,7 +210,7 @@ def construire_profils_dynamiques(nb_matchs_eligibles):
 # gagne. Au run 9 (samedi midi), essayés un par un, tous étaient saturés (429) ou trop lents.
 # Les plus rapides d'abord ; Nemotron 3 Ultra retiré (4 min 30 sans JSON au run 8).
 # Retirés (run 10) : inkling-small (403, réservé aux « agentic harnesses ») et ling-3.0-flash-fin (400).
-OPENROUTER_MODELES_DEFAUT = ("nvidia/nemotron-3.5-lightning:free,qwen/qwen3.8-27b:free,"
+OPENROUTER_MODELES_DEFAUT = ("nvidia/nemotron-3.5-lightning:free,"
                              "google/gemma-4-31b-it:free,nvidia/nemotron-3-super-120b-a12b:free,"
                              "google/gemma-4-26b-a4b-it:free,poolside/laguna-s-2.1:free,openrouter/free")
 # DeepSeek (API officielle) : deepseek-flash = DeepSeek-V4.1-Flash
