@@ -788,7 +788,41 @@ def estimer_expected_goals_depuis_marches(marches):
 # ============================================================
 
 def poisson_p(lmbda, k):
-    return (math.exp(-lmbda) * (lmbda ** k)) / math.factorial(k)
+    if lmbda <= 0:
+        return 1.0 if k == 0 else 0.0
+    return math.exp(k * math.log(lmbda) - lmbda - math.lgamma(k + 1))
+
+
+# Rapport variance/moyenne des TOTAUX de match, mesuré le 21/10/2026 sur 6 883 matchs FT de 20
+# ligues-saisons (hist_matchs, pondéré par le nombre de matchs) : corners 1.16, cartons 0.98, tirs
+# 1.34, tirs cadrés 1.10, fautes 1.23, buts 0.98. Buts et cartons sont Poisson (≈1) ; les autres sont
+# légèrement surdispersés, donc modélisés en binomiale négative (même moyenne, variance = mu*rapport)
+# — une Poisson pure y rend les lignes extrêmes trop sûres. Hors-jeux : pas de mesure, Poisson.
+DISPERSION_PAR_CATEGORIE = {
+    "Total Corners": 1.16, "Handicap Corners": 1.16,
+    "Total Tirs": 1.34, "Handicap Tirs": 1.34,
+    "Total Tirs Cadrés": 1.10, "Handicap Tirs Cadrés": 1.10,
+    "Total Fautes": 1.23, "Handicap Fautes": 1.23,
+}
+
+
+def _pmf(mu, k, dispersion=1.0):
+    """P(X=k) : Poisson si dispersion <= 1, sinon binomiale négative de moyenne mu et variance
+    mu*dispersion (méthode des moments)."""
+    if dispersion is None or dispersion <= 1.0001 or mu <= 0:
+        return poisson_p(mu, k)
+    r = mu / (dispersion - 1.0)
+    p = r / (r + mu)
+    return math.exp(math.lgamma(k + r) - math.lgamma(r) - math.lgamma(k + 1) + r * math.log(p) + k * math.log(1 - p))
+
+
+def _borne_poisson(mu, max_buts=25, dispersion=1.0):
+    """Borne de sommation d'une loi de Poisson de moyenne mu. Bug corrigé le 21/10/2026 : toutes les
+    sommes étaient figées à 25 événements, or pour des fautes (mu~22) ou des tirs (mu~26) cette
+    troncature perdait 30 à 60 % de la masse (mesuré : P(Over 25.5 | mu=26) = 0.0 au lieu de ~0.5), donc
+    tout « Under » était surestimé — c'est la vraie cause du « Total Tirs : 50 % réel pour 69 % annoncé »
+    attribué à tort à la seule surdispersion. Plancher conservé pour ne rien changer aux buts."""
+    return max(max_buts, int(mu + 10 * math.sqrt(max(mu * (dispersion or 1.0), 1.0))) + 10)
 
 
 def proba_1x2(mu_home, mu_away, max_buts=25):
@@ -805,7 +839,8 @@ def proba_1x2(mu_home, mu_away, max_buts=25):
     return p_home, p_draw, p_away
 
 
-def proba_over(ligne, mu_total, max_buts=25):
+def proba_over(ligne, mu_total, max_buts=25, dispersion=1.0):
+    max_buts = _borne_poisson(mu_total, max_buts, dispersion)
     """Probabilité de gagner un pari 'Plus de' à la ligne donnée. Gère les lignes quart
     (.25/.75) de la même façon que proba_handicap_couvert : ce sont deux demi-mises sur
     des lignes adjacentes, avec push (remboursement) possible sur la moitié entière —
@@ -813,7 +848,7 @@ def proba_over(ligne, mu_total, max_buts=25):
     def gain_et_push(l):
         p_gain, p_push = 0.0, 0.0
         for k in range(max_buts):
-            p = poisson_p(mu_total, k)
+            p = _pmf(mu_total, k, dispersion)
             if k > l:
                 p_gain += p
             elif abs(k - l) < 1e-9:
@@ -840,6 +875,7 @@ def proba_btts(mu_home, mu_away):
 
 
 def proba_total_impair(mu, max_buts=25):
+    max_buts = _borne_poisson(mu, max_buts)
     return sum(poisson_p(mu, k) for k in range(1, max_buts, 2))
 
 
@@ -853,14 +889,17 @@ def proba_win_to_nil(mu_equipe, mu_adverse):
     return poisson_p(mu_adverse, 0) * (1 - poisson_p(mu_equipe, 0))
 
 
-def _gain_et_push_sur_ligne_demie(mu_home, mu_away, h, max_buts=25):
+def _gain_et_push_sur_ligne_demie(mu_home, mu_away, h, max_buts=25, dispersion=1.0):
     """Pour une ligne handicap qui est un multiple de 0.5 (pas de quart), calcule
     (probabilité de gain plein, probabilité de push/remboursement)."""
     p_gain, p_push = 0.0, 0.0
-    for i in range(max_buts):
-        for j in range(max_buts):
+    max_i, max_j = _borne_poisson(mu_home, max_buts, dispersion), _borne_poisson(mu_away, max_buts, dispersion)
+    pj = [_pmf(mu_away, j, dispersion) for j in range(max_j)]
+    for i in range(max_i):
+        pi = _pmf(mu_home, i, dispersion)
+        for j in range(max_j):
             marge = (i - j) + h
-            p = poisson_p(mu_home, i) * poisson_p(mu_away, j)
+            p = pi * pj[j]
             if marge > 0:
                 p_gain += p
             elif abs(marge) < 1e-9:
@@ -882,7 +921,7 @@ def _gain_et_push_sur_ligne_demie(mu_home, mu_away, h, max_buts=25):
 # possible) est un marché OddsPapi TOTALEMENT DISTINCT, jamais traité par ce calcul — voir
 # TestAsianHandicapVsEuropeanHandicapMarchesDistincts : il ne doit jamais être confondu avec
 # l'Asiatique (2 voies, push/split au lieu d'un nul) quelle que soit la valeur du handicap.
-def proba_handicap_couvert(mu_home, mu_away, handicap_home, max_buts=25):
+def proba_handicap_couvert(mu_home, mu_away, handicap_home, max_buts=25, dispersion=1.0):
     """Probabilité de gain sur un handicap asiatique donné pour 'home'.
     Gère correctement les lignes quart (.25/.75) : en réalité, ce sont DEUX demi-mises
     sur deux lignes adjacentes (ex: 1.25 = moitié sur 1.0, moitié sur 1.5), avec un
@@ -893,7 +932,7 @@ def proba_handicap_couvert(mu_home, mu_away, handicap_home, max_buts=25):
     est_ligne_quart = abs(r - round(r)) < 1e-6 and (round(r) % 2 != 0)
 
     if not est_ligne_quart:
-        p_gain, p_push = _gain_et_push_sur_ligne_demie(mu_home, mu_away, handicap_home, max_buts)
+        p_gain, p_push = _gain_et_push_sur_ligne_demie(mu_home, mu_away, handicap_home, max_buts, dispersion)
         # Sur une ligne pleine, un push rembourse la mise (ni gain ni perte) — pour comparer
         # équitablement à une cote décimale classique, on traite un push comme un gain neutre
         # à 0 profit : proba effective de "ne pas perdre" utilisée pour l'edge.
@@ -901,8 +940,8 @@ def proba_handicap_couvert(mu_home, mu_away, handicap_home, max_buts=25):
 
     h_bas = handicap_home - 0.25
     h_haut = handicap_home + 0.25
-    p_gain_bas, p_push_bas = _gain_et_push_sur_ligne_demie(mu_home, mu_away, h_bas, max_buts)
-    p_gain_haut, p_push_haut = _gain_et_push_sur_ligne_demie(mu_home, mu_away, h_haut, max_buts)
+    p_gain_bas, p_push_bas = _gain_et_push_sur_ligne_demie(mu_home, mu_away, h_bas, max_buts, dispersion)
+    p_gain_haut, p_push_haut = _gain_et_push_sur_ligne_demie(mu_home, mu_away, h_haut, max_buts, dispersion)
     # Moyenne des deux moitiés de mise, chaque push comptant comme un demi-gain neutre
     proba_bas = p_gain_bas + p_push_bas * 0.5
     proba_haut = p_gain_haut + p_push_haut * 0.5
@@ -1270,7 +1309,7 @@ def _evaluer_marches_brut(marches, mu_home, mu_away, mu_corners=None, mu_cartons
             else:
                 continue
 
-            proba_over_calc = proba_over(handicap, mu_cible)
+            proba_over_calc = proba_over(handicap, mu_cible, dispersion=DISPERSION_PAR_CATEGORIE.get(categorie, 1.0))
             for s in selections:
                 sel = s["selection"].lower()
                 if "over" in sel:
@@ -1421,12 +1460,13 @@ def _evaluer_marches_brut(marches, mu_home, mu_away, mu_corners=None, mu_cartons
             mu_h, mu_a = mu_equipes
             if _est_ligne_quart(handicap):
                 continue  # même règle que le handicap principal : ligne de quart jamais modélisée
+            disp = DISPERSION_PAR_CATEGORIE.get(categorie, 1.0)
             for s in selections:
                 sel = s["selection"].lower()
                 if "home" in sel or sel == "1":
-                    proba = proba_handicap_couvert(mu_h, mu_a, handicap)
+                    proba = proba_handicap_couvert(mu_h, mu_a, handicap, dispersion=disp)
                 elif "away" in sel or sel == "2":
-                    proba = proba_handicap_couvert(mu_a, mu_h, -handicap)
+                    proba = proba_handicap_couvert(mu_a, mu_h, -handicap, dispersion=disp)
                 else:
                     continue
                 edge = calc_edge(proba, s["cote"])
