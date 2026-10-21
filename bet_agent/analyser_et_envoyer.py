@@ -399,12 +399,16 @@ K_LISSAGE_BUTS = float(os.getenv("BET_AGENT_K_LISSAGE_BUTS") or 5.0)
 
 # Priors neutres (moyennes raisonnables, toutes ligues confondues) — un point de départ quand
 # l'échantillon réel est trop petit pour parler fort, jamais une vérité universelle.
-BUTS_PRIOR = 1.3
-CORNERS_PRIOR = 5.0
-CARTONS_PRIOR = 2.0
-FAUTES_PRIOR = 11.0
-TIRS_PRIOR = 12.0
-TIRS_CADRES_PRIOR = 4.0
+# Recalés le 21/10/2026 sur les moyennes MESURÉES par équipe (backtest sur 6 996 matchs, 5 championnats) :
+# l'ancien prior (tirs 12, cadrés 4, fautes 11) tirait le mu vers le bas et sous-estimait les totaux de
+# 2 à 3 % (biais mesuré : tirs -0.54, cadrés -0.29, fautes -0.56 par match). Hors-jeux : non collectés,
+# prior inchangé faute de mesure.
+BUTS_PRIOR = 1.335
+CORNERS_PRIOR = 4.8
+CARTONS_PRIOR = 2.1
+FAUTES_PRIOR = 11.9
+TIRS_PRIOR = 12.7
+TIRS_CADRES_PRIOR = 4.4
 HORS_JEUX_PRIOR = 2.0
 
 
