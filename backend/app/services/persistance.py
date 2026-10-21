@@ -55,7 +55,7 @@ def enregistrer_collecte(db, run, donnees):
         for marche in op.get("tous_marches") or []:
             for s in marche.get("selections", []):
                 match.cotes.append(Cote(
-                    marche_id=str(marche.get("marche_id")), marche=marche.get("marche") or "",
+                    marche_id=str(marche.get("marche_id"))[:32], marche=marche.get("marche") or "",
                     handicap=marche.get("handicap"), periode=marche.get("periode"),
                     selection=str(s.get("selection")), cote=float(s.get("cote")),
                 ))
