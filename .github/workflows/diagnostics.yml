@@ -26,6 +26,8 @@ on:
           - backtest-poids-elo
           - backtest-poids-arbitre-cartons
           - backtest-calibration-double-chance
+          - backtest-avantage-domicile
+          - backtest-calibration-non-buts
           - catalogue-par-famille
         default: marches-disponibles
       date_debut:
@@ -761,6 +763,194 @@ jobs:
           tableau('Calibration 1X, domicile OUTSIDER (Elo dom+avantage < Elo ext)', 0.4, lambda e: e[4] < 0)
           tableau('Calibration 1X, domicile OUTSIDER, sans Elo', 0.0, lambda e: e[4] < 0)
           tableau('Calibration 1X, domicile FAVORI (Elo dom+avantage >= Elo ext)', 0.4, lambda e: e[4] >= 0)
+          "
+
+      - name: Backtest réel — avantage du terrain et correction du nul sur le modèle 1X2 (audit 21/10)
+        # Le xG de forme est une moyenne tous lieux confondus : il ne contient aucun avantage du
+        # terrain (réel : 1.45 but à domicile contre 1.22 à l'extérieur sur 7110 matchs), seul l'Elo
+        # (poids 0.4) en apporte un peu. Mesure, par Brier multi-classe 1/X/2 (walk-forward, forme +
+        # H2H + Elo comme en production), si un facteur multiplicatif domicile/extérieur sur mu et/ou
+        # un gonflement du nul améliorent la calibration. Rien n'est changé en production avant lecture.
+        if: inputs.verification == 'backtest-avantage-domicile'
+        working-directory: backend
+        run: |
+          python -c "
+          import math
+          import sys
+          from pathlib import Path
+          RACINE = Path.cwd().parent
+          sys.path.insert(0, str(RACINE))
+          sys.path.insert(0, str(RACINE / 'bet_agent'))
+
+          from collections import defaultdict
+
+          from app.database import SessionLocal
+          from app.services.historique import charger_matchs
+          from moteur.features import Historique, en_datetime, est_termine
+
+          import analyser_et_envoyer as ae
+
+          COMPETITIONS = {39: 'Premier League', 140: 'La Liga', 135: 'Serie A', 78: 'Bundesliga', 61: 'Ligue 1'}
+          MAX_BUTS = 12
+          FACTEURS = (1.0, 1.04, 1.08, 1.12)
+          POIDS_ELO = (0.0, 0.2, 0.4)
+
+          echantillons = []  # (mu_h, mu_a, issue, elo_h, elo_a)
+          with SessionLocal() as db:
+              for comp_id, nom in COMPETITIONS.items():
+                  matchs = charger_matchs(db, competition_id=comp_id)
+                  hist = Historique(matchs)
+                  par_paire = defaultdict(list)
+                  for m in matchs:
+                      if est_termine(m):
+                          par_paire[frozenset((m['home_id'], m['away_id']))].append(m)
+                  for paire in par_paire.values():
+                      paire.sort(key=lambda m: en_datetime(m['date']))
+                  for m in sorted((m for m in matchs if est_termine(m)), key=lambda m: en_datetime(m['date'])):
+                      t = en_datetime(m['date'])
+                      vh, va = hist.equipe_avant(m['home_id'], t, n=10), hist.equipe_avant(m['away_id'], t, n=10)
+                      if len(vh) < 5 or len(va) < 5:
+                          continue
+                      sd = lambda v: {'buts_marques_moyenne': sum(x['buts_pour'] for x in v) / len(v),
+                                      'buts_encaisses_moyenne': sum(x['buts_contre'] for x in v) / len(v),
+                                      'matchs_avec_donnees': len(v)}
+                      xg = ae.calculer_xg_depuis_stats_detaillees(sd(vh), sd(va))
+                      if not xg:
+                          continue
+                      mu_h, mu_a = xg
+                      conf = [c for c in par_paire[frozenset((m['home_id'], m['away_id']))] if en_datetime(c['date']) < t][-10:]
+                      if conf:
+                          bh = sum(c['home_score'] if c['home_id'] == m['home_id'] else c['away_score'] for c in conf)
+                          ba = sum(c['away_score'] if c['home_id'] == m['home_id'] else c['home_score'] for c in conf)
+                          mu_h, mu_a = ae._ponderer_avec_h2h(mu_h, mu_a, {'matchs_analyses': len(conf),
+                              'buts_home_moyenne': bh / len(conf), 'buts_away_moyenne': ba / len(conf)})
+                      elo_h, elo_a = hist.elo(m)
+                      hg, ag = m['home_score'], m['away_score']
+                      echantillons.append((mu_h, mu_a, 'home' if hg > ag else ('away' if hg < ag else 'draw'), elo_h, elo_a))
+          print(f'{len(echantillons)} matchs utilisables.')
+
+          def brier(p, issue):
+              y = (1.0 if issue == 'home' else 0.0, 1.0 if issue == 'draw' else 0.0, 1.0 if issue == 'away' else 0.0)
+              return sum((a - b) ** 2 for a, b in zip(p, y))
+
+          def inflater_nul(p, d):
+              ph, pd, pa = p
+              pd2 = pd * (1 + d)
+              k = (1 - pd2) / (ph + pa)
+              return ph * k, pd2, pa * k
+
+          meilleur = None
+          for f in FACTEURS:
+              base = []
+              for mu_h, mu_a, issue, elo_h, elo_a in echantillons:
+                  h, a = round(max(0.15, mu_h * f), 3), round(max(0.15, mu_a / f), 3)
+                  dfull = ae._delta_vers_cible(h, a, ae.proba_elo(elo_h, elo_a), max_buts=MAX_BUTS)
+                  base.append((h, a, dfull, issue))
+              for w in POIDS_ELO:
+                  probas = [(ae.proba_1x2(h + w * d, a - w * d, max_buts=MAX_BUTS), issue) for h, a, d, issue in base]
+                  for infl in (0.0, 0.04, 0.08):
+                      br = sum(brier(inflater_nul(p, infl), issue) for p, issue in probas) / len(probas)
+                      pd_moy = sum(inflater_nul(p, infl)[1] for p, _ in probas) / len(probas)
+                      ph_moy = sum(inflater_nul(p, infl)[0] for p, _ in probas) / len(probas)
+                      reel_nul = sum(1 for _, i in probas if i == 'draw') / len(probas)
+                      reel_dom = sum(1 for _, i in probas if i == 'home') / len(probas)
+                      print(f'facteur_domicile={f:.2f} poids_elo={w:.1f} gonflement_nul={infl:.2f}  brier={br:.4f}  '
+                            f'P(1) moy={ph_moy:.3f} (réel {reel_dom:.3f})  P(X) moy={pd_moy:.3f} (réel {reel_nul:.3f})')
+                      if meilleur is None or br < meilleur[0]:
+                          meilleur = (br, f, w, infl)
+          print(f'\\n-> Meilleur : brier={meilleur[0]:.4f} facteur_domicile={meilleur[1]} poids_elo={meilleur[2]} gonflement_nul={meilleur[3]}')
+          "
+
+      - name: Backtest réel — calibration Over/Under corners, tirs, tirs cadrés, fautes, cartons (audit 21/10)
+        # Mesure sur l'historique (walk-forward, mu calculés par les fonctions de PRODUCTION
+        # _mu_attaque_defense/_mu_direct sur les 10 derniers matchs) : (1) biais du mu total (moyenne
+        # prédite - moyenne observée), (2) Brier Over/Under aux lignes x.5 autour de mu, Poisson contre
+        # binomiale négative, (3) calibration du côté le plus probable (annoncé vs réel) par tranche.
+        if: inputs.verification == 'backtest-calibration-non-buts'
+        working-directory: backend
+        run: |
+          python -c "
+          import math
+          import sys
+          from pathlib import Path
+          RACINE = Path.cwd().parent
+          sys.path.insert(0, str(RACINE))
+          sys.path.insert(0, str(RACINE / 'bet_agent'))
+
+          from app.database import SessionLocal
+          from app.services.historique import charger_matchs
+          from moteur.features import Historique, en_datetime, est_termine
+
+          import analyser_et_envoyer as ae
+
+          COMPETITIONS = {39: 'Premier League', 140: 'La Liga', 135: 'Serie A', 78: 'Bundesliga', 61: 'Ligue 1'}
+          # categorie -> (champ stats API, forme du calcul, prior, dispersion mesurée)
+          CATS = {'Total Corners': ('corners', 'ad', ae.CORNERS_PRIOR), 'Total Tirs': ('shots', 'ad', ae.TIRS_PRIOR),
+                  'Total Tirs Cadrés': ('shots_on_target', 'ad', ae.TIRS_CADRES_PRIOR),
+                  'Total Fautes': ('fouls', 'ad', ae.FAUTES_PRIOR), 'Total Cartons': ('yellow_cards', 'direct', ae.CARTONS_PRIOR)}
+
+          def moyennes(vues, champ):
+              pour = [v['stats_pour'].get(champ) for v in vues if v['stats_pour'].get(champ) is not None]
+              contre = [v['stats_contre'].get(champ) for v in vues if v['stats_contre'].get(champ) is not None]
+              if len(pour) < 5 or len(contre) < 5:
+                  return None
+              return {'pour': sum(pour) / len(pour), 'contre': sum(contre) / len(contre), 'n': min(len(pour), len(contre))}
+
+          obs = {c: [] for c in CATS}  # (mu_total, total observé)
+          with SessionLocal() as db:
+              for comp_id in COMPETITIONS:
+                  matchs = charger_matchs(db, competition_id=comp_id)
+                  hist = Historique(matchs)
+                  for m in sorted((m for m in matchs if est_termine(m) and m.get('stats')), key=lambda m: en_datetime(m['date'])):
+                      t = en_datetime(m['date'])
+                      vh, va = hist.equipe_avant(m['home_id'], t, n=10), hist.equipe_avant(m['away_id'], t, n=10)
+                      for cat, (champ, forme, prior) in CATS.items():
+                          sh, sa = (m['stats'].get('home') or {}).get(champ), (m['stats'].get('away') or {}).get(champ)
+                          if sh is None or sa is None:
+                              continue
+                          mh, ma = moyennes(vh, champ), moyennes(va, champ)
+                          if not mh or not ma:
+                              continue
+                          if forme == 'ad':
+                              mu = ae._mu_attaque_defense(
+                                  {'p': mh['pour'], 'c': mh['contre'], 'matchs_avec_donnees': mh['n']},
+                                  {'p': ma['pour'], 'c': ma['contre'], 'matchs_avec_donnees': ma['n']}, 'p', 'c', prior)
+                          else:
+                              mu = ae._mu_direct({'p': mh['pour'], 'matchs_avec_donnees': mh['n']},
+                                                 {'p': ma['pour'], 'matchs_avec_donnees': ma['n']}, 'p', prior)
+                          if mu:
+                              obs[cat].append((sum(mu), sh + sa))
+
+          for cat, lignes in obs.items():
+              if not lignes:
+                  continue
+              n = len(lignes)
+              mu_moy = sum(a for a, _ in lignes) / n
+              reel_moy = sum(b for _, b in lignes) / n
+              var_res = sum((b - a) ** 2 for a, b in lignes) / n
+              print(f'\\n=== {cat} : n={n}  mu moyen={mu_moy:.2f}  observé moyen={reel_moy:.2f}  biais={mu_moy - reel_moy:+.2f}  '
+                    f'variance résiduelle/mu={var_res / mu_moy:.2f}')
+              for disp in (1.0, ae.DISPERSION_PAR_CATEGORIE.get(cat, 1.0)):
+                  if disp == 1.0 and cat in ae.DISPERSION_PAR_CATEGORIE:
+                      etiquette = 'Poisson'
+                  else:
+                      etiquette = f'NB x{disp:.2f}' if disp > 1 else 'Poisson'
+                  br, cote_pred, cote_reel, nn = 0.0, 0.0, 0.0, 0
+                  tranches = {}
+                  for mu, total in lignes:
+                      base = math.floor(mu) + 0.5
+                      for ligne in (base - 2, base - 1, base, base + 1, base + 2):
+                          p_over = ae.proba_over(ligne, mu, dispersion=disp)
+                          y = 1.0 if total > ligne else 0.0
+                          br += (p_over - y) ** 2; nn += 1
+                          cote, p, yy = ('Over', p_over, y) if p_over >= 0.5 else ('Under', 1 - p_over, 1 - y)
+                          b = min(int(p * 10), 9) / 10
+                          t_ = tranches.setdefault(b, [0, 0.0, 0.0]); t_[0] += 1; t_[1] += p; t_[2] += yy
+                  print(f'  {etiquette}: Brier Over/Under={br / nn:.4f} (n={nn} paris simulés)')
+                  for b in sorted(tranches):
+                      c, p, y = tranches[b]
+                      if b >= 0.6:
+                          print(f'    côté probable {b:.1f}-{b + 0.1:.1f}: n={c} annoncé={100 * p / c:.1f}% réel={100 * y / c:.1f}%')
           "
 
       - name: Catalogue par famille de marchés d'un run archivé (pourquoi 5 agents sur 10 sans candidat)
