@@ -16,3 +16,12 @@ def fourchette_de_cote_par_jambe_neutralisee(monkeypatch):
     import analyser_et_envoyer as ae
     monkeypatch.setattr(ae, "COTE_MIN_JAMBE", 0.0)
     monkeypatch.setattr(ae, "COTE_MAX_JAMBE", 0.0)
+
+
+@pytest.fixture(autouse=True)
+def selection_meme_jour_neutralisee(monkeypatch):
+    """Les tests existants de sélection utilisent des dates fictives (2099) : le filtre « matchs du
+    jour seulement » (cd.MATCHS_UNIQUEMENT_DU_JOUR) y est désactivé, et testé explicitement dans
+    TestSelectionUniquementDuJour."""
+    import collecte_donnees as cd
+    monkeypatch.setattr(cd, "MATCHS_UNIQUEMENT_DU_JOUR", False)
