@@ -1094,13 +1094,8 @@ def cote_hors_fourchette(cote):
 CATEGORIES_HANDICAP_COMPTAGE_EXCLUES = (
     "Handicap Corners", "Handicap Cartons", "Handicap Fautes", "Handicap Hors-jeux", "Handicap Tirs",
     "Handicap Tirs Cadrés")
-# BTTS EXCLU DÉFINITIVEMENT le 22/10/2026 (backtest walk-forward, 3 499 matchs de test, 9 variantes dont
-# régression logistique avec lieu/tirs cadrés/Elo/ligue) : meilleur Brier 0.2469 contre 0.2477 pour le taux de
-# ligue (+0.33 %, aucun signal exploitable), Poisson de production PIRE que la constante (-0.98 %) ; là où
-# les modèles sont confiants ils se trompent (65-70 % annoncé : 48.6 % réel) ; en production 16 jambes jugées à
-# 50 % réel pour 60 % annoncé. Rétablir seulement avec une probabilité de MARCHÉ validée (cotes BTTS captées).
 CATEGORIES_EXCLUES = tuple(c.strip() for c in os.getenv("MARCHES_EXCLUS", "").split(",") if c.strip()) or (
-    CATEGORIES_HANDICAP_COMPTAGE_EXCLUES + ("BTTS",))
+    CATEGORIES_HANDICAP_COMPTAGE_EXCLUES)
 
 
 def est_marche_exclu(nom_marche):

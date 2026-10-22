@@ -44,10 +44,9 @@ FAMILLES = (
      "Les lignes d'équipe à cote > 4 sont des paris longs à faible probabilité."),
     ("btts", "BTTS (les deux équipes marquent)",
      ("BTTS", "Both Teams To Score"),
-     "EXCLU DÉFINITIVEMENT le 22/10/2026 : backtest walk-forward sur 3 499 matchs de test et 9 modèles (Poisson, "
-     "recalibré, taux empirique, mélanges, régressions logistiques avec lieu, tirs cadrés, Elo, ligue) : meilleur "
-     "Brier 0.2469 contre 0.2477 pour la simple fréquence de la ligue (+0.33 %) ; le Poisson de production fait "
-     "moins bien que la constante ; à 65-70 % annoncé le réel est de 48.6 %. Aucun pari BTTS ne doit être retenu."),
+     "Exclu du 03/10 au 20/10/2026 (35 paris à 48 % réel pour ~63 % annoncé) mais ces paris "
+     "datent d'AVANT le lissage additif du 17/10. Réintégré le 20/10/2026 en essai borné : à "
+     "remesurer après 2 semaines."),
     ("handicap", "Handicaps (asiatique, européen)",
      ("Handicap", "Handicap Asiatique", "Asian Handicap", "European Handicap"),
      "Handicap = BUTS seulement (les handicaps de corners, cartons, fautes, hors-jeux et tirs sont exclus, "
