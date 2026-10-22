@@ -39,12 +39,35 @@ BETS_COMPLETS = [
                                                   {"value": "Under 1.5", "odd": "1.95"}]},
     {"id": 10, "name": "Total - Away", "values": [{"value": "Over 1.5", "odd": "1.85"},
                                                    {"value": "Under 1.5", "odd": "1.95"}]},
+    # Marchés ajoutés le 22/10/2026 — libellés et valeurs RÉELS vus sur 1xBet (diagnostic du 22/10)
+    {"id": 173, "name": "Fouls. Total", "values": [{"value": "Over 23.5", "odd": "1.72"},
+                                                    {"value": "Under 23.5", "odd": "2.00"}]},
+    {"id": 171, "name": "Fouls. Home Total", "values": [{"value": "Over 10.5", "odd": "1.59"},
+                                                         {"value": "Under 10.5", "odd": "2.16"}]},
+    {"id": 170, "name": "Fouls. Away Total", "values": [{"value": "Over 11.5", "odd": "1.54"},
+                                                         {"value": "Under 11.5", "odd": "2.26"}]},
+    {"id": 174, "name": "Fouls. Handicap", "values": [{"value": "Home -1.5", "odd": "2.55"},
+                                                       {"value": "Away +1.5", "odd": "1.90"}]},
+    {"id": 164, "name": "Offsides Total", "values": [{"value": "Over 3.5", "odd": "1.59"},
+                                                     {"value": "Under 3.5", "odd": "2.15"}]},
+    {"id": 167, "name": "Offsides Home Total", "values": [{"value": "Over 1.5", "odd": "1.61"},
+                                                          {"value": "Under 1.5", "odd": "2.10"}]},
+    {"id": 168, "name": "Offsides Away Total", "values": [{"value": "Over 2.5", "odd": "2.30"},
+                                                          {"value": "Under 2.5", "odd": "1.51"}]},
+    {"id": 166, "name": "Offsides Handicap", "values": [{"value": "Home +0", "odd": "2.10"},
+                                                         {"value": "Away +0", "odd": "1.65"}]},
+    {"id": 11, "name": "Home Corners Over/Under", "values": [{"value": "Over 4.5", "odd": "1.80"},
+                                                              {"value": "Under 4.5", "odd": "1.95"}]},
+    {"id": 12, "name": "Away Corners Over/Under", "values": [{"value": "Over 3.5", "odd": "1.80"},
+                                                              {"value": "Under 3.5", "odd": "1.95"}]},
+    {"id": 13, "name": "Total ShotOnGoal", "values": [{"value": "Over 8.5", "odd": "1.85"},
+                                                       {"value": "Under 8.5", "odd": "1.90"}]},
 ]
 # NB (20/10/2026) : API-Football encode l'Asian Handicap avec une ligne MIRORÉE par sélection
 # ("Home -1.25" / "Away +1.25"), OddsPapi une seule valeur référencée au domicile (confirmé sur
 # des cotes réelles de la table cotes : "1" = Home h, "2" = Away -h). L'adaptateur ramène donc
 # "Away y" à la ligne -y : les deux côtés d'une ligne tombent dans UN marché à deux sélections.
-N_MARCHES_ATTENDUS = 10  # 10 catégories, Asian Handicap fusionné (1 marché, 2 sélections)
+N_MARCHES_ATTENDUS = 21  # 21 catégories (10 d'origine + 11 ajoutées le 22/10), handicaps fusionnés (1 marché, 2 sélections)
 
 
 class TestExtractionEtTraduction:
@@ -59,7 +82,11 @@ class TestExtractionEtTraduction:
         assert noms == {"Full Time Result", "Double Chance Full Time", "Both Teams To Score",
                         "Asian Handicap", "Over Under Full Time", "Corners - Over Under Full Time",
                         "Yellow Cards - Over Under Full Time", "Shots - Over Under Full Time",
-                        "Over Under Team 1", "Over Under Team 2"}
+                        "Over Under Team 1", "Over Under Team 2",
+                        "Fouls - Over Under Full Time", "Fouls - Over Under Team 1", "Fouls - Over Under Team 2",
+                        "Fouls - Handicap", "Offsides - Over Under Full Time", "Offsides - Over Under Team 1",
+                        "Offsides - Over Under Team 2", "Offsides - Handicap", "Corners - Over Under Team 1",
+                        "Corners - Over Under Team 2", "Shots On Target - Over Under Full Time"}
 
     def test_asian_handicap_fusionne_les_deux_cotes_dune_ligne_en_un_marche(self):
         cotations, _, _ = extraire_cotations_brutes(_reponse_api_football(BETS_COMPLETS))
@@ -387,7 +414,9 @@ class TestMappingExplicite:
     def test_tous_les_marches_mappes_couvrent_les_10_categories_testees(self):
         attendues = {"1X2", "DOUBLE_CHANCE", "HANDICAP_ASIATIQUE", "BUTS_TOTAL",
                     "BUTS_EQUIPE_DOM", "BUTS_EQUIPE_EXT", "BTTS", "CORNERS_TOTAL",
-                    "CARTONS_TOTAL", "TIRS_TOTAL"}
+                    "CARTONS_TOTAL", "TIRS_TOTAL", "FAUTES_TOTAL", "FAUTES_EQUIPE_DOM", "FAUTES_EQUIPE_EXT",
+                    "FAUTES_HANDICAP", "HORS_JEUX_TOTAL", "HORS_JEUX_EQUIPE_DOM", "HORS_JEUX_EQUIPE_EXT",
+                    "HORS_JEUX_HANDICAP", "CORNERS_EQUIPE_DOM", "CORNERS_EQUIPE_EXT", "TIRS_CADRES_TOTAL"}
         assert set(MAPPING_API_FOOTBALL.values()) == attendues
 
     def test_handicap_europeen_present_cote_oddspapi_seulement(self):
@@ -408,3 +437,41 @@ class TestMarcheIdTientDansLaColonne:
         marches, _ = traduire_en_marches_oddspapi(cotations)
         assert marches
         assert max(len(m["marche_id"]) for m in marches) <= 32
+
+
+class TestFautesHorsJeuxEtEquipes:
+    """Marchés ajoutés le 22/10/2026 (audit : 72 types de paris 1xBet sur 82 ignorés par la liste blanche)."""
+
+    def _marches(self):
+        cotations, _, _ = extraire_cotations_brutes(_reponse_api_football(BETS_COMPLETS))
+        marches, _ = traduire_en_marches_oddspapi(cotations)
+        return {m["marche"]: m for m in marches}
+
+    def test_handicap_de_fautes_miroite_ramene_au_domicile(self):
+        m = self._marches()["Fouls - Handicap"]
+        cotes = {s["selection"]: s["cote"] for s in m["selections"]}
+        # Home -1.5 @2.55 et Away +1.5 @1.90 = DEUX côtés de la MÊME ligne (-1.5 référencée au domicile)
+        assert m["handicap"] == -1.5 and cotes == {"1": 2.55, "2": 1.90}
+
+    def test_handicap_hors_jeux_ligne_zero(self):
+        m = self._marches()["Offsides - Handicap"]
+        assert m["handicap"] == 0.0 and {s["selection"] for s in m["selections"]} == {"1", "2"}
+
+    def test_totaux_par_equipe_gardent_leur_ligne(self):
+        marches = self._marches()
+        assert marches["Fouls - Over Under Team 1"]["handicap"] == 10.5
+        assert marches["Fouls - Over Under Team 2"]["handicap"] == 11.5
+        assert marches["Offsides - Over Under Full Time"]["handicap"] == 3.5
+
+    def test_noms_internes_ne_contiennent_pas_asian_ni_corner_pour_les_fautes(self):
+        # « Fouls - Asian Handicap » serait capté par la branche du handicap de BUTS
+        for nom in ("Fouls - Handicap", "Offsides - Handicap"):
+            assert "asian" not in nom.lower()
+
+    def test_marche_id_tient_dans_32_caracteres(self):
+        for m in self._marches().values():
+            assert len(m["marche_id"]) <= 32, m["marche_id"]
+
+    def test_noms_internes_acceptes_par_la_liste_blanche_de_collecte(self):
+        import collecte_donnees as cd
+        assert set(self._marches()) <= cd.MARCHES_API_FOOTBALL_VALIDES

@@ -68,6 +68,22 @@ CATEGORIES_ODDSPAPI = {
     "Corners - Over Under Full Time": "CORNERS_TOTAL",
     "Yellow Cards - Over Under Full Time": "CARTONS_TOTAL",
     "Shots - Over Under Full Time": "TIRS_TOTAL",
+    # Ajoutés le 22/10/2026 (audit « 72 types de paris sur 82 ignorés pour 1xBet ») : fautes, hors-jeux,
+    # corners par équipe, tirs cadrés. Noms internes alignés sur les mots-clés de
+    # analyser_et_envoyer._evaluer_marches_brut ("foul", "offside", "on target", "team 1/2"). Les
+    # handicaps s'appellent « ... - Handicap » (SANS « Asian ») : sinon la branche du handicap de buts
+    # les capterait à tort.
+    "Fouls - Over Under Full Time": "FAUTES_TOTAL",
+    "Fouls - Over Under Team 1": "FAUTES_EQUIPE_DOM",
+    "Fouls - Over Under Team 2": "FAUTES_EQUIPE_EXT",
+    "Fouls - Handicap": "FAUTES_HANDICAP",
+    "Offsides - Over Under Full Time": "HORS_JEUX_TOTAL",
+    "Offsides - Over Under Team 1": "HORS_JEUX_EQUIPE_DOM",
+    "Offsides - Over Under Team 2": "HORS_JEUX_EQUIPE_EXT",
+    "Offsides - Handicap": "HORS_JEUX_HANDICAP",
+    "Corners - Over Under Team 1": "CORNERS_EQUIPE_DOM",
+    "Corners - Over Under Team 2": "CORNERS_EQUIPE_EXT",
+    "Shots On Target - Over Under Full Time": "TIRS_CADRES_TOTAL",
 }
 
 # nom de pari API-Football EXACT (voir le test réel du 09/10/2026) -> catégorie canonique.
@@ -86,7 +102,28 @@ MAPPING_API_FOOTBALL = {
     "Corners Over Under": "CORNERS_TOTAL",
     "Yellow Over/Under": "CARTONS_TOTAL",
     "Total Shots": "TIRS_TOTAL",
+    # Libellés réels vus sur 1xBet (diagnostic bets-bruts-api-football du 22/10/2026, valeurs « Over 19.5 »
+    # / « Home -1.5 » identiques à celles déjà gérées) — note le POINT dans « Fouls. ».
+    "Fouls. Total": "FAUTES_TOTAL",
+    "Fouls. Home Total": "FAUTES_EQUIPE_DOM",
+    "Fouls. Away Total": "FAUTES_EQUIPE_EXT",
+    "Fouls. Handicap": "FAUTES_HANDICAP",
+    "Offsides Total": "HORS_JEUX_TOTAL",
+    "Offsides Home Total": "HORS_JEUX_EQUIPE_DOM",
+    "Offsides Away Total": "HORS_JEUX_EQUIPE_EXT",
+    "Offsides Handicap": "HORS_JEUX_HANDICAP",
+    "Home Corners Over/Under": "CORNERS_EQUIPE_DOM",
+    "Away Corners Over/Under": "CORNERS_EQUIPE_EXT",
+    "Total ShotOnGoal": "TIRS_CADRES_TOTAL",
 }
+
+# Catégories à sélections « Home x / Away y » (handicap miroité, ramené à une ligne référencée au domicile)
+CATEGORIES_HANDICAP = ("HANDICAP_ASIATIQUE", "FAUTES_HANDICAP", "HORS_JEUX_HANDICAP")
+# Catégories à sélections « Over x / Under x »
+CATEGORIES_OVER_UNDER = ("BUTS_TOTAL", "BUTS_EQUIPE_DOM", "BUTS_EQUIPE_EXT", "CORNERS_TOTAL", "CARTONS_TOTAL",
+                         "TIRS_TOTAL", "TIRS_CADRES_TOTAL", "CORNERS_EQUIPE_DOM", "CORNERS_EQUIPE_EXT",
+                         "FAUTES_TOTAL", "FAUTES_EQUIPE_DOM", "FAUTES_EQUIPE_EXT",
+                         "HORS_JEUX_TOTAL", "HORS_JEUX_EQUIPE_DOM", "HORS_JEUX_EQUIPE_EXT")
 
 _RE_LIGNE = re.compile(r"([+-]?\d+(?:\.\d+)?)")
 
@@ -97,7 +134,7 @@ def _normaliser_selection_api_football(categorie, valeur_brute):
         return {"Home": "1", "Draw": "X", "Away": "2"}.get(valeur_brute), None
     if categorie == "DOUBLE_CHANCE":
         return {"Home/Draw": "1X", "Home/Away": "12", "Draw/Away": "2X"}.get(valeur_brute), None
-    if categorie == "HANDICAP_ASIATIQUE":
+    if categorie in CATEGORIES_HANDICAP:
         m = re.match(r"^(Home|Away)\s+([+-]?\d+(?:\.\d+)?)$", valeur_brute)
         if not m:
             return None, None
@@ -111,8 +148,7 @@ def _normaliser_selection_api_football(categorie, valeur_brute):
         if m.group(1) == "Home":
             return "1", ligne
         return "2", (-ligne if ligne != 0 else 0.0)
-    if categorie in ("BUTS_TOTAL", "BUTS_EQUIPE_DOM", "BUTS_EQUIPE_EXT", "CORNERS_TOTAL",
-                     "CARTONS_TOTAL", "TIRS_TOTAL"):
+    if categorie in CATEGORIES_OVER_UNDER:
         m = re.match(r"^(Over|Under)\s+(\d+(?:\.\d+)?)$", valeur_brute)
         if not m:
             return None, None

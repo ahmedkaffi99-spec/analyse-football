@@ -144,6 +144,11 @@ MARCHES_API_FOOTBALL_VALIDES = {
     "Over Under Full Time", "Over Under Team 1", "Over Under Team 2",
     "Corners - Over Under Full Time", "Yellow Cards - Over Under Full Time",
     "Shots - Over Under Full Time", "Asian Handicap",
+    # Ajoutés le 22/10/2026 (voir adaptateur_api_football.MAPPING_API_FOOTBALL)
+    "Fouls - Over Under Full Time", "Fouls - Over Under Team 1", "Fouls - Over Under Team 2", "Fouls - Handicap",
+    "Offsides - Over Under Full Time", "Offsides - Over Under Team 1", "Offsides - Over Under Team 2",
+    "Offsides - Handicap", "Corners - Over Under Team 1", "Corners - Over Under Team 2",
+    "Shots On Target - Over Under Full Time",
 }
 
 _appels_odds_api_football_consommes = 0  # compteur réel, jamais estimé — voir rapport de run

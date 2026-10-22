@@ -52,7 +52,8 @@ FAMILLES = (
      "Backtest de calibration du handicap fait le 17/10/2026 (lissage additif K_LISSAGE_BUTS). "
      "Aucun écart structurel mesuré depuis."),
     ("corners", "Corners",
-     ("Total Corners", "Handicap Corners", "Corners - Over Under Full Time"),
+     ("Total Corners", "Handicap Corners", "Corners - Over Under Full Time",
+      "Total Corners Équipe 1", "Total Corners Équipe 2"),
      "Handicap Corners EXCLU (mesure réelle dédupliquée n=6 : 33 % réel pour 63 % annoncé). "
      "Total Corners : pas d'écart structurel mesuré."),
     ("cartons", "Cartons",
@@ -61,15 +62,18 @@ FAMILLES = (
      "quand l'arbitre est assigné et a >= 5 matchs d'historique ; sinon aucun ajustement — les "
      "cartons restent un marché très variable."),
     ("tirs", "Tirs",
-     ("Total Tirs", "Total Tirs Cadrés", "Handicap Tirs", "Handicap Tirs Cadrés"),
+     ("Total Tirs", "Total Tirs Cadrés", "Handicap Tirs", "Handicap Tirs Cadrés",
+      "Total Tirs Équipe 1", "Total Tirs Équipe 2", "Total Tirs Cadrés Équipe 1", "Total Tirs Cadrés Équipe 2"),
      "Total Tirs : l'écart de 50 % réel pour 69 % annoncé (26 paris, tous « Under ») venait d'un BUG de "
      "calcul corrigé le 21/10/2026 (somme de Poisson tronquée à 25 : P(Over 25.5 | mu=26) valait 0). "
      "Depuis : binomiale négative (dispersion mesurée 1.35), priors recalés ; backtest sur 6 996 matchs : "
      "côté probable 60-70 % annoncé 63.6 % pour 63.4 % réel. Remesure en production en cours."),
     ("fautes", "Fautes et hors-jeux",
-     ("Total Fautes", "Handicap Fautes", "Total Hors-jeux", "Handicap Hors-jeux"),
-     "Aucune mesure réelle suffisante en production : traite ces paris avec la plus grande "
-     "prudence."),
+     ("Total Fautes", "Handicap Fautes", "Total Hors-jeux", "Handicap Hors-jeux",
+      "Total Fautes Équipe 1", "Total Fautes Équipe 2", "Total Hors-jeux Équipe 1", "Total Hors-jeux Équipe 2"),
+     "Marchés ajoutés au flux le 22/10/2026 : aucune mesure réelle en production. Backtest sur 6 996 matchs "
+     "(fautes) : mu sous-estimé de 0.56 avant recalage des priors, dispersion 1.22, calibré après ; hors-jeux "
+     "non validés par backtest (statistique absente de l'historique). Traite ces paris avec prudence."),
 )
 FAMILLE_DERIVES = ("derives", "Marchés dérivés (score exact, mi-temps, marge de victoire...)",
                    "Aucune mesure réelle suffisante en production : paris longs, très variables.")

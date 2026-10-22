@@ -51,6 +51,12 @@ STAT_API_FOOTBALL_PAR_CATEGORIE = {
     "Total Tirs": "Total Shots", "Handicap Tirs": "Total Shots",
     "Total Tirs Cadrés": "Shots on Goal", "Handicap Tirs Cadrés": "Shots on Goal",
     "Total Hors-jeux": "Offsides", "Handicap Hors-jeux": "Offsides",
+    # Totaux par équipe (ajoutés le 22/10/2026)
+    "Total Corners Équipe 1": "Corner Kicks", "Total Corners Équipe 2": "Corner Kicks",
+    "Total Fautes Équipe 1": "Fouls", "Total Fautes Équipe 2": "Fouls",
+    "Total Tirs Équipe 1": "Total Shots", "Total Tirs Équipe 2": "Total Shots",
+    "Total Tirs Cadrés Équipe 1": "Shots on Goal", "Total Tirs Cadrés Équipe 2": "Shots on Goal",
+    "Total Hors-jeux Équipe 1": "Offsides", "Total Hors-jeux Équipe 2": "Offsides",
 }
 
 # Suivi EN DIRECT (demande explicite du 01/10/2026, pendant un match réel suivi manuellement
@@ -250,7 +256,7 @@ def grader_pick_stat(categorie, handicap, selection, valeur_domicile, valeur_ext
     inventée)."""
     if valeur_domicile is None or valeur_exterieur is None:
         return None
-    if categorie in ("Total Cartons Équipe 1", "Total Cartons Équipe 2"):
+    if categorie.startswith("Total") and categorie.endswith(("Équipe 1", "Équipe 2")):
         valeur = valeur_domicile if categorie.endswith("1") else valeur_exterieur
         return juger_total(handicap, selection, valeur)
     if categorie.startswith("Total"):

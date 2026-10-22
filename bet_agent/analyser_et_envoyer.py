@@ -813,6 +813,11 @@ DISPERSION_PAR_CATEGORIE = {
     "Total Tirs": 1.34, "Handicap Tirs": 1.34,
     "Total Tirs Cadrés": 1.10, "Handicap Tirs Cadrés": 1.10,
     "Total Fautes": 1.23, "Handicap Fautes": 1.23,
+    # Totaux par équipe : même rapport que le total (approximation, non mesurée par équipe)
+    "Total Corners Équipe 1": 1.16, "Total Corners Équipe 2": 1.16,
+    "Total Tirs Équipe 1": 1.34, "Total Tirs Équipe 2": 1.34,
+    "Total Tirs Cadrés Équipe 1": 1.10, "Total Tirs Cadrés Équipe 2": 1.10,
+    "Total Fautes Équipe 1": 1.23, "Total Fautes Équipe 2": 1.23,
 }
 
 
@@ -1300,12 +1305,23 @@ def _evaluer_marches_brut(marches, mu_home, mu_away, mu_corners=None, mu_cartons
                 categorie = "Total Cartons Équipe 1" if est_team1 else "Total Cartons Équipe 2"
             elif (est_corner or est_faute or est_tir or est_tir_cadre or est_hors_jeu) \
                     and (est_team1 or est_team2):
-                # Marché "Total Corners/Fouls/Shots/Offsides Team 1/2" : seule la ligne
-                # globale du match est estimée ici, aucun mu PAR ÉQUIPE pour CE marché précis
-                # n'est câblé jusqu'ici — on n'invente pas ce chiffre, on ignore ce marché
-                # plutôt que de l'évaluer à tort contre le total du match entier (c'est
-                # exactement la confusion Team1/Team2-vs-total interdite).
-                continue
+                # Totaux PAR ÉQUIPE de corners/fautes/tirs/tirs cadrés/hors-jeux (22/10/2026) : le mu par
+                # équipe de CETTE statistique (mu_*_equipes, déjà calculé depuis les 10 derniers matchs)
+                # est utilisé — jamais le total du match entier (confusion Team1/Team2-vs-total interdite).
+                if est_corner:
+                    equipes, base = mu_corners_equipes, "Corners"
+                elif est_faute:
+                    equipes, base = mu_fautes_equipes, "Fautes"
+                elif est_tir_cadre:
+                    equipes, base = mu_tirs_cadres_equipes, "Tirs Cadrés"
+                elif est_tir:
+                    equipes, base = mu_tirs_equipes, "Tirs"
+                else:
+                    equipes, base = mu_hors_jeux_equipes, "Hors-jeux"
+                if equipes is None:
+                    continue
+                mu_cible = equipes[0] if est_team1 else equipes[1]
+                categorie = f"Total {base} Équipe {1 if est_team1 else 2}"
             elif est_corner:
                 if mu_corners is None:
                     continue  # pas de donnée corners pour ce match, on ignore ce marché

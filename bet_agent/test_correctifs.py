@@ -1856,14 +1856,28 @@ class TestTotalCartonsParEquipe(unittest.TestCase):
                     "selections": [{"selection": "Over", "cote": 1.8}, {"selection": "Under", "cote": 1.9}]}]
         self.assertEqual(ae.evaluer_marches_toutes(marches, 1.5, 1.2), [])
 
-    def test_corners_team_1_reste_ignore_jamais_confondu_avec_cartons(self):
-        # Seuls les cartons ont un mu par équipe câblé pour Total Team1/2 — les corners (et
-        # fautes/tirs/hors-jeux) restent ignorés, comme avant ce correctif.
+    def test_corners_team_1_utilise_le_mu_corners_de_l_equipe_jamais_celui_des_cartons(self):
+        # 22/10/2026 : les totaux par équipe de corners/fautes/tirs/hors-jeux sont maintenant modélisés
+        # avec le mu PAR ÉQUIPE de leur propre statistique (avant : ignorés).
         marches = [{"marche": "Corners - Over Under Team 1", "handicap": 4.5, "periode": "fulltime",
                     "selections": [{"selection": "Over", "cote": 1.8}, {"selection": "Under", "cote": 1.9}]}]
         candidats = ae.evaluer_marches_toutes(marches, 1.5, 1.2, mu_corners_equipes=(6.0, 4.0),
                                               mu_cartons_equipes=(1.8, 2.3))
-        self.assertEqual(candidats, [])
+        over = next(c for c in candidats if c["selection"] == "Over")
+        self.assertEqual(over["categorie"], "Total Corners Équipe 1")
+        self.assertGreater(over["proba_poisson_pct"], 60)   # mu=6 > ligne 4.5 (avec mu cartons 1.8 : ~1 %)
+
+    def test_fautes_et_hors_jeux_par_equipe_et_handicap(self):
+        marches = [
+            {"marche": "Fouls - Over Under Team 2", "handicap": 11.5, "periode": "fulltime",
+             "selections": [{"selection": "Over", "cote": 1.9}, {"selection": "Under", "cote": 1.9}]},
+            {"marche": "Offsides - Over Under Full Time", "handicap": 3.5, "periode": "fulltime",
+             "selections": [{"selection": "Over", "cote": 1.9}, {"selection": "Under", "cote": 1.9}]},
+            {"marche": "Fouls - Handicap", "handicap": -1.5, "periode": "fulltime",
+             "selections": [{"selection": "1", "cote": 2.5}, {"selection": "2", "cote": 1.5}]}]
+        categories = {c["categorie"] for c in ae.evaluer_marches_toutes(
+            marches, 1.5, 1.2, mu_fautes_equipes=(10.0, 13.0), mu_hors_jeux_equipes=(2.0, 2.0))}
+        self.assertEqual(categories, {"Total Fautes Équipe 2", "Total Hors-jeux", "Handicap Fautes"})
 
     def test_guide_et_onglet_distinguent_equipe_1_et_2(self):
         guide1, onglet1 = ae.expliquer_marche("Total Cartons Équipe 1", "Over", 2.0)
@@ -3039,3 +3053,23 @@ class TestVerifierFideliteTicket(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestVerificationTotauxParEquipeStatistiques(unittest.TestCase):
+    """22/10/2026 : les totaux par équipe de fautes/corners/tirs/hors-jeux doivent être jugés sur la
+    statistique de LEUR équipe (avant : seuls les cartons par équipe l'étaient)."""
+
+    def test_fautes_equipe_2_jugees_sur_les_fautes_exterieures(self):
+        import verifier_resultats as vr
+        self.assertEqual(vr.grader_pick_stat("Total Fautes Équipe 2", 11.5, "Over", 8, 13), "gagne")
+        self.assertEqual(vr.grader_pick_stat("Total Fautes Équipe 1", 11.5, "Over", 8, 13), "perdu")
+
+    def test_hors_jeux_equipe_et_total(self):
+        import verifier_resultats as vr
+        self.assertEqual(vr.grader_pick_stat("Total Hors-jeux Équipe 1", 1.5, "Under", 1, 4), "gagne")
+        self.assertEqual(vr.grader_pick_stat("Total Hors-jeux", 3.5, "Over", 1, 4), "gagne")
+
+    def test_handicap_fautes(self):
+        import verifier_resultats as vr
+        # domicile 14 fautes, extérieur 11 : Home -1.5 -> 14-11=3 > 1.5 gagne
+        self.assertEqual(vr.grader_pick_stat("Handicap Fautes", -1.5, "1", 14, 11), "gagne")

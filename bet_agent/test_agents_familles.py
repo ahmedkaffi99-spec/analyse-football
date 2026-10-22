@@ -253,3 +253,10 @@ def test_plafond_de_cote_totale():
     assert not acceptes and "trop haute" in problemes[0]
     acceptes, _, _ = _valider(["Double Chance", "Total Corners", "BTTS"], {"cote_totale_max": 4.0})
     assert "p" in acceptes
+
+
+def test_nouvelles_categories_par_equipe_ont_leur_famille():
+    assert af.famille_de("Total Corners Équipe 1")[0] == "corners"
+    assert af.famille_de("Total Fautes Équipe 2")[0] == "fautes"
+    assert af.famille_de("Total Hors-jeux Équipe 1")[0] == "fautes"
+    assert af.famille_de("Total Tirs Cadrés Équipe 2")[0] == "tirs"
