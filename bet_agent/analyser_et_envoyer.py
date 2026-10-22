@@ -139,8 +139,9 @@ PROFILS_COUPON = [
 # 1 = cote 5 à 10, 2 = cote 10 à 50, 3 = plus de 50"). NB_JAMBES_MIN / NB_JAMBES (entrées du workflow,
 # déjà utilisées par le moteur déterministe) les remplacent pour UN run, pour les trois coupons.
 # cote_totale_min / cote_totale_max : vérifiés par Python (agent_strategie.valider) ; le coupon 3 n'a
-# pas de plafond. Un match n'apparaît jamais dans deux coupons (règle de valider, jamais désactivable) :
-# trois coupons de 5 jambes demandent au moins 15 matchs distincts.
+# pas de plafond. Depuis le 22/10/2026 (« match répété c'est bon, il faut les 5 matchs dans les 3
+# coupons ») les 3 coupons reprennent TOUS les matchs du pool (5 par défaut), 1 à 2 paris par match, un
+# même match pouvant figurer dans plusieurs coupons mais jamais le même pari exact.
 NB_JAMBES_AGENT_MIN_DEFAUT = 5
 NB_JAMBES_AGENT_MAX_DEFAUT = 10
 # (clé, libellé, cote totale min, cote totale max ou None)
@@ -162,7 +163,9 @@ def profils_agent_quotidien():
     for cle, nom, cote_min, cote_max in TRANCHES_COTE_AGENT:
         profil = {"cle": cle, "nom": f"{nom} ({nb_min}-{nb_max} jambes)",
                   "cote_min": cote_min, "cote_max": cote_max if cote_max else 100000.0,
-                  "cote_totale_min": cote_min, "nb_jambes_min": nb_min, "nb_jambes": nb_max}
+                  "cote_totale_min": cote_min, "nb_jambes_min": nb_min, "nb_jambes": nb_max,
+                  # 5 matchs dans les 3 coupons (22/10/2026) : match répété permis, 1 à 2 paris par match
+                  "match_repete_autorise": True, "tous_les_matchs_obligatoires": True, "jambes_max_par_match": 2}
         if cote_max:
             profil["cote_totale_max"] = cote_max
         profils.append(profil)

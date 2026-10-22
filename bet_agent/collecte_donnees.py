@@ -1326,9 +1326,9 @@ def selectionner_matchs_du_jour(fixtures_oddspapi):
 # LIGUES_MAJEURES, par league_id API-Football (système d'identifiants différent d'OddsPapi,
 # qui utilise tournamentName/categoryName).
 # 5 championnats domestiques seuls (les autres identifiants de LIGUES_FILTRE_API_FOOTBALL sont les coupes d'Europe).
-LIGUES_DOMESTIQUES_API_FOOTBALL = {39, 140, 135, 78, 61}
-MELANGE_COUPES_MIN = int(os.getenv("MELANGE_COUPES_MIN", "4"))      # matchs de coupes d'Europe gardés même si les championnats suffisent
-NB_MATCHS_CIBLE_POOL = int(os.getenv("NB_MATCHS_CIBLE_POOL", "15"))  # 3 coupons x 5 jambes, matchs distincts
+LIGUES_DOMESTIQUES_ORDRE = (39, 140, 135, 78, 61)   # ordre du tour de rôle entre les championnats
+LIGUES_DOMESTIQUES_API_FOOTBALL = set(LIGUES_DOMESTIQUES_ORDRE)
+NB_MATCHS_POOL = int(os.getenv("NB_MATCHS_POOL", "5"))   # matchs du pool quotidien : les 3 coupons les reprennent tous
 
 LIGUES_FILTRE_API_FOOTBALL = {
     2,    # UEFA Champions League
@@ -1388,15 +1388,19 @@ def selectionner_matchs_du_jour_api_football(fixtures_api_football, aujourd_hui=
         vus.add(cle)
         candidats.append((home, away, depart or "", league_id))
 
-    # Priorité aux 5 grands championnats, coupes d'Europe en « mélange » (demande du 22/10/2026 :
-    # « concentre-toi sur les 5 grands championnats et un peu de mélange ») : tous les matchs
-    # domestiques d'abord, puis des matchs de C1/C3 en quantité limitée (MELANGE_COUPES_MIN, ou le
-    # complément nécessaire pour atteindre NB_MATCHS_CIBLE_POOL — trois coupons de 5 jambes demandent
-    # 15 matchs distincts — les jours sans championnat, ex. mardi à jeudi de coupe d'Europe).
-    domestiques = sorted((c for c in candidats if c[3] in LIGUES_DOMESTIQUES_API_FOOTBALL), key=lambda c: c[2])
+    # Pool de NB_MATCHS_POOL matchs (5 par défaut, demande du 22/10/2026 : « concentre-toi sur les 5 matchs
+    # des grands championnats et un peu de mélange ») : un match par championnat à tour de rôle
+    # (Premier League, La Liga, Serie A, Bundesliga, Ligue 1, du plus proche coup d'envoi au plus lointain)
+    # pour mélanger les ligues ; si les championnats ne suffisent pas, les coupes d'Europe complètent.
+    par_ligue = {lid: sorted((c for c in candidats if c[3] == lid), key=lambda c: c[2])
+                 for lid in LIGUES_DOMESTIQUES_ORDRE}
+    domestiques = []
+    while any(par_ligue.values()) and len(domestiques) < NB_MATCHS_POOL:
+        for lid in LIGUES_DOMESTIQUES_ORDRE:
+            if par_ligue[lid] and len(domestiques) < NB_MATCHS_POOL:
+                domestiques.append(par_ligue[lid].pop(0))
     coupes = sorted((c for c in candidats if c[3] not in LIGUES_DOMESTIQUES_API_FOOTBALL), key=lambda c: c[2])
-    quota_coupes = max(MELANGE_COUPES_MIN, NB_MATCHS_CIBLE_POOL - len(domestiques))
-    candidats = domestiques + coupes[:quota_coupes]
+    candidats = domestiques + coupes[:max(0, NB_MATCHS_POOL - len(domestiques))]
     matchs = [(h, a) for h, a, _, _ in candidats][:NB_CANDIDATS_A_SONDER]
     if matchs:
         print(f"   ✓ {len(matchs)} match(s) sélectionné(s) (API-Football, 5 grands championnats + C1/C3) :")

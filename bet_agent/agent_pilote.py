@@ -400,6 +400,9 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
                        "cote_totale_min": profil.get("cote_totale_min", st.COTE_TOTALE_MIN),
                        "prefere_cote_elevee": profil.get("prefere_cote_elevee", False),
                        **({"cote_totale_max": profil["cote_totale_max"]} if profil.get("cote_totale_max") else {}),
+                       **({"jambes_max_par_match": profil["jambes_max_par_match"]}
+                          if profil.get("jambes_max_par_match") else {}),
+                       **({"tous_les_matchs_obligatoires": True} if profil.get("tous_les_matchs_obligatoires") else {}),
                        **({"familles_obligatoires": True,
                            "familles_a_couvrir": sorted(st.familles_du_catalogue(etat["catalogue"]).values())}
                           if profil.get("familles_obligatoires") else {})},

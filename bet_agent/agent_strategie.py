@@ -115,6 +115,9 @@ def construire_prompt(pool, profils, catalogue_texte):
         "pari seulement pour faire monter ou descendre la cote au-delà de ce qu'il faut pour l'atteindre)."
         + (f" PLAFOND DE COTE TOTALE POUR CE PROFIL (vérifié par Python) : cote totale <= {p['cote_totale_max']:g}."
            if p.get("cote_totale_max") else "")
+        + (" TOUS LES MATCHS DU CATALOGUE doivent figurer dans CE coupon (vérifié par Python), avec 1 à "
+           f"{p.get('jambes_max_par_match', ae.MAX_JAMBES_PAR_MATCH)} pari(s) par match ; un match déjà pris dans un "
+           "autre coupon est permis, jamais le même pari exact." if p.get("tous_les_matchs_obligatoires") else "")
         + (" FAMILLES OBLIGATOIRES POUR CE PROFIL (vérifié par Python) : le coupon doit contenir AU MOINS UN pari "
            "de CHAQUE famille de marchés présente dans le catalogue (voir familles_a_couvrir dans voir_catalogue), "
            "sur des matchs différents." if p.get("familles_obligatoires") else "")
@@ -142,7 +145,8 @@ def construire_prompt(pool, profils, catalogue_texte):
         "RÈGLES ABSOLUES :\n"
         "1. Tu ne choisis QUE des paris du CATALOGUE, par leur identifiant (P1, P2...). Tu n'inventes jamais "
         "un pari, une cote ou un marché.\n"
-        f"2. Dans un coupon : au plus {ae.MAX_JAMBES_PAR_MATCH} pari(s) d'un même match, jamais deux paris "
+        f"2. Dans un coupon : au plus {max([p.get('jambes_max_par_match', ae.MAX_JAMBES_PAR_MATCH) for p in profils])} "
+        "pari(s) d'un même match (la limite exacte de chaque profil est donnée ci-dessus), jamais deux paris "
         "contradictoires, jamais de doublon — combine des matchs DIFFÉRENTS plutôt que d'empiler les paris sur "
         "un même match.\n"
         "3. La cote totale (produit des cotes) doit tomber dans la cible du profil. Python la calcule et te la "
@@ -438,6 +442,12 @@ def _familles_manquantes(selections, catalogue):
             f"(obligatoire, un pari par match) — familles absentes et candidats : " + " ; ".join(absentes)]
 
 
+def _cle_pari(selection):
+    """Identité d'un pari exact : match + catégorie + marché + sélection + ligne."""
+    p = selection["pick"]
+    return (selection["match"], p.get("categorie"), p.get("marche"), str(p.get("selection")), p.get("handicap"))
+
+
 def valider(proposition, catalogue, profils, signatures_existantes=(), selections_precedentes=(),
             ignorer_diversite_croisee=False):
     """Contrôle la proposition de l'IA profil par profil. Renvoie
@@ -477,7 +487,13 @@ def valider(proposition, catalogue, profils, signatures_existantes=(), selection
             calculs.append(f"{cle} : abstention acceptée.")
             continue
 
-        matchs_deja_utilises = {s["match"] for s in toutes_selections_verrouillees}
+        # Profil « match_repete_autorise » (demande du 22/10/2026 : « match répété c'est bon, il faut les
+        # 5 matchs dans les 3 coupons ») : un match déjà pris par un autre coupon reste permis, mais jamais
+        # le MÊME pari exact (match + marché + sélection + ligne).
+        repete = bool(profil.get("match_repete_autorise"))
+        matchs_deja_utilises = set() if repete else {s["match"] for s in toutes_selections_verrouillees}
+        paris_deja_utilises = {_cle_pari(s) for s in toutes_selections_verrouillees} if repete else set()
+        max_par_match = profil.get("jambes_max_par_match", ae.MAX_JAMBES_PAR_MATCH)
         erreurs, selections, par_match, ids_vus = [], [], {}, set()
         for jambe in jambes:
             cid = str((jambe or {}).get("id", "")).strip().upper()
@@ -495,14 +511,24 @@ def valider(proposition, catalogue, profils, signatures_existantes=(), selection
                                "(même avec un marché ou une sélection différents) — choisis un autre match "
                                "pour ce profil")
                 continue
+            if _cle_pari(selection) in paris_deja_utilises:
+                erreurs.append(f"{cid} : même pari exact ({selection['match']}, {selection['pick']['marche']}, "
+                               f"{selection['pick']['selection']}) déjà pris dans un autre coupon — choisis un autre "
+                               "marché ou une autre sélection sur ce match")
+                continue
             probleme = incoherence_raison(selection["raison_ia"], selection["pick"])
             if probleme:
                 erreurs.append(f"{cid} : {probleme} — réécris la raison de CE pari")
             par_match[selection["match"]] = par_match.get(selection["match"], 0) + 1
             selections.append(selection)
         for match, nombre in par_match.items():
-            if nombre > ae.MAX_JAMBES_PAR_MATCH:
-                erreurs.append(f"{nombre} paris sur {match} (maximum {ae.MAX_JAMBES_PAR_MATCH})")
+            if nombre > max_par_match:
+                erreurs.append(f"{nombre} paris sur {match} (maximum {max_par_match})")
+        if profil.get("tous_les_matchs_obligatoires"):
+            absents = sorted({c["match"] for c in catalogue.values()} - set(par_match))
+            if absents and len({c["match"] for c in catalogue.values()}) <= profil["nb_jambes"]:
+                erreurs.append("tous les matchs du catalogue doivent figurer dans ce coupon (1 à "
+                               f"{max_par_match} pari(s) par match) — matchs absents : " + ", ".join(absents))
 
         conservateurs = [s for s in selections if _pari_conservateur(s["pick"])]
         # floor, pas ceil : avec ceil, un coupon de 5 jambes autorisait 4 Under/No (80%) sans

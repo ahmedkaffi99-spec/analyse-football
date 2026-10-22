@@ -301,3 +301,49 @@ def test_revoir_catalogue_lance_un_agent_par_famille_fautes_et_hors_jeux(monkeyp
     # les candidats d'un agent ne fuient pas dans le prompt de l'autre
     p_fautes = next(p for p in prompts if "« Fautes »" in p)
     assert "Hors-jeux" not in p_fautes.split("CANDIDATS :")[1]
+
+
+# ------------------------------------------------------------------ 22/10/2026 : match répété + tous les matchs dans chaque coupon
+def _valider_deux(ids1, ids2, extra1=None, extra2=None, pool_supplementaire=None):
+    pool = _pool_familles()
+    for match, candidats in (pool_supplementaire or {}).items():
+        pool[match] = pool[match] + candidats
+    catalogue, _ = st.construire_catalogue(pool)
+    par_cat = {c["pick"]["categorie"]: cid for cid, c in catalogue.items()}
+    base = {"nom": "P", "nb_jambes": 8, "nb_jambes_min": 2, "cote_totale_min": 1.0}
+    proposition = {"coupons": [
+        {"profil": "p1", "strategie": "s", "jambes": [{"id": par_cat[c], "raison": "ok"} for c in ids1]},
+        {"profil": "p2", "strategie": "s", "jambes": [{"id": par_cat[c], "raison": "ok"} for c in ids2]}]}
+    return st.valider(proposition, catalogue, [dict(base, cle="p1", **(extra1 or {})), dict(base, cle="p2", **(extra2 or {}))])
+
+
+def test_match_deja_pris_refuse_par_defaut():
+    acceptes, problemes, _ = _valider_deux(["Double Chance", "Total Corners"], ["Total Corners", "BTTS"])
+    assert "p1" in acceptes and "p2" not in acceptes and "déjà utilisé" in problemes[0]
+
+
+def test_match_repete_autorise_mais_jamais_le_meme_pari_exact():
+    permis = {"match_repete_autorise": True}
+    acceptes, problemes, _ = _valider_deux(["Double Chance", "Total Corners"], ["Total", "BTTS"], permis, permis)
+    assert set(acceptes) == {"p1", "p2"}, problemes   # A–B repris avec un autre marché : accepté
+    acceptes, problemes, _ = _valider_deux(["Double Chance", "Total Corners"], ["Total", "Total Corners"], permis, permis)
+    assert "p2" not in acceptes and "même pari exact" in problemes[0]
+
+
+def test_tous_les_matchs_obligatoires_et_max_deux_paris_par_match():
+    regles = {"match_repete_autorise": True, "tous_les_matchs_obligatoires": True, "jambes_max_par_match": 2}
+    acceptes, problemes, _ = _valider_deux(["Double Chance", "Total", "Total Corners", "BTTS"], ["Total Cartons"],
+                                            regles, {"nb_jambes_min": 1})
+    assert "p1" in acceptes, problemes                           # 3 matchs présents, 2 paris sur A–B permis
+    # Coupon 2 : les 3 mêmes matchs, avec d'AUTRES paris (C–D reçoit un 2e pari, un Handicap)
+    en_plus = {"C vs D": [_cand("C vs D", "Handicap", "1", 1.5, 70.0, 2.0)]}
+    acceptes, problemes, _ = _valider_deux(["Double Chance", "Total Corners", "BTTS"],
+                                            ["Total", "Handicap", "Total Cartons"], regles, regles, en_plus)
+    assert set(acceptes) == {"p1", "p2"}, problemes
+    acceptes, problemes, _ = _valider_deux(["Double Chance", "Total Corners"], ["Double Chance"], regles, regles)
+    assert "p1" not in acceptes and "matchs absents" in problemes[0] and "E vs F" in problemes[0]
+
+
+def test_un_seul_pari_par_match_reste_la_regle_par_defaut():
+    acceptes, problemes, _ = _valider_deux(["Double Chance", "Total"], ["Total Corners"])
+    assert "p1" not in acceptes and "maximum 1" in problemes[0]
