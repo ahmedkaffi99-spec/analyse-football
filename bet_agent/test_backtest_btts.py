@@ -17,13 +17,13 @@ def echantillons():
 def test_echantillons_tries_et_bien_formes(echantillons):
     assert len(echantillons) > 500
     assert all(a["t"] <= b["t"] for a, b in zip(echantillons, echantillons[1:]))
-    assert all(set(e["f"]) == set(bb.NOMS_FEATURES) and e["y"] in (0, 1) for e in echantillons)
+    assert all(set(e["f"]) == set(bb.NOMS_FEATURES_ETENDUES) and e["y"] in (0, 1) for e in echantillons)
     assert all(0 <= e["f"]["btts_dom"] <= 1 and 0 < e["p_pois"] < 1 for e in echantillons)
 
 
 def test_toutes_les_variantes_sont_evaluees_sur_les_memes_matchs(echantillons):
     sorties = bb.predictions_walk_forward(echantillons)
-    assert len(sorties) == 8
+    assert len(sorties) == 9
     tailles = {len(v) for v in sorties.values()}
     assert len(tailles) == 1 and tailles.pop() > 200
     for pts in sorties.values():
@@ -37,6 +37,7 @@ def test_poisson_calibre_sur_donnees_poisson_et_logistique_ne_degrade_pas(echant
     b = {k: bb.metriques(v)["brier"] for k, v in sorties.items()}
     assert b["V1 Poisson (production)"] < b["V0 taux de ligue"]
     assert b["V5 régression logistique"] < b["V1 Poisson (production)"] + 0.01
+    assert b["V6 logistique étendue (lieu, tirs cadrés, Elo, ligue)"] < b["V0 taux de ligue"] + 0.01
 
 
 def test_regression_logistique_retrouve_une_relation_connue():

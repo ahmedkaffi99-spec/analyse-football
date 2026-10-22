@@ -25,10 +25,19 @@ from moteur.features import Historique, en_datetime, est_termine
 NB_MIN = 5
 COUPURES = (0.50, 0.67, 0.83)
 NOMS_FEATURES = ("logit_poisson", "btts_dom", "btts_ext", "fts_dom", "fts_ext", "cs_dom", "cs_ext", "mu_total")
+# V6 : features supplémentaires (lieu, tirs cadrés, Elo, buts attendus séparés, ligue)
+NOMS_FEATURES_ETENDUES = NOMS_FEATURES + (
+    "btts_dom_a_domicile", "btts_ext_a_exterieur", "sot_pour_dom", "sot_contre_dom", "sot_pour_ext", "sot_contre_ext",
+    "mu_dom", "mu_ext", "ecart_mu", "elo_diff", "over25_dom", "over25_ext")
 
 
 def _taux(vues, test):
     return sum(1 for v in vues if test(v)) / len(vues)
+
+
+def _moy_stat(vues, cle, champ, defaut):
+    valeurs = [v[cle].get(champ) for v in vues if v[cle].get(champ) is not None]
+    return sum(valeurs) / len(valeurs) if valeurs else defaut
 
 
 def construire_echantillons(matchs_par_competition):
@@ -60,7 +69,20 @@ def construire_echantillons(matchs_par_competition):
                       "btts_ext": _taux(va, lambda v: v["buts_pour"] > 0 and v["buts_contre"] > 0),
                       "fts_dom": _taux(vh, lambda v: v["buts_pour"] == 0), "fts_ext": _taux(va, lambda v: v["buts_pour"] == 0),
                       "cs_dom": _taux(vh, lambda v: v["buts_contre"] == 0), "cs_ext": _taux(va, lambda v: v["buts_contre"] == 0),
-                      "mu_total": mu[0] + mu[1]}})
+                      "mu_total": mu[0] + mu[1]},
+                "ligue": m.get("competition_id")})
+            vd = hist.equipe_avant(m["home_id"], t, n=10, domicile=True)
+            ve = hist.equipe_avant(m["away_id"], t, n=10, domicile=False)
+            f = echantillons[-1]["f"]
+            f["btts_dom_a_domicile"] = _taux(vd, lambda v: v["buts_pour"] > 0 and v["buts_contre"] > 0) if len(vd) >= 3 else f["btts_dom"]
+            f["btts_ext_a_exterieur"] = _taux(ve, lambda v: v["buts_pour"] > 0 and v["buts_contre"] > 0) if len(ve) >= 3 else f["btts_ext"]
+            f["sot_pour_dom"], f["sot_contre_dom"] = _moy_stat(vh, "stats_pour", "shots_on_target", 4.4), _moy_stat(vh, "stats_contre", "shots_on_target", 4.4)
+            f["sot_pour_ext"], f["sot_contre_ext"] = _moy_stat(va, "stats_pour", "shots_on_target", 4.4), _moy_stat(va, "stats_contre", "shots_on_target", 4.4)
+            f["mu_dom"], f["mu_ext"], f["ecart_mu"] = mu[0], mu[1], mu[0] - mu[1]
+            elo_h, elo_a = hist.elo(m)
+            f["elo_diff"] = (elo_h - elo_a) / 100
+            f["over25_dom"] = _taux(vh, lambda v: v["buts_pour"] + v["buts_contre"] >= 3)
+            f["over25_ext"] = _taux(va, lambda v: v["buts_pour"] + v["buts_contre"] >= 3)
     echantillons.sort(key=lambda e: e["t"])
     return echantillons
 
@@ -94,8 +116,12 @@ def predire_logistique(modele, x):
     return _sigmoide(sum(wj * (xj - m) / e for wj, xj, m, e in zip(w, x, moy, ec)) + b)
 
 
-def _vec(e):
-    return [e["f"][k] for k in NOMS_FEATURES]
+def _vec(e, noms=NOMS_FEATURES):
+    return [e["f"][k] for k in noms]
+
+
+def _vec_ligue(e, ligues):
+    return _vec(e, NOMS_FEATURES_ETENDUES) + [1.0 if e.get("ligue") == l else 0.0 for l in ligues]
 
 
 # ------------------------------------------------------------------ variantes
@@ -111,6 +137,8 @@ def predictions_walk_forward(echantillons):
         taux_ligue = sum(e["y"] for e in passe) / len(passe)
         iso = calib.Isotone([(e["p_pois"], e["y"]) for e in passe])
         logi = entrainer_logistique([_vec(e) for e in passe], [e["y"] for e in passe])
+        ligues = sorted({e.get("ligue") for e in passe if e.get("ligue") is not None})[:-1]  # une de moins (colinéarité)
+        logi2 = entrainer_logistique([_vec_ligue(e, ligues) for e in passe], [e["y"] for e in passe], l2=20.0)
         for e in futur:
             emp = (e["f"]["btts_dom"] + e["f"]["btts_ext"]) / 2
             sorties["V0 taux de ligue"].append((taux_ligue, e["y"]))
@@ -120,6 +148,8 @@ def predictions_walk_forward(echantillons):
             for w in (0.25, 0.5, 0.75):
                 sorties[f"V4 mélange Poisson {w:.2f} / empirique"].append((w * e["p_pois"] + (1 - w) * emp, e["y"]))
             sorties["V5 régression logistique"].append((predire_logistique(logi, _vec(e)), e["y"]))
+            sorties["V6 logistique étendue (lieu, tirs cadrés, Elo, ligue)"].append(
+                (predire_logistique(logi2, _vec_ligue(e, ligues)), e["y"]))
     return sorties
 
 
