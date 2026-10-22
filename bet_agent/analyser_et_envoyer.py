@@ -425,6 +425,11 @@ HORS_JEUX_PRIOR = 1.7  # 22/10/2026 : moyenne observée par équipe 1.70 (backte
 # ÉQUIPE de corners/tirs/cartons faux de 6 à 17 points (ex. handicap tirs +0.5 : annoncé 61 %, réel 67 % ;
 # -4.5 : annoncé 78 %, réel 61 %). Facteur du domicile = moyenne domicile / moyenne des deux côtés ; celui de
 # l'extérieur est son complément à 2, ce qui conserve le total.
+# VALIDÉ par grille (22/10/2026, 7 000 matchs, Brier handicaps + totaux par équipe à 0 / 50 / 75 / 100 % de
+# l'écart mesuré) : corners 0.2253 -> 0.2207, tirs 0.2261 -> 0.2181, tirs cadrés 0.2139 -> 0.2089, cartons
+# 0.1974 -> 0.1965 ; l'échelle 100 % est la meilleure (75 % équivalent à 0.0001 près) ; fautes : écart
+# négligeable (0.2260 -> 0.2256), facteur 0.985 conservé. Hors-jeux : aucun facteur (totaux par équipe déjà
+# calibrés sans, domicile 1.78 / extérieur 1.63 sur 717 matchs).
 FACTEUR_DOMICILE = {
     "corners": 1.107, "tirs": 1.101, "tirs_cadres": 1.103, "fautes": 0.985, "cartons": 0.934,
 }
