@@ -28,6 +28,7 @@ on:
           - backtest-calibration-double-chance
           - backtest-avantage-domicile
           - backtest-calibration-non-buts
+          - bets-bruts-api-football
           - catalogue-par-famille
         default: marches-disponibles
       date_debut:
@@ -951,6 +952,78 @@ jobs:
                       c, p, y = tranches[b]
                       if b >= 0.6:
                           print(f'    côté probable {b:.1f}-{b + 0.1:.1f}: n={c} annoncé={100 * p / c:.1f}% réel={100 * y / c:.1f}%')
+          "
+
+      - name: Paris bruts API-Football — fautes/hors-jeux existent-ils (langue du nom ou fixture) ?
+        # Lecture seule, ~8 appels. (1) GET /odds/bets : TOUS les types de paris que l'API connaît
+        # (nom, id) — pour voir si « fautes » existe sous un autre libellé que ceux de notre liste
+        # blanche (MAPPING_API_FOOTBALL, 10 noms). (2) GET /odds?fixture=&bookmaker=11 sur plusieurs
+        # matchs du jour : TOUS les noms de paris réellement servis pour 1xBet, avec ceux écartés par
+        # notre mapping. (3) même match SANS filtre bookmaker : quels bookmakers servent un marché
+        # fautes/hors-jeux. Distingue : nom différent (langue) / marché absent pour 1xBet (bookmaker)
+        # / absent sur ce match (fixture).
+        if: inputs.verification == 'bets-bruts-api-football'
+        working-directory: bet_agent
+        run: |
+          python -c "
+          import os
+          import requests
+          import collecte_donnees as cd
+          import adaptateur_api_football as adf
+
+          H = {'x-apisports-key': os.getenv('API_FOOTBALL_KEY') or ''}
+          BASE = adf.API_FOOTBALL_BASE
+          MOTS = ('foul', 'offside', 'fault', 'throw', 'goal kick', 'tackle', 'save', 'possession', 'pass', 'free kick')
+
+          def get(chemin, **params):
+              r = requests.get(f'{BASE}/{chemin}', headers=H, params=params, timeout=30)
+              return r.json().get('response') or []
+
+          tous = get('odds/bets')
+          print(f'\\n=== (1) {len(tous)} types de paris connus de l API ===')
+          pertinents = [b for b in tous if any(m in (b.get('name') or '').lower() for m in MOTS)]
+          for b in pertinents:
+              print(f'   id={b.get(\"id\")} nom={b.get(\"name\")}')
+          print(f'   ({len(pertinents)} types contenant {MOTS})')
+          mappes = set(adf.MAPPING_API_FOOTBALL)
+          print(f'   Noms dans notre mapping : {sorted(mappes)}')
+
+          fixtures = cd.recuperer_fixtures_api_football()
+          ns = [fx for fx in fixtures if ((fx.get('fixture') or {}).get('status') or {}).get('short') == 'NS']
+          vus, choisis = set(), []
+          for fx in ns:
+              lid = (fx.get('league') or {}).get('id')
+              if lid not in vus and len(choisis) < 5:
+                  vus.add(lid); choisis.append(fx)
+          print(f'\\n=== (2) paris servis pour 1xBet (bookmaker 11) sur {len(choisis)} match(s) de ligues différentes ===')
+          noms_1xbet = {}
+          for fx in choisis:
+              fid = fx['fixture']['id']
+              nom = f\"{fx['teams']['home']['name']} vs {fx['teams']['away']['name']} [{fx['league']['name']}]\"
+              rep = get('odds', fixture=fid, bookmaker=11)
+              bets = [b for e in rep for bk in e.get('bookmakers', []) for b in bk.get('bets', [])]
+              noms = sorted({b.get('name') for b in bets})
+              ecartes = [n for n in noms if n not in mappes]
+              noms_1xbet[nom] = noms
+              print(f'   {nom} : {len(noms)} types de paris, dont {len(ecartes)} ignorés par notre mapping')
+              fautes = [n for n in noms if any(m in (n or '').lower() for m in MOTS)]
+              print(f'      fautes/hors-jeux/etc. servis : {fautes or \"aucun\"}')
+          premier = sorted({n for ns_ in noms_1xbet.values() for n in ns_})
+          print(f'\\n   Union des types servis pour 1xBet ({len(premier)}) :')
+          for n in premier:
+              print(f'      {\"✓ mappé \" if n in mappes else \"✗ ignoré\"} {n}')
+
+          if choisis:
+              fx = choisis[0]
+              rep = get('odds', fixture=fx['fixture']['id'])
+              print(f'\\n=== (3) même match SANS filtre bookmaker : {fx[\"teams\"][\"home\"][\"name\"]} vs {fx[\"teams\"][\"away\"][\"name\"]} ===')
+              for e in rep:
+                  for bk in e.get('bookmakers', []):
+                      noms = [b.get('name') for b in bk.get('bets', [])]
+                      fautes = [n for n in noms if any(m in (n or '').lower() for m in MOTS)]
+                      if fautes:
+                          print(f'   bookmaker {bk.get(\"id\")} {bk.get(\"name\")} : {fautes}')
+                  print(f'   {len(e.get(\"bookmakers\", []))} bookmaker(s) servis au total')
           "
 
       - name: Catalogue par famille de marchés d'un run archivé (pourquoi 5 agents sur 10 sans candidat)
