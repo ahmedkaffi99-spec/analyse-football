@@ -233,6 +233,45 @@ def imprimer(col):
     return lignes
 
 
+def brier_par_famille(col):
+    """{famille: Brier moyen} sur les handicaps ET les totaux par équipe de la famille (n pondéré)."""
+    sortie = {}
+    for famille in FAMILLES_COMPTAGE:
+        pts = [pt for marche, lst in col.points.items()
+               if marche.startswith(f"Handicap {famille},") or marche.startswith(f"Total {famille} équipe")
+               for pt in lst]
+        if pts:
+            sortie[famille] = (sum((p - y) ** 2 for p, y in pts) / len(pts), len(pts))
+    return sortie
+
+
+def grille_facteurs(donnees, echelles=(0.0, 0.5, 0.75, 1.0)):
+    """Rejoue le backtest avec l'avantage du terrain à échelle × (facteur mesuré - 1) et rapporte le Brier par
+    famille : choix du facteur par l'erreur, pas à l'intuition. Restaure ae.FACTEUR_DOMICILE à la fin."""
+    original = dict(ae.FACTEUR_DOMICILE)
+    resultats = {}
+    try:
+        for e in echelles:
+            ae.FACTEUR_DOMICILE.update({f: 1 + e * (v - 1) for f, v in original.items()})
+            resultats[e] = brier_par_famille(executer(donnees))
+    finally:
+        ae.FACTEUR_DOMICILE.update(original)
+    return resultats
+
+
+def imprimer_grille(resultats):
+    echelles = sorted(resultats)
+    print("\n=== Brier (handicaps + totaux par équipe) selon l'échelle de l'avantage du terrain ===")
+    print("famille      " + "".join(f"  échelle {e:>4.2f}" for e in echelles) + "   meilleure")
+    for famille in FAMILLES_COMPTAGE:
+        valeurs = {e: resultats[e][famille][0] for e in echelles if famille in resultats[e]}
+        if not valeurs:
+            continue
+        meilleure = min(valeurs, key=valeurs.get)
+        print(f"{famille:12s} " + "".join(f"  {valeurs[e]:12.4f}" for e in echelles)
+              + f"   {meilleure:.2f} -> facteur {1 + meilleure * (ae.FACTEUR_DOMICILE[famille] - 1):.3f}")
+
+
 if __name__ == "__main__":  # pragma: no cover — lancé par diagnostics.yml (accès base)
     import sys
     from pathlib import Path
@@ -245,4 +284,7 @@ if __name__ == "__main__":  # pragma: no cover — lancé par diagnostics.yml (a
     with SessionLocal() as db:
         donnees = {cid: charger_matchs(db, competition_id=cid) for cid in competitions}
     print(f"{sum(len(v) for v in donnees.values())} matchs chargés ({', '.join(competitions.values())}).")
-    imprimer(executer(donnees))
+    if __import__("os").getenv("BACKTEST_GRILLE_DOMICILE"):
+        imprimer_grille(grille_facteurs(donnees))
+    else:
+        imprimer(executer(donnees))

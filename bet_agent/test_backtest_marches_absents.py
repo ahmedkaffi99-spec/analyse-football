@@ -97,3 +97,13 @@ def test_match_sans_hors_jeux_suivis_ignore():
     fx = {"fixture": {"id": 1, "date": "2025-01-01T18:00:00+00:00"}, "league": {"id": 1}, "goals": {"home": 1, "away": 0},
           "teams": {"home": {"id": 1}, "away": {"id": 2}}}
     assert hj.construire_matchs([(fx, [{"type": "Offsides", "value": None}], [{"type": "Offsides", "value": 2}])]) == []
+
+
+def test_grille_facteurs_restaure_les_facteurs_et_rapporte_chaque_echelle():
+    import analyser_et_envoyer as ae
+    matchs, _ = championnat(n_equipes=10, saisons=(2023, 2024))
+    avant = dict(ae.FACTEUR_DOMICILE)
+    res = bt.grille_facteurs({1: matchs}, echelles=(0.0, 1.0))
+    assert ae.FACTEUR_DOMICILE == avant
+    assert set(res) == {0.0, 1.0} and all("corners" in r for r in res.values())
+    assert all(0 < brier < 0.5 for r in res.values() for brier, _ in r.values())

@@ -30,6 +30,7 @@ on:
           - backtest-calibration-non-buts
           - bets-bruts-api-football
           - backtest-marches-absents
+          - backtest-grille-domicile
           - backtest-hors-jeux
           - catalogue-par-famille
         default: marches-disponibles
@@ -1043,6 +1044,15 @@ jobs:
         # (bet_agent/backtest_marches_absents.py) : calibration annoncé/réel par marché et par tranche.
         if: inputs.verification == 'backtest-marches-absents'
         working-directory: bet_agent
+        run: python backtest_marches_absents.py
+
+      - name: Backtest réel — grille du facteur d'avantage du terrain des comptages
+        # Rejoue le backtest des marchés absents à 4 échelles du facteur domicile (0, 50, 75, 100 % de l'écart
+        # mesuré) et rapporte le Brier par famille : le facteur retenu est celui qui minimise l'erreur.
+        if: inputs.verification == 'backtest-grille-domicile'
+        working-directory: bet_agent
+        env:
+          BACKTEST_GRILLE_DOMICILE: "1"
         run: python backtest_marches_absents.py
 
       - name: Backtest réel — HORS-JEUX (échantillon API-Football en mémoire, aucune écriture en base)
