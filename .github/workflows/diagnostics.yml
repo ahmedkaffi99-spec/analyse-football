@@ -31,6 +31,7 @@ on:
           - bets-bruts-api-football
           - backtest-marches-absents
           - backtest-grille-domicile
+          - backtest-btts
           - backtest-hors-jeux
           - catalogue-par-famille
         default: marches-disponibles
@@ -1054,6 +1055,13 @@ jobs:
         env:
           BACKTEST_GRILLE_DOMICILE: "1"
         run: python backtest_marches_absents.py
+
+      - name: Backtest réel — BTTS : Poisson de production contre taux empirique, mélange et régression logistique
+        # Walk-forward sur les 5 championnats (hist_matchs, lecture seule) : 8 variantes évaluées sur les mêmes
+        # matchs (modèle toujours appris sur le passé), Brier / log-loss / calibration du côté probable.
+        if: inputs.verification == 'backtest-btts'
+        working-directory: bet_agent
+        run: python backtest_btts.py
 
       - name: Backtest réel — HORS-JEUX (échantillon API-Football en mémoire, aucune écriture en base)
         # ~760 appels /fixtures/statistics (2 ligues x 2 saisons), limiteur de débit de la production.
