@@ -439,13 +439,10 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
         resultat_profil = acceptes[profil["cle"]]
         selections = resultat_profil.get("selections") or []
         if selections:
-            texte = ae.rediger_ticket_sans_ia(selections)
+            # Message Telegram court (demande du 22/10/2026) : une ligne par jambe, ni stratégie ni guide.
             cote_totale, _ = ae.calculer_stats_combine(selections)
-            strategie_txt = (strategie or "").strip()
-            entete_profil = f"*{profil['nom']}*"
-            if strategie_txt:
-                entete_profil += f"\n🧭 _{strategie_txt}_"
-            etat["textes"].append(f"{entete_profil}\n\n{texte}\n\n💰 *Cote totale : {cote_totale}*")
+            etat["textes"].append(f"*{profil['nom']} — cote {cote_totale}* ({len(selections)} jambes)\n\n"
+                                  f"{ae.rediger_ticket_court(selections)}")
         else:
             texte = f"_{resultat_profil.get('abstention') or 'Aucun pari jugé défendable pour ce profil.'}_"
             etat["textes"].append(f"*{profil['nom']}*\n\n{texte}")

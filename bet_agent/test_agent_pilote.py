@@ -358,11 +358,12 @@ class TestTroisProfilsMemeRun(unittest.TestCase):
 
         self.assertTrue(resultat["termine"])
         textes_envoyes = envoi.call_args.args[0]
-        # La stratégie de l'IA est reprise telle quelle dans le ticket du profil.
-        self.assertIn("double sécurité sur des favoris nets", textes_envoyes[0])
-        # La cote totale combinée (1.8 * 1.8 = 3.24) est affichée.
-        self.assertIn("Cote totale", textes_envoyes[0])
-        self.assertIn("3.24", textes_envoyes[0])
+        # Format court (demande du 22/10/2026) : la stratégie n'est plus envoyée sur Telegram,
+        # seule la cote totale combinée (1.8 * 1.8 = 3.24) figure dans l'en-tête.
+        self.assertNotIn("double sécurité sur des favoris nets", textes_envoyes[0])
+        self.assertIn("cote 3.24", textes_envoyes[0])
+        self.assertIn("(2 jambes)", textes_envoyes[0])
+        self.assertLess(len(textes_envoyes[0]), 400)
 
     def test_envoyer_telegram_refuse_si_profils_restants(self):
         reponses = [

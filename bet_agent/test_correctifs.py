@@ -3140,3 +3140,34 @@ class TestHandicapSeulementTempsReglementaire(unittest.TestCase):
         import collecte_donnees as cd
         handicaps = {m for m in cd.MARCHES_API_FOOTBALL_VALIDES if "handicap" in m.lower()}
         self.assertEqual(handicaps, {"Asian Handicap"})
+
+
+class TestTicketCourt(unittest.TestCase):
+    """Telegram court (22/10/2026) : une ligne par jambe, en français, sans guide ni proba."""
+
+    @staticmethod
+    def _sel(match, categorie, marche, selection, cote, handicap=None):
+        return {"match": match, "pick": {"categorie": categorie, "marche": marche, "marche_affichage": marche,
+                                         "selection": selection, "cote": cote, "handicap": handicap}}
+
+    def test_libelles_en_francais(self):
+        sels = [
+            self._sel("Celje vs Red Bull Salzburg", "Total", "Over Under Full Time (4.0)", "Under", 1.28, 4),
+            self._sel("Olympiakos vs Sparta", "Total Corners Équipe 2", "Corners - Over Under Team 2 (2.5)", "Over", 1.36, 2.5),
+            self._sel("Sturm vs Marseille", "Double Chance", "Double Chance Full Time", "12", 1.3),
+        ]
+        lignes = ae.rediger_ticket_court(sels).split("\n")
+        self.assertEqual(lignes[0], "1. Celje–Red Bull Salzburg : Moins de 4 buts @1.28")
+        self.assertEqual(lignes[1], "2. Olympiakos–Sparta : Sparta plus de 2.5 corners @1.36")
+        self.assertEqual(lignes[2], "3. Sturm–Marseille : Double chance 12 @1.3")
+
+    def test_marche_inconnu_garde_son_libelle(self):
+        ligne = ae.rediger_ticket_court([self._sel("A vs B", "Handicap", "Asian Handicap (-2.0)", "2", 1.33, -2)])
+        self.assertIn("Asian Handicap (-2.0) : 2 @1.33", ligne)
+
+    def test_section_agent4_courte(self):
+        item = {"profil": {"cle": "jour", "nom": "COUPON"},
+                "selections": [self._sel("A vs B", "Total", "Over Under Full Time (2.5)", "Over", 1.5, 2.5)]}
+        texte = ae.agent4_rediger_coupons([item])[0]
+        self.assertTrue(texte.startswith("*COUPON — cote 1.5* (1 jambes)"))
+        self.assertLess(len(texte), 200)

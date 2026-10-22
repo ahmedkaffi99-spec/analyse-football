@@ -2417,6 +2417,45 @@ def rediger_ticket_sans_ia(selections_finales):
     return "\n".join(blocs)
 
 
+def _libelle_pari_court(selection_finale):
+    """Pari en français courant, sur une ligne : « Moins de 4 buts », « Sparta plus de 2.5 corners »,
+    « Double chance 12 ». Les marchés qu'on ne sait pas reformuler gardent leur libellé brut."""
+    p = selection_finale["pick"]
+    domicile, _, exterieur = selection_finale["match"].partition(" vs ")
+    categorie, sel = p["categorie"], str(p["selection"])
+    marche_txt = p.get("marche_affichage") or p["marche"]
+    ligne = p.get("handicap")
+    if ligne is None:
+        m = re.search(r"\((-?[\d.]+)\)", marche_txt)
+        ligne = m.group(1) if m else None
+    if sel in ("Over", "Under") and ligne is not None and categorie.startswith("Total"):
+        sens = "plus de" if sel == "Over" else "moins de"
+        reste = categorie[len("Total"):].strip()
+        equipe = None
+        for numero, nom in (("1", domicile), ("2", exterieur)):
+            if reste.endswith(f"Équipe {numero}"):
+                equipe, reste = nom, reste[:-len(f"Équipe {numero}")].strip()
+        sujet = (reste or "buts").lower()
+        ligne_txt = f"{float(ligne):g}"
+        if equipe:
+            return f"{equipe} {sens} {ligne_txt} {sujet}"
+        return f"{sens.capitalize()} {ligne_txt} {sujet}"
+    if categorie == "Double Chance":
+        return f"Double chance {sel}"
+    return f"{marche_txt} : {sel}"
+
+
+def rediger_ticket_court(selections_finales):
+    """Ticket Telegram minimal (demande du 22/10/2026 : « simple et court, sur l'essentiel ») :
+    une ligne par jambe — match, pari, cote — sans guide, probabilité ni justification."""
+    lignes = []
+    for i, s in enumerate(selections_finales, start=1):
+        domicile, _, exterieur = s["match"].partition(" vs ")
+        match_court = f"{domicile}–{exterieur}" if exterieur else s["match"]
+        lignes.append(f"{i}. {match_court} : {_libelle_pari_court(s)} @{s['pick']['cote']}")
+    return "\n".join(lignes)
+
+
 _COTE_RE = re.compile(r"@\s*([\d]+[.,][\d]+)")
 _EDGE_RE = re.compile(r"edge\s*(-?[\d]+(?:[.,][\d]+)?)\s*%", re.IGNORECASE)
 _CONFIANCE_RE = re.compile(r"Confiance\s*:\s*([A-Za-zÀ-ÿ]+)", re.IGNORECASE)
@@ -3402,34 +3441,15 @@ def agent4_rediger_coupons(resultats_profils):
         if not selections:
             sections.append(f"{profil['nom']}\n_Aucune sélection ne remplit les critères de ce profil aujourd'hui._")
             continue
-        print(f"\n🤖 [AGENT 4 — {profil['nom']}] rédaction...")
-        ticket_texte = agent4_ia_analyse_pronostic_redaction(selections)
-        if not ticket_texte:
-            sections.append(f"{profil['nom']}\n_Échec de la rédaction IA pour ce profil — réessaiera au prochain cycle._")
-            continue
-        cote_totale, proba_combinee = calculer_stats_combine(selections)
+        cote_totale, _ = calculer_stats_combine(selections)
         nb_matchs_distincts = len({s["match"] for s in selections})
-        avertissement_correlation = ""
-        if nb_matchs_distincts < len(selections):
-            # Plusieurs jambes sur le MÊME match ne sont pas statistiquement indépendantes
-            # (ex: "Total Under" et "Handicap domicile" du même match sont corrélés) — la
-            # probabilité combinée (produit des probas individuelles) suppose l'indépendance
-            # et devient donc optimiste dans ce cas. Toujours signalé, jamais caché.
-            avertissement_correlation = (
-                f"\n⚠️ _{len(selections)} jambes sur seulement {nb_matchs_distincts} matchs distincts "
-                f"(pas assez de matchs disponibles aujourd'hui) — plusieurs paris viennent du même "
-                f"match, donc la probabilité combinée ci-dessous est optimiste (jambes corrélées, "
-                f"pas indépendantes)._"
-            )
-        ligne_strategie = f"🧭 Stratégie : {item['strategie']}\n\n" if item.get("strategie") else ""
-        ligne_proba = f" · 🎲 Probabilité combinée réelle : *{proba_combinee}%*" if proba_combinee is not None else ""
+        # Plusieurs jambes sur le MÊME match sont corrélées : seul avertissement conservé, en une ligne.
+        avertissement = (f"\n⚠️ {len(selections)} jambes sur {nb_matchs_distincts} matchs (jambes corrélées)"
+                         if nb_matchs_distincts < len(selections) else "")
         sections.append(
-            f"{profil['nom']} — {len(selections)} jambes sur {nb_matchs_distincts} match{'s' if nb_matchs_distincts > 1 else ''}\n\n"
-            f"{ligne_strategie}{ticket_texte}\n\n"
-            f"💰 Cote totale : *{cote_totale}*{ligne_proba}"
-            f"{avertissement_correlation}"
+            f"*{profil['nom']} — cote {cote_totale}* ({len(selections)} jambes)\n\n"
+            f"{rediger_ticket_court(selections)}{avertissement}"
         )
-        pause_ia(2)
     return sections
 
 
@@ -3473,12 +3493,9 @@ def agent5_envoyer_coupons(sections):
     message pour plusieurs profils. Vérifie le succès RÉEL de chaque envoi (notifier_telegram
     renvoie False en cas d'échec) plutôt que de supposer que ça a marché. Renvoie True
     seulement si TOUS les messages sont partis."""
-    date_str = datetime.now().strftime("%d/%m/%Y à %H:%M")
-    entete = f"🎯 *TICKETS DU JOUR — {date_str}*\nanalyse IA sur cotes réelles · 1xBet\n━━━━━━━━━━━━━━━━━━━━\n\n"
-    pied = (
-        f"\n\n━━━━━━━━━━━━━━━━━━━━\n"
-        f"⚠️ _Analyse automatisée à titre indicatif — vérifie toujours les cotes en direct sur 1xBet avant de parier._"
-    )
+    # Message court (demande du 22/10/2026) : ni bandeau ni avertissement, juste le coupon.
+    entete = "🎯 "
+    pied = ""
 
     tout_envoye = True
     for i, section in enumerate(sections, start=1):
