@@ -33,6 +33,7 @@ on:
           - backtest-grille-domicile
           - backtest-btts
           - backtest-btts-profondeur
+          - btts-du-jour
           - backtest-hors-jeux
           - catalogue-par-famille
         default: marches-disponibles
@@ -1070,6 +1071,58 @@ jobs:
         if: inputs.verification == 'backtest-btts-profondeur'
         working-directory: bet_agent
         run: python backtest_btts_profondeur.py
+
+      - name: BTTS du jour (Oui et Non) sur la collecte archivée d'un run — probabilités modèle, marché et finale
+        # Relit la collecte archivée (numéro du run dans match_recherche), recalcule avec le code actuel et affiche,
+        # pour chaque match : buts attendus, P(BTTS oui) et P(BTTS non) du modèle, du marché sans marge et finale
+        # (mélange 35/65), cotes et edge. Lecture seule, aucun envoi.
+        if: inputs.verification == 'btts-du-jour'
+        working-directory: backend
+        run: |
+          python -c "
+          import os
+          import sys
+          from pathlib import Path
+          RACINE = Path.cwd().parent
+          sys.path.insert(0, str(RACINE))
+          sys.path.insert(0, str(RACINE / 'bet_agent'))
+
+          from app.database import SessionLocal
+          from app.models import Run
+          from app.services.archives import telecharger_collecte
+
+          import analyser_et_envoyer as ae
+
+          run_id = int(os.environ['MATCH_RECHERCHE'])
+          with SessionLocal() as db:
+              donnees = telecharger_collecte(db, db.get(Run, run_id))
+          ae.COTE_MIN_JAMBE, ae.COTE_MAX_JAMBE = 0.0, 0.0   # montrer TOUTES les cotes, sans fourchette
+          pool = ae.agent3_calcul_pool_candidats(donnees)
+          print(f'\\n=== BTTS du run {run_id} : probabilités OUI et NON (modèle Poisson / marché sans marge / finale) ===')
+          print(f'{\"match\":42s} {\"xG dom/ext\":>11s} | {\"OUI modèle\":>10s} {\"marché\":>7s} {\"finale\":>7s} {\"cote\":>5s} {\"edge\":>6s} | {\"NON modèle\":>10s} {\"marché\":>7s} {\"finale\":>7s} {\"cote\":>5s} {\"edge\":>6s}')
+          lignes = []
+          for match, cands in pool.items():
+              btts = {c['pick']['selection'].lower(): c['pick'] for c in cands if c['pick']['categorie'] == 'BTTS'}
+              if not btts:
+                  continue
+              ctx = (cands[0].get('contexte') or {}).get('buts_attendus') or {}
+              oui, non = btts.get('yes') or btts.get('oui'), btts.get('no') or btts.get('non')
+              def f(p, cle):
+                  v = (p or {}).get(cle)
+                  return f'{v:5.1f}%' if v is not None else '   -  '
+              def c_(p, cle):
+                  v = (p or {}).get(cle)
+                  return f'{v:5.2f}' if v is not None else '  -  '
+              lignes.append((match, ctx, oui, non, f))
+              print(f'{match:42s} {ctx.get(\"domicile\", 0):5.2f}/{ctx.get(\"exterieur\", 0):4.2f} | '
+                    f'{f(oui, \"proba_poisson_pct\")} {f(oui, \"proba_marche_pct\")} {f(oui, \"proba_modele_pct\")} {c_(oui, \"cote\")} {f(oui, \"edge_pct\")} | '
+                    f'{f(non, \"proba_poisson_pct\")} {f(non, \"proba_marche_pct\")} {f(non, \"proba_modele_pct\")} {c_(non, \"cote\")} {f(non, \"edge_pct\")}')
+          n = len(lignes)
+          if n:
+              moy = lambda cle, cote: sum((l[2 if cote == 'oui' else 3] or {}).get(cle) or 0 for l in lignes) / n
+              print(f'\\nMoyennes sur {n} match(s) : OUI modèle={moy(\"proba_poisson_pct\", \"oui\"):.1f}%  marché={moy(\"proba_marche_pct\", \"oui\"):.1f}%   '
+                    f'NON modèle={moy(\"proba_poisson_pct\", \"non\"):.1f}%  marché={moy(\"proba_marche_pct\", \"non\"):.1f}%')
+          "
 
       - name: Backtest réel — HORS-JEUX (échantillon API-Football en mémoire, aucune écriture en base)
         # ~760 appels /fixtures/statistics (2 ligues x 2 saisons), limiteur de débit de la production.
