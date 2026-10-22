@@ -209,6 +209,10 @@ class CleRefusee(Exception):
 # outils) : Groq, puis Gemini, puis OpenRouter (modèles gratuits). Essayés dans cet ordre dès que DeepSeek
 # échoue (solde, clé refusée, panne) ; le premier couple fournisseur/modèle qui répond est gardé pour la suite du run.
 MAX_TOKENS_SECOURS = int(os.getenv("AGENT_SECOURS_MAX_TOKENS") or "32768")
+MODELE_OPENROUTER_DEEPSEEK = os.getenv("OPENROUTER_MODELE_PAYANT") or "deepseek/deepseek-v4.1-flash"
+# AGENT_FOURNISSEUR_PRINCIPAL : "openrouter" (défaut, depuis le 22/10/2026 : DeepSeek via OpenRouter d'abord) ou
+# "deepseek" (API officielle d'abord, puis OpenRouter et les gratuits en repli).
+FOURNISSEUR_PRINCIPAL = (os.getenv("AGENT_FOURNISSEUR_PRINCIPAL") or "openrouter").strip().lower()
 _secours = {"actif": False, "choix": None}   # état du run : DeepSeek abandonné ? dernier couple qui a marché
 
 
@@ -218,6 +222,14 @@ def _fournisseurs_secours():
         return [m.strip() for m in (os.getenv(nom_env) or defaut).split(",") if m.strip()]
 
     courses = []
+    # En tête : DeepSeek via OpenRouter (demande du 22/10/2026 : « utilise celle d'OpenRouter, modèle DeepSeek »),
+    # le même fournisseur/modèle que les agents de famille (OPENROUTER_MODELE_PAYANT).
+    if os.getenv("OPENROUTER_API_KEY"):
+        courses.append(("OpenRouter", "https://openrouter.ai/api/v1/chat/completions", os.getenv("OPENROUTER_API_KEY"),
+                        MODELE_OPENROUTER_DEEPSEEK, {"reasoning": {"effort": "medium"}}))
+    if os.getenv("DEEPSEEK_API_KEY"):   # DeepSeek officiel : repli si OpenRouter échoue
+        courses.append(("DeepSeek", URL_DEEPSEEK, os.getenv("DEEPSEEK_API_KEY"), MODELE,
+                        {"thinking": {"type": "enabled"}}))
     if os.getenv("GROQ_API_KEY"):
         for m in _liste("GROQ_MODELES", "openai/gpt-oss-120b"):
             courses.append(("Groq", "https://api.groq.com/openai/v1/chat/completions", os.getenv("GROQ_API_KEY"), m,
@@ -232,6 +244,12 @@ def _fournisseurs_secours():
             courses.append(("OpenRouter", "https://openrouter.ai/api/v1/chat/completions",
                             os.getenv("OPENROUTER_API_KEY"), m, {}))
     return courses
+
+
+def _secours_d_emblee():
+    """True si le run démarre directement sur la liste de secours (OpenRouter/DeepSeek en tête) au lieu de
+    tenter d'abord l'API officielle DeepSeek."""
+    return FOURNISSEUR_PRINCIPAL == "openrouter" and bool(os.getenv("OPENROUTER_API_KEY"))
 
 
 def secours_disponible():
@@ -270,7 +288,7 @@ def _appel_secours(messages, max_tokens, outils_schemas=None, poster=requests.po
                 data = r.json()
                 if data["choices"][0]["message"] is not None:
                     _secours["choix"] = course
-                    print(f"      🛟 Secours gratuit : {nom} / {modele}")
+                    print(f"      🛟 Fournisseur : {nom} / {modele}")
                     return data, charge["max_tokens"]
             except (ValueError, KeyError, IndexError, TypeError):
                 pass
@@ -341,7 +359,7 @@ def piloter(cle, outils, est_termine, mission, prompt_systeme=None, outils_schem
     for etape in range(1, MAX_ETAPES + 1):
         if horloge() - debut > DUREE_MAX_S:
             return {"termine": est_termine(), "etapes": etape - 1, "arret": "durée maximale atteinte", "tokens": tokens}
-        print(f"   🤖 [Agent {'secours gratuit' if _secours['actif'] else 'DeepSeek'}] étape {etape}/{MAX_ETAPES}...")
+        print(f"   🤖 [Agent {'secours' if _secours['actif'] else 'DeepSeek'}] étape {etape}/{MAX_ETAPES}...")
         data, max_tokens = _appel_api(cle, messages, max_tokens, outils_schemas, poster, pause)
         tokens += (data.get("usage") or {}).get("total_tokens", 0)
         msg = data["choices"][0]["message"]
@@ -414,7 +432,7 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
     import agents_familles
 
     cle = os.getenv("DEEPSEEK_API_KEY")
-    _secours.update(actif=False, choix=None)   # nouvel essai de DeepSeek à chaque run
+    _secours.update(actif=_secours_d_emblee(), choix=None)   # nouvel essai du fournisseur principal à chaque run
     if not cle and not secours_disponible():
         print("❌ DEEPSEEK_API_KEY manquante et aucun fournisseur de secours — agent pilote indisponible.")
         return {"termine": False, "arret": "clé DEEPSEEK_API_KEY manquante", "envoye": False,
