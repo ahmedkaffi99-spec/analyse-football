@@ -658,8 +658,9 @@ class TestSecoursGratuit(unittest.TestCase):
         data, _ = pilote._appel_api("cle", messages, 65536, poster=poster, pause=lambda s: None)
         self.assertEqual(data, ok)
         self.assertTrue(pilote._secours["actif"])
-        url_groq, charge = appels[-1]
-        self.assertIn("groq", url_groq)
+        url_secours, charge = appels[-1]
+        self.assertIn("openrouter", url_secours)                              # OpenRouter/DeepSeek d'abord
+        self.assertEqual(charge["model"], "deepseek/deepseek-v4.1-flash")
         self.assertNotIn("reasoning_content", charge["messages"][0])        # champ propre à DeepSeek retiré
         self.assertEqual(charge["max_tokens"], pilote.MAX_TOKENS_SECOURS)    # plafonné pour les gratuits
         # Étape suivante : DeepSeek n'est plus réessayé
@@ -671,13 +672,26 @@ class TestSecoursGratuit(unittest.TestCase):
         ok = {"choices": [{"message": {"role": "assistant", "content": "ok"}}]}
 
         def poster(url, **kw):
-            if "groq" in url:
+            if "openrouter" in url:
                 return self._reponse(429, {})
             return self._reponse(200, ok)
 
         data, _ = pilote._appel_secours([{"role": "user", "content": "x"}], 4096, poster=poster)
         self.assertEqual(data, ok)
-        self.assertIn("openrouter", pilote._secours["choix"][1])
+        self.assertIn("groq", pilote._secours["choix"][1])    # OpenRouter en 429 -> fournisseur suivant
+
+    def test_openrouter_deepseek_par_defaut_des_le_debut_du_run(self):
+        with mock.patch.object(pilote, "FOURNISSEUR_PRINCIPAL", "openrouter"):
+            self.assertTrue(pilote._secours_d_emblee())
+        with mock.patch.object(pilote, "FOURNISSEUR_PRINCIPAL", "deepseek"):
+            self.assertFalse(pilote._secours_d_emblee())
+        with mock.patch.object(pilote, "FOURNISSEUR_PRINCIPAL", "openrouter"), \
+                mock.patch.dict(os.environ, {"OPENROUTER_API_KEY": ""}):
+            self.assertFalse(pilote._secours_d_emblee())   # sans clé OpenRouter : DeepSeek officiel d'abord
+
+    def test_openrouter_deepseek_est_en_tete_de_liste(self):
+        premier = pilote._fournisseurs_secours()[0]
+        self.assertEqual((premier[0], premier[3]), ("OpenRouter", "deepseek/deepseek-v4.1-flash"))
 
     def test_sans_cle_deepseek_direct_sur_le_secours(self):
         ok = {"choices": [{"message": {"role": "assistant", "content": "ok"}}]}
