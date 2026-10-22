@@ -28,10 +28,27 @@ def agents_actifs(monkeypatch):
     monkeypatch.setenv("AGENTS_FAMILLES_ACTIFS", "1")
 
 
-def test_dix_familles_declarees_plus_derives():
-    assert len(af.FAMILLES) == 9
+def test_onze_agents_dix_familles_plus_derives():
+    assert len(af.FAMILLES) == 10
     ids = {f[0] for f in af.FAMILLES} | {af.FAMILLE_DERIVES[0]}
-    assert len(ids) == 10
+    assert len(ids) == 11
+    assert {"fautes", "hors_jeux"} <= ids
+
+
+def test_fautes_et_hors_jeux_sont_deux_familles_distinctes():
+    for cat in ("Total Fautes", "Handicap Fautes", "Total Fautes Équipe 1", "Total Fautes Équipe 2"):
+        assert af.famille_de(cat)[0] == "fautes"
+    for cat in ("Total Hors-jeux", "Handicap Hors-jeux", "Total Hors-jeux Équipe 1", "Total Hors-jeux Équipe 2"):
+        assert af.famille_de(cat)[0] == "hors_jeux"
+    assert af.famille_de("Total Hors-jeux")[1] == "Hors-jeux" and af.famille_de("Total Fautes")[1] == "Fautes"
+
+
+def test_chaque_categorie_modelisee_appartient_a_une_seule_famille():
+    vues = {}
+    for fid, _, cats, _ in af.FAMILLES:
+        for c in cats:
+            assert c not in vues, f"{c} dans {vues[c]} et {fid}"
+            vues[c] = fid
 
 
 def test_famille_de_categorie_connue_et_inconnue():
@@ -258,5 +275,29 @@ def test_plafond_de_cote_totale():
 def test_nouvelles_categories_par_equipe_ont_leur_famille():
     assert af.famille_de("Total Corners Équipe 1")[0] == "corners"
     assert af.famille_de("Total Fautes Équipe 2")[0] == "fautes"
-    assert af.famille_de("Total Hors-jeux Équipe 1")[0] == "fautes"
+    assert af.famille_de("Total Hors-jeux Équipe 1")[0] == "hors_jeux"
     assert af.famille_de("Total Tirs Cadrés Équipe 2")[0] == "tirs"
+
+
+def test_revoir_catalogue_lance_un_agent_par_famille_fautes_et_hors_jeux(monkeypatch):
+    pool = {
+        "A vs B": [_cand("A vs B", "Total Fautes", "Under", 1.5, 74.0, 3.0),
+                   _cand("A vs B", "Total Fautes Équipe 1", "Under", 1.4, 75.0, 2.0)],
+        "C vs D": [_cand("C vs D", "Total Hors-jeux", "Under", 1.4, 76.0, 2.0),
+                   _cand("C vs D", "Total Hors-jeux Équipe 2", "Over", 1.6, 72.0, 2.0)],
+    }
+    catalogue, _ = st.construire_catalogue(pool)
+    monkeypatch.setattr(ae, "budget_ia_epuise", lambda: False)
+    prompts = []
+
+    def appel(prompt, max_tokens=0, json_attendu=False):
+        prompts.append(prompt)
+        return json.dumps({"ecartes": [], "avis": []})
+
+    af.revoir_catalogue(catalogue, appel=appel)
+    assert len(prompts) == 2
+    assert sum("agent spécialiste « Fautes »" in p for p in prompts) == 1
+    assert sum("agent spécialiste « Hors-jeux »" in p for p in prompts) == 1
+    # les candidats d'un agent ne fuient pas dans le prompt de l'autre
+    p_fautes = next(p for p in prompts if "« Fautes »" in p)
+    assert "Hors-jeux" not in p_fautes.split("CANDIDATS :")[1]

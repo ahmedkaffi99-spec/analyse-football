@@ -1,5 +1,5 @@
-"""Les 10 agents spécialistes par famille de marchés (20/10/2026, demande explicite : "ajoute les
-10 agents en production").
+"""Les 11 agents spécialistes par famille de marchés (20/10/2026, demande explicite : "ajoute les
+10 agents en production" ; fautes et hors-jeux séparés en deux agents le 22/10/2026 : 10 familles + dérivés).
 
 Les agents travaillent en parallèle (un appel IA par famille, tous lancés ensemble).
 Chaque agent connaît UNE famille de marchés, ses faits MESURÉS en production (audit des 10
@@ -68,12 +68,19 @@ FAMILLES = (
      "calcul corrigé le 21/10/2026 (somme de Poisson tronquée à 25 : P(Over 25.5 | mu=26) valait 0). "
      "Depuis : binomiale négative (dispersion mesurée 1.35), priors recalés ; backtest sur 6 996 matchs : "
      "côté probable 60-70 % annoncé 63.6 % pour 63.4 % réel. Remesure en production en cours."),
-    ("fautes", "Fautes et hors-jeux",
-     ("Total Fautes", "Handicap Fautes", "Total Hors-jeux", "Handicap Hors-jeux",
-      "Total Fautes Équipe 1", "Total Fautes Équipe 2", "Total Hors-jeux Équipe 1", "Total Hors-jeux Équipe 2"),
-     "Marchés ajoutés au flux le 22/10/2026 : aucune mesure réelle en production. Backtest sur 6 996 matchs "
-     "(fautes) : mu sous-estimé de 0.56 avant recalage des priors, dispersion 1.22, calibré après ; hors-jeux "
-     "non validés par backtest (statistique absente de l'historique). Traite ces paris avec prudence."),
+    ("fautes", "Fautes",
+     ("Total Fautes", "Handicap Fautes", "Total Fautes Équipe 1", "Total Fautes Équipe 2"),
+     "Marché ajouté au flux le 22/10/2026 : aucune mesure réelle en production. Backtest sur 6 996 matchs : "
+     "mu sous-estimé de 0.56 avant recalage du prior (11.9 fautes par équipe), dispersion 1.22 (binomiale "
+     "négative), calibré après recalage. Les cotes de fautes de 1xBet sont très serrées (ex. Over 19.5 à 1.26 "
+     "et Under 19.5 à 3.30) : méfie-toi des lignes extrêmes."),
+    ("hors_jeux", "Hors-jeux",
+     ("Total Hors-jeux", "Handicap Hors-jeux", "Total Hors-jeux Équipe 1", "Total Hors-jeux Équipe 2"),
+     "Marché ajouté au flux le 22/10/2026 : AUCUNE validation par backtest (la statistique « hors-jeux » n'existe "
+     "pas dans l'historique de 8 849 matchs ; seule la moyenne des 10 derniers matchs de chaque équipe est "
+     "collectée en production). Loi de Poisson sans surdispersion mesurée, prior 2.0 par équipe non vérifié. "
+     "Moyennes faibles (environ 2 à 4 par match) : une ligne à 1.5 ou 2.5 est très sensible à un seul hors-jeu. "
+     "Traite ces paris avec la plus grande prudence."),
 )
 FAMILLE_DERIVES = ("derives", "Marchés dérivés (score exact, mi-temps, marge de victoire...)",
                    "Aucune mesure réelle suffisante en production : paris longs, très variables.")
