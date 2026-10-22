@@ -113,6 +113,11 @@ def construire_prompt(pool, profils, catalogue_texte):
         "contrainte précise à viser, SEUL un plancher est vérifié par Python pour CE profil : cote totale >= "
         f"{p.get('cote_totale_min', COTE_TOTALE_MIN):g} (ce plancher varie selon le profil — ne force jamais un "
         "pari seulement pour faire monter ou descendre la cote au-delà de ce qu'il faut pour l'atteindre)."
+        + (f" PLAFOND DE COTE TOTALE POUR CE PROFIL (vérifié par Python) : cote totale <= {p['cote_totale_max']:g}."
+           if p.get("cote_totale_max") else "")
+        + (" FAMILLES OBLIGATOIRES POUR CE PROFIL (vérifié par Python) : le coupon doit contenir AU MOINS UN pari "
+           "de CHAQUE famille de marchés présente dans le catalogue (voir familles_a_couvrir dans voir_catalogue), "
+           "sur des matchs différents." if p.get("familles_obligatoires") else "")
         + (" PROFIL RISQUÉ INTENTIONNEL (demande explicite \"cote élevée = gain élevé\") : parmi les paris déjà "
            "filtrés par Python (probabilité >= 60%, jamais en dessous), choisis ceux à la cote individuelle la "
            "PLUS ÉLEVÉE disponible plutôt que les plus sûrs — contrairement aux autres profils, qui visent la "
@@ -381,6 +386,58 @@ def _familles_dominantes(selections, catalogue, deja_presents=()):
     return erreurs
 
 
+def familles_du_catalogue(catalogue):
+    """{id_famille: nom} des familles de marchés présentes dans le catalogue (après revue des agents)."""
+    return {fid: nom for fid, nom, _ in (agents_familles.famille_de(c["pick"]["categorie"]) for c in catalogue.values())}
+
+
+def _nb_familles_couvrables(catalogue):
+    """Plus grand nombre de familles distinctes qu'un coupon à UN pari par match peut couvrir
+    (couplage maximum familles <-> matchs, algorithme de Kuhn). Avec 5 familles mais 3 matchs, « toutes
+    les familles » est impossible : la règle exige alors 3, pas 5."""
+    matchs_par_famille = {}
+    for c in catalogue.values():
+        matchs_par_famille.setdefault(agents_familles.famille_de(c["pick"]["categorie"])[0], set()).add(c["match"])
+    affectation = {}  # match -> famille
+
+    def placer(famille, vus):
+        for m in matchs_par_famille[famille]:
+            if m in vus:
+                continue
+            vus.add(m)
+            if m not in affectation or placer(affectation[m], vus):
+                affectation[m] = famille
+                return True
+        return False
+
+    return sum(1 for f in matchs_par_famille if placer(f, set()))
+
+
+def _familles_manquantes(selections, catalogue):
+    """Erreurs (liste) si le coupon ne couvre pas assez de familles de marchés. Profil
+    « familles_obligatoires » (demande explicite du 22/10/2026 : « choisis obligatoirement toutes les
+    familles de marché ») : le coupon doit couvrir toutes les familles du catalogue, ou le maximum
+    FAISABLE avec un pari par match (_nb_familles_couvrables). Le message indique, pour chaque famille
+    absente, les candidats sur des matchs encore libres, pour que l'IA corrige en un tour."""
+    presentes = {agents_familles.famille_de(s["pick"]["categorie"])[0] for s in selections}
+    requis = _nb_familles_couvrables(catalogue)
+    if len(presentes) >= requis:
+        return []
+    matchs_pris = {s["match"] for s in selections}
+    absentes = []
+    for fid, nom in familles_du_catalogue(catalogue).items():
+        if fid in presentes:
+            continue
+        candidats = [(cid, c) for cid, c in catalogue.items()
+                     if agents_familles.famille_de(c["pick"]["categorie"])[0] == fid]
+        libres = [(cid, c) for cid, c in candidats if c["match"] not in matchs_pris]
+        montres = ", ".join(f"{cid} ({c['match']}, {c['pick']['selection']} @ {c['pick']['cote']})"
+                            for cid, c in (libres or candidats)[:3])
+        absentes.append(f"« {nom} » : {montres}")
+    return [f"seulement {len(presentes)} famille(s) de marchés couverte(s), il en faut au moins {requis} "
+            f"(obligatoire, un pari par match) — familles absentes et candidats : " + " ; ".join(absentes)]
+
+
 def valider(proposition, catalogue, profils, signatures_existantes=(), selections_precedentes=(),
             ignorer_diversite_croisee=False):
     """Contrôle la proposition de l'IA profil par profil. Renvoie
@@ -492,6 +549,12 @@ def valider(proposition, catalogue, profils, signatures_existantes=(), selection
         if selections and cote < plancher:
             erreurs.append(f"cote totale {cote:.2f} trop basse (minimum {plancher:g} pour ce profil) — "
                            "ajoute un pari ou remplace par des cotes plus hautes")
+        plafond = profil.get("cote_totale_max")
+        if selections and plafond and cote > plafond:
+            erreurs.append(f"cote totale {cote:.2f} trop haute (maximum {plafond:g} pour ce profil) — "
+                           "retire un pari ou remplace par des cotes plus basses")
+        if selections and profil.get("familles_obligatoires"):
+            erreurs.extend(_familles_manquantes(selections, catalogue))
         empreinte = signature(selections)
         if empreinte and empreinte in signatures:
             erreurs.append("identique à un autre coupon")

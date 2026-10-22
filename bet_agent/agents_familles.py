@@ -26,7 +26,7 @@ PART_MAX_ECARTEE = 0.5
 # (id, nom, catégories exactes, faits mesurés). Tout ce qui n'est dans aucune liste → "derives".
 FAMILLES = (
     ("resultat", "Résultat 1X2 / Double Chance",
-     ("Double Chance", "Double Chance Full Time", "Full Time Result"),
+     ("Double Chance", "Double Chance Full Time", "Full Time Result", "Draw No Bet"),
      "Backtest 6997 matchs (5 championnats) : P(1X) est calibrée en moyenne (+0,5 pt) mais "
      "surestimée de 4 à 5 pts quand l'équipe à domicile est l'OUTSIDER (Elo domicile+avantage < "
      "Elo extérieur). En production (dédupliqué) : 1X = 7/21 (33 %) pour ~69 % annoncé ; 12 = 10/11 "
@@ -39,7 +39,7 @@ FAMILLES = (
     ("buts_equipe", "Buts par équipe / Win To Nil",
      ("Total Équipe 1", "Total Équipe 2", "Over Under Team 1", "Over Under Team 2",
       "Win To Nil Équipe 1", "Win To Nil Équipe 2", "Team 1 Win To Nil", "Team 2 Win To Nil",
-      "Team 1 Clean Sheet", "Team 2 Clean Sheet"),
+      "Team 1 Clean Sheet", "Team 2 Clean Sheet", "Clean Sheet Équipe 1", "Clean Sheet Équipe 2"),
      "Motif observé (n=23, pas encore significatif) : les « Over » d'équipe 1 sont à surveiller. "
      "Les lignes d'équipe à cote > 4 sont des paris longs à faible probabilité."),
     ("btts", "BTTS (les deux équipes marquent)",
@@ -61,9 +61,11 @@ FAMILLES = (
      "quand l'arbitre est assigné et a >= 5 matchs d'historique ; sinon aucun ajustement — les "
      "cartons restent un marché très variable."),
     ("tirs", "Tirs",
-     ("Total Tirs", "Total Tirs Cadrés", "Handicap Tirs"),
-     "Total Tirs EXCLU : 26 paris réels dédupliqués, tous « Under », 50,0 % réel pour 69,1 % "
-     "annoncé (-19,1 pts) — la Poisson pure sous-estime la variance des tirs."),
+     ("Total Tirs", "Total Tirs Cadrés", "Handicap Tirs", "Handicap Tirs Cadrés"),
+     "Total Tirs : l'écart de 50 % réel pour 69 % annoncé (26 paris, tous « Under ») venait d'un BUG de "
+     "calcul corrigé le 21/10/2026 (somme de Poisson tronquée à 25 : P(Over 25.5 | mu=26) valait 0). "
+     "Depuis : binomiale négative (dispersion mesurée 1.35), priors recalés ; backtest sur 6 996 matchs : "
+     "côté probable 60-70 % annoncé 63.6 % pour 63.4 % réel. Remesure en production en cours."),
     ("fautes", "Fautes et hors-jeux",
      ("Total Fautes", "Handicap Fautes", "Total Hors-jeux", "Handicap Hors-jeux"),
      "Aucune mesure réelle suffisante en production : traite ces paris avec la plus grande "
@@ -167,7 +169,7 @@ def revoir_catalogue(catalogue, appel=None):
         except Exception as e:
             print(f"   ⚠️ [Agent {nom}] réponse inexploitable ({ae._cause(e)[:120]}) — famille inchangée.")
             continue
-        plafond = max(1, int(len(restants) * PART_MAX_ECARTEE))
+        plafond = int(len(restants) * PART_MAX_ECARTEE)  # floor : une famille d'un seul candidat n'est jamais vidée
         for e in proposes[:plafond]:
             ecartes.add(e["id"])
             avis[e["id"]] = f"[écarté par l'agent {nom}] {str(e.get('raison') or '').strip()[:160]}"

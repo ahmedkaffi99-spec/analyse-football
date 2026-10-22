@@ -1981,35 +1981,25 @@ class TestCorrectifsP0(unittest.TestCase):
         self.assertIn("BTTS", categories)
         self.assertIn("Total", categories)
 
-    def test_total_tirs_exclu_du_calcul(self):
-        # 18/10/2026, audit Agent 8 (10 agents en parallèle) : "Total Tirs" écarté après un
-        # écart réel de -19,1 pts qui SURVIT à la déduplication par match (26 paris réels
-        # distincts, tous "Under", 50,0% réel pour 69,1% annoncé) — cause probable : Poisson
-        # pure au lieu d'une binomiale négative (surdispersion) pour ce marché.
-        self.assertIn("Total Tirs", ae.CATEGORIES_EXCLUES)
-        marches = [{"marche": "Total Shots", "handicap": 22.5, "periode": "fulltime",
-                    "selections": [{"selection": "Over", "cote": 1.9}, {"selection": "Under", "cote": 1.9}]},
-                   {"marche": "Over Under Full Time", "handicap": 2.5, "periode": "fulltime",
+    def test_total_tirs_reintegre_apres_correction_de_la_troncature(self):
+        # 22/10/2026 : exclu le 18/10 (50 % réel pour 69 % annoncé) à cause d'un bug de troncature
+        # des sommes de Poisson à 25 (corrigé le 21/10) ; réintégré, calibré au backtest.
+        self.assertNotIn("Total Tirs", ae.CATEGORIES_EXCLUES)
+        marches = [{"marche": "Shots - Over Under Full Time", "handicap": 24.5, "periode": "fulltime",
                     "selections": [{"selection": "Over", "cote": 1.9}, {"selection": "Under", "cote": 1.9}]}]
         categories = {c["categorie"] for c in ae.evaluer_marches_toutes(
-            marches, 1.5, 1.2, mu_tirs_equipes=(12.0, 10.0))}
-        self.assertNotIn("Total Tirs", categories)
-        self.assertIn("Total", categories)
+            marches, 1.5, 1.2, mu_tirs_equipes=(12.5, 12.5))}
+        self.assertIn("Total Tirs", categories)
 
-    def test_total_tirs_exclu_du_calcul(self):
-        # 18/10/2026, audit Agent 8 (10 agents en parallèle) : "Total Tirs" écarté après un
-        # écart réel de -19,1 pts qui SURVIT à la déduplication par match (26 paris réels
-        # distincts, tous "Under", 50,0% réel pour 69,1% annoncé) — cause probable : Poisson
-        # pure au lieu d'une binomiale négative (surdispersion) pour ce marché.
-        self.assertIn("Total Tirs", ae.CATEGORIES_EXCLUES)
-        marches = [{"marche": "Total Shots", "handicap": 22.5, "periode": "fulltime",
-                    "selections": [{"selection": "Over", "cote": 1.9}, {"selection": "Under", "cote": 1.9}]},
-                   {"marche": "Over Under Full Time", "handicap": 2.5, "periode": "fulltime",
+    def test_total_tirs_reintegre_apres_correction_de_la_troncature(self):
+        # 22/10/2026 : exclu le 18/10 (50 % réel pour 69 % annoncé) à cause d'un bug de troncature
+        # des sommes de Poisson à 25 (corrigé le 21/10) ; réintégré, calibré au backtest.
+        self.assertNotIn("Total Tirs", ae.CATEGORIES_EXCLUES)
+        marches = [{"marche": "Shots - Over Under Full Time", "handicap": 24.5, "periode": "fulltime",
                     "selections": [{"selection": "Over", "cote": 1.9}, {"selection": "Under", "cote": 1.9}]}]
         categories = {c["categorie"] for c in ae.evaluer_marches_toutes(
-            marches, 1.5, 1.2, mu_tirs_equipes=(12.0, 10.0))}
-        self.assertNotIn("Total Tirs", categories)
-        self.assertIn("Total", categories)
+            marches, 1.5, 1.2, mu_tirs_equipes=(12.5, 12.5))}
+        self.assertIn("Total Tirs", categories)
 
 
 class TestQuotaOddsPapiEpuiseArreteLesAppels(unittest.TestCase):

@@ -16,6 +16,7 @@ def _cand(match, categorie, selection, cote, proba, edge, marche="M"):
 def _pool():
     return {
         "A vs B": [_cand("A vs B", "Double Chance", "1X", 1.8, 76.0, 8.0),
+                   _cand("A vs B", "Double Chance", "12", 1.3, 77.0, 3.0),
                    _cand("A vs B", "Total", "Over", 1.7, 74.0, 6.0)],
         "C vs D": [_cand("C vs D", "Total Corners", "Under", 1.9, 72.0, 25.0),
                    _cand("C vs D", "Score Exact Bizarre", "1-0", 6.0, 71.0, 5.0)],
@@ -47,8 +48,27 @@ def test_veto_python_edge_suspect():
 
 
 def test_veto_python_categorie_exclue():
-    assert "Total Tirs" in ae.CATEGORIES_EXCLUES
-    assert af.veto_python({"categorie": "Total Tirs", "edge_pct": 1.0}) is not None
+    assert "Handicap Corners" in ae.CATEGORIES_EXCLUES
+    assert af.veto_python({"categorie": "Handicap Corners", "edge_pct": 1.0}) is not None
+    # Total Tirs réintégré le 22/10/2026 (bug de troncature corrigé) : plus de veto de catégorie
+    assert af.veto_python({"categorie": "Total Tirs", "edge_pct": 1.0}) is None
+
+
+def test_categories_modelisees_ont_leur_famille():
+    """Audit du 22/10 : ces catégories modélisées tombaient à tort dans « dérivés »."""
+    assert af.famille_de("Draw No Bet")[0] == "resultat"
+    assert af.famille_de("Clean Sheet Équipe 1")[0] == "buts_equipe"
+    assert af.famille_de("Handicap Tirs Cadrés")[0] == "tirs"
+
+
+def test_une_famille_d_un_seul_candidat_n_est_jamais_videe(monkeypatch):
+    catalogue, _ = st.construire_catalogue({"A vs B": [_cand("A vs B", "Double Chance", "1X", 1.8, 76.0, 8.0)]})
+    monkeypatch.setattr(ae, "budget_ia_epuise", lambda: False)
+    id_dc = next(i for i, c in catalogue.items() if c["pick"]["categorie"] == "Double Chance")
+    appel = lambda prompt, max_tokens=0, json_attendu=False: json.dumps(
+        {"ecartes": [{"id": id_dc, "raison": "x"}], "avis": []})
+    ecartes, _ = af.revoir_catalogue(catalogue, appel=appel)
+    assert id_dc not in ecartes
 
 
 def test_revoir_catalogue_veto_python_sans_ia(monkeypatch):
@@ -186,3 +206,50 @@ def test_coupon_equilibre_entre_familles_accepte():
                   _sel("G vs H", "Double Chance", "1X"), _sel("I vs J", "BTTS", "Yes")]
     catalogue = {f"P{i}": s for i, s in enumerate(selections)}
     assert st._familles_dominantes(selections, catalogue) == []
+
+
+# ------------------------------------------------------------------ profil « toutes les familles » + plafond de cote
+def _pool_familles():
+    return {
+        "A vs B": [_cand("A vs B", "Double Chance", "12", 1.3, 80.0, 3.0), _cand("A vs B", "Total", "Over", 1.5, 76.0, 4.0)],
+        "C vs D": [_cand("C vs D", "Total Corners", "Over", 1.6, 74.0, 5.0)],
+        "E vs F": [_cand("E vs F", "BTTS", "Yes", 1.7, 72.0, 4.0), _cand("E vs F", "Total Cartons", "Under", 1.4, 78.0, 2.0)],
+    }
+
+
+def _valider(ids, profil):
+    catalogue, _ = st.construire_catalogue(_pool_familles())
+    par_cat = {c["pick"]["categorie"]: cid for cid, c in catalogue.items()}
+    proposition = {"coupons": [{"profil": "p", "strategie": "s",
+                                "jambes": [{"id": par_cat[c], "raison": "ok"} for c in ids]}]}
+    return st.valider(proposition, catalogue, [dict({"cle": "p", "nom": "P", "nb_jambes": 8, "nb_jambes_min": 2,
+                                                       "cote_totale_min": 1.0}, **profil)])
+
+
+def test_familles_couvrables_limitees_par_le_nombre_de_matchs():
+    catalogue, _ = st.construire_catalogue(_pool_familles())
+    assert len(st.familles_du_catalogue(catalogue)) == 5  # résultat, buts total, corners, BTTS, cartons
+    assert st._nb_familles_couvrables(catalogue) == 3      # mais 3 matchs, un pari par match
+
+
+def test_familles_obligatoires_refuse_un_coupon_qui_couvre_moins_que_le_maximum_faisable():
+    acceptes, problemes, _ = _valider(["Double Chance", "Total Corners"], {"familles_obligatoires": True})
+    assert not acceptes and "il en faut au moins 3" in problemes[0]
+
+
+def test_familles_obligatoires_accepte_le_maximum_faisable():
+    acceptes, problemes, _ = _valider(["Double Chance", "Total Corners", "BTTS"], {"familles_obligatoires": True})
+    assert "p" in acceptes, problemes
+
+
+def test_sans_le_drapeau_une_famille_absente_reste_permise():
+    acceptes, _, _ = _valider(["Double Chance", "Total Corners"], {})
+    assert "p" in acceptes
+
+
+def test_plafond_de_cote_totale():
+    # 1.3 * 1.6 * 1.7 = 3.54
+    acceptes, problemes, _ = _valider(["Double Chance", "Total Corners", "BTTS"], {"cote_totale_max": 3.0})
+    assert not acceptes and "trop haute" in problemes[0]
+    acceptes, _, _ = _valider(["Double Chance", "Total Corners", "BTTS"], {"cote_totale_max": 4.0})
+    assert "p" in acceptes

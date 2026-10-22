@@ -1053,8 +1053,11 @@ def cote_hors_fourchette(cote):
 # vraies jambes mesurables par qualite_marches() (maintenant fiable, filtré sur
 # envoye_telegram) ; à remesurer après 2 semaines de production avant toute décision
 # définitive. Si le signal négatif revient, remettre "BTTS" dans cette liste.
+# "Total Tirs" RÉINTÉGRÉ le 22/10/2026 (demande explicite : toutes les familles de marchés) : son écart
+# réel venait d'un bug de troncature des sommes corrigé le 21/10 (voir _borne_poisson), pas d'un défaut
+# du marché ; le backtest (6 996 matchs) le montre calibré (63.6 % annoncé / 63.4 % réel).
 CATEGORIES_EXCLUES = tuple(c.strip() for c in os.getenv("MARCHES_EXCLUS", "").split(",") if c.strip()) or (
-    "Handicap Corners", "Handicap Cartons", "Total Tirs")
+    "Handicap Corners", "Handicap Cartons")
 
 
 def est_marche_exclu(nom_marche):
