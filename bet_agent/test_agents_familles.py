@@ -174,7 +174,7 @@ def test_les_agents_travaillent_en_parallele(monkeypatch):
         "A vs B": [_cand("A vs B", "Double Chance", "1X", 1.8, 76.0, 8.0)],
         "C vs D": [_cand("C vs D", "Total", "Over", 1.7, 74.0, 6.0)],
         "E vs F": [_cand("E vs F", "Total Corners", "Under", 1.9, 72.0, 5.0)],
-        "G vs H": [_cand("G vs H", "BTTS", "Yes", 1.9, 71.0, 5.0)],
+        "G vs H": [_cand("G vs H", "Total Cartons", "Under", 1.9, 71.0, 5.0)],
     }
     catalogue, _ = st.construire_catalogue(pool)
     monkeypatch.setattr(ae, "budget_ia_epuise", lambda: False)
@@ -301,3 +301,14 @@ def test_revoir_catalogue_lance_un_agent_par_famille_fautes_et_hors_jeux(monkeyp
     # les candidats d'un agent ne fuient pas dans le prompt de l'autre
     p_fautes = next(p for p in prompts if "« Fautes »" in p)
     assert "Hors-jeux" not in p_fautes.split("CANDIDATS :")[1]
+
+
+def test_btts_est_exclu_et_son_agent_n_est_jamais_lance(monkeypatch):
+    """22/10/2026 : BTTS exclu définitivement (backtest, aucun signal) — veto Python, aucun appel IA pour lui."""
+    assert "BTTS" in ae.CATEGORIES_EXCLUES
+    assert af.veto_python({"categorie": "BTTS", "edge_pct": 1.0}) is not None
+    pool = {"A vs B": [_cand("A vs B", "BTTS", "Yes", 1.9, 71.0, 5.0), _cand("A vs B", "BTTS", "No", 1.9, 72.0, 5.0)]}
+    catalogue, _ = st.construire_catalogue(pool)
+    monkeypatch.setattr(ae, "budget_ia_epuise", lambda: False)
+    ecartes, _ = af.revoir_catalogue(catalogue, appel=lambda *a, **k: pytest.fail("agent BTTS lancé"))
+    assert ecartes == set(catalogue)

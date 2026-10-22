@@ -1982,18 +1982,17 @@ class TestCorrectifsP0(unittest.TestCase):
                 "C vs D": [_selection("C vs D", "Total", "Over", 1.5, proba=72.0)]}
         self.assertIsNone(ae.selectionner_combo_cote_cible(pool, 2, 1.0, 100.0))
 
-    def test_btts_reintegre_en_essai_borne(self):
-        # 18/10/2026, demande explicite ("lance les deux", essai borné décidé après l'audit
-        # Agent 4) : les 35 paris qui motivaient l'exclusion du 03/10/2026 datent tous d'avant
-        # le correctif de lissage additif — BTTS n'est plus exclu par défaut, pour accumuler de
-        # vraies jambes mesurables par qualite_marches() (maintenant fiable).
-        self.assertNotIn("BTTS", ae.CATEGORIES_EXCLUES)
+    def test_btts_exclu_definitivement_apres_backtest(self):
+        # 18/10/2026 : réintégré en essai borné ; 22/10/2026 : EXCLU DÉFINITIVEMENT — backtest walk-forward
+        # (3 499 matchs de test, 9 modèles) : meilleur Brier 0.2469 contre 0.2477 pour la constante de ligue,
+        # aucun signal exploitable, tranche 65-70 % annoncée à 48.6 % réel.
+        self.assertIn("BTTS", ae.CATEGORIES_EXCLUES)
         marches = [{"marche": "Both Teams To Score", "handicap": None, "periode": "fulltime",
                     "selections": [{"selection": "Yes", "cote": 1.8}, {"selection": "No", "cote": 2.0}]},
                    {"marche": "Over Under Full Time", "handicap": 2.5, "periode": "fulltime",
                     "selections": [{"selection": "Over", "cote": 1.9}, {"selection": "Under", "cote": 1.9}]}]
         categories = {c["categorie"] for c in ae.evaluer_marches_toutes(marches, 1.5, 1.2)}
-        self.assertIn("BTTS", categories)
+        self.assertNotIn("BTTS", categories)
         self.assertIn("Total", categories)
 
     def test_total_tirs_reintegre_apres_correction_de_la_troncature(self):
