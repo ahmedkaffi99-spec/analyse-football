@@ -34,6 +34,7 @@ on:
           - backtest-btts
           - backtest-btts-profondeur
           - btts-du-jour
+          - envoyer-coupon-telegram
           - backtest-hors-jeux
           - catalogue-par-famille
         default: marches-disponibles
@@ -1122,6 +1123,37 @@ jobs:
               moy = lambda cle, cote: sum((l[2 if cote == 'oui' else 3] or {}).get(cle) or 0 for l in lignes) / n
               print(f'\\nMoyennes sur {n} match(s) : OUI modèle={moy(\"proba_poisson_pct\", \"oui\"):.1f}%  marché={moy(\"proba_marche_pct\", \"oui\"):.1f}%   '
                     f'NON modèle={moy(\"proba_poisson_pct\", \"non\"):.1f}%  marché={moy(\"proba_marche_pct\", \"non\"):.1f}%')
+          "
+
+      - name: Envoyer sur Telegram un coupon DÉJÀ généré (numéro du coupon dans match_recherche)
+        # Envoi explicitement autorisé par l'utilisateur le 22/10/2026 pour le coupon 247 (run 184).
+        # Renvoie le texte tel qu'enregistré en base, sans régénérer ni modifier le coupon.
+        if: inputs.verification == 'envoyer-coupon-telegram'
+        working-directory: backend
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python -c "
+          import os
+          import sys
+          from pathlib import Path
+          RACINE = Path.cwd().parent
+          sys.path.insert(0, str(RACINE))
+          sys.path.insert(0, str(RACINE / 'bet_agent'))
+
+          from app.database import SessionLocal
+          from app.models import Coupon
+
+          import analyser_et_envoyer as ae
+
+          coupon_id = int(os.environ['MATCH_RECHERCHE'])
+          with SessionLocal() as db:
+              texte = db.get(Coupon, coupon_id).texte
+          assert texte, 'coupon sans texte'
+          ok = ae.agent5_envoyer_coupons([texte])
+          print('ENVOYE' if ok else 'ECHEC')
+          sys.exit(0 if ok else 1)
           "
 
       - name: Backtest réel — HORS-JEUX (échantillon API-Football en mémoire, aucune écriture en base)
