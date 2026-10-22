@@ -1,6 +1,7 @@
 """Tests hors-ligne de l'agent pilote DeepSeek (executer() branché sur collecte/analyse
 réelles, moteur piloter() simulé) : python -m unittest test_agent_pilote"""
 import json
+import os
 import unittest
 from unittest import mock
 
@@ -623,3 +624,74 @@ class TestMinimumDeJambesAdaptatifEtAbstentionSansTelegram(unittest.TestCase):
         resultat, envoi = self._executer(self._pool(3), reponses, profil)
         envoi.assert_not_called()
         self.assertFalse(resultat["envoye"])
+
+
+class TestSecoursGratuit(unittest.TestCase):
+    """22/10/2026 : DeepSeek 402 « Insufficient Balance » arrêtait tout le run — bascule sur Groq/Gemini/OpenRouter."""
+
+    def setUp(self):
+        pilote._secours.update(actif=False, choix=None)
+        self.env = mock.patch.dict(os.environ, {"GROQ_API_KEY": "g", "GEMINI_API_KEY": "", "OPENROUTER_API_KEY": "o",
+                                                "GROQ_MODELES": "openai/gpt-oss-120b",
+                                                "OPENROUTER_MODELES": "gratuit/modele:free"})
+        self.env.start()
+        self.addCleanup(self.env.stop)
+        self.addCleanup(lambda: pilote._secours.update(actif=False, choix=None))
+
+    @staticmethod
+    def _reponse(code, corps=None):
+        r = mock.Mock(status_code=code, content=b"x", text=json.dumps(corps or {}))
+        r.json.return_value = corps or {}
+        return r
+
+    def test_402_deepseek_bascule_sur_groq(self):
+        ok = {"choices": [{"message": {"role": "assistant", "content": "ok"}}], "usage": {"total_tokens": 5}}
+        appels = []
+
+        def poster(url, **kw):
+            appels.append((url, kw["json"]))
+            if "deepseek" in url:
+                return self._reponse(402, {"error": {"message": "Insufficient Balance"}})
+            return self._reponse(200, ok)
+
+        messages = [{"role": "assistant", "content": "", "reasoning_content": "pensée DeepSeek"}]
+        data, _ = pilote._appel_api("cle", messages, 65536, poster=poster, pause=lambda s: None)
+        self.assertEqual(data, ok)
+        self.assertTrue(pilote._secours["actif"])
+        url_groq, charge = appels[-1]
+        self.assertIn("groq", url_groq)
+        self.assertNotIn("reasoning_content", charge["messages"][0])        # champ propre à DeepSeek retiré
+        self.assertEqual(charge["max_tokens"], pilote.MAX_TOKENS_SECOURS)    # plafonné pour les gratuits
+        # Étape suivante : DeepSeek n'est plus réessayé
+        appels.clear()
+        pilote._appel_api("cle", messages, 65536, poster=poster, pause=lambda s: None)
+        self.assertTrue(all("deepseek" not in u for u, _ in appels))
+
+    def test_fournisseur_suivant_quand_le_premier_echoue(self):
+        ok = {"choices": [{"message": {"role": "assistant", "content": "ok"}}]}
+
+        def poster(url, **kw):
+            if "groq" in url:
+                return self._reponse(429, {})
+            return self._reponse(200, ok)
+
+        data, _ = pilote._appel_secours([{"role": "user", "content": "x"}], 4096, poster=poster)
+        self.assertEqual(data, ok)
+        self.assertIn("openrouter", pilote._secours["choix"][1])
+
+    def test_sans_cle_deepseek_direct_sur_le_secours(self):
+        ok = {"choices": [{"message": {"role": "assistant", "content": "ok"}}]}
+        data, _ = pilote._appel_api(None, [{"role": "user", "content": "x"}], 4096,
+                                    poster=lambda url, **kw: self._reponse(200, ok))
+        self.assertEqual(data, ok)
+
+    def test_erreur_deepseek_remontee_sans_secours_configure(self):
+        with mock.patch.dict(os.environ, {"GROQ_API_KEY": "", "OPENROUTER_API_KEY": "", "GEMINI_API_KEY": ""}):
+            with self.assertRaises(RuntimeError):
+                pilote._appel_api("cle", [], 4096, pause=lambda s: None,
+                                  poster=lambda url, **kw: self._reponse(402, {"error": {"message": "Insufficient Balance"}}))
+
+    def test_tous_les_secours_en_echec_leve_une_erreur_claire(self):
+        with self.assertRaises(RuntimeError) as ctx:
+            pilote._appel_secours([], 4096, poster=lambda url, **kw: self._reponse(500, {}))
+        self.assertIn("Aucun fournisseur de secours", str(ctx.exception))
