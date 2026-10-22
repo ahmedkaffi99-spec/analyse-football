@@ -29,6 +29,8 @@ on:
           - backtest-avantage-domicile
           - backtest-calibration-non-buts
           - bets-bruts-api-football
+          - backtest-marches-absents
+          - backtest-hors-jeux
           - catalogue-par-famille
         default: marches-disponibles
       date_debut:
@@ -1035,6 +1037,19 @@ jobs:
                           print(f'   bookmaker {bk.get(\"id\")} {bk.get(\"name\")} : {fautes}')
                   print(f'   {len(e.get(\"bookmakers\", []))} bookmaker(s) servis au total')
           "
+
+      - name: Backtest réel — marchés ABSENTS des coupons (BTTS, handicaps, par équipe, pair/impair, score exact...)
+        # Walk-forward sur les 5 championnats (hist_matchs, lecture seule), fonctions de PRODUCTION
+        # (bet_agent/backtest_marches_absents.py) : calibration annoncé/réel par marché et par tranche.
+        if: inputs.verification == 'backtest-marches-absents'
+        working-directory: bet_agent
+        run: python backtest_marches_absents.py
+
+      - name: Backtest réel — HORS-JEUX (échantillon API-Football en mémoire, aucune écriture en base)
+        # ~760 appels /fixtures/statistics (2 ligues x 2 saisons), limiteur de débit de la production.
+        if: inputs.verification == 'backtest-hors-jeux'
+        working-directory: bet_agent
+        run: python backtest_hors_jeux.py
 
       - name: Catalogue par famille de marchés d'un run archivé (pourquoi 5 agents sur 10 sans candidat)
         # Relit la collecte archivée d'un run (numéro dans 'match_recherche') et recalcule le pool de
