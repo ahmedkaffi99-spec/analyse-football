@@ -139,15 +139,15 @@ def _normaliser_selection_api_football(categorie, valeur_brute):
         if not m:
             return None, None
         ligne = float(m.group(2))
-        # Convention OddsPapi/interne CONFIRMÉE sur données réelles le 20/10/2026 (table cotes,
-        # favori à 1.43 : "1" à handicap -1 = 1.59 / "2" à handicap -1 = 2.11 ; "1" à +1 = 1.02 /
-        # "2" à +1 = 10.5) : UNE seule valeur de handicap par marché, référencée au DOMICILE —
-        # "1" = Home h, "2" = Away (-h). API-Football miroite la ligne par sélection ("Home -1.25"
-        # / "Away +1.25") : on ramène donc "Away y" à la ligne domicile -y pour que les deux côtés
-        # tombent dans le MÊME marché.
-        if m.group(1) == "Home":
-            return "1", ligne
-        return "2", (-ligne if ligne != 0 else 0.0)
+        # BUG CORRIGÉ le 22/10/2026 : API-Football étiquette les DEUX côtés d'une même ligne avec la MÊME
+        # valeur, référencée au domicile — « Home -1.5 @2.28 » et « Away -1.5 @1.69 » sont les deux issues
+        # complémentaires du handicap -1.5 (1/2.28 + 1/1.69 = 1.03), « Away -1.5 » signifiant Away +1.5 pour
+        # l'extérieur. Constaté sur les fautes (Home -1.5 @2.55 / Away -1.5 @1.42) et sur les cotes stockées
+        # (écart moyen à la complémentarité 0.38 sur 131 lignes). L'ancienne version inversait le signe
+        # (« Away y » -> ligne -y) et rangeait donc le côté extérieur sur la MAUVAISE ligne : le modèle
+        # évaluait « Away +h » avec la cote de « Away -h » (edges aberrants, vetoés heureusement).
+        # Convention interne inchangée : UNE valeur par marché, "1" = Home h, "2" = Away h-complément.
+        return ("1" if m.group(1) == "Home" else "2"), ligne
     if categorie in CATEGORIES_OVER_UNDER:
         m = re.match(r"^(Over|Under)\s+(\d+(?:\.\d+)?)$", valeur_brute)
         if not m:
