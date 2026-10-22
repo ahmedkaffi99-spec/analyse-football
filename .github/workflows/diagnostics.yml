@@ -35,6 +35,7 @@ on:
           - backtest-btts-profondeur
           - btts-du-jour
           - envoyer-coupon-telegram
+          - suivi-coupons
           - backtest-hors-jeux
           - catalogue-par-famille
         default: marches-disponibles
@@ -1154,6 +1155,57 @@ jobs:
           ok = ae.agent5_envoyer_coupons([texte])
           print('ENVOYE' if ok else 'ECHEC')
           sys.exit(0 if ok else 1)
+          "
+
+      - name: Suivi des coupons (numéros dans match_recherche) — rapport court par jambe, sans Telegram
+        # Juge les matchs terminés (mise à jour habituelle de jambes.resultat par le vérificateur de production),
+        # puis imprime, par coupon, un verdict par jambe, le score/la minute des matchs en cours et un
+        # drapeau « TOUS LES MATCHS TERMINÉS » quand plus aucune jambe n'est en attente. Aucun envoi.
+        if: inputs.verification == 'suivi-coupons'
+        working-directory: backend
+        run: |
+          python -c "
+          import os
+          import sys
+          from pathlib import Path
+          RACINE = Path.cwd().parent
+          sys.path.insert(0, str(RACINE))
+          sys.path.insert(0, str(RACINE / 'bet_agent'))
+
+          from sqlalchemy import select
+          from app.database import SessionLocal
+          from app.models import Coupon, Jambe
+          from app.services.verification import etat_live_jambes, statut_coupon, verifier_coupons_en_attente
+
+          import analyser_et_envoyer as ae
+
+          ids = [int(x) for x in os.environ['MATCH_RECHERCHE'].split(',') if x.strip().isdigit()]
+          ICONES = {'gagne': '✅', 'perdu': '❌', 'push': '➖', 'en_attente': '⏳', 'perime': '❔', 'non_verifiable': '❔'}
+          with SessionLocal() as db:
+              compte = verifier_coupons_en_attente(db)
+              print(f'🔎 Jambes jugées à cette passe : {dict(compte) or \"aucune\"}')
+              tout_fini = True
+              for cid in ids:
+                  coupon = db.get(Coupon, cid)
+                  jambes = list(db.scalars(select(Jambe).where(Jambe.coupon_id == cid).order_by(Jambe.id)))
+                  live = {(e['match'], e['selection'], e['marche']): e for e in etat_live_jambes(db, run_id=coupon.run_id)}
+                  statut = statut_coupon([j.resultat for j in jambes])
+                  nb = {k: sum(1 for j in jambes if j.resultat == k) for k in ('gagne', 'perdu', 'push', 'en_attente')}
+                  print(f'\n=== Coupon {cid} — cote {coupon.cote_totale} — statut : {statut.upper()} '
+                        f'(✅{nb[\"gagne\"]} ❌{nb[\"perdu\"]} ➖{nb[\"push\"]} ⏳{nb[\"en_attente\"]}) ===')
+                  for i, j in enumerate(jambes, start=1):
+                      sel = {'match': j.libelle_match, 'pick': {'categorie': j.categorie, 'marche': j.marche,
+                             'marche_affichage': j.marche, 'selection': j.selection, 'cote': j.cote, 'handicap': j.handicap}}
+                      e = live.get((j.libelle_match, j.selection, j.marche))
+                      score = ''
+                      if e:
+                          minute = f\"{e['minute']}'\" if e['minute'] is not None else e['statut']
+                          score = f\" · EN COURS {e['score_actuel']} ({minute}) → si ça finit ainsi : {e['verdict_si_ca_finissait_maintenant']}\"
+                      elif j.match and j.match.score_domicile is not None:
+                          score = f' · score final {j.match.score_domicile}-{j.match.score_exterieur}'
+                      print(f'{i:2d}. {ICONES.get(j.resultat, \"❔\")} {j.libelle_match} — {ae._libelle_pari_court(sel)} @{j.cote}{score}')
+                  tout_fini = tout_fini and nb['en_attente'] == 0
+              print('\\nTOUS LES MATCHS TERMINÉS' if tout_fini else '\\nDES MATCHS RESTENT À JOUER')
           "
 
       - name: Backtest réel — HORS-JEUX (échantillon API-Football en mémoire, aucune écriture en base)
