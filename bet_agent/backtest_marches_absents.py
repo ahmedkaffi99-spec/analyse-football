@@ -25,6 +25,7 @@ from moteur.features import Historique, en_datetime, est_termine
 from moteur.modeles import marches as mm
 
 NB_MIN_MATCHS_EQUIPE = 5
+AVANTAGE_DOMICILE_DESACTIVE = bool(__import__("os").getenv("BACKTEST_SANS_AVANTAGE_DOMICILE"))
 TRANCHES = ((0.5, 0.6), (0.6, 0.7), (0.7, 0.8), (0.8, 0.9), (0.9, 1.0001))
 SEUIL_ECART_PTS = 3.0     # |réel - annoncé| toléré dans la tranche >= 70 %
 N_MIN_VERDICT = 150
@@ -79,11 +80,15 @@ def _mu_comptage(famille, vh, va):
     if not mh or not ma:
         return None
     if forme == "ad":
-        return ae._mu_attaque_defense({"p": mh["pour"], "c": mh["contre"], "matchs_avec_donnees": mh["n"]},
-                                      {"p": ma["pour"], "c": ma["contre"], "matchs_avec_donnees": ma["n"]},
-                                      "p", "c", prior)
-    return ae._mu_direct({"p": mh["pour"], "matchs_avec_donnees": mh["n"]},
-                         {"p": ma["pour"], "matchs_avec_donnees": ma["n"]}, "p", prior)
+        mu = ae._mu_attaque_defense({"p": mh["pour"], "c": mh["contre"], "matchs_avec_donnees": mh["n"]},
+                                    {"p": ma["pour"], "c": ma["contre"], "matchs_avec_donnees": ma["n"]},
+                                    "p", "c", prior)
+    else:
+        mu = ae._mu_direct({"p": mh["pour"], "matchs_avec_donnees": mh["n"]},
+                           {"p": ma["pour"], "matchs_avec_donnees": ma["n"]}, "p", prior)
+    # même ajustement que la production (analyser_et_envoyer.appliquer_avantage_domicile) ; désactivable pour
+    # mesurer l'effet : BACKTEST_SANS_AVANTAGE_DOMICILE=1
+    return mu if AVANTAGE_DOMICILE_DESACTIVE else ae.appliquer_avantage_domicile(famille, mu)
 
 
 class Collecteur:

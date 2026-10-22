@@ -415,7 +415,28 @@ CARTONS_PRIOR = 2.1
 FAUTES_PRIOR = 11.9
 TIRS_PRIOR = 12.7
 TIRS_CADRES_PRIOR = 4.4
-HORS_JEUX_PRIOR = 2.0
+HORS_JEUX_PRIOR = 1.7  # 22/10/2026 : moyenne observée par équipe 1.70 (backtest, 717 matchs PL + Liga) ; l'ancien 2.0 donnait mu +0.24
+
+
+# AVANTAGE DU TERRAIN des comptages (22/10/2026). Le mu de chaque équipe est une moyenne de forme tous lieux
+# confondus : il ne contenait AUCUN avantage du terrain, alors que l'historique (7 205 matchs, 5 championnats)
+# montre domicile contre extérieur : corners 5.34/4.31, tirs 14.00/11.43, tirs cadrés 4.86/3.96, fautes
+# 11.78/12.13, cartons jaunes 1.97/2.25. Le backtest des marchés absents l'a révélé : handicaps et totaux PAR
+# ÉQUIPE de corners/tirs/cartons faux de 6 à 17 points (ex. handicap tirs +0.5 : annoncé 61 %, réel 67 % ;
+# -4.5 : annoncé 78 %, réel 61 %). Facteur du domicile = moyenne domicile / moyenne des deux côtés ; celui de
+# l'extérieur est son complément à 2, ce qui conserve le total.
+FACTEUR_DOMICILE = {
+    "corners": 1.107, "tirs": 1.101, "tirs_cadres": 1.103, "fautes": 0.985, "cartons": 0.934,
+}
+
+
+def appliquer_avantage_domicile(famille, mu_equipes):
+    """(mu_dom, mu_ext) -> ajusté de l'avantage du terrain de la famille ; None inchangé. Hors-jeux : pas de
+    facteur mesuré (statistique absente de l'historique), donc aucun ajustement."""
+    f = FACTEUR_DOMICILE.get(famille)
+    if not mu_equipes or f is None:
+        return mu_equipes
+    return round(max(0.15, mu_equipes[0] * f), 2), round(max(0.15, mu_equipes[1] * (2 - f)), 2)
 
 
 def _lisser_vers_prior(valeur, nb_matchs, prior, k=K_LISSAGE_BUTS):
@@ -2705,9 +2726,9 @@ def agent3_calcul_pool_candidats(donnees):
         # détaillées manquent, un repli par équipe est dérivé des lignes de marché "Team 1"/
         # "Team 2" (même logique de repli que le total, jamais pour les corners — cohérent
         # avec "aucun repli pour les corners" ci-dessus).
-        corners_equipes = calculer_mu_corners_depuis_stats_detaillees(stats_detaillees.get("home"), stats_detaillees.get("away"))
+        corners_equipes = appliquer_avantage_domicile("corners", calculer_mu_corners_depuis_stats_detaillees(stats_detaillees.get("home"), stats_detaillees.get("away")))
         mu_corners = round(sum(corners_equipes), 2) if corners_equipes else None
-        cartons_equipes = calculer_mu_cartons_depuis_stats_detaillees(stats_detaillees.get("home"), stats_detaillees.get("away"))
+        cartons_equipes = appliquer_avantage_domicile("cartons", calculer_mu_cartons_depuis_stats_detaillees(stats_detaillees.get("home"), stats_detaillees.get("away")))
         if cartons_equipes:
             mu_cartons = round(sum(cartons_equipes), 2)
         else:
@@ -2736,10 +2757,10 @@ def agent3_calcul_pool_candidats(donnees):
         # réseau supplémentaire — None si les stats détaillées manquent (pas de repli marché
         # tenté, contrairement aux cartons : ces 3 statistiques n'ont pas de ligne 1xBet
         # "équilibrée" assez fiable par match pour servir de repli).
-        fautes_equipes = calculer_mu_fautes_depuis_stats_detaillees(stats_detaillees.get("home"), stats_detaillees.get("away"))
-        tirs_equipes = calculer_mu_tirs_depuis_stats_detaillees(stats_detaillees.get("home"), stats_detaillees.get("away"))
-        tirs_cadres_equipes = calculer_mu_tirs_depuis_stats_detaillees(
-            stats_detaillees.get("home"), stats_detaillees.get("away"), cadres=True)
+        fautes_equipes = appliquer_avantage_domicile("fautes", calculer_mu_fautes_depuis_stats_detaillees(stats_detaillees.get("home"), stats_detaillees.get("away")))
+        tirs_equipes = appliquer_avantage_domicile("tirs", calculer_mu_tirs_depuis_stats_detaillees(stats_detaillees.get("home"), stats_detaillees.get("away")))
+        tirs_cadres_equipes = appliquer_avantage_domicile("tirs_cadres", calculer_mu_tirs_depuis_stats_detaillees(
+            stats_detaillees.get("home"), stats_detaillees.get("away"), cadres=True))
         hors_jeux_equipes = calculer_mu_hors_jeux_depuis_stats_detaillees(stats_detaillees.get("home"), stats_detaillees.get("away"))
 
         candidats_modelises = evaluer_marches_toutes(marches, home_xg, away_xg, mu_corners, mu_cartons,

@@ -80,7 +80,9 @@ def evaluer(matchs):
     n = len(mus)
     diag = {"n": n, "mu_moyen": sum(mus) / n if n else None, "observe_moyen": sum(observes) / n if n else None,
             "variance_residuelle_sur_mu": sum(residus) / n if n else None,
-            "observe_par_equipe": sum(observes) / (2 * n) if n else None, "prior": ae.HORS_JEUX_PRIOR}
+            "observe_par_equipe": sum(observes) / (2 * n) if n else None, "prior": ae.HORS_JEUX_PRIOR,
+            "dom": sum(m["stats"]["home"]["offsides"] for m in matchs) / len(matchs) if matchs else None,
+            "ext": sum(m["stats"]["away"]["offsides"] for m in matchs) / len(matchs) if matchs else None}
     return col, diag
 
 
@@ -119,5 +121,6 @@ if __name__ == "__main__":  # pragma: no cover
     col, diag = evaluer(matchs)
     print(f"\nDiagnostic du mu : n={diag['n']}  mu moyen={diag['mu_moyen']:.2f}  observé moyen={diag['observe_moyen']:.2f}  "
           f"biais={diag['mu_moyen'] - diag['observe_moyen']:+.2f}  variance résiduelle/mu={diag['variance_residuelle_sur_mu']:.2f}  "
-          f"observé par équipe={diag['observe_par_equipe']:.2f} (prior production {diag['prior']})\n")
+          f"observé par équipe={diag['observe_par_equipe']:.2f} (prior production {diag['prior']})  "
+          f"domicile={diag['dom']:.2f} extérieur={diag['ext']:.2f}\n")
     bt.imprimer(col)

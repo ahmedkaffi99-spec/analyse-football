@@ -3073,3 +3073,31 @@ class TestVerificationTotauxParEquipeStatistiques(unittest.TestCase):
         import verifier_resultats as vr
         # domicile 14 fautes, extérieur 11 : Home -1.5 -> 14-11=3 > 1.5 gagne
         self.assertEqual(vr.grader_pick_stat("Handicap Fautes", -1.5, "1", 14, 11), "gagne")
+
+
+class TestAvantageDuTerrainDesComptages(unittest.TestCase):
+    """22/10/2026 : le mu des comptages ignorait l'avantage du terrain (backtest : handicaps faux de 6 à 17 pts)."""
+
+    def test_corners_dom_augmentent_ext_diminuent_total_conserve(self):
+        h, a = ae.appliquer_avantage_domicile("corners", (5.0, 5.0))
+        self.assertGreater(h, 5.0)
+        self.assertLess(a, 5.0)
+        self.assertAlmostEqual(h + a, 10.0, places=1)
+
+    def test_cartons_et_fautes_favorisent_l_exterieur(self):
+        h, a = ae.appliquer_avantage_domicile("cartons", (2.0, 2.0))
+        self.assertLess(h, a)
+        h, a = ae.appliquer_avantage_domicile("fautes", (12.0, 12.0))
+        self.assertLess(h, a)
+
+    def test_famille_sans_facteur_et_none_inchanges(self):
+        self.assertEqual(ae.appliquer_avantage_domicile("hors_jeux", (2.0, 1.5)), (2.0, 1.5))
+        self.assertIsNone(ae.appliquer_avantage_domicile("corners", None))
+
+    def test_ratios_conformes_aux_moyennes_mesurees(self):
+        self.assertAlmostEqual(ae.FACTEUR_DOMICILE["corners"], 5.343 / ((5.343 + 4.307) / 2), places=2)
+        self.assertAlmostEqual(ae.FACTEUR_DOMICILE["tirs"], 14.002 / ((14.002 + 11.430) / 2), places=2)
+        self.assertAlmostEqual(ae.FACTEUR_DOMICILE["cartons"], 1.974 / ((1.974 + 2.252) / 2), places=2)
+
+    def test_prior_hors_jeux_recale(self):
+        self.assertEqual(ae.HORS_JEUX_PRIOR, 1.7)
