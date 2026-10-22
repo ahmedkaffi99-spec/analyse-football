@@ -988,13 +988,19 @@ jobs:
           mappes = set(adf.MAPPING_API_FOOTBALL)
           print(f'   Noms dans notre mapping : {sorted(mappes)}')
 
-          fixtures = cd.recuperer_fixtures_api_football()
-          ns = [fx for fx in fixtures if ((fx.get('fixture') or {}).get('status') or {}).get('short') == 'NS']
-          vus, choisis = set(), []
-          for fx in ns:
-              lid = (fx.get('league') or {}).get('id')
-              if lid not in vus and len(choisis) < 5:
-                  vus.add(lid); choisis.append(fx)
+          # match_recherche = identifiants de fixtures API-Football séparés par des virgules (ex:
+          # 1636303,1636276) ; vide = 5 matchs NS de ligues différentes (échantillon souvent pauvre).
+          ids = [int(x) for x in (os.getenv('MATCH_RECHERCHE') or '').split(',') if x.strip().isdigit()]
+          if ids:
+              choisis = [fx for i in ids[:6] for fx in get('fixtures', id=i)]
+          else:
+              fixtures = cd.recuperer_fixtures_api_football()
+              ns = [fx for fx in fixtures if ((fx.get('fixture') or {}).get('status') or {}).get('short') == 'NS']
+              vus, choisis = set(), []
+              for fx in ns:
+                  lid = (fx.get('league') or {}).get('id')
+                  if lid not in vus and len(choisis) < 5:
+                      vus.add(lid); choisis.append(fx)
           print(f'\\n=== (2) paris servis pour 1xBet (bookmaker 11) sur {len(choisis)} match(s) de ligues différentes ===')
           noms_1xbet = {}
           for fx in choisis:
@@ -1008,6 +1014,10 @@ jobs:
               print(f'   {nom} : {len(noms)} types de paris, dont {len(ecartes)} ignorés par notre mapping')
               fautes = [n for n in noms if any(m in (n or '').lower() for m in MOTS)]
               print(f'      fautes/hors-jeux/etc. servis : {fautes or \"aucun\"}')
+              for b in bets:
+                  if any(m in (b.get('name') or '').lower() for m in MOTS):
+                      vals = ', '.join(f\"{v.get('value')}@{v.get('odd')}\" for v in (b.get('values') or [])[:8])
+                      print(f'         · id={b.get(\"id\")} {b.get(\"name\")} ({len(b.get(\"values\") or [])} valeurs) : {vals}')
           premier = sorted({n for ns_ in noms_1xbet.values() for n in ns_})
           print(f'\\n   Union des types servis pour 1xBet ({len(premier)}) :')
           for n in premier:
