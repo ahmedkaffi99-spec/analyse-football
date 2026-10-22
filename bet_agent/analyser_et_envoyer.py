@@ -134,13 +134,21 @@ PROFILS_COUPON = [
      "cote_min": 1.1, "cote_max": 2.1, "nb_jambes_min": 2, "nb_jambes": 5},
 ]
 
-# Profil du moteur "agent" (agent pilote IA) en production depuis le 20/10/2026 (demande
-# explicite : "l'IA choisit les paris" et "coupon de 12 à 15 jambes"). NB_JAMBES_MIN / NB_JAMBES
-# (entrées du workflow, déjà utilisées par le moteur déterministe) les remplacent pour UN run.
-# cote_min/cote_max : cible de cote totale du repli 100 % Python, volontairement très large —
-# 12 jambes à ~1.4 donnent déjà ~56 (seul le plancher absolu COTE_TOTALE_MIN de l'agent compte).
-NB_JAMBES_AGENT_MIN_DEFAUT = 12
-NB_JAMBES_AGENT_MAX_DEFAUT = 15
+# Profils du moteur "agent" (agent pilote IA) en production depuis le 20/10/2026 ; passés à TROIS
+# coupons de 5 à 10 jambes le 22/10/2026 (demande explicite : "min 5 max 10 et trois types de coupon :
+# 1 = cote 5 à 10, 2 = cote 10 à 50, 3 = plus de 50"). NB_JAMBES_MIN / NB_JAMBES (entrées du workflow,
+# déjà utilisées par le moteur déterministe) les remplacent pour UN run, pour les trois coupons.
+# cote_totale_min / cote_totale_max : vérifiés par Python (agent_strategie.valider) ; le coupon 3 n'a
+# pas de plafond. Un match n'apparaît jamais dans deux coupons (règle de valider, jamais désactivable) :
+# trois coupons de 5 jambes demandent au moins 15 matchs distincts.
+NB_JAMBES_AGENT_MIN_DEFAUT = 5
+NB_JAMBES_AGENT_MAX_DEFAUT = 10
+# (clé, libellé, cote totale min, cote totale max ou None)
+TRANCHES_COTE_AGENT = (
+    ("coupon1", "🟢 COUPON 1 — cote 5 à 10", 5.0, 10.0),
+    ("coupon2", "🟠 COUPON 2 — cote 10 à 50", 10.0, 50.0),
+    ("coupon3", "🔴 COUPON 3 — cote 50 et plus", 50.0, None),
+)
 
 
 def profils_agent_quotidien():
@@ -150,8 +158,15 @@ def profils_agent_quotidien():
 
     nb_max = _entier("NB_JAMBES", NB_JAMBES_AGENT_MAX_DEFAUT)
     nb_min = min(_entier("NB_JAMBES_MIN", NB_JAMBES_AGENT_MIN_DEFAUT), nb_max)
-    return [{"cle": "jour", "nom": f"🏆 COUPON DU JOUR ({nb_min}-{nb_max} jambes, probabilité maximale)",
-             "cote_min": 5.0, "cote_max": 100000.0, "nb_jambes_min": nb_min, "nb_jambes": nb_max}]
+    profils = []
+    for cle, nom, cote_min, cote_max in TRANCHES_COTE_AGENT:
+        profil = {"cle": cle, "nom": f"{nom} ({nb_min}-{nb_max} jambes)",
+                  "cote_min": cote_min, "cote_max": cote_max if cote_max else 100000.0,
+                  "cote_totale_min": cote_min, "nb_jambes_min": nb_min, "nb_jambes": nb_max}
+        if cote_max:
+            profil["cote_totale_max"] = cote_max
+        profils.append(profil)
+    return profils
 
 
 # ------------------------------------------------------------------------------------------

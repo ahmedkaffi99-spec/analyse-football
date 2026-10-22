@@ -160,20 +160,21 @@ def test_moteur_agent_est_le_defaut_avec_profil_12_a_15_jambes(monkeypatch):
     assert taches.main(["run"]) == 0
 
     assert len(appels) == 1
-    (profil,) = appels[0]["profils"]
-    assert profil["nb_jambes_min"] == 12 and profil["nb_jambes"] == 15
+    profils = appels[0]["profils"]
+    assert [p["cle"] for p in profils] == ["coupon1", "coupon2", "coupon3"]
+    assert all(p["nb_jambes_min"] == 5 and p["nb_jambes"] == 10 for p in profils)
+    assert [(p["cote_totale_min"], p.get("cote_totale_max")) for p in profils] == [
+        (5.0, 10.0), (10.0, 50.0), (50.0, None)]
 
 
 def test_profil_agent_quotidien_respecte_nb_jambes_du_workflow(monkeypatch):
     import analyser_et_envoyer as ae
     monkeypatch.setenv("NB_JAMBES", "8")
     monkeypatch.setenv("NB_JAMBES_MIN", "6")
-    (profil,) = ae.profils_agent_quotidien()
-    assert (profil["nb_jambes_min"], profil["nb_jambes"]) == (6, 8)
+    assert {(p["nb_jambes_min"], p["nb_jambes"]) for p in ae.profils_agent_quotidien()} == {(6, 8)}
     monkeypatch.setenv("NB_JAMBES", "10")
     monkeypatch.setenv("NB_JAMBES_MIN", "20")  # min jamais au-dessus du max
-    (profil,) = ae.profils_agent_quotidien()
-    assert (profil["nb_jambes_min"], profil["nb_jambes"]) == (10, 10)
+    assert {(p["nb_jambes_min"], p["nb_jambes"]) for p in ae.profils_agent_quotidien()} == {(10, 10)}
 
 
 def test_moteur_agent_coupon_deja_envoye_sauvegarde_meme_si_la_collecte_plante(monkeypatch):

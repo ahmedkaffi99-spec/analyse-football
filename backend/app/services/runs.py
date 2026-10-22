@@ -99,7 +99,7 @@ def executer_run(run_id, envoyer_telegram=False, rediger=True, depuis_run=None, 
             # pilote pour qu'il pèse ses choix du jour à la lumière des résultats réels passés,
             # pas seulement du catalogue du jour. None tant qu'aucun coupon n'est encore clos.
             bilan = resume_pour_ia(db)
-            # Sans profils personnalisés : profil quotidien de l'agent (12-15 jambes par défaut,
+            # Sans profils personnalisés : profils quotidiens de l'agent (3 coupons de 5-10 jambes par défaut,
             # 20/10/2026) — jamais ae.PROFILS_COUPON (2-5 jambes), réservé au mode manuel.
             if profils_personnalises is None:
                 profils_personnalises = ae.profils_agent_quotidien()
