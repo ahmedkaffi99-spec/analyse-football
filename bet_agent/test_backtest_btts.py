@@ -54,3 +54,19 @@ def test_metriques_et_cote_probable():
     assert m["n"] == 20
     n, reel, annonce = m["seuils"][0.70]
     assert n == 20 and abs(reel - 0.9) < 1e-9 and abs(annonce - 0.75) < 1e-9     # (0.8 x10 et 0.7 x10)
+
+
+def test_diagnostics_en_profondeur_sur_championnat_simule(echantillons, capsys):
+    import backtest_btts_profondeur as bp
+    bp.diagnostics(echantillons)
+    sortie = capsys.readouterr().out
+    for titre in ("=== A.", "=== B.", "=== C.", "=== D1.", "=== D2.", "=== D3.", "=== E."):
+        assert titre in sortie, titre
+
+
+def test_p_yes_poisson_pur_et_zeros_gonfles():
+    import backtest_btts_profondeur as bp
+    import analyser_et_envoyer as ae
+    assert abs(bp._p_yes(1.4, 1.1) - ae.proba_btts(1.4, 1.1)) < 1e-9     # pi=0, kappa=1 : identique à la production
+    assert bp._p_yes(1.4, 1.1, pi=0.05) < bp._p_yes(1.4, 1.1)             # plus de zéros -> moins de BTTS oui
+    assert 0 < bp._p_yes(0.2, 0.2, pi=0.5) < 0.1

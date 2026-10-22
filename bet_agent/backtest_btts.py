@@ -64,6 +64,7 @@ def construire_echantillons(matchs_par_competition):
             p = min(max(ae.proba_btts(*mu), 1e-4), 1 - 1e-4)
             echantillons.append({
                 "t": t, "y": 1 if (m["home_score"] > 0 and m["away_score"] > 0) else 0, "p_pois": p,
+                "mu": mu, "buts": (m["home_score"], m["away_score"]),
                 "f": {"logit_poisson": math.log(p / (1 - p)),
                       "btts_dom": _taux(vh, lambda v: v["buts_pour"] > 0 and v["buts_contre"] > 0),
                       "btts_ext": _taux(va, lambda v: v["buts_pour"] > 0 and v["buts_contre"] > 0),

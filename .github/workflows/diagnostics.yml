@@ -32,6 +32,7 @@ on:
           - backtest-marches-absents
           - backtest-grille-domicile
           - backtest-btts
+          - backtest-btts-profondeur
           - backtest-hors-jeux
           - catalogue-par-famille
         default: marches-disponibles
@@ -1062,6 +1063,13 @@ jobs:
         if: inputs.verification == 'backtest-btts'
         working-directory: bet_agent
         run: python backtest_btts.py
+
+      - name: Backtest réel — BTTS en profondeur (calibration par côté, zéros gonflés, dépendance, segmentation)
+        # Pourquoi le Poisson de production échoue : par côté Oui/Non, par tranche de buts attendus, dépendance
+        # entre équipes, par ligue, puis modèle corrigé (zéros gonflés + dépendance) appris sur le passé.
+        if: inputs.verification == 'backtest-btts-profondeur'
+        working-directory: bet_agent
+        run: python backtest_btts_profondeur.py
 
       - name: Backtest réel — HORS-JEUX (échantillon API-Football en mémoire, aucune écriture en base)
         # ~760 appels /fixtures/statistics (2 ligues x 2 saisons), limiteur de débit de la production.
