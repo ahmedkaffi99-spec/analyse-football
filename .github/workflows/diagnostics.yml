@@ -1073,7 +1073,7 @@ jobs:
                   for c in candidats:
                       p = c['pick']
                       fid, nom, _ = af.famille_de(p['categorie'])
-                      f = familles.setdefault(fid, {'nom': nom, 'total': 0, 'modele': 0, 'p70': 0, 'matchs70': set(), 'cats': {}})
+                      f = familles.setdefault(fid, {'nom': nom, 'total': 0, 'modele': 0, 'p70': 0, 'veto': 0, 'matchs70': set(), 'cats': {}})
                       f['total'] += 1
                       cat = f['cats'].setdefault(p['categorie'], [0, 0, 0])
                       cat[0] += 1
@@ -1084,16 +1084,20 @@ jobs:
                               f['p70'] += 1
                               cat[2] += 1
                               f['matchs70'].add(match)
+                              if af.veto_python(p):
+                                  f['veto'] += 1
               for fid, f in sorted(familles.items()):
                   total, modeles, p70, nb70 = f['total'], f['modele'], f['p70'], len(f['matchs70'])
-                  print(f'{fid:12s} total={total:4d} modelises={modeles:4d} proba>=70%={p70:4d} sur {nb70} match(s)')
+                  print(f'{fid:12s} total={total:4d} modelises={modeles:4d} proba>=70%={p70:4d} sur {nb70} match(s) '
+                        f'(dont {f[\"veto\"]} écarté(s) par veto Python) => catalogue={p70 - f[\"veto\"]}')
                   for cat, (t, m, h) in sorted(f['cats'].items()):
                       print(f'     {cat:34s} total={t:3d} modelises={m:3d} >=70%={h:3d}')
               absentes = [f[0] for f in af.FAMILLES if f[0] not in familles] + ([af.FAMILLE_DERIVES[0]] if af.FAMILLE_DERIVES[0] not in familles else [])
               print('Familles sans AUCUN candidat dans le pool :', absentes or 'aucune')
 
           print(f'COTE_MIN_JAMBE={ae.COTE_MIN_JAMBE} COTE_MAX_JAMBE={ae.COTE_MAX_JAMBE} PROBA_MIN_FORTE={ae.PROBA_MIN_FORTE} CATEGORIES_EXCLUES={ae.CATEGORIES_EXCLUES}')
-          bilan('Avec la fourchette de cote de production')
+          ae.COTE_MIN_JAMBE, ae.COTE_MAX_JAMBE = 1.2, 2.0  # fourchette du run manuel 181
+          bilan('Avec la fourchette de cote du run (1.2-2.0)')
           ae.COTE_MIN_JAMBE, ae.COTE_MAX_JAMBE = 0.0, 0.0
           bilan('SANS fourchette de cote (cote libre)')
           "
