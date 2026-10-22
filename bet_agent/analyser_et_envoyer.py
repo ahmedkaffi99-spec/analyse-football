@@ -2418,7 +2418,7 @@ def rediger_ticket_sans_ia(selections_finales):
 
 
 def _libelle_pari_court(selection_finale):
-    """Pari en français courant, sur une ligne : « Moins de 4 buts », « Sparta plus de 2.5 corners »,
+    """Pari en français courant, sur une ligne : « Total buts : moins de 4 », « Total 2 (Sparta) corners : plus de 2.5 »,
     « Sturm Graz ou Marseille (pas de match nul) ». Les marchés qu'on ne sait pas reformuler gardent
     leur libellé brut."""
     p = selection_finale["pick"]
@@ -2432,15 +2432,13 @@ def _libelle_pari_court(selection_finale):
     if sel in ("Over", "Under") and ligne is not None and categorie.startswith("Total"):
         sens = "plus de" if sel == "Over" else "moins de"
         reste = categorie[len("Total"):].strip()
-        equipe = None
+        equipe = None   # « Total 1 (domicile) » / « Total 2 (extérieur) » comme sur 1xBet
         for numero, nom in (("1", domicile), ("2", exterieur)):
             if reste.endswith(f"Équipe {numero}"):
-                equipe, reste = nom, reste[:-len(f"Équipe {numero}")].strip()
+                equipe, reste = f"Total {numero} ({nom})", reste[:-len(f"Équipe {numero}")].strip()
         sujet = {"cartons": "cartons jaunes"}.get(reste.lower(), (reste or "buts").lower())
         ligne_txt = f"{float(ligne):g}"
-        if equipe:
-            return f"{equipe} {sens} {ligne_txt} {sujet}"
-        return f"{sens.capitalize()} {ligne_txt} {sujet}"
+        return f"{equipe or 'Total'} {sujet} : {sens} {ligne_txt}"
     sel_norm = re.sub(r"[^a-z0-9]", "", sel.lower())
     if categorie == "Double Chance":
         return {"1x": f"{domicile} ou match nul", "x2": f"Match nul ou {exterieur}",

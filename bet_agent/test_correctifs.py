@@ -3161,10 +3161,10 @@ class TestTicketCourt(unittest.TestCase):
         ]
         lignes = ae.rediger_ticket_court(sels).split("\n")
         self.assertEqual(lignes[0], "1. Celje vs Red Bull Salzburg")
-        self.assertEqual(lignes[1], "    Moins de 4 buts @1.28")
-        self.assertEqual(lignes[3], "    Sparta Praha plus de 2.5 corners @1.36")
+        self.assertEqual(lignes[1], "    Total buts : moins de 4 @1.28")
+        self.assertEqual(lignes[3], "    Total 2 (Sparta Praha) corners : plus de 2.5 @1.36")
         self.assertEqual(lignes[5], "    Sturm Graz ou Marseille (pas de match nul) @1.3")
-        self.assertEqual(lignes[7], "    Moins de 5 cartons jaunes @1.2")
+        self.assertEqual(lignes[7], "    Total cartons jaunes : moins de 5 @1.2")
         self.assertEqual(lignes[9], "    Rennes +2 (handicap) @1.33")
         self.assertEqual(lignes[11], "    Les deux équipes marquent : Oui @1.7")
 
