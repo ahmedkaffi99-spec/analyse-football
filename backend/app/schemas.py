@@ -99,3 +99,4 @@ class VerificationOut(BaseModel):
     pas_termine: int = 0
     annule: int = 0  # match reporté/annulé/abandonné (PST/CANC/ABD) -> remboursement, jamais un score deviné
     perime: int = 0  # délai de péremption dépassé sans verdict -> jamais en_attente indéfiniment
+    stats_indisponibles: int = 0  # statistique finale absente : jambe laissée en_attente, rejugée au prochain passage

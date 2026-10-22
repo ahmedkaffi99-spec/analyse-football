@@ -84,6 +84,12 @@ STATUTS_INDETERMINES_PROLONGES = ("SUSP", "INT")
 # mécanisme de ce type n'existait avant ce correctif). Configurable (DELAI_PEREMPTION_JOURS),
 # jamais appliqué sans connaître le coup d'envoi réel.
 DELAI_PEREMPTION_JOURS = int(os.getenv("DELAI_PEREMPTION_JOURS", "10"))
+# Statistiques finales (corners, fautes, tirs, hors-jeux, cartons) : API-Football peut les publier
+# après le coup de sifflet final ou ne pas les renvoyer au premier appel (constaté le 22/10/2026 :
+# Lech Poznan–Sunderland, jambe « corners de Lech » classée non_verifiable définitivement dès le
+# premier passage). Une jambe dont la statistique manque est donc REJUGÉE à chaque passage pendant
+# ce délai (jours après le coup d'envoi) avant d'être classée non_verifiable.
+DELAI_STATS_JOURS = int(os.getenv("DELAI_STATS_JOURS", "2"))
 
 
 def jambe_perimee(coup_envoi, maintenant=None, delai_jours=None):

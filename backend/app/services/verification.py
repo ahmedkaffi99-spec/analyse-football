@@ -4,7 +4,7 @@ verifier_resultats.py (grader_pick & co) — même règles que le bilan Telegram
 from collections import Counter
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 
 from app.models import Coupon, Jambe
 from app.services import pipeline
@@ -30,7 +30,20 @@ def statut_coupon(resultats):
 
 def verifier_jambes(db, jambes):
     cd, _, vr = pipeline.modules()
-    a_juger = [j for j in jambes if j.resultat == "en_attente" and j.fixture_id_oddspapi]
+    maintenant = datetime.now(timezone.utc)
+
+    def _a_rejuger(j):
+        if not j.fixture_id_oddspapi:
+            return False
+        if j.resultat == "en_attente":
+            return True
+        # Jambe de statistique classée non_verifiable par manque de statistique : rejugée tant que le
+        # délai DELAI_STATS_JOURS n'est pas écoulé (les statistiques arrivent parfois après le match).
+        return (j.resultat == "non_verifiable" and j.categorie in vr.STAT_API_FOOTBALL_PAR_CATEGORIE
+                and j.match is not None and j.match.fixture_id_api_football is not None
+                and not vr.jambe_perimee(j.match.coup_envoi, maintenant, delai_jours=vr.DELAI_STATS_JOURS))
+
+    a_juger = [j for j in jambes if _a_rejuger(j)]
     compte = Counter()
     if not a_juger:
         return compte
@@ -42,7 +55,6 @@ def verifier_jambes(db, jambes):
     fixtures_af = vr.recuperer_fixtures_api_football_du_jour()
     fixtures = None  # OddsPapi, chargé à la demande (repli), une seule fois pour tout le passage
     scores = {}
-    maintenant = datetime.now(timezone.utc)
 
     def _marquer_non_resolu(jambe):
         # Péremption (délai dépassé depuis le coup d'envoi, sans verdict) -> "perime", jamais
@@ -99,14 +111,26 @@ def verifier_jambes(db, jambes):
             # "non_verifiable" pour cette seule raison avant ce correctif).
             fixture_af = jambe.match.fixture_id_api_football if jambe.match else None
             stats = vr.recuperer_statistiques_finales_api_football(fixture_af, domicile) if fixture_af else None
-            if stats is None:
-                jambe.resultat = "non_verifiable"
-            else:
+            verdict = None
+            if stats is not None:
                 bloc_dom, bloc_ext = stats
                 val_dom = cd._valeur_stat(bloc_dom, type_stat)
                 val_ext = cd._valeur_stat(bloc_ext, type_stat)
                 verdict = vr.grader_pick_stat(jambe.categorie, jambe.handicap, jambe.selection, val_dom, val_ext)
-                jambe.resultat = VERDICT_VERS_RESULTAT.get(verdict, "non_verifiable")
+            if verdict is None and fixture_af:
+                # Statistique absente (réponse vide, valeur non suivie, panne) : rejugée au prochain passage
+                # tant que le délai DELAI_STATS_JOURS n'est pas écoulé — jamais classée non_verifiable à vie
+                # dès le premier essai (cas Lech Poznan–Sunderland du 22/10/2026).
+                if jambe.match is not None:
+                    jambe.match.score_domicile, jambe.match.score_exterieur = but_dom, but_ext
+                if vr.jambe_perimee(jambe.match.coup_envoi, maintenant, delai_jours=vr.DELAI_STATS_JOURS):
+                    jambe.resultat = "non_verifiable"
+                    compte["non_verifiable"] += 1
+                else:
+                    jambe.resultat = "en_attente"
+                    compte["stats_indisponibles"] += 1
+                continue
+            jambe.resultat = VERDICT_VERS_RESULTAT.get(verdict, "non_verifiable")
         else:
             pick = {"categorie": jambe.categorie, "selection": jambe.selection, "handicap": jambe.handicap}
             jambe.resultat = VERDICT_VERS_RESULTAT.get(vr.grader_pick(pick, but_dom, but_ext), "non_verifiable")
@@ -121,7 +145,11 @@ def verifier_jambes(db, jambes):
 
 
 def verifier_coupons_en_attente(db, run_id=None):
-    requete = select(Jambe).join(Coupon).where(Jambe.resultat == "en_attente")
+    cd, _, vr = pipeline.modules()
+    # + jambes de statistique classées non_verifiable par manque de statistique (rejugées, voir _a_rejuger).
+    requete = select(Jambe).join(Coupon).where(or_(
+        Jambe.resultat == "en_attente",
+        and_(Jambe.resultat == "non_verifiable", Jambe.categorie.in_(list(vr.STAT_API_FOOTBALL_PAR_CATEGORIE)))))
     if run_id is not None:
         requete = requete.where(Coupon.run_id == run_id)
     return verifier_jambes(db, list(db.scalars(requete)))
