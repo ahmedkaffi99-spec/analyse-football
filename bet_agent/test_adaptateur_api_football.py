@@ -473,7 +473,11 @@ class TestFautesHorsJeuxEtEquipes:
 
     def test_noms_internes_acceptes_par_la_liste_blanche_de_collecte(self):
         import collecte_donnees as cd
-        assert set(self._marches()) <= cd.MARCHES_API_FOOTBALL_VALIDES
+        # handicap = buts seulement (22/10/2026) : les handicaps de fautes/hors-jeux sont mappés par l'adaptateur
+        # mais volontairement NON collectés
+        non_collectes = {"Fouls - Handicap", "Offsides - Handicap"}
+        assert set(self._marches()) - non_collectes <= cd.MARCHES_API_FOOTBALL_VALIDES
+        assert not non_collectes & cd.MARCHES_API_FOOTBALL_VALIDES
 
 
 class TestHandicapDeuxCotesComplementaires:

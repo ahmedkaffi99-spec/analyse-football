@@ -145,9 +145,10 @@ MARCHES_API_FOOTBALL_VALIDES = {
     "Corners - Over Under Full Time", "Yellow Cards - Over Under Full Time",
     "Shots - Over Under Full Time", "Asian Handicap",
     # Ajoutés le 22/10/2026 (voir adaptateur_api_football.MAPPING_API_FOOTBALL)
-    "Fouls - Over Under Full Time", "Fouls - Over Under Team 1", "Fouls - Over Under Team 2", "Fouls - Handicap",
+    # (handicaps de fautes/hors-jeux NON collectés : handicap = buts seulement, demande du 22/10/2026)
+    "Fouls - Over Under Full Time", "Fouls - Over Under Team 1", "Fouls - Over Under Team 2",
     "Offsides - Over Under Full Time", "Offsides - Over Under Team 1", "Offsides - Over Under Team 2",
-    "Offsides - Handicap", "Corners - Over Under Team 1", "Corners - Over Under Team 2",
+    "Corners - Over Under Team 1", "Corners - Over Under Team 2",
     "Shots On Target - Over Under Full Time",
 }
 

@@ -1877,7 +1877,8 @@ class TestTotalCartonsParEquipe(unittest.TestCase):
              "selections": [{"selection": "1", "cote": 2.5}, {"selection": "2", "cote": 1.5}]}]
         categories = {c["categorie"] for c in ae.evaluer_marches_toutes(
             marches, 1.5, 1.2, mu_fautes_equipes=(10.0, 13.0), mu_hors_jeux_equipes=(2.0, 2.0))}
-        self.assertEqual(categories, {"Total Fautes Équipe 2", "Total Hors-jeux", "Handicap Fautes"})
+        # le handicap de fautes est calculé mais EXCLU (handicap = buts seulement, 22/10/2026)
+        self.assertEqual(categories, {"Total Fautes Équipe 2", "Total Hors-jeux"})
 
     def test_guide_et_onglet_distinguent_equipe_1_et_2(self):
         guide1, onglet1 = ae.expliquer_marche("Total Cartons Équipe 1", "Over", 2.0)
@@ -3101,3 +3102,26 @@ class TestAvantageDuTerrainDesComptages(unittest.TestCase):
 
     def test_prior_hors_jeux_recale(self):
         self.assertEqual(ae.HORS_JEUX_PRIOR, 1.7)
+
+
+class TestHandicapButsSeulement(unittest.TestCase):
+    """22/10/2026, demande explicite : « handicap c'est but seul ou résultat »."""
+
+    def test_tous_les_handicaps_de_comptage_sont_exclus(self):
+        for c in ("Handicap Corners", "Handicap Cartons", "Handicap Fautes", "Handicap Hors-jeux",
+                  "Handicap Tirs", "Handicap Tirs Cadrés"):
+            self.assertIn(c, ae.CATEGORIES_EXCLUES)
+
+    def test_handicap_de_buts_reste_autorise(self):
+        self.assertNotIn("Handicap", ae.CATEGORIES_EXCLUES)
+        self.assertNotIn("Handicap Asiatique", ae.CATEGORIES_EXCLUES)
+        marches = [{"marche": "Asian Handicap", "handicap": -0.5, "periode": "fulltime",
+                    "selections": [{"selection": "1", "cote": 1.9}, {"selection": "2", "cote": 1.95}]}]
+        categories = {c["categorie"] for c in ae.evaluer_marches_toutes(marches, 1.9, 1.1)}
+        self.assertEqual(categories, {"Handicap"})
+
+    def test_marches_bruts_de_handicap_de_comptage_aussi_exclus(self):
+        for nom in ("Fouls - Handicap", "Offsides - Handicap", "Corners Asian Handicap", "Yellow Asian Handicap",
+                    "Shots - Handicap", "ShotOnTarget Handicap"):
+            self.assertTrue(ae.est_marche_exclu(nom), nom)
+        self.assertFalse(ae.est_marche_exclu("Asian Handicap"))

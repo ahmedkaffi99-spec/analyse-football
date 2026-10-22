@@ -49,8 +49,10 @@ FAMILLES = (
      "remesurer après 2 semaines."),
     ("handicap", "Handicaps (asiatique, européen)",
      ("Handicap", "Handicap Asiatique", "Asian Handicap", "European Handicap"),
-     "Backtest de calibration du handicap fait le 17/10/2026 (lissage additif K_LISSAGE_BUTS). "
-     "Aucun écart structurel mesuré depuis."),
+     "Handicap = BUTS seulement (les handicaps de corners, cartons, fautes, hors-jeux et tirs sont exclus, "
+     "demande du 22/10/2026). Backtest 7 000 matchs : handicap de buts calibré à ±3 pts sur les lignes +/-0.5, "
+     "+/-1.5, +/-2.5 et +1 ; légèrement PRUDENT sur -0.5, 0 et -1 (réel +4 à +5 pts au-dessus de l'annoncé). "
+     "Attention : jusqu'au 22/10/2026 un bug d'adaptateur rangeait le côté extérieur sur la mauvaise ligne."),
     ("corners", "Corners",
      ("Total Corners", "Handicap Corners", "Corners - Over Under Full Time",
       "Total Corners Équipe 1", "Total Corners Équipe 2"),

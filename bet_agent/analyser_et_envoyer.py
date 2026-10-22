@@ -1082,8 +1082,15 @@ def cote_hors_fourchette(cote):
 # "Total Tirs" RÉINTÉGRÉ le 22/10/2026 (demande explicite : toutes les familles de marchés) : son écart
 # réel venait d'un bug de troncature des sommes corrigé le 21/10 (voir _borne_poisson), pas d'un défaut
 # du marché ; le backtest (6 996 matchs) le montre calibré (63.6 % annoncé / 63.4 % réel).
+# TOUS les handicaps de comptage exclus le 22/10/2026 (demande explicite : « handicap c'est but seul ou
+# résultat ») : le handicap ne reste que sur les BUTS ("Handicap", "Handicap Asiatique"). Backtest 7 000
+# matchs : handicap de buts calibré à ±3 pts, alors que les handicaps de corners/cartons/tirs/fautes/
+# hors-jeux dépendent d'un avantage du terrain par statistique (cartons +0.5 : annoncé 73 %, réel 63 %).
+CATEGORIES_HANDICAP_COMPTAGE_EXCLUES = (
+    "Handicap Corners", "Handicap Cartons", "Handicap Fautes", "Handicap Hors-jeux", "Handicap Tirs",
+    "Handicap Tirs Cadrés")
 CATEGORIES_EXCLUES = tuple(c.strip() for c in os.getenv("MARCHES_EXCLUS", "").split(",") if c.strip()) or (
-    "Handicap Corners", "Handicap Cartons")
+    CATEGORIES_HANDICAP_COMPTAGE_EXCLUES)
 
 
 def est_marche_exclu(nom_marche):
@@ -1091,7 +1098,8 @@ def est_marche_exclu(nom_marche):
     deux jambes perdues le même jour (Belarus-San Marino, Estonia-Luxembourg) — exclus aussi
     en brut (completer_avec_marches_bruts), sinon ils reviendraient par cette porte."""
     nom = (nom_marche or "").lower()
-    return "handicap" in nom and ("corner" in nom or "card" in nom or "booking" in nom)
+    return "handicap" in nom and any(m in nom for m in (
+        "corner", "card", "booking", "yellow", "foul", "offside", "shot", "tackle", "save"))
 
 
 def _edge_calculable(edge, proba):
