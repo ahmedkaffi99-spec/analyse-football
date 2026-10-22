@@ -1056,7 +1056,7 @@ jobs:
           BACKTEST_GRILLE_DOMICILE: "1"
         run: python backtest_marches_absents.py
 
-      - name: Backtest réel — BTTS : Poisson de production contre taux empirique, mélange et régression logistique
+      - name: Backtest réel — BTTS (Poisson de production contre taux empirique, mélange et régression logistique)
         # Walk-forward sur les 5 championnats (hist_matchs, lecture seule) : 8 variantes évaluées sur les mêmes
         # matchs (modèle toujours appris sur le passé), Brier / log-loss / calibration du côté probable.
         if: inputs.verification == 'backtest-btts'
