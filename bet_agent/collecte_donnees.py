@@ -1325,6 +1325,11 @@ def selectionner_matchs_du_jour(fixtures_oddspapi):
 # jusque-là seulement couverts par la liste manuelle codée en dur). IDs déjà utilisés dans
 # LIGUES_MAJEURES, par league_id API-Football (système d'identifiants différent d'OddsPapi,
 # qui utilise tournamentName/categoryName).
+# 5 championnats domestiques seuls (les autres identifiants de LIGUES_FILTRE_API_FOOTBALL sont les coupes d'Europe).
+LIGUES_DOMESTIQUES_API_FOOTBALL = {39, 140, 135, 78, 61}
+MELANGE_COUPES_MIN = int(os.getenv("MELANGE_COUPES_MIN", "4"))      # matchs de coupes d'Europe gardés même si les championnats suffisent
+NB_MATCHS_CIBLE_POOL = int(os.getenv("NB_MATCHS_CIBLE_POOL", "15"))  # 3 coupons x 5 jambes, matchs distincts
+
 LIGUES_FILTRE_API_FOOTBALL = {
     2,    # UEFA Champions League
     3,    # UEFA Europa League
@@ -1381,10 +1386,18 @@ def selectionner_matchs_du_jour_api_football(fixtures_api_football, aujourd_hui=
         if cle in vus:
             continue
         vus.add(cle)
-        candidats.append((home, away, depart or ""))
+        candidats.append((home, away, depart or "", league_id))
 
-    candidats.sort(key=lambda c: c[2])
-    matchs = [(h, a) for h, a, _ in candidats][:NB_CANDIDATS_A_SONDER]
+    # Priorité aux 5 grands championnats, coupes d'Europe en « mélange » (demande du 22/10/2026 :
+    # « concentre-toi sur les 5 grands championnats et un peu de mélange ») : tous les matchs
+    # domestiques d'abord, puis des matchs de C1/C3 en quantité limitée (MELANGE_COUPES_MIN, ou le
+    # complément nécessaire pour atteindre NB_MATCHS_CIBLE_POOL — trois coupons de 5 jambes demandent
+    # 15 matchs distincts — les jours sans championnat, ex. mardi à jeudi de coupe d'Europe).
+    domestiques = sorted((c for c in candidats if c[3] in LIGUES_DOMESTIQUES_API_FOOTBALL), key=lambda c: c[2])
+    coupes = sorted((c for c in candidats if c[3] not in LIGUES_DOMESTIQUES_API_FOOTBALL), key=lambda c: c[2])
+    quota_coupes = max(MELANGE_COUPES_MIN, NB_MATCHS_CIBLE_POOL - len(domestiques))
+    candidats = domestiques + coupes[:quota_coupes]
+    matchs = [(h, a) for h, a, _, _ in candidats][:NB_CANDIDATS_A_SONDER]
     if matchs:
         print(f"   ✓ {len(matchs)} match(s) sélectionné(s) (API-Football, 5 grands championnats + C1/C3) :")
         for h, a in matchs:

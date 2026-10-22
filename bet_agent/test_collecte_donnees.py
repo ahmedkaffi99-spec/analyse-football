@@ -464,3 +464,24 @@ class TestRecupererArbitreCartonsMoyenne:
 
         monkeypatch.setattr(mf, "construire_features", plante)
         assert cd.recuperer_arbitre_cartons_moyenne("A. Taylor", 140, "2026-10-18T19:00:00+00:00") is None
+
+
+class TestMelangeChampionnatsEtCoupes:
+    """22/10/2026 : « concentre-toi sur les 5 grands championnats et un peu de mélange » — les matchs
+    des 5 championnats passent d'abord, les coupes d'Europe complètent (4 au minimum, ou le nombre
+    nécessaire pour atteindre NB_MATCHS_CIBLE_POOL quand les championnats ne suffisent pas)."""
+
+    def test_championnats_d_abord_puis_quota_de_coupes(self, monkeypatch):
+        monkeypatch.setattr(cd, "MELANGE_COUPES_MIN", 2)
+        monkeypatch.setattr(cd, "NB_MATCHS_CIBLE_POOL", 3)
+        fixtures = [_fixture_af(f"Coupe{i}", f"Adversaire{i}", 3) for i in range(5)] + [
+            _fixture_af("Arsenal", "Chelsea", 39), _fixture_af("Lyon", "Monaco", 61)]
+        matchs = cd.selectionner_matchs_du_jour_api_football(fixtures)
+        assert matchs[:2] == [("Arsenal", "Chelsea"), ("Lyon", "Monaco")]   # championnats en tête
+        assert len(matchs) == 2 + 2                                         # + MELANGE_COUPES_MIN coupes
+
+    def test_jour_sans_championnat_les_coupes_completent_jusqu_a_la_cible(self, monkeypatch):
+        monkeypatch.setattr(cd, "MELANGE_COUPES_MIN", 2)
+        monkeypatch.setattr(cd, "NB_MATCHS_CIBLE_POOL", 4)
+        fixtures = [_fixture_af(f"Coupe{i}", f"Adversaire{i}", 3) for i in range(6)]
+        assert len(cd.selectionner_matchs_du_jour_api_football(fixtures)) == 4   # cible atteinte, pas plus
