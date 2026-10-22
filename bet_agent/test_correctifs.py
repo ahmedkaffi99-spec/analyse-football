@@ -3125,3 +3125,18 @@ class TestHandicapButsSeulement(unittest.TestCase):
                     "Shots - Handicap", "ShotOnTarget Handicap"):
             self.assertTrue(ae.est_marche_exclu(nom), nom)
         self.assertFalse(ae.est_marche_exclu("Asian Handicap"))
+
+
+class TestHandicapSeulementTempsReglementaire(unittest.TestCase):
+    """Les handicaps de mi-temps ne sont ni collectés ni modélisés : seul le « Asian Handicap » temps plein."""
+
+    def test_handicaps_de_mi_temps_non_mappes_et_rejetes(self):
+        import adaptateur_api_football as adf
+        for nom in ("Asian Handicap First Half", "Asian Handicap (2nd Half)", "Asian Handicap (1st Half)"):
+            self.assertNotIn(nom, adf.MAPPING_API_FOOTBALL)
+            self.assertFalse(ae.est_marche_match_entier({"marche": nom, "periode": "fulltime"}), nom)
+
+    def test_seul_asian_handicap_temps_plein_est_collecte(self):
+        import collecte_donnees as cd
+        handicaps = {m for m in cd.MARCHES_API_FOOTBALL_VALIDES if "handicap" in m.lower()}
+        self.assertEqual(handicaps, {"Asian Handicap"})

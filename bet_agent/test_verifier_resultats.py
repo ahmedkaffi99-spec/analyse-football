@@ -277,3 +277,29 @@ class TestJambePerimee(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestHandicapTempsReglementaire(unittest.TestCase):
+    """22/10/2026, demande explicite : « handicap c'est le temps réglementaire » (90 minutes)."""
+
+    def _fixture_aet(self):
+        fx = _fixture_af("H", "A", "AET", 3, 2)           # buts finaux 3-2 APRÈS prolongation
+        fx["score"] = {"fulltime": {"home": 1, "away": 1}, "extratime": {"home": 2, "away": 1}}
+        return fx
+
+    def test_handicap_juge_sur_le_score_a_90_minutes_et_non_apres_prolongation(self):
+        home, away = vr.score_reglementaire_api_football(self._fixture_aet())
+        self.assertEqual((home, away), (1, 1))
+        # Domicile -0.5 : nul à 90 minutes = perdu (la victoire en prolongation ne compte pas)
+        self.assertEqual(vr.juger_handicap(-0.5, "1", home, away), "perdu")
+        # Extérieur +0.5 : nul à 90 minutes = gagné
+        self.assertEqual(vr.juger_handicap(-0.5, "2", home, away), "gagne")
+
+    def test_handicap_entier_nul_a_90_minutes_rembourse(self):
+        home, away = vr.score_reglementaire_api_football(self._fixture_aet())
+        self.assertEqual(vr.juger_handicap(0.0, "1", home, away), "push")
+
+    def test_match_aux_tirs_au_but_jamais_regle_sur_le_score_final(self):
+        fx = _fixture_af("H", "A", "PEN", 1, 1)
+        fx["score"] = {"fulltime": {"home": 0, "away": 0}, "penalty": {"home": 5, "away": 4}}
+        self.assertEqual(vr.score_reglementaire_api_football(fx), (0, 0))
