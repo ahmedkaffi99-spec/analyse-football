@@ -2419,7 +2419,8 @@ def rediger_ticket_sans_ia(selections_finales):
 
 def _libelle_pari_court(selection_finale):
     """Pari en français courant, sur une ligne : « Moins de 4 buts », « Sparta plus de 2.5 corners »,
-    « Double chance 12 ». Les marchés qu'on ne sait pas reformuler gardent leur libellé brut."""
+    « Sturm Graz ou Marseille (pas de match nul) ». Les marchés qu'on ne sait pas reformuler gardent
+    leur libellé brut."""
     p = selection_finale["pick"]
     domicile, _, exterieur = selection_finale["match"].partition(" vs ")
     categorie, sel = p["categorie"], str(p["selection"])
@@ -2435,25 +2436,35 @@ def _libelle_pari_court(selection_finale):
         for numero, nom in (("1", domicile), ("2", exterieur)):
             if reste.endswith(f"Équipe {numero}"):
                 equipe, reste = nom, reste[:-len(f"Équipe {numero}")].strip()
-        sujet = (reste or "buts").lower()
+        sujet = {"cartons": "cartons jaunes"}.get(reste.lower(), (reste or "buts").lower())
         ligne_txt = f"{float(ligne):g}"
         if equipe:
             return f"{equipe} {sens} {ligne_txt} {sujet}"
         return f"{sens.capitalize()} {ligne_txt} {sujet}"
+    sel_norm = re.sub(r"[^a-z0-9]", "", sel.lower())
     if categorie == "Double Chance":
-        return f"Double chance {sel}"
+        return {"1x": f"{domicile} ou match nul", "x2": f"Match nul ou {exterieur}",
+                "2x": f"Match nul ou {exterieur}",
+                "12": f"{domicile} ou {exterieur} (pas de match nul)"}.get(sel_norm, f"Double chance {sel}")
+    if categorie == "Draw No Bet":
+        equipe = domicile if sel_norm in ("home", "1") else exterieur
+        return f"{equipe} gagne (match nul remboursé)"
+    if categorie == "BTTS":
+        return "Les deux équipes marquent : " + ("Oui" if sel_norm in ("yes", "oui") else "Non")
+    if categorie.startswith("Handicap") and sel_norm in ("1", "2") and ligne is not None:
+        valeur = float(ligne) if sel_norm == "1" else -float(ligne)   # ligne exprimée côté domicile
+        return f"{domicile if sel_norm == '1' else exterieur} {valeur:+g} (handicap)"
     return f"{marche_txt} : {sel}"
 
 
 def rediger_ticket_court(selections_finales):
-    """Ticket Telegram minimal (demande du 22/10/2026 : « simple et court, sur l'essentiel ») :
-    une ligne par jambe — match, pari, cote — sans guide, probabilité ni justification."""
-    lignes = []
+    """Ticket Telegram minimal (demande du 22/10/2026 : « simple et court, sur l'essentiel »,
+    « noms d'équipes complets, écrit clair ») : par jambe, le match avec les noms complets
+    puis le pari en français et la cote — sans guide, probabilité ni justification."""
+    blocs = []
     for i, s in enumerate(selections_finales, start=1):
-        domicile, _, exterieur = s["match"].partition(" vs ")
-        match_court = f"{domicile}–{exterieur}" if exterieur else s["match"]
-        lignes.append(f"{i}. {match_court} : {_libelle_pari_court(s)} @{s['pick']['cote']}")
-    return "\n".join(lignes)
+        blocs.append(f"{i}. {s['match']}\n    {_libelle_pari_court(s)} @{s['pick']['cote']}")
+    return "\n".join(blocs)
 
 
 _COTE_RE = re.compile(r"@\s*([\d]+[.,][\d]+)")

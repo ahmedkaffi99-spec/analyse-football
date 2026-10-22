@@ -3153,21 +3153,28 @@ class TestTicketCourt(unittest.TestCase):
     def test_libelles_en_francais(self):
         sels = [
             self._sel("Celje vs Red Bull Salzburg", "Total", "Over Under Full Time (4.0)", "Under", 1.28, 4),
-            self._sel("Olympiakos vs Sparta", "Total Corners Équipe 2", "Corners - Over Under Team 2 (2.5)", "Over", 1.36, 2.5),
-            self._sel("Sturm vs Marseille", "Double Chance", "Double Chance Full Time", "12", 1.3),
+            self._sel("Olympiakos Piraeus vs Sparta Praha", "Total Corners Équipe 2", "Corners - Over Under Team 2 (2.5)", "Over", 1.36, 2.5),
+            self._sel("Sturm Graz vs Marseille", "Double Chance", "Double Chance Full Time", "12", 1.3),
+            self._sel("Celtic vs Celta Vigo", "Total Cartons", "Yellow Cards - Over Under Full Time (5.0)", "Under", 1.2, 5),
+            self._sel("Juventus vs Rennes", "Handicap", "Asian Handicap (-2.0)", "2", 1.33, -2),
+            self._sel("A vs B", "BTTS", "Both Teams To Score", "Yes", 1.7),
         ]
         lignes = ae.rediger_ticket_court(sels).split("\n")
-        self.assertEqual(lignes[0], "1. Celje–Red Bull Salzburg : Moins de 4 buts @1.28")
-        self.assertEqual(lignes[1], "2. Olympiakos–Sparta : Sparta plus de 2.5 corners @1.36")
-        self.assertEqual(lignes[2], "3. Sturm–Marseille : Double chance 12 @1.3")
+        self.assertEqual(lignes[0], "1. Celje vs Red Bull Salzburg")
+        self.assertEqual(lignes[1], "    Moins de 4 buts @1.28")
+        self.assertEqual(lignes[3], "    Sparta Praha plus de 2.5 corners @1.36")
+        self.assertEqual(lignes[5], "    Sturm Graz ou Marseille (pas de match nul) @1.3")
+        self.assertEqual(lignes[7], "    Moins de 5 cartons jaunes @1.2")
+        self.assertEqual(lignes[9], "    Rennes +2 (handicap) @1.33")
+        self.assertEqual(lignes[11], "    Les deux équipes marquent : Oui @1.7")
 
     def test_marche_inconnu_garde_son_libelle(self):
-        ligne = ae.rediger_ticket_court([self._sel("A vs B", "Handicap", "Asian Handicap (-2.0)", "2", 1.33, -2)])
-        self.assertIn("Asian Handicap (-2.0) : 2 @1.33", ligne)
+        ligne = ae.rediger_ticket_court([self._sel("A vs B", "Pair/Impair", "Odd/Even", "Odd", 1.9)])
+        self.assertIn("Odd/Even : Odd @1.9", ligne)
 
     def test_section_agent4_courte(self):
         item = {"profil": {"cle": "jour", "nom": "COUPON"},
                 "selections": [self._sel("A vs B", "Total", "Over Under Full Time (2.5)", "Over", 1.5, 2.5)]}
         texte = ae.agent4_rediger_coupons([item])[0]
         self.assertTrue(texte.startswith("*COUPON — cote 1.5* (1 jambes)"))
-        self.assertLess(len(texte), 200)
+        self.assertLess(len(texte), 250)

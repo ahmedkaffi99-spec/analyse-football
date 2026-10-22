@@ -363,7 +363,7 @@ class TestTroisProfilsMemeRun(unittest.TestCase):
         self.assertNotIn("double sécurité sur des favoris nets", textes_envoyes[0])
         self.assertIn("cote 3.24", textes_envoyes[0])
         self.assertIn("(2 jambes)", textes_envoyes[0])
-        self.assertLess(len(textes_envoyes[0]), 400)
+        self.assertLess(len(textes_envoyes[0]), 500)
 
     def test_envoyer_telegram_refuse_si_profils_restants(self):
         reponses = [
