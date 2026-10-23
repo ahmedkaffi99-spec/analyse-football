@@ -349,13 +349,18 @@ def test_un_seul_pari_par_match_reste_la_regle_par_defaut():
     assert "p1" not in acceptes and "maximum 1" in problemes[0]
 
 
-def test_un_seul_pari_de_score_par_match_regle_1xbet():
-    # Constaté sur le coupon réel du 23/10/2026 : Total + Handicap du même match refusés par 1xBet ;
-    # double chance + corners et total buts + fautes acceptés.
-    regles = {"match_repete_autorise": True, "jambes_max_par_match": 2, "un_seul_pari_score_par_match": True}
-    # A–B : Double Chance + Total (deux paris de score) -> refusé
+def test_un_seul_pari_par_event_regle_1xbet():
+    # Captures du coupon réel du 23/10/2026 : Total + Handicap du même match refusés (même event) ;
+    # double chance + corners acceptés (events distincts).
+    regles = {"match_repete_autorise": True, "jambes_max_par_match": 6, "un_seul_pari_par_event": True}
+    # A–B : Double Chance + Total = deux paris du jeu principal -> refusé
     acceptes, problemes, _ = _valider_deux(["Double Chance", "Total", "Total Corners"], ["Total Corners"], regles, None)
-    assert "p1" not in acceptes and "paris de score sur A vs B" in problemes[0]
-    # A–B : Double Chance + (rien d'autre) ; E–F : BTTS + Cartons (score + comptage) -> accepté
+    assert "p1" not in acceptes and "même event « jeu principal » sur A vs B" in problemes[0]
+    # E–F : BTTS (jeu principal) + Cartons (event distinct) -> accepté
     acceptes, problemes, _ = _valider_deux(["Double Chance", "BTTS", "Total Cartons"], ["Total Corners"], regles, None)
     assert "p1" in acceptes, problemes
+    # Deux paris de corners sur le même match = même event -> refusé
+    pool = {"C vs D": [_cand("C vs D", "Total Corners Équipe 1", "Over", 1.5, 72.0, 2.0)]}
+    acceptes, problemes, _ = _valider_deux(["Total Corners", "Total Corners Équipe 1", "BTTS"], ["Double Chance"],
+                                            regles, None, pool)
+    assert "p1" not in acceptes and "même event « corners » sur C vs D" in problemes[0]
