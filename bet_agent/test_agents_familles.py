@@ -347,3 +347,15 @@ def test_tous_les_matchs_obligatoires_et_max_deux_paris_par_match():
 def test_un_seul_pari_par_match_reste_la_regle_par_defaut():
     acceptes, problemes, _ = _valider_deux(["Double Chance", "Total"], ["Total Corners"])
     assert "p1" not in acceptes and "maximum 1" in problemes[0]
+
+
+def test_un_seul_pari_de_score_par_match_regle_1xbet():
+    # Constaté sur le coupon réel du 23/10/2026 : Total + Handicap du même match refusés par 1xBet ;
+    # double chance + corners et total buts + fautes acceptés.
+    regles = {"match_repete_autorise": True, "jambes_max_par_match": 2, "un_seul_pari_score_par_match": True}
+    # A–B : Double Chance + Total (deux paris de score) -> refusé
+    acceptes, problemes, _ = _valider_deux(["Double Chance", "Total", "Total Corners"], ["Total Corners"], regles, None)
+    assert "p1" not in acceptes and "paris de score sur A vs B" in problemes[0]
+    # A–B : Double Chance + (rien d'autre) ; E–F : BTTS + Cartons (score + comptage) -> accepté
+    acceptes, problemes, _ = _valider_deux(["Double Chance", "BTTS", "Total Cartons"], ["Total Corners"], regles, None)
+    assert "p1" in acceptes, problemes

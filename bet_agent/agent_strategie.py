@@ -115,9 +115,15 @@ def construire_prompt(pool, profils, catalogue_texte):
         "pari seulement pour faire monter ou descendre la cote au-delà de ce qu'il faut pour l'atteindre)."
         + (f" PLAFOND DE COTE TOTALE POUR CE PROFIL (vérifié par Python) : cote totale <= {p['cote_totale_max']:g}."
            if p.get("cote_totale_max") else "")
-        + (" TOUS LES MATCHS DU CATALOGUE doivent figurer dans CE coupon (vérifié par Python), avec 1 à "
-           f"{p.get('jambes_max_par_match', ae.MAX_JAMBES_PAR_MATCH)} pari(s) par match ; un match déjà pris dans un "
+        + (" TOUS LES MATCHS DU CATALOGUE doivent figurer dans CE coupon (vérifié par Python), avec "
+           + ("EXACTEMENT UN pari par match (1xBet refuse deux paris du même match)"
+              if p.get("jambes_max_par_match", ae.MAX_JAMBES_PAR_MATCH) == 1
+              else f"1 à {p.get('jambes_max_par_match')} paris par match")
+           + " ; un match déjà pris dans un "
            "autre coupon est permis, jamais le même pari exact." if p.get("tous_les_matchs_obligatoires") else "")
+        + (" RÈGLE 1xBET (vérifiée par Python) : par match, UN SEUL pari de score parmi Total, Handicap, BTTS, "
+           "Double Chance/1X2, buts par équipe ; tu peux y ajouter UN pari de comptage du même match (corners, cartons, "
+           "fautes, tirs, hors-jeux)." if p.get("un_seul_pari_score_par_match") else "")
         + (" FAMILLES OBLIGATOIRES POUR CE PROFIL (vérifié par Python) : le coupon doit contenir AU MOINS UN pari "
            "de CHAQUE famille de marchés présente dans le catalogue (voir familles_a_couvrir dans voir_catalogue), "
            "sur des matchs différents." if p.get("familles_obligatoires") else "")
@@ -442,6 +448,22 @@ def _familles_manquantes(selections, catalogue):
             f"(obligatoire, un pari par match) — familles absentes et candidats : " + " ; ".join(absentes)]
 
 
+# Familles « score » : sur 1xBet, UN SEUL pari de ces familles par match dans un coupon (constaté le 23/10/2026
+# sur le coupon réel : Total + Handicap du même match -> « Event already added ! » ; en revanche
+# double chance + corners, ou total buts + fautes d'équipe, sont acceptés). Les paris de comptage (corners,
+# cartons, fautes, tirs, hors-jeux) se combinent avec un pari de score du même match.
+FAMILLES_SCORE = ("resultat", "buts_total", "buts_equipe", "btts", "handicap")
+
+
+def _paris_score_en_double(selections):
+    """Matchs ayant plus d'un pari de score dans la liste (match -> nombre)."""
+    compte = {}
+    for s in selections:
+        if agents_familles.famille_de(s["pick"]["categorie"])[0] in FAMILLES_SCORE:
+            compte[s["match"]] = compte.get(s["match"], 0) + 1
+    return {m: n for m, n in compte.items() if n > 1}
+
+
 def _cle_pari(selection):
     """Identité d'un pari exact : match + catégorie + marché + sélection + ligne."""
     p = selection["pick"]
@@ -524,11 +546,17 @@ def valider(proposition, catalogue, profils, signatures_existantes=(), selection
         for match, nombre in par_match.items():
             if nombre > max_par_match:
                 erreurs.append(f"{nombre} paris sur {match} (maximum {max_par_match})")
+        if profil.get("un_seul_pari_score_par_match"):
+            for match, nombre in _paris_score_en_double(selections).items():
+                erreurs.append(f"{nombre} paris de score sur {match} (Total, Handicap, BTTS, Double Chance...) — 1xBet "
+                               "n'accepte qu'UN seul de ces marchés par match dans un coupon ; garde-en un et "
+                               "complète avec un marché de comptage (corners, cartons, fautes, tirs, hors-jeux)")
         if profil.get("tous_les_matchs_obligatoires"):
             absents = sorted({c["match"] for c in catalogue.values()} - set(par_match))
             if absents and len({c["match"] for c in catalogue.values()}) <= profil["nb_jambes"]:
-                erreurs.append("tous les matchs du catalogue doivent figurer dans ce coupon (1 à "
-                               f"{max_par_match} pari(s) par match) — matchs absents : " + ", ".join(absents))
+                erreurs.append("tous les matchs du catalogue doivent figurer dans ce coupon (" +
+                               ("un seul pari par match" if max_par_match == 1 else f"1 à {max_par_match} paris par match") +
+                               ") — matchs absents : " + ", ".join(absents))
 
         conservateurs = [s for s in selections if _pari_conservateur(s["pick"])]
         # floor, pas ceil : avec ceil, un coupon de 5 jambes autorisait 4 Under/No (80%) sans

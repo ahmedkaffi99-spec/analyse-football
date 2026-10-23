@@ -27,9 +27,13 @@ def construire_prompt_systeme(profils):
     n = len(profils)
     noms = ", ".join(p["nom"] for p in profils)
     if any(p.get("tous_les_matchs_obligatoires") for p in profils):
-        regle_matchs = ("chacun reprenant TOUS les matchs du catalogue (1 à "
-                        f"{max(p.get('jambes_max_par_match', 1) for p in profils)} paris par match ; un même match "
-                        "peut figurer dans plusieurs coupons, jamais le même pari exact)")
+        maxi = max(p.get("jambes_max_par_match", 1) for p in profils)
+        regle_matchs = ("chacun reprenant TOUS les matchs du catalogue ("
+                        + (f"par match : UN pari de score (Total, Handicap, BTTS, Double Chance...) + UN pari de comptage "
+                           "(corners, cartons, fautes, tirs, hors-jeux) au plus, car 1xBet refuse deux paris de score du "
+                           "même match" if any(p.get("un_seul_pari_score_par_match") for p in profils)
+                           else f"1 à {maxi} paris par match")
+                        + " ; un même match peut figurer dans plusieurs coupons, jamais le même pari exact)")
     else:
         regle_matchs = "chacun de matchs DIFFÉRENTS (un seul pari par match)"
     return f"""Tu es l'agent pilote d'un pipeline de coupons de paris football (1xBet). Tu conduis le run \

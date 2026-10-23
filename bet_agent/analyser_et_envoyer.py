@@ -164,8 +164,10 @@ def profils_agent_quotidien():
         profil = {"cle": cle, "nom": f"{nom} ({nb_min}-{nb_max} jambes)",
                   "cote_min": cote_min, "cote_max": cote_max if cote_max else 100000.0,
                   "cote_totale_min": cote_min, "nb_jambes_min": nb_min, "nb_jambes": nb_max,
-                  # 5 matchs dans les 3 coupons (22/10/2026) : match répété permis, 1 à 2 paris par match
-                  "match_repete_autorise": True, "tous_les_matchs_obligatoires": True, "jambes_max_par_match": 2}
+                  # 5 matchs dans les 3 coupons (22/10/2026) : match répété permis ENTRE coupons ; par match et par coupon, UN
+                  # pari de score (Total, Handicap, BTTS, Double Chance...) + UN de comptage (23/10/2026, règle 1xBet)
+                  "match_repete_autorise": True, "tous_les_matchs_obligatoires": True, "jambes_max_par_match": 2,
+                  "un_seul_pari_score_par_match": True}
         if cote_max:
             profil["cote_totale_max"] = cote_max
         profils.append(profil)
