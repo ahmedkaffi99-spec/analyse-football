@@ -136,7 +136,7 @@ PROFILS_COUPON = [
 
 # Profils du moteur "agent" (agent pilote IA) en production depuis le 20/10/2026 ; passés à TROIS
 # coupons de 5 à 10 jambes le 22/10/2026 (demande explicite : "min 5 max 10 et trois types de coupon :
-# 1 = cote 5 à 10, 2 = cote 10 à 50, 3 = plus de 50"). NB_JAMBES_MIN / NB_JAMBES (entrées du workflow,
+# 1 = cote 5 à 10, 2 = cote 10 à 50, 3 = plus de 50"), coupon 3 ramené à 25 et plus le 23/10/2026. NB_JAMBES_MIN / NB_JAMBES (entrées du workflow,
 # déjà utilisées par le moteur déterministe) les remplacent pour UN run, pour les trois coupons.
 # cote_totale_min / cote_totale_max : vérifiés par Python (agent_strategie.valider) ; le coupon 3 n'a
 # pas de plafond. Depuis le 22/10/2026 (« match répété c'est bon, il faut les 5 matchs dans les 3
@@ -148,7 +148,7 @@ NB_JAMBES_AGENT_MAX_DEFAUT = 10
 TRANCHES_COTE_AGENT = (
     ("coupon1", "🟢 COUPON 1 — cote 5 à 10", 5.0, 10.0),
     ("coupon2", "🟠 COUPON 2 — cote 10 à 50", 10.0, 50.0),
-    ("coupon3", "🔴 COUPON 3 — cote 50 et plus", 50.0, None),
+    ("coupon3", "🔴 COUPON 3 — cote 25 et plus", 25.0, None),   # 50 -> 25 le 23/10/2026 : 50+ inatteignable (jambes à 1,2-1,4)
 )
 
 

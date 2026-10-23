@@ -164,7 +164,7 @@ def test_moteur_agent_est_le_defaut_avec_profil_12_a_15_jambes(monkeypatch):
     assert [p["cle"] for p in profils] == ["coupon1", "coupon2", "coupon3"]
     assert all(p["nb_jambes_min"] == 5 and p["nb_jambes"] == 10 for p in profils)
     assert [(p["cote_totale_min"], p.get("cote_totale_max")) for p in profils] == [
-        (5.0, 10.0), (10.0, 50.0), (50.0, None)]
+        (5.0, 10.0), (10.0, 50.0), (25.0, None)]
 
 
 def test_profil_agent_quotidien_respecte_nb_jambes_du_workflow(monkeypatch):
