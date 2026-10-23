@@ -166,7 +166,7 @@ def test_moteur_agent_est_le_defaut_avec_profil_12_a_15_jambes(monkeypatch):
     # 1xBet : un seul pari par EVENT (« Event already added » sinon, 23/10/2026)
     assert all(p["un_seul_pari_par_event"] and p["tous_les_matchs_obligatoires"] for p in profils)
     assert [(p["cote_totale_min"], p.get("cote_totale_max")) for p in profils] == [
-        (5.0, 10.0), (10.0, 50.0), (24.0, None)]
+        (5.0, 10.0), (10.0, 50.0), (20.0, None)]
 
 
 def test_profil_agent_quotidien_respecte_nb_jambes_du_workflow(monkeypatch):
