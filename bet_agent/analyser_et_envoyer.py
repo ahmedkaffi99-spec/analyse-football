@@ -148,7 +148,7 @@ NB_JAMBES_AGENT_MAX_DEFAUT = 10
 TRANCHES_COTE_AGENT = (
     ("coupon1", "🟢 COUPON 1 — cote 5 à 10", 5.0, 10.0),
     ("coupon2", "🟠 COUPON 2 — cote 10 à 50", 10.0, 50.0),
-    ("coupon3", "🔴 COUPON 3 — cote 25 et plus", 25.0, None),   # 50 -> 25 le 23/10/2026 : 50+ inatteignable (jambes à 1,2-1,4)
+    ("coupon3", "🔴 COUPON 3 — cote 24 et plus", 24.0, None),   # 50 -> 25 le 23/10/2026 : 50+ inatteignable (jambes à 1,2-1,4)
 )
 
 
