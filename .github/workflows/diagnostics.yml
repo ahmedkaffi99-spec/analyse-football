@@ -1032,6 +1032,17 @@ jobs:
               print(f'      {\"✓ mappé \" if n in mappes else \"✗ ignoré\"} {n}')
 
           if choisis:
+              rep0 = get('odds', fixture=choisis[0]['fixture']['id'], bookmaker=11)
+              print('\\n=== (2b) paris de type résultat / combiné servis pour 1xBet, avec valeurs ===')
+              for e in rep0:
+                  for bk in e.get('bookmakers', []):
+                      for b in bk.get('bets', []):
+                          n = (b.get('name') or '').lower()
+                          if 'result' in n or 'both' in n or 'win' in n or 'total' in n and '/' in n:
+                              vals = ', '.join(f\"{v.get('value')}@{v.get('odd')}\" for v in (b.get('values') or [])[:14])
+                              print(f'   · id={b.get(\"id\")} {b.get(\"name\")} ({len(b.get(\"values\") or [])} valeurs) : {vals}')
+
+          if choisis:
               fx = choisis[0]
               rep = get('odds', fixture=fx['fixture']['id'])
               print(f'\\n=== (3) même match SANS filtre bookmaker : {fx[\"teams\"][\"home\"][\"name\"]} vs {fx[\"teams\"][\"away\"][\"name\"]} ===')
