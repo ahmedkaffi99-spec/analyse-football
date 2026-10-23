@@ -145,11 +145,11 @@ PROFILS_COUPON = [
 TRANCHES_COTE_AGENT = (
     # (clé, libellé, cote totale min, cote totale max ou None, probabilité minimale par jambe en %, jambes min, jambes max)
     # 24/10/2026 : « petite cote 5 à 15 (prudent) 5-7 jambes, cote moyenne 20 à 40 (équilibré) 8-10 jambes, haute cote
-    # 50 à 100+ (très risqué) 10-12 jambes ». Le coupon très risqué accepte des jambes à probabilité plus basse, sinon
+    # 50 à 100+ (très risqué) 11-15 jambes ». Le coupon très risqué accepte des jambes à probabilité plus basse, sinon
     # 50+ est hors de portée (jambes à 1,2-1,4 au seuil de 70 %).
     ("coupon1", "🟢 PETITE COTE — cote 5 à 15 (prudent)", 5.0, 15.0, 70.0, 5, 7),
     ("coupon2", "🟠 COTE MOYENNE — cote 20 à 40 (équilibré)", 20.0, 40.0, 62.0, 8, 10),
-    ("coupon3", "🔴 HAUTE COTE — cote 50 à 100+ (très risqué)", 50.0, None, 55.0, 10, 12),
+    ("coupon3", "🔴 HAUTE COTE — cote 50 à 100+ (très risqué)", 50.0, None, 55.0, 11, 15),
 )
 
 
