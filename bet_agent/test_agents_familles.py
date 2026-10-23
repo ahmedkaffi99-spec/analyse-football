@@ -408,3 +408,23 @@ def test_probabilite_minimale_par_profil_et_seuil_du_catalogue():
     acceptes, problemes, _ = st.valider(prop, catalogue, [dict(base, cle="p1", proba_min_pct=70.0),
                                                          dict(base, cle="p3", proba_min_pct=55.0)])
     assert "p3" in acceptes and "p1" not in acceptes and "trop basse pour CE profil" in problemes[0]
+
+
+def test_dernier_coupon_doit_couvrir_tous_les_matchs_restants():
+    # 24/10/2026 : obligation de couvrir tous les matchs sur l'ensemble des coupons (le dernier complète).
+    catalogue, _ = st.construire_catalogue(_pool_familles())
+    par = {}
+    for cid, c in catalogue.items():
+        par.setdefault(c["match"], []).append(cid)
+    base = {"nom": "P", "nb_jambes": 8, "nb_jambes_min": 1, "cote_totale_min": 1.0, "couvrir_tous_les_matchs": True,
+            "dernier_profil": True}
+    # Coupon précédent (verrouillé) : A–B ; ce dernier coupon ne prend que C–D -> E–F reste non couvert -> refusé
+    precedent = [dict(catalogue[par["A vs B"][0]], pick=dict(catalogue[par["A vs B"][0]]["pick"]))]
+    prop = {"coupons": [{"profil": "p", "strategie": "s", "jambes": [{"id": par["C vs D"][0], "raison": "ok"}]}]}
+    acceptes, problemes, _ = st.valider(prop, catalogue, [dict(base, cle="p")], selections_precedentes=precedent)
+    assert not acceptes and "E vs F" in problemes[0] and "couvrir TOUS les matchs" in problemes[0]
+    # Avec C–D et E–F dans ce dernier coupon : accepté
+    prop = {"coupons": [{"profil": "p", "strategie": "s", "jambes": [
+        {"id": par["C vs D"][0], "raison": "ok"}, {"id": par["E vs F"][0], "raison": "ok"}]}]}
+    acceptes, problemes, _ = st.valider(prop, catalogue, [dict(base, cle="p")], selections_precedentes=precedent)
+    assert "p" in acceptes, problemes

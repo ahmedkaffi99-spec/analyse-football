@@ -524,6 +524,11 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
                        "prefere_cote_elevee": profil.get("prefere_cote_elevee", False),
                        **({"cote_totale_max": profil["cote_totale_max"]} if profil.get("cote_totale_max") else {}),
                        **({"proba_min_pct_par_jambe": profil["proba_min_pct"]} if profil.get("proba_min_pct") else {}),
+                       **({"matchs_restants_a_couvrir": sorted(
+                           {c["match"] for c in etat["catalogue"].values()
+                            if (c["pick"].get("proba_modele_pct") or 0) >= profil.get("proba_min_pct", 0)}
+                           - {sel["match"] for r in etat["resultats_profils"] for sel in r["selections"]})}
+                          if profil.get("couvrir_tous_les_matchs") else {}),
                        **({"jambes_max_par_match": profil["jambes_max_par_match"]}
                           if profil.get("jambes_max_par_match") else {}),
                        **({"tous_les_matchs_obligatoires": True} if profil.get("tous_les_matchs_obligatoires") else {}),

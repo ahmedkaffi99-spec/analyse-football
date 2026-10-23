@@ -127,6 +127,9 @@ def construire_prompt(pool, profils, catalogue_texte):
               else f"1 à {p.get('jambes_max_par_match')} paris par match")
            + " ; un match déjà pris dans un "
            "autre coupon est permis, jamais le même pari exact." if p.get("tous_les_matchs_obligatoires") else "")
+        + (" COUVERTURE DES MATCHS : à eux trois les coupons doivent couvrir TOUS les matchs du catalogue (vérifié sur le "
+           "DERNIER coupon, qui doit compléter les matchs encore non couverts — voir matchs_restants_a_couvrir) ; répartis "
+           "donc dès le premier coupon des matchs variés, sans te limiter aux plus probables." if p.get("couvrir_tous_les_matchs") else "")
         + (f" PROBABILITÉ MINIMALE PAR JAMBE POUR CE PROFIL : {p['proba_min_pct']:g} % (vérifiée par Python ; les jambes "
            "moins probables du catalogue sont réservées aux profils plus risqués)." if p.get("proba_min_pct") else "")
         + (" DIVERSIFICATION ENTRE COUPONS (vérifiée par Python) : ne reprends pas, d'un coupon à l'autre, le même marché "
@@ -594,6 +597,25 @@ def valider(proposition, catalogue, profils, signatures_existantes=(), selection
                 erreurs.append(f"{nombre} paris du même event « {event} » sur {match} — 1xBet n'accepte qu'UN pari par "
                                "event dans un coupon (jeu principal = Total/Handicap/BTTS/Double Chance/buts par équipe ; "
                                "corners, cartons, fautes, tirs, hors-jeux = un event chacun) ; garde-en un seul")
+        if profil.get("couvrir_tous_les_matchs") and profil.get("dernier_profil"):
+            # 24/10/2026 : « impose les 4 matchs, obligation de couvrir tous les matchs » — à eux trois, les coupons
+            # couvrent tous les matchs du catalogue ; le DERNIER coupon complète ce qui manque (parmi les matchs qui ont
+            # au moins une jambe respectant SA probabilité minimale).
+            minimum = profil.get("proba_min_pct", SEUIL_PROBA_CATALOGUE)
+            couvrables = {c["match"] for c in catalogue.values()
+                          if (c["pick"].get("proba_modele_pct") or 0) >= minimum}
+            couverts = {s["match"] for s in toutes_selections_verrouillees} | set(par_match)
+            manquants = sorted(couvrables - couverts)
+            if manquants:
+                pistes = []
+                for match in manquants:
+                    meilleurs = sorted((cid for cid, c in catalogue.items() if c["match"] == match
+                                        and (c["pick"].get("proba_modele_pct") or 0) >= minimum),
+                                       key=lambda cid: -(catalogue[cid]["pick"].get("proba_modele_pct") or 0))[:2]
+                    pistes.append(f"{match} ({', '.join(meilleurs)})")
+                erreurs.append("les 3 coupons doivent couvrir TOUS les matchs du catalogue ; matchs encore non couverts "
+                               "(ajoute au moins une jambe de chacun dans CE dernier coupon, pistes entre parenthèses) : "
+                               + " ; ".join(pistes))
         if profil.get("tous_les_matchs_obligatoires"):
             absents = sorted({c["match"] for c in catalogue.values()} - set(par_match))
             if absents and len({c["match"] for c in catalogue.values()}) <= profil["nb_jambes"]:

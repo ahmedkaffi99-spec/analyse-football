@@ -172,10 +172,13 @@ def profils_agent_quotidien():
                   "match_repete_autorise": True, "jambes_max_par_match": 6,
                   "un_seul_pari_par_event": True, "proba_min_pct": proba_min,
                   # diversification entre coupons (23/10/2026) : même risque (marché+équipe+sens, toute ligne) jamais repris
-                  "diversifier_entre_coupons": True}
+                  "diversifier_entre_coupons": True,
+                  # couverture de TOUS les matchs sur l'ensemble des coupons (24/10/2026), complétée par le dernier
+                  "couvrir_tous_les_matchs": True}
         if cote_max:
             profil["cote_totale_max"] = cote_max
         profils.append(profil)
+    profils[-1]["dernier_profil"] = True
     return profils
 
 
