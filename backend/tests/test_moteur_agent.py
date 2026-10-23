@@ -164,10 +164,12 @@ def test_moteur_agent_est_le_defaut_avec_profil_12_a_15_jambes(monkeypatch):
     assert [p["cle"] for p in profils] == ["coupon1", "coupon2", "coupon3"]
     assert all(p["nb_jambes_min"] == 5 and p["nb_jambes"] == 10 for p in profils)
     # 1xBet : un seul pari par EVENT (« Event already added » sinon, 23/10/2026)
-    assert all(p["un_seul_pari_par_event"] and p["tous_les_matchs_obligatoires"] for p in profils)
+    assert all(p["un_seul_pari_par_event"] and not p.get("tous_les_matchs_obligatoires") for p in profils)
     assert all(p["diversifier_entre_coupons"] for p in profils)
+    # 24/10/2026 : petite cote 5-15 (prudent), cote moyenne 20-40 (équilibré), haute cote 50-100+ (très risqué)
     assert [(p["cote_totale_min"], p.get("cote_totale_max")) for p in profils] == [
-        (5.0, 10.0), (10.0, 50.0), (20.0, None)]
+        (5.0, 15.0), (20.0, 40.0), (50.0, None)]
+    assert [p["proba_min_pct"] for p in profils] == [70.0, 62.0, 55.0]
 
 
 def test_profil_agent_quotidien_respecte_nb_jambes_du_workflow(monkeypatch):

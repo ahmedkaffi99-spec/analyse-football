@@ -31,6 +31,11 @@ def construire_prompt_systeme(profils):
                         "le jeu principal (Total, Handicap, BTTS, Double Chance, buts par équipe) compte pour un event, "
                         "corners, cartons, fautes, tirs et hors-jeux chacun pour un autre ; 1xBet refuse deux paris du même "
                         "event ; un même match peut figurer dans plusieurs coupons, jamais le même pari exact)")
+    elif any(p.get("un_seul_pari_par_event") for p in profils):
+        regle_matchs = ("chacun choisissant ses jambes parmi les matchs du catalogue (par match : UN pari par EVENT 1xBet au "
+                        "plus — le jeu principal (Total, Handicap, BTTS, Double Chance, buts par équipe) compte pour un event, "
+                        "corners, cartons, fautes, tirs et hors-jeux chacun pour un autre ; un même match peut figurer dans "
+                        "plusieurs coupons, jamais le même risque — marché, équipe et sens, quelle que soit la ligne)")
     else:
         regle_matchs = "chacun de matchs DIFFÉRENTS (un seul pari par match)"
     return f"""Tu es l'agent pilote d'un pipeline de coupons de paris football (1xBet). Tu conduis le run \
@@ -470,7 +475,8 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
             return {"erreur": "appelle d'abord collecter_donnees"}
         if etat["catalogue"] is None:
             etat["pool"] = ae.agent3_calcul_pool_candidats(etat["donnees"])
-            etat["catalogue"], etat["catalogue_texte"] = st.construire_catalogue(etat["pool"])
+            etat["catalogue"], etat["catalogue_texte"] = st.construire_catalogue(
+                etat["pool"], seuil_proba=st.seuil_catalogue(etat["profils"]))
             # Agents spécialistes par famille de marchés (20/10/2026) : constat réel sur le run 170
             # — ils n'étaient branchés que dans composer_coupons (moteur déterministe), jamais ici,
             # donc ABSENTS du moteur agent. Même revue (veto Python + avis IA par famille) avant
@@ -479,7 +485,7 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
                 ecartes, avis = agents_familles.revoir_catalogue(etat["catalogue"], ae.appel_llm)
                 if ecartes or avis:
                     etat["catalogue"], etat["catalogue_texte"] = st.construire_catalogue(
-                        etat["pool"], ecartes=ecartes, avis=avis)
+                        etat["pool"], seuil_proba=st.seuil_catalogue(etat["profils"]), ecartes=ecartes, avis=avis)
             # contexte_texte (01/10/2026, correctif réel) : voir_catalogue ne renvoyait QUE les
             # lignes de paris, jamais le contexte par match (buts attendus, confrontations
             # directes, blessures, prédictions, forme, presse) alors que le prompt système
@@ -517,6 +523,7 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
                        "cote_totale_min": profil.get("cote_totale_min", st.COTE_TOTALE_MIN),
                        "prefere_cote_elevee": profil.get("prefere_cote_elevee", False),
                        **({"cote_totale_max": profil["cote_totale_max"]} if profil.get("cote_totale_max") else {}),
+                       **({"proba_min_pct_par_jambe": profil["proba_min_pct"]} if profil.get("proba_min_pct") else {}),
                        **({"jambes_max_par_match": profil["jambes_max_par_match"]}
                           if profil.get("jambes_max_par_match") else {}),
                        **({"tous_les_matchs_obligatoires": True} if profil.get("tous_les_matchs_obligatoires") else {}),

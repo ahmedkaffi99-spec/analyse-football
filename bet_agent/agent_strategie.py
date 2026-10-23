@@ -56,6 +56,12 @@ COTE_TOTALE_MIN = 5.0
 SEUIL_PROBA_CATALOGUE = ae.PROBA_MIN_FORTE
 
 
+def seuil_catalogue(profils):
+    """Seuil de probabilité du catalogue : le plus bas des profils (un profil très risqué accepte des jambes moins
+    probables) ; chaque profil garde SON minimum, vérifié dans valider."""
+    return min([p.get("proba_min_pct", SEUIL_PROBA_CATALOGUE) for p in profils] or [SEUIL_PROBA_CATALOGUE])
+
+
 def construire_catalogue(pool, seuil_proba=SEUIL_PROBA_CATALOGUE, ecartes=frozenset(), avis=None):
     """Renvoie ({id: sélection}, texte du catalogue groupé par match) — FILTRÉ et TRIÉ par
     Python (demande explicite du 01/10/2026 : "réduire les tâches de l'IA, augmenter Python") :
@@ -121,6 +127,8 @@ def construire_prompt(pool, profils, catalogue_texte):
               else f"1 à {p.get('jambes_max_par_match')} paris par match")
            + " ; un match déjà pris dans un "
            "autre coupon est permis, jamais le même pari exact." if p.get("tous_les_matchs_obligatoires") else "")
+        + (f" PROBABILITÉ MINIMALE PAR JAMBE POUR CE PROFIL : {p['proba_min_pct']:g} % (vérifiée par Python ; les jambes "
+           "moins probables du catalogue sont réservées aux profils plus risqués)." if p.get("proba_min_pct") else "")
         + (" DIVERSIFICATION ENTRE COUPONS (vérifiée par Python) : ne reprends pas, d'un coupon à l'autre, le même marché "
            "dans le même sens sur la même équipe d'un match (une autre ligne — 2.5 puis 3 — compte comme le MÊME pari), et "
            "un seul pari « résultat » (1X2, double chance, sans nul) par match sur l'ensemble des coupons ; un même match "
@@ -562,6 +570,11 @@ def valider(proposition, catalogue, profils, signatures_existantes=(), selection
                                f"{selection['pick']['selection']}) déjà pris dans un autre coupon — choisis un autre "
                                "marché ou une autre sélection sur ce match")
                 continue
+            proba_jambe = selection["pick"].get("proba_modele_pct")
+            if proba_jambe is not None and proba_jambe < profil.get("proba_min_pct", SEUIL_PROBA_CATALOGUE):
+                erreurs.append(f"{cid} : probabilité {proba_jambe:g} % trop basse pour CE profil (minimum "
+                               f"{profil.get('proba_min_pct', SEUIL_PROBA_CATALOGUE):g} %) — choisis un pari plus probable")
+                continue
             if _cle_risque(selection) in risques_deja_utilises:
                 erreurs.append(f"{cid} : même risque que dans un autre coupon ({selection['match']}, "
                                f"{selection['pick']['categorie']}, {selection['pick']['selection']} — une autre ligne du "
@@ -656,13 +669,14 @@ def composer_coupons(pool, profils, appel=None, nb_tours=NB_TOURS_MAX):
     """Boucle IA ⇄ Python. Renvoie {"coupons": {cle: {...}}, "analyse_matchs": [...]} avec les
     profils validés (les autres absents → repli automatique), ou None si l'IA n'a rien produit."""
     appel = appel or ae.appel_llm
-    catalogue, catalogue_texte = construire_catalogue(pool)
+    seuil = seuil_catalogue(profils)
+    catalogue, catalogue_texte = construire_catalogue(pool, seuil_proba=seuil)
     if not catalogue:
         return None
     if agents_familles.actif():
         ecartes, avis = agents_familles.revoir_catalogue(catalogue, appel)
         if ecartes or avis:
-            catalogue, catalogue_texte = construire_catalogue(pool, ecartes=ecartes, avis=avis)
+            catalogue, catalogue_texte = construire_catalogue(pool, seuil_proba=seuil, ecartes=ecartes, avis=avis)
             if not catalogue:
                 return None
     prompt_base = construire_prompt(pool, profils, catalogue_texte)

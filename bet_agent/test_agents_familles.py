@@ -391,3 +391,20 @@ def test_un_seul_pari_resultat_par_match_sur_l_ensemble_des_coupons():
     pool = {"A vs B": [_cand("A vs B", "Draw No Bet", "1", 1.4, 74.0, 2.0)]}
     acceptes, problemes, _ = _valider_deux(["Double Chance"], ["Draw No Bet"], div, div, pool)
     assert "p2" not in acceptes and "même risque" in problemes[0]   # deuxième pari « résultat » sur A–B : refusé
+
+
+def test_probabilite_minimale_par_profil_et_seuil_du_catalogue():
+    # 24/10/2026 : le coupon « très risqué » accepte des jambes moins probables, les autres gardent leur minimum.
+    profils = [{"cle": "p1", "proba_min_pct": 70.0}, {"cle": "p3", "proba_min_pct": 55.0}]
+    assert st.seuil_catalogue(profils) == 55.0
+    assert st.seuil_catalogue([]) == st.SEUIL_PROBA_CATALOGUE
+    pool = {"A vs B": [_cand("A vs B", "Total", "Over", 1.8, 60.0, 2.0), _cand("A vs B", "BTTS", "Yes", 1.4, 75.0, 2.0)]}
+    catalogue, _ = st.construire_catalogue(pool, seuil_proba=55.0)
+    par_cat = {c["pick"]["categorie"]: cid for cid, c in catalogue.items()}
+    assert "Total" in par_cat                                   # visible grâce au seuil abaissé
+    base = {"nom": "P", "nb_jambes": 8, "nb_jambes_min": 1, "cote_totale_min": 1.0}
+    prop = {"coupons": [{"profil": "p1", "strategie": "s", "jambes": [{"id": par_cat["Total"], "raison": "ok"}]},
+                        {"profil": "p3", "strategie": "s", "jambes": [{"id": par_cat["Total"], "raison": "ok"}]}]}
+    acceptes, problemes, _ = st.valider(prop, catalogue, [dict(base, cle="p1", proba_min_pct=70.0),
+                                                         dict(base, cle="p3", proba_min_pct=55.0)])
+    assert "p3" in acceptes and "p1" not in acceptes and "trop basse pour CE profil" in problemes[0]

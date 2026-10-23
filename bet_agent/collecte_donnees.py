@@ -1328,7 +1328,7 @@ def selectionner_matchs_du_jour(fixtures_oddspapi):
 # 5 championnats domestiques seuls (les autres identifiants de LIGUES_FILTRE_API_FOOTBALL sont les coupes d'Europe).
 LIGUES_DOMESTIQUES_ORDRE = (39, 140, 135, 78, 61)   # ordre du tour de rôle entre les championnats
 LIGUES_DOMESTIQUES_API_FOOTBALL = set(LIGUES_DOMESTIQUES_ORDRE)
-NB_MATCHS_POOL = int(os.getenv("NB_MATCHS_POOL", "5"))   # matchs du pool quotidien : les 3 coupons les reprennent tous
+NB_MATCHS_POOL = int(os.getenv("NB_MATCHS_POOL", "20"))   # 24/10/2026 : 19 matchs ce jour-là, tous dans le pool   # matchs du pool quotidien : les 3 coupons les reprennent tous
 
 LIGUES_FILTRE_API_FOOTBALL = {
     2,    # UEFA Champions League
