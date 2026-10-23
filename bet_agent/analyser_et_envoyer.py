@@ -2464,7 +2464,7 @@ def _libelle_pari_court(selection_finale):
         for numero, nom in (("1", domicile), ("2", exterieur)):
             if reste.endswith(f"Équipe {numero}"):
                 equipe, reste = f"Total {numero} ({nom})", reste[:-len(f"Équipe {numero}")].strip()
-        sujet = {"cartons": "cartons jaunes"}.get(reste.lower(), (reste or "buts").lower())
+        sujet = {"cartons": "cartons jaunes", "tirs": "tirs vers le but"}.get(reste.lower(), (reste or "buts").lower())
         ligne_txt = f"{float(ligne):g}"
         return f"{equipe or 'Total'} {sujet} : {sens} {ligne_txt}"
     sel_norm = re.sub(r"[^a-z0-9]", "", sel.lower())
