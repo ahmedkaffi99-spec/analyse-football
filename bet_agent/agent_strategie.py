@@ -121,6 +121,10 @@ def construire_prompt(pool, profils, catalogue_texte):
               else f"1 à {p.get('jambes_max_par_match')} paris par match")
            + " ; un match déjà pris dans un "
            "autre coupon est permis, jamais le même pari exact." if p.get("tous_les_matchs_obligatoires") else "")
+        + (" DIVERSIFICATION ENTRE COUPONS (vérifiée par Python) : ne reprends pas, d'un coupon à l'autre, le même marché "
+           "dans le même sens sur la même équipe d'un match (une autre ligne — 2.5 puis 3 — compte comme le MÊME pari), et "
+           "un seul pari « résultat » (1X2, double chance, sans nul) par match sur l'ensemble des coupons ; un même match "
+           "reste permis avec un marché différent." if p.get("diversifier_entre_coupons") else "")
         + (" RÈGLE 1xBET PAR EVENT (vérifiée par Python) : dans ce coupon, UN SEUL pari par event d'un match — le jeu "
            "principal (Total buts, Handicap, BTTS, Double Chance/1X2, buts par équipe) compte pour UN event ; corners, "
            "cartons, fautes, tirs et hors-jeux sont chacun un event distinct. Donc par match : au plus UN pari de jeu "
@@ -478,6 +482,16 @@ def _cle_pari(selection):
     return (selection["match"], p.get("categorie"), p.get("marche"), str(p.get("selection")), p.get("handicap"))
 
 
+def _cle_risque(selection):
+    """Identité de RISQUE d'un pari, indépendante de la ligne : match + catégorie + sens. Constaté le 23/10/2026 :
+    « Total 2 (Malaga) corners plus de 2.5 » (254, 259) et « plus de 3 » (261) ont fait perdre trois coupons d'un coup.
+    Les paris du résultat (1X2, double chance, sans nul) d'un même match comptent comme UN seul risque."""
+    p = selection["pick"]
+    if agents_familles.famille_de(p.get("categorie"))[0] == "resultat":
+        return (selection["match"], "resultat")
+    return (selection["match"], p.get("categorie"), str(p.get("selection")))
+
+
 def valider(proposition, catalogue, profils, signatures_existantes=(), selections_precedentes=(),
             ignorer_diversite_croisee=False):
     """Contrôle la proposition de l'IA profil par profil. Renvoie
@@ -523,6 +537,8 @@ def valider(proposition, catalogue, profils, signatures_existantes=(), selection
         repete = bool(profil.get("match_repete_autorise"))
         matchs_deja_utilises = set() if repete else {s["match"] for s in toutes_selections_verrouillees}
         paris_deja_utilises = {_cle_pari(s) for s in toutes_selections_verrouillees} if repete else set()
+        risques_deja_utilises = ({_cle_risque(s) for s in toutes_selections_verrouillees}
+                                 if profil.get("diversifier_entre_coupons") else set())
         max_par_match = profil.get("jambes_max_par_match", ae.MAX_JAMBES_PAR_MATCH)
         erreurs, selections, par_match, ids_vus = [], [], {}, set()
         for jambe in jambes:
@@ -545,6 +561,12 @@ def valider(proposition, catalogue, profils, signatures_existantes=(), selection
                 erreurs.append(f"{cid} : même pari exact ({selection['match']}, {selection['pick']['marche']}, "
                                f"{selection['pick']['selection']}) déjà pris dans un autre coupon — choisis un autre "
                                "marché ou une autre sélection sur ce match")
+                continue
+            if _cle_risque(selection) in risques_deja_utilises:
+                erreurs.append(f"{cid} : même risque que dans un autre coupon ({selection['match']}, "
+                               f"{selection['pick']['categorie']}, {selection['pick']['selection']} — une autre ligne du "
+                               "même marché compte comme le même pari) ; diversifie : choisis un autre marché, une autre "
+                               "équipe ou l'autre sens (Over/Under) sur ce match")
                 continue
             probleme = incoherence_raison(selection["raison_ia"], selection["pick"])
             if probleme:

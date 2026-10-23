@@ -167,7 +167,9 @@ def profils_agent_quotidien():
                   # 5 matchs dans les 3 coupons (22/10/2026) : match répété permis ENTRE coupons ; par coupon, UN seul
                   # pari PAR EVENT 1xBet (jeu principal, corners, fautes... chacun un event, 23/10/2026)
                   "match_repete_autorise": True, "tous_les_matchs_obligatoires": True, "jambes_max_par_match": 6,
-                  "un_seul_pari_par_event": True}
+                  "un_seul_pari_par_event": True,
+                  # diversification entre coupons (23/10/2026) : même risque (marché+équipe+sens, toute ligne) jamais repris
+                  "diversifier_entre_coupons": True}
         if cote_max:
             profil["cote_totale_max"] = cote_max
         profils.append(profil)

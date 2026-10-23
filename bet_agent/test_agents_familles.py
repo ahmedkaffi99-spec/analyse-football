@@ -364,3 +364,30 @@ def test_un_seul_pari_par_event_regle_1xbet():
     acceptes, problemes, _ = _valider_deux(["Total Corners", "Total Corners Équipe 1", "BTTS"], ["Double Chance"],
                                             regles, None, pool)
     assert "p1" not in acceptes and "même event « corners » sur C vs D" in problemes[0]
+
+
+def test_diversification_entre_coupons_meme_risque_toute_ligne():
+    # 23/10/2026 : « Malaga corners plus de 2.5 » puis « plus de 3 » = le même risque, trois coupons perdus d'un coup.
+    div = {"match_repete_autorise": True, "diversifier_entre_coupons": True}
+    pool = {"C vs D": [_cand("C vs D", "Total Corners Équipe 1", "Over", 1.5, 72.0, 2.0)]}
+    # p1 prend « Total Corners » (C–D), p2 reprend la même catégorie/sens sur C–D avec une autre ligne : refus
+    catalogue, _ = st.construire_catalogue({**_pool_familles(), **{"C vs D": _pool_familles()["C vs D"] + [
+        _cand("C vs D", "Total Corners", "Over", 1.4, 75.0, 2.0, marche="M2")]}})
+    ids = {}
+    for cid, c in catalogue.items():
+        ids.setdefault((c["match"], c["pick"]["categorie"], c["pick"]["marche"]), cid)
+    base = {"nom": "P", "nb_jambes": 8, "nb_jambes_min": 1, "cote_totale_min": 1.0, **div}
+    proposition = {"coupons": [
+        {"profil": "p1", "strategie": "s", "jambes": [{"id": ids[("C vs D", "Total Corners", "M")], "raison": "ok"}]},
+        {"profil": "p2", "strategie": "s", "jambes": [{"id": ids[("C vs D", "Total Corners", "M2")], "raison": "ok"}]}]}
+    acceptes, problemes, _ = st.valider(proposition, catalogue, [dict(base, cle="p1"), dict(base, cle="p2")])
+    assert "p1" in acceptes and "p2" not in acceptes and "même risque" in problemes[0]
+
+
+def test_un_seul_pari_resultat_par_match_sur_l_ensemble_des_coupons():
+    div = {"match_repete_autorise": True, "diversifier_entre_coupons": True, "nb_jambes_min": 1}
+    acceptes, problemes, _ = _valider_deux(["Double Chance"], ["Total"], div, div)
+    assert set(acceptes) == {"p1", "p2"}, problemes      # résultat puis un autre marché sur A–B : permis
+    pool = {"A vs B": [_cand("A vs B", "Draw No Bet", "1", 1.4, 74.0, 2.0)]}
+    acceptes, problemes, _ = _valider_deux(["Double Chance"], ["Draw No Bet"], div, div, pool)
+    assert "p2" not in acceptes and "même risque" in problemes[0]   # deuxième pari « résultat » sur A–B : refusé
