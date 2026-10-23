@@ -162,7 +162,8 @@ def test_moteur_agent_est_le_defaut_avec_profil_12_a_15_jambes(monkeypatch):
     assert len(appels) == 1
     profils = appels[0]["profils"]
     assert [p["cle"] for p in profils] == ["coupon1", "coupon2", "coupon3"]
-    assert all(p["nb_jambes_min"] == 5 and p["nb_jambes"] == 10 for p in profils)
+    assert [(p["nb_jambes_min"], p["nb_jambes"]) for p in profils] == [(5, 7), (8, 10), (10, 15)]
+    assert all(p["jambes_max_par_match"] == 1 for p in profils)  # une seule sélection par match dans un coupon
     # 1xBet : un seul pari par EVENT (« Event already added » sinon, 23/10/2026)
     assert all(p["un_seul_pari_par_event"] and not p.get("tous_les_matchs_obligatoires") for p in profils)
     assert all(p["diversifier_entre_coupons"] for p in profils)

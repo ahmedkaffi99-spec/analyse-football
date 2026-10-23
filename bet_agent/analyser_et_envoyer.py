@@ -142,34 +142,34 @@ PROFILS_COUPON = [
 # pas de plafond. Depuis le 22/10/2026 (« match répété c'est bon, il faut les 5 matchs dans les 3
 # coupons ») les 3 coupons reprennent TOUS les matchs du pool (5 par défaut), 1 à 2 paris par match, un
 # même match pouvant figurer dans plusieurs coupons mais jamais le même pari exact.
-NB_JAMBES_AGENT_MIN_DEFAUT = 5
-NB_JAMBES_AGENT_MAX_DEFAUT = 10
 TRANCHES_COTE_AGENT = (
-    # (clé, libellé, cote totale min, cote totale max ou None, probabilité minimale par jambe en %)
-    # 24/10/2026 (19 matchs) : « petite cote 5 à 15 (prudent), cote moyenne 20 à 40 (équilibré), haute cote 50 à 100+
-    # (très risqué) », 5 à 10 jambes chacun. Le coupon très risqué accepte des jambes à probabilité plus basse, sinon
+    # (clé, libellé, cote totale min, cote totale max ou None, probabilité minimale par jambe en %, jambes min, jambes max)
+    # 24/10/2026 : « petite cote 5 à 15 (prudent) 5-7 jambes, cote moyenne 20 à 40 (équilibré) 8-10 jambes, haute cote
+    # 50 à 100+ (très risqué) 10-15 jambes ». Le coupon très risqué accepte des jambes à probabilité plus basse, sinon
     # 50+ est hors de portée (jambes à 1,2-1,4 au seuil de 70 %).
-    ("coupon1", "🟢 PETITE COTE — cote 5 à 15 (prudent)", 5.0, 15.0, 70.0),
-    ("coupon2", "🟠 COTE MOYENNE — cote 20 à 40 (équilibré)", 20.0, 40.0, 62.0),
-    ("coupon3", "🔴 HAUTE COTE — cote 50 à 100+ (très risqué)", 50.0, None, 55.0),
+    ("coupon1", "🟢 PETITE COTE — cote 5 à 15 (prudent)", 5.0, 15.0, 70.0, 5, 7),
+    ("coupon2", "🟠 COTE MOYENNE — cote 20 à 40 (équilibré)", 20.0, 40.0, 62.0, 8, 10),
+    ("coupon3", "🔴 HAUTE COTE — cote 50 à 100+ (très risqué)", 50.0, None, 55.0, 10, 15),
 )
 
 
 def profils_agent_quotidien():
-    def _entier(nom, defaut):
+    def _entier(nom):
         valeur = (os.getenv(nom) or "").strip()
-        return int(valeur) if valeur.isdigit() and int(valeur) > 0 else defaut
+        return int(valeur) if valeur.isdigit() and int(valeur) > 0 else None
 
-    nb_max = _entier("NB_JAMBES", NB_JAMBES_AGENT_MAX_DEFAUT)
-    nb_min = min(_entier("NB_JAMBES_MIN", NB_JAMBES_AGENT_MIN_DEFAUT), nb_max)
+    # NB_JAMBES / NB_JAMBES_MIN (entrées du workflow), si fournis, remplacent les bornes de TOUS les coupons.
+    force_max, force_min = _entier("NB_JAMBES"), _entier("NB_JAMBES_MIN")
     profils = []
-    for cle, nom, cote_min, cote_max, proba_min in TRANCHES_COTE_AGENT:
+    for cle, nom, cote_min, cote_max, proba_min, tr_min, tr_max in TRANCHES_COTE_AGENT:
+        nb_max = force_max or tr_max
+        nb_min = min(force_min or tr_min, nb_max)
         profil = {"cle": cle, "nom": f"{nom} ({nb_min}-{nb_max} jambes)",
                   "cote_min": cote_min, "cote_max": cote_max if cote_max else 100000.0,
                   "cote_totale_min": cote_min, "nb_jambes_min": nb_min, "nb_jambes": nb_max,
-                  # 5 matchs dans les 3 coupons (22/10/2026) : match répété permis ENTRE coupons ; par coupon, UN seul
-                  # pari PAR EVENT 1xBet (jeu principal, corners, fautes... chacun un event, 23/10/2026)
-                  "match_repete_autorise": True, "jambes_max_par_match": 6,
+                  # un match peut figurer dans plusieurs coupons (22/10/2026) mais, dans UN coupon, une seule sélection
+                  # par match (24/10/2026, « interdit d'intégrer un match sur deux sélections sur un coupon »)
+                  "match_repete_autorise": True, "jambes_max_par_match": 1,
                   "un_seul_pari_par_event": True, "proba_min_pct": proba_min,
                   # diversification entre coupons (23/10/2026) : même risque (marché+équipe+sens, toute ligne) jamais repris
                   "diversifier_entre_coupons": True,
