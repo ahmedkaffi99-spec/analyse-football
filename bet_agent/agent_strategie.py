@@ -147,7 +147,10 @@ def construire_prompt(pool, profils, catalogue_texte):
         + (" PROFIL RISQUÉ INTENTIONNEL (demande explicite \"cote élevée = gain élevé\") : parmi les paris déjà "
            "filtrés par Python (probabilité >= 60%, jamais en dessous), choisis ceux à la cote individuelle la "
            "PLUS ÉLEVÉE disponible plutôt que les plus sûrs — contrairement aux autres profils, qui visent la "
-           "probabilité maximale." if p.get("prefere_cote_elevee") else "") for p in profils)
+           "probabilité maximale." if p.get("prefere_cote_elevee") else "")
+        # Run PONCTUEL (profils_json) : consigne libre de l'utilisateur, ajoutée telle quelle au prompt de CE profil
+        + (f" CONSIGNE SPÉCIALE POUR CE PROFIL : {str(p['consigne']).strip()}" if p.get("consigne") else "")
+        for p in profils)
     exemple_coupons = ", ".join(
         '{"profil": "%s", "strategie": "1-2 phrases", "jambes": [{"id": "P3", "raison": "1 phrase"}]}' % p["cle"]
         for p in profils)

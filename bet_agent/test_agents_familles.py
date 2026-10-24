@@ -428,3 +428,12 @@ def test_dernier_coupon_doit_couvrir_tous_les_matchs_restants():
         {"id": par["C vs D"][0], "raison": "ok"}, {"id": par["E vs F"][0], "raison": "ok"}]}]}
     acceptes, problemes, _ = st.valider(prop, catalogue, [dict(base, cle="p")], selections_precedentes=precedent)
     assert "p" in acceptes, problemes
+
+
+def test_consigne_speciale_du_profil_est_dans_le_prompt():
+    profil = {"cle": "speciala", "nom": "Spécial A", "nb_jambes": 6, "cote_totale_min": 5.0,
+              "consigne": "Évite les « moins de » sur un favori."}
+    prompt = st.construire_prompt({}, [profil], "catalogue")
+    assert "CONSIGNE SPÉCIALE POUR CE PROFIL : Évite les « moins de » sur un favori." in prompt
+    sans = st.construire_prompt({}, [dict(profil, consigne="")], "catalogue")
+    assert "CONSIGNE SPÉCIALE" not in sans
