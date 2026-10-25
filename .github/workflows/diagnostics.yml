@@ -1147,6 +1147,7 @@ jobs:
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_TOKEN_FRERE: ${{ secrets.TELEGRAM_TOKEN_FRERE }}
         run: |
           python -c "
           import os
@@ -1166,6 +1167,9 @@ jobs:
           coupon_id = int(reference)
           if autre_chat.strip():
               ae.TELEGRAM_CHAT_ID = autre_chat.strip()
+              # bot séparé pour cette conversation (secret TELEGRAM_TOKEN_FRERE) ; jamais le bot principal
+              assert os.environ.get('TELEGRAM_TOKEN_FRERE'), 'secret TELEGRAM_TOKEN_FRERE absent'
+              ae.TELEGRAM_TOKEN = os.environ['TELEGRAM_TOKEN_FRERE']
           with SessionLocal() as db:
               texte = db.get(Coupon, coupon_id).texte
           assert texte, 'coupon sans texte'
