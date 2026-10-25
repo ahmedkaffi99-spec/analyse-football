@@ -60,9 +60,12 @@ SEUIL_PROBA_CATALOGUE = ae.PROBA_MIN_FORTE
 # Catégories jamais montrées à l'IA (bilan du 24/10/2026 sur 100 jambes distinctes : tirs 1 gagnée sur 3, corners 13 sur 20
 # avec des corners d'équipe qui dépendent trop de l'état du match). Remplaçable sans code : CATEGORIES_EXCLUES = liste
 # séparée par des virgules, « aucune » pour tout autoriser.
+# 25/10/2026 (recommandation 3 du bilan) : BTTS (49 % réel pour 63 % annoncé sur 39 jambes ; 0 sur 2 le 25/10) et Handicap
+# Asiatique (40 % pour 59 % sur 30 jambes) rejoignent la liste.
 CATEGORIES_EXCLUES_PAR_DEFAUT = ("Total Tirs", "Total Tirs Cadrés", "Handicap Tirs", "Handicap Tirs Cadrés",
                                  "Total Tirs Équipe 1", "Total Tirs Équipe 2", "Total Tirs Cadrés Équipe 1",
-                                 "Total Tirs Cadrés Équipe 2", "Total Corners Équipe 1", "Total Corners Équipe 2")
+                                 "Total Tirs Cadrés Équipe 2", "Total Corners Équipe 1", "Total Corners Équipe 2",
+                                 "BTTS", "Handicap Asiatique")
 
 
 def categories_exclues():

@@ -25,3 +25,11 @@ def selection_meme_jour_neutralisee(monkeypatch):
     TestSelectionUniquementDuJour."""
     import collecte_donnees as cd
     monkeypatch.setattr(cd, "MATCHS_UNIQUEMENT_DU_JOUR", False)
+
+
+@pytest.fixture(autouse=True)
+def categories_exclues_neutralisees(monkeypatch):
+    """Les tests existants du stratège utilisent BTTS, Handicap Asiatique, tirs et corners d'équipe : la liste
+    d'exclusion de production (agent_strategie.CATEGORIES_EXCLUES_PAR_DEFAUT) y est neutralisée, et testée
+    explicitement dans test_categories_exclues_par_defaut_* (qui retire cette variable)."""
+    monkeypatch.setenv("CATEGORIES_EXCLUES", "aucune")

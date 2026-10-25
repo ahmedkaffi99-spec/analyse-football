@@ -443,12 +443,13 @@ def test_consigne_speciale_du_profil_est_dans_le_prompt():
 def test_categories_exclues_par_defaut_tirs_et_corners_d_equipe(monkeypatch):
     monkeypatch.delenv("CATEGORIES_EXCLUES", raising=False)
     pool = {"A vs B": [_cand("A vs B", cat, "Over", 1.5, 72.0, 2.0)
-                       for cat in ("Total Tirs", "Total Corners Équipe 1", "Total Corners", "Total Cartons")]}
+                       for cat in ("Total Tirs", "Total Corners Équipe 1", "Total Corners", "Total Cartons", "BTTS",
+                                   "Handicap Asiatique")]}
     cat, _ = st.construire_catalogue(pool, seuil_proba=60.0)
     assert sorted(c["pick"]["categorie"] for c in cat.values()) == ["Total Cartons", "Total Corners"]
     monkeypatch.setenv("CATEGORIES_EXCLUES", "aucune")
     cat, _ = st.construire_catalogue(pool, seuil_proba=60.0)
-    assert len(cat) == 4
+    assert len(cat) == 6
 
 
 def test_probabilite_maximale_par_jambe_refusee_au_dessus_du_plafond():
