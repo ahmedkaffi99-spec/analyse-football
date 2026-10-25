@@ -286,6 +286,20 @@ def deepseek_lecture(url, cle, poster=requests.post, max_caracteres=None):
     return {"titre": _premier(data, ("title", "name")), "contenu": contenu[:max_caracteres or MAX_CARACTERES_PAGE]}
 
 
+def construire_journal(etat):
+    """Journal compact du run (25/10/2026, demande : « enregistre les recherches ») : recherches web et pages lues, avec
+    ce que l'agent a trouvé, puis stratégie et raison de chaque jambe retenue — pour juger plus tard si la recherche a
+    changé des choix. Texte court (extraits de 200 caractères) : stocké dans runs.detail."""
+    raisons = {}
+    for r in etat["resultats_profils"]:
+        raisons[r["profil"]["cle"]] = [
+            {"match": s["match"], "pari": f"{s['pick'].get('marche')} → {s['pick'].get('selection')}",
+             "cote": s["pick"].get("cote"), "raison": (s.get("raison_ia") or "")[:200]}
+            for s in r["selections"]]
+    return {"recherches": etat.get("journal_recherches", []), "pages": etat.get("journal_pages", []),
+            "strategies": etat.get("strategies", {}), "raisons": raisons}
+
+
 def _fournisseurs_secours():
     """[(nom, url, cle, modele, extras)] des fournisseurs gratuits dont la clé est présente."""
     def _liste(nom_env, defaut):
@@ -516,7 +530,7 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
     etat = {
         "donnees": None, "pool": None, "catalogue": None, "catalogue_texte": None, "contexte_texte": None,
         "profils": profils, "profil_index": 0, "textes": [], "resultats_profils": [],
-        "nb_recherches": 0, "nb_lectures": 0, "termine": False, "envoye": False, "raison_abandon": None,
+        "nb_recherches": 0, "nb_lectures": 0, "journal_recherches": [], "journal_pages": [], "strategies": {}, "termine": False, "envoye": False, "raison_abandon": None,
     }
 
     def collecter_donnees_outil():
@@ -611,6 +625,9 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
             try:
                 resultats = deepseek_recherche(requete, cle)
                 if resultats:
+                    etat["journal_recherches"].append({"requete": requete, "source": "deepseek", "resultats": [
+                        {"titre": r.get("titre"), "date": r.get("date"), "lien": r.get("lien"),
+                         "extrait": (r.get("extrait") or "")[:200]} for r in resultats]})
                     return {"source": "deepseek", "resultats": resultats}
             except Exception as e:
                 print(f"   ⚠️ Recherche DeepSeek indisponible ({e}) — repli sur Serper.")
@@ -621,6 +638,9 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
         if not data:
             return {"resultats": []}
         organic = data.get("organic", [])[:5]
+        etat["journal_recherches"].append({"requete": requete, "source": "serper", "resultats": [
+            {"titre": r.get("title"), "lien": r.get("link"), "extrait": (r.get("snippet") or "")[:200]}
+            for r in organic]})
         return {"source": "serper",
                 "resultats": [{"titre": r.get("title"), "extrait": r.get("snippet"), "lien": r.get("link")}
                               for r in organic]}
@@ -632,9 +652,11 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
             return {"erreur": "url invalide (http ou https attendu)"}
         etat["nb_lectures"] += 1
         try:
-            return deepseek_lecture(url, cle)
+            page = deepseek_lecture(url, cle)
         except Exception as e:
             return {"erreur": f"lecture de page indisponible : {e}"}
+        etat["journal_pages"].append({"url": url, "titre": page.get("titre"), "caracteres": len(page.get("contenu") or "")})
+        return page
 
     def proposer_coupon_outil(strategie, jambes):
         if etat["profil_index"] >= len(etat["profils"]):
@@ -652,6 +674,7 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
         if problemes:
             return {"valide": False, "problemes": problemes}
         resultat_profil = acceptes[profil["cle"]]
+        etat["strategies"][profil["cle"]] = str(strategie or "")[:400]
         selections = resultat_profil.get("selections") or []
         if selections:
             # Message Telegram court (demande du 22/10/2026) : une ligne par jambe, ni stratégie ni guide.
@@ -716,6 +739,7 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
     resultat["donnees"] = etat["donnees"]
     resultat["resultats_profils"] = etat["resultats_profils"]
     resultat["textes"] = etat["textes"] if etat["textes"] else None
+    resultat["journal"] = construire_journal(etat)
     return resultat
 
 

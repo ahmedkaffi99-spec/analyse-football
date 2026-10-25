@@ -768,3 +768,18 @@ class TestRechercheWebDeepSeek(unittest.TestCase):
         self.assertEqual(res[0]["date"], "2026-10-22")
         page = pilote.deepseek_lecture("http://a", "CLE", poster=poster)
         self.assertEqual(page["contenu"], "# Titre. Nom | Valeur (x)")
+
+
+class TestJournalAgent(unittest.TestCase):
+    def test_construire_journal_reprend_recherches_strategies_et_raisons(self):
+        sel = {"match": "A vs B", "pick": {"marche": "Total", "selection": "Over", "cote": 1.5}, "raison_ia": "r" * 500}
+        etat = {"journal_recherches": [{"requete": "q", "source": "deepseek", "resultats": []}],
+                "journal_pages": [{"url": "http://a", "titre": "P", "caracteres": 10}],
+                "strategies": {"c1": "prudent"},
+                "resultats_profils": [{"profil": {"cle": "c1"}, "selections": [sel]}]}
+        j = pilote.construire_journal(etat)
+        self.assertEqual(j["recherches"][0]["requete"], "q")
+        self.assertEqual(j["pages"][0]["url"], "http://a")
+        self.assertEqual(j["strategies"], {"c1": "prudent"})
+        self.assertEqual(j["raisons"]["c1"][0]["pari"], "Total → Over")
+        self.assertEqual(len(j["raisons"]["c1"][0]["raison"]), 200)

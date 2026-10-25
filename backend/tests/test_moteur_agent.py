@@ -210,3 +210,27 @@ def test_moteur_agent_coupon_deja_envoye_sauvegarde_meme_si_la_collecte_plante(m
         assert run.envoye_telegram is True
         assert len(run.coupons) == 1 and len(run.coupons[0].jambes) == len(selections)
         assert run.coupons[0].texte == "ticket envoyé"
+
+
+def test_moteur_agent_enregistre_le_journal_des_recherches_dans_run_detail(monkeypatch):
+    # 25/10/2026 : recherches web, pages lues, stratégie et raison de chaque jambe -> runs.detail (colonne texte existante)
+    import json
+    profil = _profil_unique()
+    selections = profils_exemple()[0]["selections"]
+    journal = {"recherches": [{"requete": "Chelsea composition", "source": "deepseek",
+                               "resultats": [{"titre": "Predicted XI", "lien": "http://a", "extrait": "Penders joue"}]}],
+               "pages": [], "strategies": {profil["cle"]: "prudent"}, "raisons": {profil["cle"]: []}}
+    _faux_agent_pilote(monkeypatch, {
+        "donnees": collecte_exemple(), "resultats_profils": [{"profil": profil, "selections": selections}],
+        "textes": ["ticket"], "envoye": False, "raison_abandon": None, "journal": journal,
+    })
+
+    assert taches.main(["run", "--moteur", "agent"]) == 0
+
+    with SessionLocal() as db:
+        run = db.query(Run).one()
+        assert run.statut == "termine"
+        assert run.detail.startswith("JOURNAL_AGENT ")
+        relu = json.loads(run.detail[len("JOURNAL_AGENT "):])
+        assert relu["recherches"][0]["requete"] == "Chelsea composition"
+        assert relu["strategies"][profil["cle"]] == "prudent"
