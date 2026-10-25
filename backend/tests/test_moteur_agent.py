@@ -162,7 +162,7 @@ def test_moteur_agent_est_le_defaut_avec_profil_12_a_15_jambes(monkeypatch):
     assert len(appels) == 1
     profils = appels[0]["profils"]
     assert [p["cle"] for p in profils] == ["coupon1", "coupon2", "coupon3"]
-    assert [(p["nb_jambes_min"], p["nb_jambes"]) for p in profils] == [(5, 7), (6, 7), (7, 7)]
+    assert [(p["nb_jambes_min"], p["nb_jambes"]) for p in profils] == [(5, 8), (6, 8), (7, 8)]
     assert all(p["jambes_max_par_match"] == 1 for p in profils)  # une seule sélection par match dans un coupon
     # 1xBet : un seul pari par EVENT (« Event already added » sinon, 23/10/2026)
     assert all(p["un_seul_pari_par_event"] and not p.get("tous_les_matchs_obligatoires") for p in profils)
@@ -172,7 +172,7 @@ def test_moteur_agent_est_le_defaut_avec_profil_12_a_15_jambes(monkeypatch):
     assert [(p["cote_totale_min"], p.get("cote_totale_max")) for p in profils] == [
         (5.0, 10.0), (10.0, 18.0), (18.0, 35.0)]
     assert [p["proba_min_pct"] for p in profils] == [70.0, 65.0, 60.0]
-    assert [p["proba_max_pct"] for p in profils] == [78.0, 75.0, 72.0]  # bilan du 25/10/2026 : cote croissante, 7 jambes au plus
+    assert [p["proba_max_pct"] for p in profils] == [78.0, 75.0, 72.0]  # bilan du 25/10/2026 : cote croissante, 8 jambes au plus
 
 
 def test_profil_agent_quotidien_respecte_nb_jambes_du_workflow(monkeypatch):

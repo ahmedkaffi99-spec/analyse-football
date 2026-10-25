@@ -148,13 +148,13 @@ PROFILS_COUPON = [
 TRANCHES_COTE_AGENT = (
     # (clé, libellé, cote totale min, cote totale max ou None, probabilité min par jambe %, jambes min, jambes max,
     #  probabilité max par jambe %)
-    # 25/10/2026 (bilan de 1 757 jambes) : coupons de 5 à 7 jambes au maximum (11 jambes : 0 gagné sur 11 ; 8 à 10 : 2 sur 30),
+    # 25/10/2026 (bilan de 1 757 jambes) : coupons de 5 à 8 jambes au maximum (11 jambes : 0 gagné sur 11 ; 8 à 10 : 2 sur 30 ; 6 à 7 : 3 sur 8),
     # jambes à 70-78 % pour le coupon prudent (au-dessus de 80 % annoncés, la réussite réelle n'augmente plus). La cote
     # AUGMENTE d'un coupon à l'autre par des jambes un peu moins probables et donc mieux payées : depuis le 21/10, les
     # jambes annoncées à 60-70 % ont réussi à 70-86 % (89 jambes), le modèle y est prudent.
-    ("coupon1", "🟢 PETITE COTE — cote 5 à 10 (prudent)", 5.0, 10.0, 70.0, 5, 7, 78.0),
-    ("coupon2", "🟠 COTE MOYENNE — cote 10 à 18 (équilibré)", 10.0, 18.0, 65.0, 6, 7, 75.0),
-    ("coupon3", "🔴 HAUTE COTE — cote 18 à 35 (risqué)", 18.0, 35.0, 60.0, 7, 7, 72.0),
+    ("coupon1", "🟢 PETITE COTE — cote 5 à 10 (prudent)", 5.0, 10.0, 70.0, 5, 8, 78.0),
+    ("coupon2", "🟠 COTE MOYENNE — cote 10 à 18 (équilibré)", 10.0, 18.0, 65.0, 6, 8, 75.0),
+    ("coupon3", "🔴 HAUTE COTE — cote 18 à 35 (risqué)", 18.0, 35.0, 60.0, 7, 8, 72.0),
 )
 
 
