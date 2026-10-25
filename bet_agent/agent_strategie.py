@@ -149,6 +149,8 @@ def construire_prompt(pool, profils, catalogue_texte):
         + (" COUVERTURE DES MATCHS : à eux trois les coupons doivent couvrir TOUS les matchs du catalogue (vérifié sur le "
            "DERNIER coupon, qui doit compléter les matchs encore non couverts — voir matchs_restants_a_couvrir) ; répartis "
            "donc dès le premier coupon des matchs variés, sans te limiter aux plus probables." if p.get("couvrir_tous_les_matchs") else "")
+        + (f" PROBABILITÉ MAXIMALE PAR JAMBE POUR CE PROFIL : {p['proba_max_pct']:g} % (vérifiée par Python : au-delà, la "
+           "réussite réelle n'augmente plus, le modèle est trop optimiste)." if p.get("proba_max_pct") else "")
         + (f" PROBABILITÉ MINIMALE PAR JAMBE POUR CE PROFIL : {p['proba_min_pct']:g} % (vérifiée par Python ; les jambes "
            "moins probables du catalogue sont réservées aux profils plus risqués)." if p.get("proba_min_pct") else "")
         + (" DIVERSIFICATION ENTRE COUPONS (vérifiée par Python) : ne reprends pas, d'un coupon à l'autre, le même marché "
@@ -599,6 +601,10 @@ def valider(proposition, catalogue, profils, signatures_existantes=(), selection
             if proba_jambe is not None and proba_jambe < profil.get("proba_min_pct", SEUIL_PROBA_CATALOGUE):
                 erreurs.append(f"{cid} : probabilité {proba_jambe:g} % trop basse pour CE profil (minimum "
                                f"{profil.get('proba_min_pct', SEUIL_PROBA_CATALOGUE):g} %) — choisis un pari plus probable")
+                continue
+            if proba_jambe is not None and profil.get("proba_max_pct") and proba_jambe > profil["proba_max_pct"]:
+                erreurs.append(f"{cid} : probabilité {proba_jambe:g} % trop haute pour CE profil (maximum "
+                               f"{profil['proba_max_pct']:g} %) — choisis un pari un peu moins probable (70-78 %)")
                 continue
             if _cle_risque(selection) in risques_deja_utilises:
                 erreurs.append(f"{cid} : même risque que dans un autre coupon ({selection['match']}, "

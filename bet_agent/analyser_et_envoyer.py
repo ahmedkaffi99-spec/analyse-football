@@ -147,13 +147,16 @@ PROFILS_COUPON = [
 # même match pouvant figurer dans plusieurs coupons mais jamais le même pari exact.
 TRANCHES_COTE_AGENT = (
     # (clé, libellé, cote totale min, cote totale max ou None, probabilité minimale par jambe en %, jambes min, jambes max)
-    # 24/10/2026 : « petite cote 5 à 15 (prudent) 5-7 jambes, cote moyenne 20 à 40 (équilibré) 8-10 jambes, haute cote
-    # 50 à 100+ (très risqué) 11-15 jambes ». Le coupon très risqué accepte des jambes à probabilité plus basse, sinon
-    # 50+ est hors de portée (jambes à 1,2-1,4 au seuil de 70 %).
-    ("coupon1", "🟢 PETITE COTE — cote 5 à 15 (prudent)", 5.0, 15.0, 70.0, 5, 7),
-    ("coupon2", "🟠 COTE MOYENNE — cote 20 à 40 (équilibré)", 20.0, 40.0, 62.0, 8, 10),
-    ("coupon3", "🔴 HAUTE COTE — cote 50 à 100+ (très risqué)", 50.0, None, 55.0, 11, 15),
+    # 25/10/2026 (bilan de 1 757 jambes) : « coupons de 5 à 7 jambes au maximum, jambes à 70-78 % » — aucun coupon de 11
+    # jambes n'a jamais gagné (0 sur 11), 8 à 10 jambes : 2 sur 30 ; au-dessus de 80 % annoncés, la réussite réelle
+    # n'augmente plus (72,9 % pour 82,1 %). Avec des jambes à 70-78 % (cotes d'environ 1,3 à 1,5) et 7 jambes au plus,
+    # la cote totale plafonne vers 14 : les anciennes tranches 20-40 et 50+ ne sont plus atteignables.
+    ("coupon1", "🟢 PETITE COTE — cote 5 à 8 (prudent)", 5.0, 8.0, 70.0, 5, 7),
+    ("coupon2", "🟠 COTE MOYENNE — cote 8 à 11 (équilibré)", 8.0, 11.0, 70.0, 6, 7),
+    ("coupon3", "🔴 HAUTE COTE — cote 11 et plus (risqué)", 11.0, None, 70.0, 7, 7),
 )
+# Probabilité MAXIMALE par jambe (modifiable : PROBA_MAX_JAMBE, 0 = pas de plafond).
+PROBA_MAX_JAMBE_DEFAUT = 78.0
 
 
 def profils_agent_quotidien():
@@ -163,6 +166,10 @@ def profils_agent_quotidien():
 
     # NB_JAMBES / NB_JAMBES_MIN (entrées du workflow), si fournis, remplacent les bornes de TOUS les coupons.
     force_max, force_min = _entier("NB_JAMBES"), _entier("NB_JAMBES_MIN")
+    try:
+        proba_max = float(os.getenv("PROBA_MAX_JAMBE") or PROBA_MAX_JAMBE_DEFAUT)
+    except ValueError:
+        proba_max = PROBA_MAX_JAMBE_DEFAUT
     profils = []
     for cle, nom, cote_min, cote_max, proba_min, tr_min, tr_max in TRANCHES_COTE_AGENT:
         nb_max = force_max or tr_max
@@ -174,6 +181,7 @@ def profils_agent_quotidien():
                   # par match (24/10/2026, « interdit d'intégrer un match sur deux sélections sur un coupon »)
                   "match_repete_autorise": True, "jambes_max_par_match": 1,
                   "un_seul_pari_par_event": True, "proba_min_pct": proba_min,
+                  **({"proba_max_pct": proba_max} if proba_max > 0 else {}),
                   # diversification entre coupons (23/10/2026) : même risque (marché+équipe+sens, toute ligne) jamais repris
                   "diversifier_entre_coupons": True,
                   # couverture de TOUS les matchs sur l'ensemble des coupons (24/10/2026), complétée par le dernier

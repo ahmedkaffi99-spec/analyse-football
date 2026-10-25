@@ -449,3 +449,20 @@ def test_categories_exclues_par_defaut_tirs_et_corners_d_equipe(monkeypatch):
     monkeypatch.setenv("CATEGORIES_EXCLUES", "aucune")
     cat, _ = st.construire_catalogue(pool, seuil_proba=60.0)
     assert len(cat) == 4
+
+
+def test_probabilite_maximale_par_jambe_refusee_au_dessus_du_plafond():
+    # 25/10/2026 : jambes à 70-78 % (au-delà de 80 % annoncés, la réussite réelle n'augmente plus : 72,9 % pour 82,1 %)
+    pool = {"A vs B": [_cand("A vs B", "Total", "Over", 1.25, 82.0, 2.0)],
+            "C vs D": [_cand("C vs D", "Total", "Over", 1.35, 74.0, 2.0)]}
+    catalogue, _ = st.construire_catalogue(pool, seuil_proba=70.0)
+    par_match = {c["match"]: cid for cid, c in catalogue.items()}
+    base = {"cle": "p1", "nom": "P", "nb_jambes": 8, "nb_jambes_min": 1, "cote_totale_min": 1.0,
+            "proba_min_pct": 70.0, "proba_max_pct": 78.0}
+    haut = {"coupons": [{"profil": "p1", "strategie": "s", "jambes": [{"id": par_match["A vs B"], "raison": "ok"}]}]}
+    acceptes, problemes, _ = st.valider(haut, catalogue, [base])
+    assert "p1" not in acceptes and "trop haute pour CE profil" in problemes[0]
+    ok = {"coupons": [{"profil": "p1", "strategie": "s", "jambes": [{"id": par_match["C vs D"], "raison": "ok"}]}]}
+    acceptes, problemes, _ = st.valider(ok, catalogue, [base])
+    assert "p1" in acceptes, problemes
+    assert "PROBABILITÉ MAXIMALE PAR JAMBE" in st.construire_prompt(pool, [base], "cat")
