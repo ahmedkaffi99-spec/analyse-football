@@ -98,6 +98,8 @@ jobs:
         # trouvé — aucune collecte complète, aucune écriture en base, aucun envoi Telegram.
         if: inputs.verification == 'matchs-5-grands-championnats'
         working-directory: bet_agent
+        env:
+          NB_MATCHS_POOL: "100"   # compte TOUS les matchs éligibles (le pool de production est plafonné à 20)
         run: |
           python -c "
           import collecte_donnees as cd
