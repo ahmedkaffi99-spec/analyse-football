@@ -1161,7 +1161,11 @@ jobs:
 
           import analyser_et_envoyer as ae
 
-          coupon_id = int(os.environ['MATCH_RECHERCHE'])
+          # « 284 » : conversation Telegram par défaut ; « 284@8083070670 » : autre conversation (chat id) pour cet envoi
+          reference, _, autre_chat = os.environ['MATCH_RECHERCHE'].partition('@')
+          coupon_id = int(reference)
+          if autre_chat.strip():
+              ae.TELEGRAM_CHAT_ID = autre_chat.strip()
           with SessionLocal() as db:
               texte = db.get(Coupon, coupon_id).texte
           assert texte, 'coupon sans texte'
