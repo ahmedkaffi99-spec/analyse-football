@@ -86,6 +86,32 @@ class TestStatistiquesFinalesApiFootball(unittest.TestCase):
             self.assertIsNone(vr.recuperer_statistiques_finales_api_football(123, "Solo"))
 
 
+class TestAmbiguiteEtLignesDeQuart(unittest.TestCase):
+    def test_noms_indiscernables_renvoient_none_plutot_qu_un_bloc_au_hasard(self):
+        blocs = [_bloc_stats("Atletico", Corner_Kicks=7), _bloc_stats("Atletico", Corner_Kicks=4)]
+        with mock.patch.object(cd, "_appel_statistiques_fixture", return_value=blocs):
+            self.assertIsNone(vr.recuperer_statistiques_finales_api_football(123, "Atletico"))
+
+    def test_total_ligne_de_quart_net_ou_non_verifiable(self):
+        # Over 2.25 : moitiés sur 2.0 et 2.5. 3 buts -> les deux gagnent ; 1 but -> les deux perdent.
+        self.assertEqual(vr.juger_total(2.25, "Over", 3), "gagne")
+        self.assertEqual(vr.juger_total(2.25, "Over", 1), "perdu")
+        self.assertEqual(vr.juger_total(2.25, "Under", 3), "perdu")
+        # 2 buts : moitié rendue (push) + moitié perdue -> demi-perte, non représentable.
+        self.assertIsNone(vr.juger_total(2.25, "Over", 2))
+        self.assertIsNone(vr.juger_total(2.75, "Under", 3))
+
+    def test_handicap_ligne_de_quart(self):
+        self.assertEqual(vr.juger_handicap(-0.75, "home", 2, 0), "gagne")
+        self.assertEqual(vr.juger_handicap(-0.75, "home", 0, 0), "perdu")
+        self.assertIsNone(vr.juger_handicap(-0.75, "home", 1, 0))
+
+    def test_lignes_entieres_et_demies_inchangees(self):
+        self.assertEqual(vr.juger_total(2.5, "Over", 3), "gagne")
+        self.assertEqual(vr.juger_total(2.0, "Over", 2), "push")
+        self.assertEqual(vr.juger_handicap(-1.0, "home", 1, 0), "push")
+
+
 class TestGraderPickStat(unittest.TestCase):
     """grader_pick_stat : mêmes règles que grader_pick (juger_total/juger_handicap), mais sur
     une statistique de fin de match au lieu des buts."""

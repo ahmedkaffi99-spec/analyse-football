@@ -250,6 +250,10 @@ def recuperer_statistiques_finales_api_football(fixture_id_af, domicile):
     nom1 = unidecode(((b1.get("team") or {}).get("name") or "").lower())
     d = unidecode((domicile or "").lower())
     score0, score1 = fuzz.token_set_ratio(d, nom0), fuzz.token_set_ratio(d, nom1)
+    if score0 == score1:
+        # Noms indiscernables : attribuer au hasard le bloc 0 au domicile inverserait corners/
+        # cartons -> faux verdict possible. Mieux vaut "indisponible" que faux.
+        return None
     bloc_dom, bloc_ext = (b0, b1) if score0 >= score1 else (b1, b0)
     return bloc_dom.get("statistics"), bloc_ext.get("statistics")
 
@@ -304,12 +308,29 @@ def trouver_etat_live_api_football(home_nom, away_nom, fixtures_af, cd):
 # au score réel final plutôt qu'à une probabilité Poisson.
 # ============================================================
 
+def _est_ligne_quart(ligne):
+    return abs(ligne * 4 - round(ligne * 4)) < 1e-9 and abs(ligne * 2 - round(ligne * 2)) > 1e-9
+
+
+def _juger_ligne_quart(juger, ligne):
+    """Ligne de quart (.25/.75) = deux demi-mises sur les lignes adjacentes (ligne ± 0.25), comme
+    le modèle (proba_over, proba_handicap_couvert). Verdict net seulement si les deux moitiés
+    concordent (toutes deux gagnées ou toutes deux perdues) ; sinon demi-gain/demi-perte, que le
+    schéma gagne/perdu/push ne représente pas -> None (non vérifiable), jamais un faux verdict."""
+    bas, haut = juger(ligne - 0.25), juger(ligne + 0.25)
+    if bas == haut and bas in ("gagne", "perdu"):
+        return bas
+    return None
+
+
 def juger_total(handicap, selection, total):
     """total déjà calculé par l'appelant (buts du match entier, d'UNE SEULE équipe, ou toute
     autre statistique comparable — corners, cartons... voir grader_pick_stat) — générique
     depuis le 03/10/2026, pour être réutilisable au-delà des buts."""
     if handicap is None or total is None:
         return None
+    if _est_ligne_quart(handicap):
+        return _juger_ligne_quart(lambda l: juger_total(l, selection, total), handicap)
     if abs(total - handicap) < 1e-9:
         return "push"
     est_over = "over" in selection.lower()
@@ -367,6 +388,8 @@ def juger_handicap(handicap, selection, home_g, away_g):
     """Reproduit exactement la convention de proba_handicap_couvert : pour 'home', la marge
     est (buts domicile - buts extérieur) + handicap ; pour 'away', c'est l'inverse avec le
     handicap opposé — voir evaluer_marches et expliquer_marche dans analyser_et_envoyer.py."""
+    if handicap is not None and _est_ligne_quart(handicap):
+        return _juger_ligne_quart(lambda h: juger_handicap(h, selection, home_g, away_g), handicap)
     sel = selection.lower()
     if sel in ("home", "1"):
         marge = (home_g - away_g) + handicap
