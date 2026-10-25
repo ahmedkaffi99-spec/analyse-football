@@ -733,8 +733,8 @@ class TestRechercheWebDeepSeek(unittest.TestCase):
                                           {"name": "T2", "snippet": "S2", "link": "http://b"}]})
 
         res = pilote.deepseek_recherche("Chelsea composition", "CLE", nombre=5, poster=poster)
-        self.assertEqual(res[0], {"titre": "T1", "extrait": "S1", "lien": "http://a"})
-        self.assertEqual(res[1], {"titre": "T2", "extrait": "S2", "lien": "http://b"})
+        self.assertEqual(res[0], {"titre": "T1", "date": None, "extrait": "S1", "lien": "http://a"})
+        self.assertEqual(res[1], {"titre": "T2", "date": None, "extrait": "S2", "lien": "http://b"})
         self.assertEqual(appels[0][0], pilote.URL_RECHERCHE_DEEPSEEK)
         self.assertEqual(appels[0][1]["Authorization"], "Bearer CLE")
         self.assertEqual(appels[0][2], {"query": "Chelsea composition", "count": 5})
@@ -756,3 +756,15 @@ class TestRechercheWebDeepSeek(unittest.TestCase):
         res = pilote.deepseek_lecture("http://a", "CLE", poster=poster, max_caracteres=100)
         self.assertEqual(res["titre"], "Page")
         self.assertEqual(len(res["contenu"]), 100)
+
+    def test_extrait_tronque_et_markdown_nettoye(self):
+        def poster(url, headers=None, json=None, timeout=None):
+            if url == pilote.URL_RECHERCHE_DEEPSEEK:
+                return self._Rep({"results": [{"title": "T", "summary": "z" * 5000, "url": "http://a", "date": "2026-10-22"}]})
+            return self._Rep({"title": "P", "content": "\\# Titre\\. Nom \\| Valeur \\(x\\)"})
+
+        res = pilote.deepseek_recherche("q", "CLE", poster=poster)
+        self.assertEqual(len(res[0]["extrait"]), pilote.MAX_CARACTERES_EXTRAIT)
+        self.assertEqual(res[0]["date"], "2026-10-22")
+        page = pilote.deepseek_lecture("http://a", "CLE", poster=poster)
+        self.assertEqual(page["contenu"], "# Titre. Nom | Valeur (x)")

@@ -5,6 +5,7 @@ En mode thinking avec outils, reasoning_content doit etre renvoye a l'API (sinon
 
 import json
 import os
+import re
 import time
 
 import requests
@@ -239,6 +240,7 @@ URL_LECTURE_DEEPSEEK = "https://api.deepseek.com/v1/tools/fetch"
 MAX_RECHERCHES_WEB = int(os.getenv("MAX_RECHERCHES_WEB") or "5")
 MAX_LECTURES_PAGE = int(os.getenv("MAX_LECTURES_PAGE") or "3")
 MAX_CARACTERES_PAGE = int(os.getenv("MAX_CARACTERES_PAGE") or "4000")
+MAX_CARACTERES_EXTRAIT = int(os.getenv("MAX_CARACTERES_EXTRAIT") or "700")
 
 
 def _premier(d, cles):
@@ -259,8 +261,12 @@ def deepseek_recherche(requete, cle, nombre=5, poster=requests.post):
         brut = _premier(brut, ("results", "items")) or []
     resultats = []
     for x in brut[:nombre]:
+        # Réponse réelle (test du 25/10/2026) : title, url, date, site_name, authority, rerank_score, snippet et un
+        # « summary » de plusieurs paragraphes — tronqué pour ne pas gonfler le contexte de l'agent.
+        extrait = _premier(x, ("summary", "snippet", "content", "description"))
         resultats.append({"titre": _premier(x, ("title", "name")),
-                          "extrait": _premier(x, ("summary", "snippet", "content", "description")),
+                          "date": _premier(x, ("date",)),
+                          "extrait": str(extrait)[:MAX_CARACTERES_EXTRAIT] if extrait else None,
                           "lien": _premier(x, ("url", "link"))})
     return resultats
 
@@ -274,7 +280,9 @@ def deepseek_lecture(url, cle, poster=requests.post, max_caracteres=None):
     if isinstance(data, dict) and isinstance(data.get("data"), dict):
         data = data["data"]
     contenu = _premier(data, ("content", "markdown", "text")) or ""
-    return {"titre": _premier(data, ("title", "name")), "contenu": str(contenu)[:max_caracteres or MAX_CARACTERES_PAGE]}
+    # Le contenu revient en Markdown avec des caractères échappés (« \\# », « \\. », « \\| ») : on les retire (tokens).
+    contenu = re.sub(r"\\([\\\-|.()\[\]*_#>+!~`<>%])", r"\1", str(contenu))
+    return {"titre": _premier(data, ("title", "name")), "contenu": contenu[:max_caracteres or MAX_CARACTERES_PAGE]}
 
 
 def _fournisseurs_secours():
