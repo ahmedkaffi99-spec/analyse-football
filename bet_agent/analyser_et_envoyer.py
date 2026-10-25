@@ -2468,6 +2468,14 @@ def _libelle_pari_court(selection_finale):
         ligne_txt = f"{float(ligne):g}"
         return f"{equipe or 'Total'} {sujet} : {sens} {ligne_txt}"
     sel_norm = re.sub(r"[^a-z0-9]", "", sel.lower())
+    if categorie == "Full Time Result":
+        # Vocabulaire de 1xBet (demande du 25/10/2026 : « 1X2 ou W1 ou autre proche ») : W1 / X / W2
+        if sel_norm == "1":
+            return f"{domicile} gagne (1X2 : W1)"
+        if sel_norm in ("x", "draw"):
+            return "Match nul (1X2 : X)"
+        if sel_norm == "2":
+            return f"{exterieur} gagne (1X2 : W2)"
     if categorie == "Double Chance":
         return {"1x": f"{domicile} ou match nul", "x2": f"Match nul ou {exterieur}",
                 "2x": f"Match nul ou {exterieur}",

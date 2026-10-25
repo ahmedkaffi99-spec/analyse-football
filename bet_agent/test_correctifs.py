@@ -3168,6 +3168,14 @@ class TestTicketCourt(unittest.TestCase):
         self.assertEqual(lignes[9], "    Rennes +2 (handicap) @1.33")
         self.assertEqual(lignes[11], "    Les deux équipes marquent : Oui @1.7")
 
+    def test_resultat_du_match_en_vocabulaire_1xbet(self):
+        w1 = ae.rediger_ticket_court([self._sel("Real Sociedad vs Levante", "Full Time Result", "Full Time Result", "1", 1.63)])
+        self.assertIn("Real Sociedad gagne (1X2 : W1) @1.63", w1)
+        nul = ae.rediger_ticket_court([self._sel("A vs B", "Full Time Result", "Full Time Result", "X", 3.2)])
+        self.assertIn("Match nul (1X2 : X) @3.2", nul)
+        w2 = ae.rediger_ticket_court([self._sel("A vs B", "Full Time Result", "Full Time Result", "2", 2.1)])
+        self.assertIn("B gagne (1X2 : W2) @2.1", w2)
+
     def test_marche_inconnu_garde_son_libelle(self):
         ligne = ae.rediger_ticket_court([self._sel("A vs B", "Pair/Impair", "Odd/Even", "Odd", 1.9)])
         self.assertIn("Odd/Even : Odd @1.9", ligne)
