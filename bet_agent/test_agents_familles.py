@@ -349,7 +349,8 @@ def test_un_seul_pari_par_match_reste_la_regle_par_defaut():
     assert "p1" not in acceptes and "maximum 1" in problemes[0]
 
 
-def test_un_seul_pari_par_event_regle_1xbet():
+def test_un_seul_pari_par_event_regle_1xbet(monkeypatch):
+    monkeypatch.setenv("CATEGORIES_EXCLUES", "aucune")  # ce test utilise des corners d'équipe, exclus par défaut
     # Captures du coupon réel du 23/10/2026 : Total + Handicap du même match refusés (même event) ;
     # double chance + corners acceptés (events distincts).
     regles = {"match_repete_autorise": True, "jambes_max_par_match": 6, "un_seul_pari_par_event": True}
@@ -437,3 +438,14 @@ def test_consigne_speciale_du_profil_est_dans_le_prompt():
     assert "CONSIGNE SPÉCIALE POUR CE PROFIL : Évite les « moins de » sur un favori." in prompt
     sans = st.construire_prompt({}, [dict(profil, consigne="")], "catalogue")
     assert "CONSIGNE SPÉCIALE" not in sans
+
+
+def test_categories_exclues_par_defaut_tirs_et_corners_d_equipe(monkeypatch):
+    monkeypatch.delenv("CATEGORIES_EXCLUES", raising=False)
+    pool = {"A vs B": [_cand("A vs B", cat, "Over", 1.5, 72.0, 2.0)
+                       for cat in ("Total Tirs", "Total Corners Équipe 1", "Total Corners", "Total Cartons")]}
+    cat, _ = st.construire_catalogue(pool, seuil_proba=60.0)
+    assert sorted(c["pick"]["categorie"] for c in cat.values()) == ["Total Cartons", "Total Corners"]
+    monkeypatch.setenv("CATEGORIES_EXCLUES", "aucune")
+    cat, _ = st.construire_catalogue(pool, seuil_proba=60.0)
+    assert len(cat) == 4

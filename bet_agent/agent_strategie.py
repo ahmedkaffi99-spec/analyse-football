@@ -27,6 +27,7 @@ explicite : « réduire les tâches de l'IA, augmenter celles de Python ») :
 """
 
 import json
+import os
 import math
 import re
 
@@ -56,6 +57,23 @@ COTE_TOTALE_MIN = 5.0
 SEUIL_PROBA_CATALOGUE = ae.PROBA_MIN_FORTE
 
 
+# Catégories jamais montrées à l'IA (bilan du 24/10/2026 sur 100 jambes distinctes : tirs 1 gagnée sur 3, corners 13 sur 20
+# avec des corners d'équipe qui dépendent trop de l'état du match). Remplaçable sans code : CATEGORIES_EXCLUES = liste
+# séparée par des virgules, « aucune » pour tout autoriser.
+CATEGORIES_EXCLUES_PAR_DEFAUT = ("Total Tirs", "Total Tirs Cadrés", "Handicap Tirs", "Handicap Tirs Cadrés",
+                                 "Total Tirs Équipe 1", "Total Tirs Équipe 2", "Total Tirs Cadrés Équipe 1",
+                                 "Total Tirs Cadrés Équipe 2", "Total Corners Équipe 1", "Total Corners Équipe 2")
+
+
+def categories_exclues():
+    valeur = (os.getenv("CATEGORIES_EXCLUES") or "").strip()
+    if not valeur:
+        return frozenset(CATEGORIES_EXCLUES_PAR_DEFAUT)
+    if valeur.lower() == "aucune":
+        return frozenset()
+    return frozenset(v.strip() for v in valeur.split(",") if v.strip())
+
+
 def seuil_catalogue(profils):
     """Seuil de probabilité du catalogue : le plus bas des profils (un profil très risqué accepte des jambes moins
     probables) ; chaque profil garde SON minimum, vérifié dans valider."""
@@ -75,10 +93,11 @@ def construire_catalogue(pool, seuil_proba=SEUIL_PROBA_CATALOGUE, ecartes=frozen
     # écarté), un pari écarté n'est plus montré à l'IA stratège, un avis s'ajoute à sa ligne.
     avis = avis or {}
     catalogue, lignes, numero = {}, [], 0
+    exclues = categories_exclues()
     for match, candidats in pool.items():
         retenus = sorted(
             (c for c in candidats if c["pick"].get("proba_modele_pct") is not None
-             and c["pick"]["proba_modele_pct"] >= seuil_proba),
+             and c["pick"]["proba_modele_pct"] >= seuil_proba and c["pick"].get("categorie") not in exclues),
             key=lambda c: c["pick"]["proba_modele_pct"], reverse=True)
         if not retenus:
             continue
