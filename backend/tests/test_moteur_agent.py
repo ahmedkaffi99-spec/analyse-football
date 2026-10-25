@@ -170,9 +170,9 @@ def test_moteur_agent_est_le_defaut_avec_profil_12_a_15_jambes(monkeypatch):
     assert all(p["couvrir_tous_les_matchs"] for p in profils) and [p.get("dernier_profil") for p in profils] == [None, None, True]
     # 24/10/2026 : petite cote 5-15 (prudent), cote moyenne 20-40 (équilibré), haute cote 50-100+ (très risqué)
     assert [(p["cote_totale_min"], p.get("cote_totale_max")) for p in profils] == [
-        (5.0, 8.0), (8.0, 11.0), (11.0, None)]
-    assert [p["proba_min_pct"] for p in profils] == [70.0, 70.0, 70.0]
-    assert all(p["proba_max_pct"] == 78.0 for p in profils)  # jambes à 70-78 % (bilan du 25/10/2026)
+        (5.0, 10.0), (10.0, 18.0), (18.0, 35.0)]
+    assert [p["proba_min_pct"] for p in profils] == [70.0, 65.0, 60.0]
+    assert [p["proba_max_pct"] for p in profils] == [78.0, 75.0, 72.0]  # bilan du 25/10/2026 : cote croissante, 7 jambes au plus
 
 
 def test_profil_agent_quotidien_respecte_nb_jambes_du_workflow(monkeypatch):

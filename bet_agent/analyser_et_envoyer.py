@@ -146,17 +146,16 @@ PROFILS_COUPON = [
 # coupons ») les 3 coupons reprennent TOUS les matchs du pool (5 par défaut), 1 à 2 paris par match, un
 # même match pouvant figurer dans plusieurs coupons mais jamais le même pari exact.
 TRANCHES_COTE_AGENT = (
-    # (clé, libellé, cote totale min, cote totale max ou None, probabilité minimale par jambe en %, jambes min, jambes max)
-    # 25/10/2026 (bilan de 1 757 jambes) : « coupons de 5 à 7 jambes au maximum, jambes à 70-78 % » — aucun coupon de 11
-    # jambes n'a jamais gagné (0 sur 11), 8 à 10 jambes : 2 sur 30 ; au-dessus de 80 % annoncés, la réussite réelle
-    # n'augmente plus (72,9 % pour 82,1 %). Avec des jambes à 70-78 % (cotes d'environ 1,3 à 1,5) et 7 jambes au plus,
-    # la cote totale plafonne vers 14 : les anciennes tranches 20-40 et 50+ ne sont plus atteignables.
-    ("coupon1", "🟢 PETITE COTE — cote 5 à 8 (prudent)", 5.0, 8.0, 70.0, 5, 7),
-    ("coupon2", "🟠 COTE MOYENNE — cote 8 à 11 (équilibré)", 8.0, 11.0, 70.0, 6, 7),
-    ("coupon3", "🔴 HAUTE COTE — cote 11 et plus (risqué)", 11.0, None, 70.0, 7, 7),
+    # (clé, libellé, cote totale min, cote totale max ou None, probabilité min par jambe %, jambes min, jambes max,
+    #  probabilité max par jambe %)
+    # 25/10/2026 (bilan de 1 757 jambes) : coupons de 5 à 7 jambes au maximum (11 jambes : 0 gagné sur 11 ; 8 à 10 : 2 sur 30),
+    # jambes à 70-78 % pour le coupon prudent (au-dessus de 80 % annoncés, la réussite réelle n'augmente plus). La cote
+    # AUGMENTE d'un coupon à l'autre par des jambes un peu moins probables et donc mieux payées : depuis le 21/10, les
+    # jambes annoncées à 60-70 % ont réussi à 70-86 % (89 jambes), le modèle y est prudent.
+    ("coupon1", "🟢 PETITE COTE — cote 5 à 10 (prudent)", 5.0, 10.0, 70.0, 5, 7, 78.0),
+    ("coupon2", "🟠 COTE MOYENNE — cote 10 à 18 (équilibré)", 10.0, 18.0, 65.0, 6, 7, 75.0),
+    ("coupon3", "🔴 HAUTE COTE — cote 18 à 35 (risqué)", 18.0, 35.0, 60.0, 7, 7, 72.0),
 )
-# Probabilité MAXIMALE par jambe (modifiable : PROBA_MAX_JAMBE, 0 = pas de plafond).
-PROBA_MAX_JAMBE_DEFAUT = 78.0
 
 
 def profils_agent_quotidien():
@@ -167,11 +166,11 @@ def profils_agent_quotidien():
     # NB_JAMBES / NB_JAMBES_MIN (entrées du workflow), si fournis, remplacent les bornes de TOUS les coupons.
     force_max, force_min = _entier("NB_JAMBES"), _entier("NB_JAMBES_MIN")
     try:
-        proba_max = float(os.getenv("PROBA_MAX_JAMBE") or PROBA_MAX_JAMBE_DEFAUT)
+        proba_max = float(os.getenv("PROBA_MAX_JAMBE") or 0)   # 0 = plafonds des tranches ; sinon plafond commun plus strict
     except ValueError:
-        proba_max = PROBA_MAX_JAMBE_DEFAUT
+        proba_max = 0.0
     profils = []
-    for cle, nom, cote_min, cote_max, proba_min, tr_min, tr_max in TRANCHES_COTE_AGENT:
+    for cle, nom, cote_min, cote_max, proba_min, tr_min, tr_max, tr_proba_max in TRANCHES_COTE_AGENT:
         nb_max = force_max or tr_max
         nb_min = min(force_min or tr_min, nb_max)
         profil = {"cle": cle, "nom": f"{nom} ({nb_min}-{nb_max} jambes)",
@@ -181,7 +180,7 @@ def profils_agent_quotidien():
                   # par match (24/10/2026, « interdit d'intégrer un match sur deux sélections sur un coupon »)
                   "match_repete_autorise": True, "jambes_max_par_match": 1,
                   "un_seul_pari_par_event": True, "proba_min_pct": proba_min,
-                  **({"proba_max_pct": proba_max} if proba_max > 0 else {}),
+                  **({"proba_max_pct": min(proba_max, tr_proba_max) if proba_max > 0 else tr_proba_max}),
                   # diversification entre coupons (23/10/2026) : même risque (marché+équipe+sens, toute ligne) jamais repris
                   "diversifier_entre_coupons": True,
                   # couverture de TOUS les matchs sur l'ensemble des coupons (24/10/2026), complétée par le dernier
