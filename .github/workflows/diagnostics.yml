@@ -38,6 +38,7 @@ on:
           - suivi-coupons
           - backtest-hors-jeux
           - catalogue-par-famille
+          - deepseek-recherche-web
         default: marches-disponibles
       date_debut:
         description: "Date cible de début (AAAA-MM-JJ) — utilisé seulement par 'marches-disponibles'"
@@ -1176,6 +1177,28 @@ jobs:
           ok = ae.agent5_envoyer_coupons([texte])
           print('ENVOYE' if ok else 'ECHEC')
           sys.exit(0 if ok else 1)
+          "
+
+      - name: DeepSeek Search et Fetch — test réel (réponses brutes et lecture par l'agent)
+        # Appelle les VRAIES API (≈ 0,002 $) : une recherche et une lecture de page ; affiche la réponse brute (clés et
+        # extrait) puis ce que l'agent en tire. Aucune écriture en base, aucun envoi Telegram.
+        if: inputs.verification == 'deepseek-recherche-web'
+        working-directory: bet_agent
+        run: |
+          python -c "
+          import json, os, requests
+          import agent_pilote as ap
+          cle = os.environ['DEEPSEEK_API_KEY']
+          en = {'Authorization': f'Bearer {cle}', 'Content-Type': 'application/json'}
+          r = requests.post(ap.URL_RECHERCHE_DEEPSEEK, headers=en, json={'query': 'Chelsea Tottenham probable lineup injuries', 'count': 3}, timeout=60)
+          print('SEARCH HTTP', r.status_code)
+          print('SEARCH BRUT', r.text[:1500])
+          print('SEARCH LU PAR L AGENT', json.dumps(ap.deepseek_recherche('Chelsea Tottenham probable lineup injuries', cle, nombre=3), ensure_ascii=False)[:1500])
+          r = requests.post(ap.URL_LECTURE_DEEPSEEK, headers=en, json={'url': 'https://en.wikipedia.org/wiki/Tottenham_Hotspur_F.C.'}, timeout=90)
+          print('FETCH HTTP', r.status_code)
+          print('FETCH BRUT (clés)', list(r.json().keys()) if r.headers.get('content-type','').startswith('application/json') else r.text[:300])
+          lu = ap.deepseek_lecture('https://en.wikipedia.org/wiki/Tottenham_Hotspur_F.C.', cle, max_caracteres=600)
+          print('FETCH LU PAR L AGENT', json.dumps(lu, ensure_ascii=False)[:900])
           "
 
       - name: Suivi des coupons (numéros dans match_recherche) — rapport court par jambe, sans Telegram

@@ -709,3 +709,50 @@ class TestSecoursGratuit(unittest.TestCase):
         with self.assertRaises(RuntimeError) as ctx:
             pilote._appel_secours([], 4096, poster=lambda url, **kw: self._reponse(500, {}))
         self.assertIn("Aucun fournisseur de secours", str(ctx.exception))
+
+
+class TestRechercheWebDeepSeek(unittest.TestCase):
+    """Recherche web et lecture de page DeepSeek (Search/Fetch du 17/10/2026) : lecture défensive des réponses."""
+
+    class _Rep:
+        def __init__(self, data):
+            self._data = data
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return self._data
+
+    def test_recherche_lit_plusieurs_formes_de_reponse(self):
+        appels = []
+
+        def poster(url, headers=None, json=None, timeout=None):
+            appels.append((url, headers, json))
+            return self._Rep({"results": [{"title": "T1", "summary": "S1", "url": "http://a"},
+                                          {"name": "T2", "snippet": "S2", "link": "http://b"}]})
+
+        res = pilote.deepseek_recherche("Chelsea composition", "CLE", nombre=5, poster=poster)
+        self.assertEqual(res[0], {"titre": "T1", "extrait": "S1", "lien": "http://a"})
+        self.assertEqual(res[1], {"titre": "T2", "extrait": "S2", "lien": "http://b"})
+        self.assertEqual(appels[0][0], pilote.URL_RECHERCHE_DEEPSEEK)
+        self.assertEqual(appels[0][1]["Authorization"], "Bearer CLE")
+        self.assertEqual(appels[0][2], {"query": "Chelsea composition", "count": 5})
+
+    def test_requete_tronquee_a_128_caracteres(self):
+        vu = {}
+
+        def poster(url, headers=None, json=None, timeout=None):
+            vu.update(json)
+            return self._Rep({"results": []})
+
+        pilote.deepseek_recherche("x" * 300, "CLE", poster=poster)
+        self.assertEqual(len(vu["query"]), 128)
+
+    def test_lecture_tronque_le_contenu(self):
+        def poster(url, headers=None, json=None, timeout=None):
+            return self._Rep({"data": {"title": "Page", "content": "a" * 10000}})
+
+        res = pilote.deepseek_lecture("http://a", "CLE", poster=poster, max_caracteres=100)
+        self.assertEqual(res["titre"], "Page")
+        self.assertEqual(len(res["contenu"]), 100)
