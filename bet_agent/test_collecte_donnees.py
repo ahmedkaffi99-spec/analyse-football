@@ -489,3 +489,28 @@ class TestPoolDeCinqMatchs:
         monkeypatch.setattr(cd, "NB_MATCHS_POOL", 3)
         fixtures = [_fixture_af(f"Coupe{i}", f"Adv{i}", 2) for i in range(6)]
         assert len(cd.selectionner_matchs_du_jour_api_football(fixtures)) == 3
+
+
+class TestPeriodeDemandee:
+    """25/10/2026 : un run daté du 25 ne doit pas reprendre les matchs du 26 (fixtures hier/aujourd'hui/demain)."""
+
+    def test_seuls_les_matchs_de_la_periode_sont_retenus(self):
+        from datetime import timedelta
+        base = datetime.now(timezone.utc) + timedelta(days=3)
+        jour = base.date().isoformat()
+        lendemain = (base + timedelta(days=1)).date().isoformat()
+
+        def fx(home, away, quand):
+            return {"fixture": {"date": quand.isoformat(), "status": {"short": "NS"}}, "league": {"id": 39},
+                    "teams": {"home": {"name": home}, "away": {"name": away}}}
+
+        fixtures = [fx("Arsenal", "Chelsea", base.replace(hour=15, minute=0)),
+                    fx("Everton", "Fulham", (base + timedelta(days=1)).replace(hour=15, minute=0))]
+        with mock.patch.object(cd, "DATE_CIBLE_DEBUT", jour), mock.patch.object(cd, "DATE_CIBLE_FIN", jour), \
+                mock.patch.object(cd, "LIGUES_FILTRE_API_FOOTBALL", {39}):
+            matchs = cd.selectionner_matchs_du_jour_api_football(fixtures)
+        assert matchs == [("Arsenal", "Chelsea")]
+        with mock.patch.object(cd, "DATE_CIBLE_DEBUT", jour), mock.patch.object(cd, "DATE_CIBLE_FIN", lendemain), \
+                mock.patch.object(cd, "LIGUES_FILTRE_API_FOOTBALL", {39}):
+            matchs = cd.selectionner_matchs_du_jour_api_football(fixtures)
+        assert len(matchs) == 2

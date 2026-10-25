@@ -1376,6 +1376,14 @@ def selectionner_matchs_du_jour_api_football(fixtures_api_football, aujourd_hui=
             jour_ref = aujourd_hui or datetime.now(timezone.utc).date()
             if jour_match is not None and jour_match.astimezone(timezone.utc).date() != jour_ref:
                 continue  # match d'un autre jour (demain) : jamais mélangé aux matchs du jour
+        elif DATE_CIBLE_DEBUT and DATE_CIBLE_FIN:
+            # Période demandée (date_debut / date_fin du workflow) : seuls les matchs DE cette période (25/10/2026 : un run
+            # « 25 octobre » reprenait PSG – Lyon et Sevilla – Osasuna du 26, car les fixtures hier/aujourd'hui/demain
+            # étaient toutes retenues). Date du coup d'envoi en UTC, bornes incluses.
+            jour_match = _date_iso(depart)
+            if jour_match is not None and not (
+                    DATE_CIBLE_DEBUT <= jour_match.astimezone(timezone.utc).date().isoformat() <= DATE_CIBLE_FIN):
+                continue
         home = (fx.get("teams") or {}).get("home", {}).get("name") or ""
         away = (fx.get("teams") or {}).get("away", {}).get("name") or ""
         if contient_indicateur_reserve(home) or contient_indicateur_reserve(away):
