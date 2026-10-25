@@ -631,6 +631,7 @@ class TestSecoursGratuit(unittest.TestCase):
     def setUp(self):
         pilote._secours.update(actif=False, choix=None)
         self.env = mock.patch.dict(os.environ, {"GROQ_API_KEY": "g", "GEMINI_API_KEY": "", "OPENROUTER_API_KEY": "o",
+                                                "UTILISER_OPENROUTER": "1",
                                                 "GROQ_MODELES": "openai/gpt-oss-120b",
                                                 "OPENROUTER_MODELES": "gratuit/modele:free"})
         self.env.start()
@@ -678,6 +679,17 @@ class TestSecoursGratuit(unittest.TestCase):
         data, _ = pilote._appel_secours([{"role": "user", "content": "x"}], 4096, poster=poster)
         self.assertEqual(data, ok)
         self.assertIn("groq", pilote._secours["choix"][1])    # OpenRouter en 429 -> fournisseur suivant
+
+    def test_openrouter_desactive_par_defaut_et_deepseek_plateforme_principal(self):
+        # 25/10/2026 : « IA principale = plateforme DeepSeek, oublie OpenRouter »
+        self.assertEqual(pilote.FOURNISSEUR_PRINCIPAL, "deepseek")
+        with mock.patch.dict(os.environ, {"UTILISER_OPENROUTER": ""}):
+            self.assertIsNone(pilote._cle_openrouter())
+            noms = [c[0] for c in pilote._fournisseurs_secours()]
+            self.assertNotIn("OpenRouter", noms)
+            self.assertFalse(pilote._secours_d_emblee())
+        with mock.patch.dict(os.environ, {"UTILISER_OPENROUTER": "1"}):
+            self.assertEqual(pilote._cle_openrouter(), "o")
 
     def test_openrouter_deepseek_par_defaut_des_le_debut_du_run(self):
         with mock.patch.object(pilote, "FOURNISSEUR_PRINCIPAL", "openrouter"):
