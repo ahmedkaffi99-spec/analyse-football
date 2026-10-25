@@ -44,7 +44,10 @@ if not VERIFIER_SSL_ODDSPAPI:
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+# OpenRouter est DÉSACTIVÉ par défaut (demande du 25/10/2026 : « IA principale = plateforme DeepSeek, oublie OpenRouter ») :
+# sa clé est ignorée tant que UTILISER_OPENROUTER n'est pas à 1 — réversible sans toucher au code.
+OPENROUTER_ACTIF = (os.getenv("UTILISER_OPENROUTER") or "0").strip().lower() in ("1", "true", "oui", "yes")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY") if OPENROUTER_ACTIF else None
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 ODDSPAPI_KEY = os.getenv("ODDSPAPI_KEY")

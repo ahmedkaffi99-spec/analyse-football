@@ -225,9 +225,17 @@ class CleRefusee(Exception):
 # échoue (solde, clé refusée, panne) ; le premier couple fournisseur/modèle qui répond est gardé pour la suite du run.
 MAX_TOKENS_SECOURS = int(os.getenv("AGENT_SECOURS_MAX_TOKENS") or "32768")
 MODELE_OPENROUTER_DEEPSEEK = os.getenv("OPENROUTER_MODELE_PAYANT") or "deepseek/deepseek-v4.1-flash"
-# AGENT_FOURNISSEUR_PRINCIPAL : "openrouter" (défaut, depuis le 22/10/2026 : DeepSeek via OpenRouter d'abord) ou
-# "deepseek" (API officielle d'abord, puis OpenRouter et les gratuits en repli).
-FOURNISSEUR_PRINCIPAL = (os.getenv("AGENT_FOURNISSEUR_PRINCIPAL") or "openrouter").strip().lower()
+# AGENT_FOURNISSEUR_PRINCIPAL : "deepseek" (défaut depuis le 25/10/2026 : API officielle, puis Groq/Gemini en repli) ou
+# "openrouter" (DeepSeek via OpenRouter d'abord — exige UTILISER_OPENROUTER=1).
+FOURNISSEUR_PRINCIPAL = (os.getenv("AGENT_FOURNISSEUR_PRINCIPAL") or "deepseek").strip().lower()
+
+
+def _cle_openrouter():
+    """Clé OpenRouter, ou None tant qu'OpenRouter est désactivé (UTILISER_OPENROUTER, défaut 0 depuis le 25/10/2026 :
+    l'IA principale est la plateforme DeepSeek)."""
+    if (os.getenv("UTILISER_OPENROUTER") or "0").strip().lower() in ("1", "true", "oui", "yes"):
+        return os.getenv("OPENROUTER_API_KEY")
+    return None
 _secours = {"actif": False, "choix": None}   # état du run : DeepSeek abandonné ? dernier couple qui a marché
 
 
@@ -308,8 +316,8 @@ def _fournisseurs_secours():
     courses = []
     # En tête : DeepSeek via OpenRouter (demande du 22/10/2026 : « utilise celle d'OpenRouter, modèle DeepSeek »),
     # le même fournisseur/modèle que les agents de famille (OPENROUTER_MODELE_PAYANT).
-    if os.getenv("OPENROUTER_API_KEY"):
-        courses.append(("OpenRouter", "https://openrouter.ai/api/v1/chat/completions", os.getenv("OPENROUTER_API_KEY"),
+    if _cle_openrouter():
+        courses.append(("OpenRouter", "https://openrouter.ai/api/v1/chat/completions", _cle_openrouter(),
                         MODELE_OPENROUTER_DEEPSEEK, {"reasoning": {"effort": "medium"}}))
     if os.getenv("DEEPSEEK_API_KEY"):   # DeepSeek officiel : repli si OpenRouter échoue
         courses.append(("DeepSeek", URL_DEEPSEEK, os.getenv("DEEPSEEK_API_KEY"), MODELE,
@@ -322,18 +330,18 @@ def _fournisseurs_secours():
         for m in _liste("GEMINI_MODELES", "gemini-3.8-flash"):
             courses.append(("Gemini", "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
                             os.getenv("GEMINI_API_KEY"), m, {}))
-    if os.getenv("OPENROUTER_API_KEY"):
+    if _cle_openrouter():
         for m in _liste("OPENROUTER_MODELES", "nvidia/nemotron-3-super-120b-a12b:free,google/gemma-4-31b-it:free,"
                                               "openrouter/free"):
             courses.append(("OpenRouter", "https://openrouter.ai/api/v1/chat/completions",
-                            os.getenv("OPENROUTER_API_KEY"), m, {}))
+                            _cle_openrouter(), m, {}))
     return courses
 
 
 def _secours_d_emblee():
     """True si le run démarre directement sur la liste de secours (OpenRouter/DeepSeek en tête) au lieu de
     tenter d'abord l'API officielle DeepSeek."""
-    return FOURNISSEUR_PRINCIPAL == "openrouter" and bool(os.getenv("OPENROUTER_API_KEY"))
+    return FOURNISSEUR_PRINCIPAL == "openrouter" and bool(_cle_openrouter())
 
 
 def secours_disponible():
