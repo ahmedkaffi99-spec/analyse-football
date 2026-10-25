@@ -81,8 +81,9 @@ jambes cible, diversité des catégories), PUIS passe au profil suivant en réut
 
 ORDRE CONSEILLÉ (tu peux l'adapter, revenir en arrière ou chercher plus d'information) :
 1. collecter_donnees (une seule fois)  2. voir_catalogue (indique le profil EN COURS parmi les {n} — le \
-catalogue lui-même ne change pas)  3. (optionnel) rechercher_web (puis lire_page sur un lien) pour vérifier une blessure, une rotation, une \
-composition, un enjeu — 5 recherches et 3 pages au maximum par run  4. proposer_coupon pour le profil en cours (Python vérifie — identifiants valides, un pari par match, \
+catalogue lui-même ne change pas)  3. RECOMMANDÉ : 2 à 4 rechercher_web (puis lire_page sur un lien au besoin) sur les matchs les plus importants de ton \
+catalogue, pour vérifier une blessure, une rotation, une composition probable, un enjeu — 5 recherches et 3 pages au \
+maximum par run ; un pari que l'actualité contredit se remplace  4. proposer_coupon pour le profil en cours (Python vérifie — identifiants valides, un pari par match, \
 nombre de jambes, diversité — rédige automatiquement le coupon une fois validé, et te dit s'il reste des \
 profils)  5. répète 2-4 pour chaque profil restant  6. envoyer_telegram une fois les {n} profils traités \
 ({n} messages séparés, un par profil) — ou abandonner si RIEN n'est défendable pour AUCUN des {n} profils.
