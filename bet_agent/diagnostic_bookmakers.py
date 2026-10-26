@@ -28,8 +28,12 @@ def marge_1x2(bets):
 
 
 def main():
-    fixtures = [fx for fx in cd.recuperer_fixtures_api_football()
-                if ((fx.get("fixture") or {}).get("status") or {}).get("short") == "NS"][:NB_MATCHS]
+    a_venir = [fx for fx in cd.recuperer_fixtures_api_football()
+               if ((fx.get("fixture") or {}).get("status") or {}).get("short") == "NS"]
+    # Grandes ligues d'abord (là où les bookmakers servent des cotes), puis le reste.
+    a_venir.sort(key=lambda fx: ((fx.get("league") or {}).get("id") not in cd.LIGUES_MAJEURES,
+                                 (fx.get("fixture") or {}).get("timestamp") or 0))
+    fixtures = a_venir[:NB_MATCHS]
     print(f"{len(fixtures)} match(s) à venir sondés")
     nb_matchs = defaultdict(int)
     nb_marches = defaultdict(list)
