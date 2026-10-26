@@ -70,7 +70,45 @@ def evaluer(cotes_bookmakers, buts_dom, buts_ext, acc):
         enr["logloss"] += -math.log(max(probas[gagnante], 1e-9))
 
 
+def detail_matchs(fragments):
+    """Cote de chaque bookmaker et résultat réel pour les matchs terminés (7 jours) dont une équipe contient un des
+    fragments (ex: « Real Sociedad,Paris »)."""
+    from unidecode import unidecode
+    frags = [unidecode(f.strip().lower()) for f in fragments.split(",") if f.strip()]
+    aujourd_hui = datetime.now(timezone.utc).date()
+    for i in range(0, NB_JOURS + 1):
+        jour = (aujourd_hui - timedelta(days=i)).isoformat()
+        for fx in get("fixtures", date=jour, status="FT"):
+            dom, ext = fx["teams"]["home"]["name"], fx["teams"]["away"]["name"]
+            noms = unidecode(f"{dom} {ext}".lower())
+            if not any(f in noms for f in frags):
+                continue
+            b = fx.get("goals") or {}
+            print(f"\n##### {dom} {b.get('home')}-{b.get('away')} {ext} [{fx['league']['name']}] {jour}")
+            cotes = adf.cotes_par_bookmaker({"errors": [], "response": get("odds", fixture=fx["fixture"]["id"])})
+            if not cotes:
+                print("   (cotes d'avant-match plus servies)")
+                continue
+            lignes = defaultdict(dict)
+            for bm, marches in cotes.items():
+                for m in marches:
+                    if m["marche"] in ("Full Time Result", "Both Teams To Score") or (
+                            m["marche"] == "Over Under Full Time" and m.get("handicap") == 2.5):
+                        for sel in m["selections"]:
+                            lignes[(m["marche"], sel["selection"])][bm] = sel["cote"]
+            gagnantes = {m: issue_reelle(m, 2.5 if m == "Over Under Full Time" else None, b["home"], b["away"])
+                         for m in ("Full Time Result", "Over Under Full Time", "Both Teams To Score")}
+            for (marche, sel), par_bm in sorted(lignes.items()):
+                etoile = " ✅ réalisé" if gagnantes.get(marche) == sel else ""
+                lib = {"Full Time Result": "1X2", "Over Under Full Time": "Plus/Moins 2.5",
+                       "Both Teams To Score": "BTTS"}[marche]
+                detail = "  ".join(f"{bm} {c:.2f}" for bm, c in sorted(par_bm.items(), key=lambda x: -x[1]))
+                print(f"   {lib} {sel:<5}{etoile}\n      {detail}")
+
+
 def main():
+    if os.getenv("EQUIPES"):
+        return detail_matchs(os.environ["EQUIPES"])
     aujourd_hui = datetime.now(timezone.utc).date()
     termines = []
     for i in range(1, NB_JOURS + 1):

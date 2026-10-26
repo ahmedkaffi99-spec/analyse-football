@@ -1069,8 +1069,12 @@ jobs:
       - name: Backtest réel — cotes de chaque bookmaker à part (Brier, log-loss, marge, ROI aveugle)
         # Lecture seule : matchs terminés des grandes ligues sur 7 jours dont API-Football sert encore les
         # cotes d'avant-match (1 appel /fixtures par jour + 1 appel /odds par match, 80 matchs au plus).
+        # match_recherche non vide : détail des cotes de chaque bookmaker pour les matchs terminés dont une équipe
+        # contient un des fragments (ex: « Real Sociedad,Paris »).
         if: inputs.verification == 'backtest-bookmakers'
         working-directory: bet_agent
+        env:
+          EQUIPES: ${{ inputs.match_recherche }}
         run: python backtest_bookmakers.py
 
       - name: Backtest réel — marchés ABSENTS des coupons (BTTS, handicaps, par équipe, pair/impair, score exact...)
