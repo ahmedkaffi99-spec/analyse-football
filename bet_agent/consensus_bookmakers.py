@@ -3,6 +3,8 @@ bookmakers). Pour chaque sélection, la cote de chaque bookmaker est ramenée à
 (normalisation du marché complet), puis moyennée avec un poids plus fort pour Pinnacle (référence du marché).
 Calcul pur : aucun réseau ; n'influence PAS la sélection des coupons (information seulement)."""
 
+import os
+
 POIDS_BOOKMAKER = {"Pinnacle": 3.0}   # tous les autres : 1.0
 BOOKMAKERS_EXCLUS = {"Dafabet"}       # n'a servi qu'un marché sur le diagnostic du 26/10/2026
 NB_BOOKMAKERS_MIN = 3
@@ -44,3 +46,35 @@ def consensus(cotes_bookmakers, nom_reference="1xBet"):
                 "proba_ref_pct": round(100 * ref, 2) if ref is not None else None,
                 "ecart_pts": round(100 * (proba - ref), 2) if ref is not None else None}
     return sortie
+
+
+SEUIL_GARDE_FOU_PTS = float(os.getenv("SEUIL_GARDE_FOU_CONSENSUS_PTS") or "4")
+
+
+def annoter_candidats(candidats, cotes_bookmakers):
+    """Ajoute à chaque pick dont le marché est couvert par ≥ NB_BOOKMAKERS_MIN bookmakers :
+    consensus_pct, consensus_nb_bookmakers et ecart_consensus_pts (consensus - proba sans marge de 1xBet ;
+    négatif = 1xBet est plus optimiste que le marché). Un pick non couvert n'est pas modifié. Renvoie le
+    nombre de picks annotés."""
+    if not cotes_bookmakers:
+        return 0
+    cons = consensus(cotes_bookmakers)
+    nb = 0
+    for c in candidats:
+        v = cons.get((c.get("marche_brut"), c.get("handicap"), c.get("selection")))
+        if v and v["ecart_pts"] is not None:
+            c["consensus_pct"] = v["proba_pct"]
+            c["consensus_nb_bookmakers"] = v["nb_bookmakers"]
+            c["ecart_consensus_pts"] = v["ecart_pts"]
+            nb += 1
+    return nb
+
+
+def garde_fou(pick):
+    """Raison du veto si 1xBet est plus optimiste que le consensus d'au moins SEUIL_GARDE_FOU_PTS points
+    (cote probablement erronée ou ligne mal alignée), sinon None. Ne s'applique qu'aux picks annotés."""
+    ecart = pick.get("ecart_consensus_pts")
+    if ecart is not None and ecart <= -SEUIL_GARDE_FOU_PTS:
+        return (f"cote 1xBet trop favorable face au consensus des bookmakers ({ecart:+g} pts, "
+                f"{pick.get('consensus_nb_bookmakers')} bookmakers)")
+    return None

@@ -19,6 +19,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 
 import analyser_et_envoyer as ae
+import consensus_bookmakers
 
 EDGE_MAX_AGENT = 20.0
 PART_MAX_ECARTEE = 0.5
@@ -107,7 +108,7 @@ def veto_python(pick):
         return f"edge suspect ({edge:g} % > {EDGE_MAX_AGENT:g} %)"
     if pick.get("categorie") in ae.CATEGORIES_EXCLUES:
         return f"catégorie exclue ({pick.get('categorie')})"
-    return None
+    return consensus_bookmakers.garde_fou(pick)
 
 
 def _prompt_famille(fid, nom, faits, lignes):

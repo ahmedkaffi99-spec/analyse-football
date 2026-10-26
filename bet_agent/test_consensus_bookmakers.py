@@ -95,3 +95,43 @@ class TestBacktestBookmakers(unittest.TestCase):
         self.assertGreater(acc[("1xBet", "Full Time Result")]["marge"], 0)
         # Brier d'un 1X2 est dans [0, 2]
         self.assertTrue(0 <= acc[("1xBet", "Full Time Result")]["brier"] <= 2)
+
+
+class TestGardeFou(unittest.TestCase):
+    def _cotes(self, cote_1xbet_home):
+        data = _reponse([_bm(11, "1xBet", cote_1xbet_home, 3.5, 4.0), _bm(4, "Pinnacle", 2.4, 3.5, 3.0),
+                         _bm(8, "Bet365", 2.4, 3.4, 3.0), _bm(2, "Marathonbet", 2.4, 3.5, 3.0)])
+        return adf.cotes_par_bookmaker(data)
+
+    def _pick(self, selection="1"):
+        return {"marche_brut": "Full Time Result", "handicap": None, "selection": selection, "cote": 2.0}
+
+    def test_annotation_et_veto_quand_1xbet_trop_favorable(self):
+        # 1xBet paie 1.70 sur « 1 » alors que le marché paie ~2.4 : 1xBet est bien plus optimiste.
+        pick = self._pick()
+        self.assertEqual(cb.annoter_candidats([pick], self._cotes(1.70)), 1)
+        self.assertLess(pick["ecart_consensus_pts"], -4)
+        self.assertIn("consensus", cb.garde_fou(pick))
+
+    def test_pas_de_veto_quand_1xbet_en_ligne_ou_plus_genereux(self):
+        pick = self._pick()
+        cb.annoter_candidats([pick], self._cotes(2.4))
+        self.assertIsNone(cb.garde_fou(pick))
+        genereux = self._pick()
+        cb.annoter_candidats([genereux], self._cotes(3.0))   # 1xBet paie plus que le marché : bon pour nous
+        self.assertGreater(genereux["ecart_consensus_pts"], 0)
+        self.assertIsNone(cb.garde_fou(genereux))
+
+    def test_pick_non_couvert_ou_sans_cotes_jamais_modifie(self):
+        pick = self._pick("Inconnu")
+        self.assertEqual(cb.annoter_candidats([pick], self._cotes(1.7)), 0)
+        self.assertNotIn("ecart_consensus_pts", pick)
+        self.assertEqual(cb.annoter_candidats([self._pick()], None), 0)
+        self.assertIsNone(cb.garde_fou({}))
+
+    def test_veto_python_des_agents_familles_utilise_le_garde_fou(self):
+        import agents_familles as af
+        pick = {"categorie": "1X2", "edge_pct": 1.0, "ecart_consensus_pts": -6.0, "consensus_nb_bookmakers": 8}
+        self.assertIn("consensus", af.veto_python(pick))
+        pick["ecart_consensus_pts"] = -1.0
+        self.assertIsNone(af.veto_python(pick))
