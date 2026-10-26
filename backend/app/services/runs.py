@@ -99,7 +99,7 @@ def executer_run(run_id, envoyer_telegram=False, rediger=True, depuis_run=None, 
             # pilote pour qu'il pèse ses choix du jour à la lumière des résultats réels passés,
             # pas seulement du catalogue du jour. None tant qu'aucun coupon n'est encore clos.
             bilan = resume_pour_ia(db)
-            # Sans profils personnalisés : profil quotidien de l'agent (12-15 jambes par défaut,
+            # Sans profils personnalisés : profils quotidiens de l'agent (3 coupons de 5-10 jambes par défaut,
             # 20/10/2026) — jamais ae.PROFILS_COUPON (2-5 jambes), réservé au mode manuel.
             if profils_personnalises is None:
                 profils_personnalises = ae.profils_agent_quotidien()
@@ -132,6 +132,14 @@ def executer_run(run_id, envoyer_telegram=False, rediger=True, depuis_run=None, 
                 enregistrer_coupons(db, run, resultats, index, textes=resultat_agent.get("textes"))
                 run.envoye_telegram = envoye
                 run.statut = "termine"
+                # Journal de l'agent (recherches web, pages lues, stratégie et raison de chaque jambe) : enregistré dans
+                # runs.detail, colonne texte déjà existante (aucune modification du schéma).
+                journal = resultat_agent.get("journal")
+                if journal and (journal.get("recherches") or journal.get("pages") or journal.get("raisons")):
+                    texte_journal = json.dumps(journal, ensure_ascii=False, separators=(",", ":"))
+                    if len(texte_journal) > 30000:  # jamais un JSON tronqué : on retire les raisons détaillées
+                        texte_journal = json.dumps(dict(journal, raisons={}), ensure_ascii=False, separators=(",", ":"))
+                    run.detail = "JOURNAL_AGENT " + texte_journal
             else:
                 run.statut = "abandonne"
                 run.detail = (resultat_agent.get("raison_abandon") or resultat_agent.get("arret")

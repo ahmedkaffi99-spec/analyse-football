@@ -359,11 +359,12 @@ class TestTroisProfilsMemeRun(unittest.TestCase):
 
         self.assertTrue(resultat["termine"])
         textes_envoyes = envoi.call_args.args[0]
-        # La stratégie de l'IA est reprise telle quelle dans le ticket du profil.
-        self.assertIn("double sécurité sur des favoris nets", textes_envoyes[0])
-        # La cote totale combinée (1.8 * 1.8 = 3.24) est affichée.
-        self.assertIn("Cote totale", textes_envoyes[0])
-        self.assertIn("3.24", textes_envoyes[0])
+        # Format court (demande du 22/10/2026) : la stratégie n'est plus envoyée sur Telegram,
+        # seule la cote totale combinée (1.8 * 1.8 = 3.24) figure dans l'en-tête.
+        self.assertNotIn("double sécurité sur des favoris nets", textes_envoyes[0])
+        self.assertIn("cote 3.24", textes_envoyes[0])
+        self.assertIn("(2 jambes)", textes_envoyes[0])
+        self.assertLess(len(textes_envoyes[0]), 500)
 
     def test_envoyer_telegram_refuse_si_profils_restants(self):
         reponses = [
@@ -720,3 +721,77 @@ class TestSecoursGratuit(unittest.TestCase):
         with self.assertRaises(RuntimeError) as ctx:
             pilote._appel_secours([], 4096, poster=lambda url, **kw: self._reponse(500, {}))
         self.assertIn("Aucun fournisseur de secours", str(ctx.exception))
+
+
+class TestRechercheWebDeepSeek(unittest.TestCase):
+    """Recherche web et lecture de page DeepSeek (Search/Fetch du 17/10/2026) : lecture défensive des réponses."""
+
+    class _Rep:
+        def __init__(self, data):
+            self._data = data
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return self._data
+
+    def test_recherche_lit_plusieurs_formes_de_reponse(self):
+        appels = []
+
+        def poster(url, headers=None, json=None, timeout=None):
+            appels.append((url, headers, json))
+            return self._Rep({"results": [{"title": "T1", "summary": "S1", "url": "http://a"},
+                                          {"name": "T2", "snippet": "S2", "link": "http://b"}]})
+
+        res = pilote.deepseek_recherche("Chelsea composition", "CLE", nombre=5, poster=poster)
+        self.assertEqual(res[0], {"titre": "T1", "date": None, "extrait": "S1", "lien": "http://a"})
+        self.assertEqual(res[1], {"titre": "T2", "date": None, "extrait": "S2", "lien": "http://b"})
+        self.assertEqual(appels[0][0], pilote.URL_RECHERCHE_DEEPSEEK)
+        self.assertEqual(appels[0][1]["Authorization"], "Bearer CLE")
+        self.assertEqual(appels[0][2], {"query": "Chelsea composition", "count": 5})
+
+    def test_requete_tronquee_a_128_caracteres(self):
+        vu = {}
+
+        def poster(url, headers=None, json=None, timeout=None):
+            vu.update(json)
+            return self._Rep({"results": []})
+
+        pilote.deepseek_recherche("x" * 300, "CLE", poster=poster)
+        self.assertEqual(len(vu["query"]), 128)
+
+    def test_lecture_tronque_le_contenu(self):
+        def poster(url, headers=None, json=None, timeout=None):
+            return self._Rep({"data": {"title": "Page", "content": "a" * 10000}})
+
+        res = pilote.deepseek_lecture("http://a", "CLE", poster=poster, max_caracteres=100)
+        self.assertEqual(res["titre"], "Page")
+        self.assertEqual(len(res["contenu"]), 100)
+
+    def test_extrait_tronque_et_markdown_nettoye(self):
+        def poster(url, headers=None, json=None, timeout=None):
+            if url == pilote.URL_RECHERCHE_DEEPSEEK:
+                return self._Rep({"results": [{"title": "T", "summary": "z" * 5000, "url": "http://a", "date": "2026-10-22"}]})
+            return self._Rep({"title": "P", "content": "\\# Titre\\. Nom \\| Valeur \\(x\\)"})
+
+        res = pilote.deepseek_recherche("q", "CLE", poster=poster)
+        self.assertEqual(len(res[0]["extrait"]), pilote.MAX_CARACTERES_EXTRAIT)
+        self.assertEqual(res[0]["date"], "2026-10-22")
+        page = pilote.deepseek_lecture("http://a", "CLE", poster=poster)
+        self.assertEqual(page["contenu"], "# Titre. Nom | Valeur (x)")
+
+
+class TestJournalAgent(unittest.TestCase):
+    def test_construire_journal_reprend_recherches_strategies_et_raisons(self):
+        sel = {"match": "A vs B", "pick": {"marche": "Total", "selection": "Over", "cote": 1.5}, "raison_ia": "r" * 500}
+        etat = {"journal_recherches": [{"requete": "q", "source": "deepseek", "resultats": []}],
+                "journal_pages": [{"url": "http://a", "titre": "P", "caracteres": 10}],
+                "strategies": {"c1": "prudent"},
+                "resultats_profils": [{"profil": {"cle": "c1"}, "selections": [sel]}]}
+        j = pilote.construire_journal(etat)
+        self.assertEqual(j["recherches"][0]["requete"], "q")
+        self.assertEqual(j["pages"][0]["url"], "http://a")
+        self.assertEqual(j["strategies"], {"c1": "prudent"})
+        self.assertEqual(j["raisons"]["c1"][0]["pari"], "Total → Over")
+        self.assertEqual(len(j["raisons"]["c1"][0]["raison"]), 200)

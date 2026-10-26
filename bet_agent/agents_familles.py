@@ -1,5 +1,5 @@
-"""Les 10 agents spécialistes par famille de marchés (20/10/2026, demande explicite : "ajoute les
-10 agents en production").
+"""Les 11 agents spécialistes par famille de marchés (20/10/2026, demande explicite : "ajoute les
+10 agents en production" ; fautes et hors-jeux séparés en deux agents le 22/10/2026 : 10 familles + dérivés).
 
 Les agents travaillent en parallèle (un appel IA par famille, tous lancés ensemble).
 Chaque agent connaît UNE famille de marchés, ses faits MESURÉS en production (audit des 10
@@ -26,7 +26,7 @@ PART_MAX_ECARTEE = 0.5
 # (id, nom, catégories exactes, faits mesurés). Tout ce qui n'est dans aucune liste → "derives".
 FAMILLES = (
     ("resultat", "Résultat 1X2 / Double Chance",
-     ("Double Chance", "Double Chance Full Time", "Full Time Result"),
+     ("Double Chance", "Double Chance Full Time", "Full Time Result", "Draw No Bet"),
      "Backtest 6997 matchs (5 championnats) : P(1X) est calibrée en moyenne (+0,5 pt) mais "
      "surestimée de 4 à 5 pts quand l'équipe à domicile est l'OUTSIDER (Elo domicile+avantage < "
      "Elo extérieur). En production (dédupliqué) : 1X = 7/21 (33 %) pour ~69 % annoncé ; 12 = 10/11 "
@@ -39,7 +39,7 @@ FAMILLES = (
     ("buts_equipe", "Buts par équipe / Win To Nil",
      ("Total Équipe 1", "Total Équipe 2", "Over Under Team 1", "Over Under Team 2",
       "Win To Nil Équipe 1", "Win To Nil Équipe 2", "Team 1 Win To Nil", "Team 2 Win To Nil",
-      "Team 1 Clean Sheet", "Team 2 Clean Sheet"),
+      "Team 1 Clean Sheet", "Team 2 Clean Sheet", "Clean Sheet Équipe 1", "Clean Sheet Équipe 2"),
      "Motif observé (n=23, pas encore significatif) : les « Over » d'équipe 1 sont à surveiller. "
      "Les lignes d'équipe à cote > 4 sont des paris longs à faible probabilité."),
     ("btts", "BTTS (les deux équipes marquent)",
@@ -49,10 +49,13 @@ FAMILLES = (
      "remesurer après 2 semaines."),
     ("handicap", "Handicaps (asiatique, européen)",
      ("Handicap", "Handicap Asiatique", "Asian Handicap", "European Handicap"),
-     "Backtest de calibration du handicap fait le 17/10/2026 (lissage additif K_LISSAGE_BUTS). "
-     "Aucun écart structurel mesuré depuis."),
+     "Handicap = BUTS seulement (les handicaps de corners, cartons, fautes, hors-jeux et tirs sont exclus, "
+     "demande du 22/10/2026). Backtest 7 000 matchs : handicap de buts calibré à ±3 pts sur les lignes +/-0.5, "
+     "+/-1.5, +/-2.5 et +1 ; légèrement PRUDENT sur -0.5, 0 et -1 (réel +4 à +5 pts au-dessus de l'annoncé). "
+     "Attention : jusqu'au 22/10/2026 un bug d'adaptateur rangeait le côté extérieur sur la mauvaise ligne."),
     ("corners", "Corners",
-     ("Total Corners", "Handicap Corners", "Corners - Over Under Full Time"),
+     ("Total Corners", "Handicap Corners", "Corners - Over Under Full Time",
+      "Total Corners Équipe 1", "Total Corners Équipe 2"),
      "Handicap Corners EXCLU (mesure réelle dédupliquée n=6 : 33 % réel pour 63 % annoncé). "
      "Total Corners : pas d'écart structurel mesuré."),
     ("cartons", "Cartons",
@@ -61,13 +64,25 @@ FAMILLES = (
      "quand l'arbitre est assigné et a >= 5 matchs d'historique ; sinon aucun ajustement — les "
      "cartons restent un marché très variable."),
     ("tirs", "Tirs",
-     ("Total Tirs", "Total Tirs Cadrés", "Handicap Tirs"),
-     "Total Tirs EXCLU : 26 paris réels dédupliqués, tous « Under », 50,0 % réel pour 69,1 % "
-     "annoncé (-19,1 pts) — la Poisson pure sous-estime la variance des tirs."),
-    ("fautes", "Fautes et hors-jeux",
-     ("Total Fautes", "Handicap Fautes", "Total Hors-jeux", "Handicap Hors-jeux"),
-     "Aucune mesure réelle suffisante en production : traite ces paris avec la plus grande "
-     "prudence."),
+     ("Total Tirs", "Total Tirs Cadrés", "Handicap Tirs", "Handicap Tirs Cadrés",
+      "Total Tirs Équipe 1", "Total Tirs Équipe 2", "Total Tirs Cadrés Équipe 1", "Total Tirs Cadrés Équipe 2"),
+     "Total Tirs : l'écart de 50 % réel pour 69 % annoncé (26 paris, tous « Under ») venait d'un BUG de "
+     "calcul corrigé le 21/10/2026 (somme de Poisson tronquée à 25 : P(Over 25.5 | mu=26) valait 0). "
+     "Depuis : binomiale négative (dispersion mesurée 1.35), priors recalés ; backtest sur 6 996 matchs : "
+     "côté probable 60-70 % annoncé 63.6 % pour 63.4 % réel. Remesure en production en cours."),
+    ("fautes", "Fautes",
+     ("Total Fautes", "Handicap Fautes", "Total Fautes Équipe 1", "Total Fautes Équipe 2"),
+     "Marché ajouté au flux le 22/10/2026 : aucune mesure réelle en production. Backtest sur 6 996 matchs : "
+     "mu sous-estimé de 0.56 avant recalage du prior (11.9 fautes par équipe), dispersion 1.22 (binomiale "
+     "négative), calibré après recalage. Les cotes de fautes de 1xBet sont très serrées (ex. Over 19.5 à 1.26 "
+     "et Under 19.5 à 3.30) : méfie-toi des lignes extrêmes."),
+    ("hors_jeux", "Hors-jeux",
+     ("Total Hors-jeux", "Handicap Hors-jeux", "Total Hors-jeux Équipe 1", "Total Hors-jeux Équipe 2"),
+     "Marché ajouté au flux le 22/10/2026 : AUCUNE validation par backtest (la statistique « hors-jeux » n'existe "
+     "pas dans l'historique de 8 849 matchs ; seule la moyenne des 10 derniers matchs de chaque équipe est "
+     "collectée en production). Loi de Poisson sans surdispersion mesurée, prior 2.0 par équipe non vérifié. "
+     "Moyennes faibles (environ 2 à 4 par match) : une ligne à 1.5 ou 2.5 est très sensible à un seul hors-jeu. "
+     "Traite ces paris avec la plus grande prudence."),
 )
 FAMILLE_DERIVES = ("derives", "Marchés dérivés (score exact, mi-temps, marge de victoire...)",
                    "Aucune mesure réelle suffisante en production : paris longs, très variables.")
@@ -167,7 +182,7 @@ def revoir_catalogue(catalogue, appel=None):
         except Exception as e:
             print(f"   ⚠️ [Agent {nom}] réponse inexploitable ({ae._cause(e)[:120]}) — famille inchangée.")
             continue
-        plafond = max(1, int(len(restants) * PART_MAX_ECARTEE))
+        plafond = int(len(restants) * PART_MAX_ECARTEE)  # floor : une famille d'un seul candidat n'est jamais vidée
         for e in proposes[:plafond]:
             ecartes.add(e["id"])
             avis[e["id"]] = f"[écarté par l'agent {nom}] {str(e.get('raison') or '').strip()[:160]}"

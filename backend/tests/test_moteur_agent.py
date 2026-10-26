@@ -160,20 +160,29 @@ def test_moteur_agent_est_le_defaut_avec_profil_12_a_15_jambes(monkeypatch):
     assert taches.main(["run"]) == 0
 
     assert len(appels) == 1
-    (profil,) = appels[0]["profils"]
-    assert profil["nb_jambes_min"] == 12 and profil["nb_jambes"] == 15
+    profils = appels[0]["profils"]
+    assert [p["cle"] for p in profils] == ["coupon1", "coupon2", "coupon3"]
+    assert [(p["nb_jambes_min"], p["nb_jambes"]) for p in profils] == [(5, 8), (6, 8), (7, 8)]
+    assert all(p["jambes_max_par_match"] == 1 for p in profils)  # une seule sélection par match dans un coupon
+    # 1xBet : un seul pari par EVENT (« Event already added » sinon, 23/10/2026)
+    assert all(p["un_seul_pari_par_event"] and not p.get("tous_les_matchs_obligatoires") for p in profils)
+    assert all(p["diversifier_entre_coupons"] for p in profils)
+    assert all(p["couvrir_tous_les_matchs"] for p in profils) and [p.get("dernier_profil") for p in profils] == [None, None, True]
+    # 24/10/2026 : petite cote 5-15 (prudent), cote moyenne 20-40 (équilibré), haute cote 50-100+ (très risqué)
+    assert [(p["cote_totale_min"], p.get("cote_totale_max")) for p in profils] == [
+        (5.0, 10.0), (10.0, 18.0), (18.0, 35.0)]
+    assert [p["proba_min_pct"] for p in profils] == [70.0, 65.0, 60.0]
+    assert [p["proba_max_pct"] for p in profils] == [78.0, 75.0, 72.0]  # bilan du 25/10/2026 : cote croissante, 8 jambes au plus
 
 
 def test_profil_agent_quotidien_respecte_nb_jambes_du_workflow(monkeypatch):
     import analyser_et_envoyer as ae
     monkeypatch.setenv("NB_JAMBES", "8")
     monkeypatch.setenv("NB_JAMBES_MIN", "6")
-    (profil,) = ae.profils_agent_quotidien()
-    assert (profil["nb_jambes_min"], profil["nb_jambes"]) == (6, 8)
+    assert {(p["nb_jambes_min"], p["nb_jambes"]) for p in ae.profils_agent_quotidien()} == {(6, 8)}
     monkeypatch.setenv("NB_JAMBES", "10")
     monkeypatch.setenv("NB_JAMBES_MIN", "20")  # min jamais au-dessus du max
-    (profil,) = ae.profils_agent_quotidien()
-    assert (profil["nb_jambes_min"], profil["nb_jambes"]) == (10, 10)
+    assert {(p["nb_jambes_min"], p["nb_jambes"]) for p in ae.profils_agent_quotidien()} == {(10, 10)}
 
 
 def test_moteur_agent_coupon_deja_envoye_sauvegarde_meme_si_la_collecte_plante(monkeypatch):
@@ -202,3 +211,27 @@ def test_moteur_agent_coupon_deja_envoye_sauvegarde_meme_si_la_collecte_plante(m
         assert run.envoye_telegram is True
         assert len(run.coupons) == 1 and len(run.coupons[0].jambes) == len(selections)
         assert run.coupons[0].texte == "ticket envoyé"
+
+
+def test_moteur_agent_enregistre_le_journal_des_recherches_dans_run_detail(monkeypatch):
+    # 25/10/2026 : recherches web, pages lues, stratégie et raison de chaque jambe -> runs.detail (colonne texte existante)
+    import json
+    profil = _profil_unique()
+    selections = profils_exemple()[0]["selections"]
+    journal = {"recherches": [{"requete": "Chelsea composition", "source": "deepseek",
+                               "resultats": [{"titre": "Predicted XI", "lien": "http://a", "extrait": "Penders joue"}]}],
+               "pages": [], "strategies": {profil["cle"]: "prudent"}, "raisons": {profil["cle"]: []}}
+    _faux_agent_pilote(monkeypatch, {
+        "donnees": collecte_exemple(), "resultats_profils": [{"profil": profil, "selections": selections}],
+        "textes": ["ticket"], "envoye": False, "raison_abandon": None, "journal": journal,
+    })
+
+    assert taches.main(["run", "--moteur", "agent"]) == 0
+
+    with SessionLocal() as db:
+        run = db.query(Run).one()
+        assert run.statut == "termine"
+        assert run.detail.startswith("JOURNAL_AGENT ")
+        relu = json.loads(run.detail[len("JOURNAL_AGENT "):])
+        assert relu["recherches"][0]["requete"] == "Chelsea composition"
+        assert relu["strategies"][profil["cle"]] == "prudent"

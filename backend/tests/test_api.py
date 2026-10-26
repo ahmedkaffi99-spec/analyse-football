@@ -309,3 +309,57 @@ def test_statut_coupon():
     assert statut_coupon(["gagne", "annule"]) == "gagne"
     assert statut_coupon(["gagne", "perime"]) == "incertain"
     assert statut_coupon(["perdu", "annule"]) == "perdu"
+
+
+def test_verification_stats_absentes_rejugees_puis_jugees(client, monkeypatch):
+    # Correctif du 22/10/2026 (Lech Poznan–Sunderland) : une jambe de statistique (corners...) dont la
+    # statistique n'est pas (encore) renvoyée par API-Football restait non_verifiable À VIE dès le premier
+    # passage. Elle doit rester en_attente (rejugée) tant que DELAI_STATS_JOURS n'est pas écoulé.
+    profils = [{"cle": "profil1", "nom": "🛡️ COUPON 1", "selections": [{
+        "match": "Lens vs Auxerre", "home_nom": "Lens", "away_nom": "Auxerre", "fixture_id_oddspapi": "idLENSAUX",
+        "pick": {"categorie": "Total Corners Équipe 1", "marche": "Corners - Over Under Team 1 (5.5)",
+                 "handicap": 5.5, "selection": "Over", "cote": 1.5,
+                 "proba_modele_pct": 70.0, "edge_pct": 5.0, "guide": "g", "onglet": "o"}}]}]
+    ticket = {"date": "2026-09-25", "genere_a": "2026-09-25T12:05:00", "profils": profils, "resultat_envoye": False}
+    client.post("/api/imports", json={"collecte": collecte_exemple(), "ticket": ticket})
+
+    cd, _, vr = pipeline.modules()
+    monkeypatch.setattr(vr, "DELAI_STATS_JOURS", 999999)
+    monkeypatch.setattr(vr, "DELAI_PEREMPTION_JOURS", 999999)
+    monkeypatch.setattr(vr, "recuperer_fixtures_du_jour", lambda: {})
+    monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda: [
+        {"teams": {"home": {"name": "RC Lens"}, "away": {"name": "AJ Auxerre"}},
+         "fixture": {"status": {"short": "FT"}}, "goals": {"home": 2, "away": 1}}])
+    monkeypatch.setattr(cd, "_appel_statistiques_fixture", lambda fixture_id: [])  # statistiques pas encore publiées
+
+    premier = client.post("/api/coupons/verification").json()
+    assert premier["stats_indisponibles"] == 1 and premier["non_verifiable"] == 0
+    assert client.get("/api/coupons").json()[0]["jambes"][0]["resultat"] == "en_attente"
+
+    # Statistiques publiées : Lens 7 corners (> 5.5) -> gagné.
+    monkeypatch.setattr(cd, "_appel_statistiques_fixture", lambda fixture_id: [
+        {"team": {"name": "RC Lens"}, "statistics": [{"type": "Corner Kicks", "value": 7}]},
+        {"team": {"name": "AJ Auxerre"}, "statistics": [{"type": "Corner Kicks", "value": 4}]}])
+    second = client.post("/api/coupons/verification").json()
+    assert second["gagne"] == 1
+    assert client.get("/api/coupons").json()[0]["jambes"][0]["resultat"] == "gagne"
+
+
+def test_verification_stats_absentes_non_verifiable_apres_le_delai(client, monkeypatch):
+    profils = [{"cle": "profil1", "nom": "🛡️ COUPON 1", "selections": [{
+        "match": "Lens vs Auxerre", "home_nom": "Lens", "away_nom": "Auxerre", "fixture_id_oddspapi": "idLENSAUX",
+        "pick": {"categorie": "Total Corners Équipe 1", "marche": "Corners - Over Under Team 1 (5.5)",
+                 "handicap": 5.5, "selection": "Over", "cote": 1.5,
+                 "proba_modele_pct": 70.0, "edge_pct": 5.0, "guide": "g", "onglet": "o"}}]}]
+    ticket = {"date": "2026-09-25", "genere_a": "2026-09-25T12:05:00", "profils": profils, "resultat_envoye": False}
+    client.post("/api/imports", json={"collecte": collecte_exemple(), "ticket": ticket})
+    cd, _, vr = pipeline.modules()
+    # Le coup d'envoi de collecte_exemple() (25/09/2026) est bien au-delà de DELAI_STATS_JOURS (2 jours).
+    monkeypatch.setattr(vr, "recuperer_fixtures_du_jour", lambda: {})
+    monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda: [
+        {"teams": {"home": {"name": "RC Lens"}, "away": {"name": "AJ Auxerre"}},
+         "fixture": {"status": {"short": "FT"}}, "goals": {"home": 2, "away": 1}}])
+    monkeypatch.setattr(cd, "_appel_statistiques_fixture", lambda fixture_id: [])
+
+    resultat = client.post("/api/coupons/verification").json()
+    assert resultat["non_verifiable"] == 1 and resultat["stats_indisponibles"] == 0

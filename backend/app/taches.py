@@ -424,7 +424,7 @@ def main(argv=None):
                             "(moteur deterministe uniquement)")
     p_run.add_argument("--moteur", choices=["central", "agent", "deterministe"], default="agent",
                        help="agent = OFFICIEL PAR DÉFAUT depuis le 20/10/2026 (demande explicite : "
-                            "l'IA choisit les paris, coupon de 12 à 15 jambes, agents spécialistes par "
+                            "l'IA choisit les paris, 3 coupons de 5 à 10 jambes (cote 5-10, 10-50, 50+), agents spécialistes par "
                             "famille de marchés — voir bet_agent/agents_familles.py) ; "
                             "central = officiel du 11/10 au 20/10/2026 (11/10/2026, moteur le plus récemment "
                             "construit — moteur_central/) : arbitrage par marché bet_agent/moteur "

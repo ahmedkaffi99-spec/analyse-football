@@ -14,6 +14,12 @@ du 01/10/2026 : "il peut sélectionner 12 et n'importe quelle cote si le taux de
 
 import os
 import re
+import sys
+# Noyau de calcul partagé (moteur/) : racine du dépôt ajoutée au chemin si le module est lancé seul.
+_RACINE_DEPOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _RACINE_DEPOT not in sys.path:
+    sys.path.append(_RACINE_DEPOT)
+from moteur.modeles import lois as _lois, marches as _marches  # noqa: E402
 import json
 import math
 import time
@@ -131,24 +137,59 @@ PROFILS_COUPON = [
      "cote_min": 1.1, "cote_max": 2.1, "nb_jambes_min": 2, "nb_jambes": 5},
 ]
 
-# Profil du moteur "agent" (agent pilote IA) en production depuis le 20/10/2026 (demande
-# explicite : "l'IA choisit les paris" et "coupon de 12 à 15 jambes"). NB_JAMBES_MIN / NB_JAMBES
-# (entrées du workflow, déjà utilisées par le moteur déterministe) les remplacent pour UN run.
-# cote_min/cote_max : cible de cote totale du repli 100 % Python, volontairement très large —
-# 12 jambes à ~1.4 donnent déjà ~56 (seul le plancher absolu COTE_TOTALE_MIN de l'agent compte).
-NB_JAMBES_AGENT_MIN_DEFAUT = 12
-NB_JAMBES_AGENT_MAX_DEFAUT = 15
+# Profils du moteur "agent" (agent pilote IA) en production depuis le 20/10/2026 ; passés à TROIS
+# coupons de 5 à 10 jambes le 22/10/2026 (demande explicite : "min 5 max 10 et trois types de coupon :
+# 1 = cote 5 à 10, 2 = cote 10 à 50, 3 = plus de 50"), coupon 3 ramené à 25 et plus le 23/10/2026. NB_JAMBES_MIN / NB_JAMBES (entrées du workflow,
+# déjà utilisées par le moteur déterministe) les remplacent pour UN run, pour les trois coupons.
+# cote_totale_min / cote_totale_max : vérifiés par Python (agent_strategie.valider) ; le coupon 3 n'a
+# pas de plafond. Depuis le 22/10/2026 (« match répété c'est bon, il faut les 5 matchs dans les 3
+# coupons ») les 3 coupons reprennent TOUS les matchs du pool (5 par défaut), 1 à 2 paris par match, un
+# même match pouvant figurer dans plusieurs coupons mais jamais le même pari exact.
+TRANCHES_COTE_AGENT = (
+    # (clé, libellé, cote totale min, cote totale max ou None, probabilité min par jambe %, jambes min, jambes max,
+    #  probabilité max par jambe %)
+    # 25/10/2026 (bilan de 1 757 jambes) : coupons de 5 à 8 jambes au maximum (11 jambes : 0 gagné sur 11 ; 8 à 10 : 2 sur 30 ; 6 à 7 : 3 sur 8),
+    # jambes à 70-78 % pour le coupon prudent (au-dessus de 80 % annoncés, la réussite réelle n'augmente plus). La cote
+    # AUGMENTE d'un coupon à l'autre par des jambes un peu moins probables et donc mieux payées : depuis le 21/10, les
+    # jambes annoncées à 60-70 % ont réussi à 70-86 % (89 jambes), le modèle y est prudent.
+    ("coupon1", "🟢 PETITE COTE — cote 5 à 10 (prudent)", 5.0, 10.0, 70.0, 5, 8, 78.0),
+    ("coupon2", "🟠 COTE MOYENNE — cote 10 à 18 (équilibré)", 10.0, 18.0, 65.0, 6, 8, 75.0),
+    ("coupon3", "🔴 HAUTE COTE — cote 18 à 35 (risqué)", 18.0, 35.0, 60.0, 7, 8, 72.0),
+)
 
 
 def profils_agent_quotidien():
-    def _entier(nom, defaut):
+    def _entier(nom):
         valeur = (os.getenv(nom) or "").strip()
-        return int(valeur) if valeur.isdigit() and int(valeur) > 0 else defaut
+        return int(valeur) if valeur.isdigit() and int(valeur) > 0 else None
 
-    nb_max = _entier("NB_JAMBES", NB_JAMBES_AGENT_MAX_DEFAUT)
-    nb_min = min(_entier("NB_JAMBES_MIN", NB_JAMBES_AGENT_MIN_DEFAUT), nb_max)
-    return [{"cle": "jour", "nom": f"🏆 COUPON DU JOUR ({nb_min}-{nb_max} jambes, probabilité maximale)",
-             "cote_min": 5.0, "cote_max": 100000.0, "nb_jambes_min": nb_min, "nb_jambes": nb_max}]
+    # NB_JAMBES / NB_JAMBES_MIN (entrées du workflow), si fournis, remplacent les bornes de TOUS les coupons.
+    force_max, force_min = _entier("NB_JAMBES"), _entier("NB_JAMBES_MIN")
+    try:
+        proba_max = float(os.getenv("PROBA_MAX_JAMBE") or 0)   # 0 = plafonds des tranches ; sinon plafond commun plus strict
+    except ValueError:
+        proba_max = 0.0
+    profils = []
+    for cle, nom, cote_min, cote_max, proba_min, tr_min, tr_max, tr_proba_max in TRANCHES_COTE_AGENT:
+        nb_max = force_max or tr_max
+        nb_min = min(force_min or tr_min, nb_max)
+        profil = {"cle": cle, "nom": f"{nom} ({nb_min}-{nb_max} jambes)",
+                  "cote_min": cote_min, "cote_max": cote_max if cote_max else 100000.0,
+                  "cote_totale_min": cote_min, "nb_jambes_min": nb_min, "nb_jambes": nb_max,
+                  # un match peut figurer dans plusieurs coupons (22/10/2026) mais, dans UN coupon, une seule sélection
+                  # par match (24/10/2026, « interdit d'intégrer un match sur deux sélections sur un coupon »)
+                  "match_repete_autorise": True, "jambes_max_par_match": 1,
+                  "un_seul_pari_par_event": True, "proba_min_pct": proba_min,
+                  **({"proba_max_pct": min(proba_max, tr_proba_max) if proba_max > 0 else tr_proba_max}),
+                  # diversification entre coupons (23/10/2026) : même risque (marché+équipe+sens, toute ligne) jamais repris
+                  "diversifier_entre_coupons": True,
+                  # couverture de TOUS les matchs sur l'ensemble des coupons (24/10/2026), complétée par le dernier
+                  "couvrir_tous_les_matchs": True}
+        if cote_max:
+            profil["cote_totale_max"] = cote_max
+        profils.append(profil)
+    profils[-1]["dernier_profil"] = True
+    return profils
 
 
 # ------------------------------------------------------------------------------------------
@@ -402,13 +443,43 @@ K_LISSAGE_BUTS = float(os.getenv("BET_AGENT_K_LISSAGE_BUTS") or 5.0)
 
 # Priors neutres (moyennes raisonnables, toutes ligues confondues) — un point de départ quand
 # l'échantillon réel est trop petit pour parler fort, jamais une vérité universelle.
-BUTS_PRIOR = 1.3
-CORNERS_PRIOR = 5.0
-CARTONS_PRIOR = 2.0
-FAUTES_PRIOR = 11.0
-TIRS_PRIOR = 12.0
-TIRS_CADRES_PRIOR = 4.0
-HORS_JEUX_PRIOR = 2.0
+# Recalés le 21/10/2026 sur les moyennes MESURÉES par équipe (backtest sur 6 996 matchs, 5 championnats) :
+# l'ancien prior (tirs 12, cadrés 4, fautes 11) tirait le mu vers le bas et sous-estimait les totaux de
+# 2 à 3 % (biais mesuré : tirs -0.54, cadrés -0.29, fautes -0.56 par match). Hors-jeux : non collectés,
+# prior inchangé faute de mesure.
+BUTS_PRIOR = 1.335
+CORNERS_PRIOR = 4.8
+CARTONS_PRIOR = 2.1
+FAUTES_PRIOR = 11.9
+TIRS_PRIOR = 12.7
+TIRS_CADRES_PRIOR = 4.4
+HORS_JEUX_PRIOR = 1.7  # 22/10/2026 : moyenne observée par équipe 1.70 (backtest, 717 matchs PL + Liga) ; l'ancien 2.0 donnait mu +0.24
+
+
+# AVANTAGE DU TERRAIN des comptages (22/10/2026). Le mu de chaque équipe est une moyenne de forme tous lieux
+# confondus : il ne contenait AUCUN avantage du terrain, alors que l'historique (7 205 matchs, 5 championnats)
+# montre domicile contre extérieur : corners 5.34/4.31, tirs 14.00/11.43, tirs cadrés 4.86/3.96, fautes
+# 11.78/12.13, cartons jaunes 1.97/2.25. Le backtest des marchés absents l'a révélé : handicaps et totaux PAR
+# ÉQUIPE de corners/tirs/cartons faux de 6 à 17 points (ex. handicap tirs +0.5 : annoncé 61 %, réel 67 % ;
+# -4.5 : annoncé 78 %, réel 61 %). Facteur du domicile = moyenne domicile / moyenne des deux côtés ; celui de
+# l'extérieur est son complément à 2, ce qui conserve le total.
+# VALIDÉ par grille (22/10/2026, 7 000 matchs, Brier handicaps + totaux par équipe à 0 / 50 / 75 / 100 % de
+# l'écart mesuré) : corners 0.2253 -> 0.2207, tirs 0.2261 -> 0.2181, tirs cadrés 0.2139 -> 0.2089, cartons
+# 0.1974 -> 0.1965 ; l'échelle 100 % est la meilleure (75 % équivalent à 0.0001 près) ; fautes : écart
+# négligeable (0.2260 -> 0.2256), facteur 0.985 conservé. Hors-jeux : aucun facteur (totaux par équipe déjà
+# calibrés sans, domicile 1.78 / extérieur 1.63 sur 717 matchs).
+FACTEUR_DOMICILE = {
+    "corners": 1.107, "tirs": 1.101, "tirs_cadres": 1.103, "fautes": 0.985, "cartons": 0.934,
+}
+
+
+def appliquer_avantage_domicile(famille, mu_equipes):
+    """(mu_dom, mu_ext) -> ajusté de l'avantage du terrain de la famille ; None inchangé. Hors-jeux : pas de
+    facteur mesuré (statistique absente de l'historique), donc aucun ajustement."""
+    f = FACTEUR_DOMICILE.get(famille)
+    if not mu_equipes or f is None:
+        return mu_equipes
+    return round(max(0.15, mu_equipes[0] * f), 2), round(max(0.15, mu_equipes[1] * (2 - f)), 2)
 
 
 def _lisser_vers_prior(valeur, nb_matchs, prior, k=K_LISSAGE_BUTS):
@@ -806,6 +877,11 @@ DISPERSION_PAR_CATEGORIE = {
     "Total Tirs": 1.34, "Handicap Tirs": 1.34,
     "Total Tirs Cadrés": 1.10, "Handicap Tirs Cadrés": 1.10,
     "Total Fautes": 1.23, "Handicap Fautes": 1.23,
+    # Totaux par équipe : même rapport que le total (approximation, non mesurée par équipe)
+    "Total Corners Équipe 1": 1.16, "Total Corners Équipe 2": 1.16,
+    "Total Tirs Équipe 1": 1.34, "Total Tirs Équipe 2": 1.34,
+    "Total Tirs Cadrés Équipe 1": 1.10, "Total Tirs Cadrés Équipe 2": 1.10,
+    "Total Fautes Équipe 1": 1.23, "Total Fautes Équipe 2": 1.23,
 }
 
 
@@ -951,6 +1027,41 @@ def proba_handicap_couvert(mu_home, mu_away, handicap_home, max_buts=25, dispers
     return (proba_bas + proba_haut) / 2
 
 
+def _distribution_comptage(mu, dispersion=1.0):
+    """Loi (Poisson, ou binomiale négative si dispersion > 1) d'un comptage de moyenne mu — celle de
+    moteur/, bornes adaptatives et renormalisation."""
+    return _lois.distribution(mu, mu * dispersion if dispersion and dispersion > 1 else None)
+
+
+def issues_total(ligne, mu, selection, dispersion=1.0):
+    """Distribution EXACTE des 5 issues (gagné, demi-gagné, remboursé, demi-perdu, perdu) d'un
+    Over/Under sur un total de moyenne mu. Même règle que la vérification des résultats."""
+    resultat = dict.fromkeys(_marches.ISSUES, 0.0)
+    for k, p in enumerate(_distribution_comptage(mu, dispersion)):
+        resultat[_marches.issue_total(k, ligne, selection)] += p
+    return resultat
+
+
+def issues_handicap(mu_pour, mu_contre, handicap, dispersion=1.0):
+    """Distribution exacte des 5 issues d'un handicap asiatique pour l'équipe de moyenne mu_pour
+    (handicap appliqué à CETTE équipe)."""
+    resultat = dict.fromkeys(_marches.ISSUES, 0.0)
+    d_pour, d_contre = _distribution_comptage(mu_pour, dispersion), _distribution_comptage(mu_contre, dispersion)
+    for i, pi in enumerate(d_pour):
+        for j, pj in enumerate(d_contre):
+            resultat[_marches.issue_ligne(i - j, handicap)] += pi * pj
+    return resultat
+
+
+def proba_equivalente(issues, cote):
+    """Probabilité « équivalente » p telle que p*cote - 1 = espérance exacte du pari. Remplace
+    l'ancienne approximation p_gain + 0.5*p_remboursement (EV fausse dès que cote != 2, audit C3) ;
+    identique à p_gain sur un marché binaire (ligne demie)."""
+    if not cote or cote <= 1:
+        return None
+    return (_marches.esperance(issues, cote) + 1) / cote
+
+
 def calc_edge(proba_modele, cote):
     if not cote or cote <= 1:
         return None
@@ -1011,8 +1122,18 @@ def cote_hors_fourchette(cote):
 # vraies jambes mesurables par qualite_marches() (maintenant fiable, filtré sur
 # envoye_telegram) ; à remesurer après 2 semaines de production avant toute décision
 # définitive. Si le signal négatif revient, remettre "BTTS" dans cette liste.
+# "Total Tirs" RÉINTÉGRÉ le 22/10/2026 (demande explicite : toutes les familles de marchés) : son écart
+# réel venait d'un bug de troncature des sommes corrigé le 21/10 (voir _borne_poisson), pas d'un défaut
+# du marché ; le backtest (6 996 matchs) le montre calibré (63.6 % annoncé / 63.4 % réel).
+# TOUS les handicaps de comptage exclus le 22/10/2026 (demande explicite : « handicap c'est but seul ou
+# résultat ») : le handicap ne reste que sur les BUTS ("Handicap", "Handicap Asiatique"). Backtest 7 000
+# matchs : handicap de buts calibré à ±3 pts, alors que les handicaps de corners/cartons/tirs/fautes/
+# hors-jeux dépendent d'un avantage du terrain par statistique (cartons +0.5 : annoncé 73 %, réel 63 %).
+CATEGORIES_HANDICAP_COMPTAGE_EXCLUES = (
+    "Handicap Corners", "Handicap Cartons", "Handicap Fautes", "Handicap Hors-jeux", "Handicap Tirs",
+    "Handicap Tirs Cadrés")
 CATEGORIES_EXCLUES = tuple(c.strip() for c in os.getenv("MARCHES_EXCLUS", "").split(",") if c.strip()) or (
-    "Handicap Corners", "Handicap Cartons", "Total Tirs")
+    CATEGORIES_HANDICAP_COMPTAGE_EXCLUES)
 
 
 def est_marche_exclu(nom_marche):
@@ -1020,7 +1141,8 @@ def est_marche_exclu(nom_marche):
     deux jambes perdues le même jour (Belarus-San Marino, Estonia-Luxembourg) — exclus aussi
     en brut (completer_avec_marches_bruts), sinon ils reviendraient par cette porte."""
     nom = (nom_marche or "").lower()
-    return "handicap" in nom and ("corner" in nom or "card" in nom or "booking" in nom)
+    return "handicap" in nom and any(m in nom for m in (
+        "corner", "card", "booking", "yellow", "foul", "offside", "shot", "tackle", "save"))
 
 
 def _edge_calculable(edge, proba):
@@ -1255,12 +1377,23 @@ def _evaluer_marches_brut(marches, mu_home, mu_away, mu_corners=None, mu_cartons
                 categorie = "Total Cartons Équipe 1" if est_team1 else "Total Cartons Équipe 2"
             elif (est_corner or est_faute or est_tir or est_tir_cadre or est_hors_jeu) \
                     and (est_team1 or est_team2):
-                # Marché "Total Corners/Fouls/Shots/Offsides Team 1/2" : seule la ligne
-                # globale du match est estimée ici, aucun mu PAR ÉQUIPE pour CE marché précis
-                # n'est câblé jusqu'ici — on n'invente pas ce chiffre, on ignore ce marché
-                # plutôt que de l'évaluer à tort contre le total du match entier (c'est
-                # exactement la confusion Team1/Team2-vs-total interdite).
-                continue
+                # Totaux PAR ÉQUIPE de corners/fautes/tirs/tirs cadrés/hors-jeux (22/10/2026) : le mu par
+                # équipe de CETTE statistique (mu_*_equipes, déjà calculé depuis les 10 derniers matchs)
+                # est utilisé — jamais le total du match entier (confusion Team1/Team2-vs-total interdite).
+                if est_corner:
+                    equipes, base = mu_corners_equipes, "Corners"
+                elif est_faute:
+                    equipes, base = mu_fautes_equipes, "Fautes"
+                elif est_tir_cadre:
+                    equipes, base = mu_tirs_cadres_equipes, "Tirs Cadrés"
+                elif est_tir:
+                    equipes, base = mu_tirs_equipes, "Tirs"
+                else:
+                    equipes, base = mu_hors_jeux_equipes, "Hors-jeux"
+                if equipes is None:
+                    continue
+                mu_cible = equipes[0] if est_team1 else equipes[1]
+                categorie = f"Total {base} Équipe {1 if est_team1 else 2}"
             elif est_corner:
                 if mu_corners is None:
                     continue  # pas de donnée corners pour ce match, on ignore ce marché
@@ -1312,17 +1445,15 @@ def _evaluer_marches_brut(marches, mu_home, mu_away, mu_corners=None, mu_cartons
             else:
                 continue
 
-            proba_over_calc = proba_over(handicap, mu_cible, dispersion=DISPERSION_PAR_CATEGORIE.get(categorie, 1.0))
+            disp = DISPERSION_PAR_CATEGORIE.get(categorie, 1.0)
             for s in selections:
                 sel = s["selection"].lower()
-                if "over" in sel:
-                    edge = calc_edge(proba_over_calc, s["cote"])
-                    if _edge_calculable(edge, proba_over_calc):
-                        candidats.append(_candidat(marche["marche"], handicap, s, proba_over_calc, edge, categorie))
-                elif "under" in sel:
-                    edge = calc_edge(1 - proba_over_calc, s["cote"])
-                    if _edge_calculable(edge, 1 - proba_over_calc):
-                        candidats.append(_candidat(marche["marche"], handicap, s, 1 - proba_over_calc, edge, categorie))
+                if "over" in sel or "under" in sel:
+                    cote_s = s["cote"]
+                    proba = proba_equivalente(issues_total(handicap, mu_cible, "over" if "over" in sel else "under", disp), cote_s)
+                    edge = calc_edge(proba, cote_s) if proba is not None else None
+                    if _edge_calculable(edge, proba):
+                        candidats.append(_candidat(marche["marche"], handicap, s, proba, edge, categorie))
 
         # --- Both Teams To Score ---
         elif "both teams to score" in nom or "btts" in nom:
@@ -1422,12 +1553,13 @@ def _evaluer_marches_brut(marches, mu_home, mu_away, mu_corners=None, mu_cartons
             for s in selections:
                 sel = s["selection"].lower()
                 if "home" in sel or sel == "1":
-                    proba = proba_handicap_couvert(mu_home, mu_away, handicap)
+                    issues = issues_handicap(mu_home, mu_away, handicap)
                 elif "away" in sel or sel == "2":
-                    proba = proba_handicap_couvert(mu_away, mu_home, -handicap)
+                    issues = issues_handicap(mu_away, mu_home, -handicap)
                 else:
                     continue
-                edge = calc_edge(proba, s["cote"])
+                proba = proba_equivalente(issues, s["cote"])
+                edge = calc_edge(proba, s["cote"]) if proba is not None else None
                 if _edge_calculable(edge, proba):
                     candidats.append(_candidat(marche["marche"], handicap, s, proba, edge, "Handicap"))
 
@@ -1467,12 +1599,13 @@ def _evaluer_marches_brut(marches, mu_home, mu_away, mu_corners=None, mu_cartons
             for s in selections:
                 sel = s["selection"].lower()
                 if "home" in sel or sel == "1":
-                    proba = proba_handicap_couvert(mu_h, mu_a, handicap, dispersion=disp)
+                    issues = issues_handicap(mu_h, mu_a, handicap, disp)
                 elif "away" in sel or sel == "2":
-                    proba = proba_handicap_couvert(mu_a, mu_h, -handicap, dispersion=disp)
+                    issues = issues_handicap(mu_a, mu_h, -handicap, disp)
                 else:
                     continue
-                edge = calc_edge(proba, s["cote"])
+                proba = proba_equivalente(issues, s["cote"])
+                edge = calc_edge(proba, s["cote"]) if proba is not None else None
                 if _edge_calculable(edge, proba):
                     candidats.append(_candidat(marche["marche"], handicap, s, proba, edge, categorie))
 
@@ -2322,6 +2455,62 @@ def rediger_ticket_sans_ia(selections_finales):
     return "\n".join(blocs)
 
 
+def _libelle_pari_court(selection_finale):
+    """Pari en français courant, sur une ligne : « Total buts : moins de 4 », « Total 2 (Sparta) corners : plus de 2.5 »,
+    « Sturm Graz ou Marseille (pas de match nul) ». Les marchés qu'on ne sait pas reformuler gardent
+    leur libellé brut."""
+    p = selection_finale["pick"]
+    domicile, _, exterieur = selection_finale["match"].partition(" vs ")
+    categorie, sel = p["categorie"], str(p["selection"])
+    marche_txt = p.get("marche_affichage") or p["marche"]
+    ligne = p.get("handicap")
+    if ligne is None:
+        m = re.search(r"\((-?[\d.]+)\)", marche_txt)
+        ligne = m.group(1) if m else None
+    if sel in ("Over", "Under") and ligne is not None and categorie.startswith("Total"):
+        sens = "plus de" if sel == "Over" else "moins de"
+        reste = categorie[len("Total"):].strip()
+        equipe = None   # « Total 1 (domicile) » / « Total 2 (extérieur) » comme sur 1xBet
+        for numero, nom in (("1", domicile), ("2", exterieur)):
+            if reste.endswith(f"Équipe {numero}"):
+                equipe, reste = f"Total {numero} ({nom})", reste[:-len(f"Équipe {numero}")].strip()
+        sujet = {"cartons": "cartons jaunes", "tirs": "tirs vers le but"}.get(reste.lower(), (reste or "buts").lower())
+        ligne_txt = f"{float(ligne):g}"
+        return f"{equipe or 'Total'} {sujet} : {sens} {ligne_txt}"
+    sel_norm = re.sub(r"[^a-z0-9]", "", sel.lower())
+    if categorie == "Full Time Result":
+        # Vocabulaire de 1xBet (demande du 25/10/2026 : « 1X2 ou W1 ou autre proche ») : W1 / X / W2
+        if sel_norm == "1":
+            return f"{domicile} gagne (1X2 : W1)"
+        if sel_norm in ("x", "draw"):
+            return "Match nul (1X2 : X)"
+        if sel_norm == "2":
+            return f"{exterieur} gagne (1X2 : W2)"
+    if categorie == "Double Chance":
+        return {"1x": f"{domicile} ou match nul", "x2": f"Match nul ou {exterieur}",
+                "2x": f"Match nul ou {exterieur}",
+                "12": f"{domicile} ou {exterieur} (pas de match nul)"}.get(sel_norm, f"Double chance {sel}")
+    if categorie == "Draw No Bet":
+        equipe = domicile if sel_norm in ("home", "1") else exterieur
+        return f"{equipe} gagne (match nul remboursé)"
+    if categorie == "BTTS":
+        return "Les deux équipes marquent : " + ("Oui" if sel_norm in ("yes", "oui") else "Non")
+    if categorie.startswith("Handicap") and sel_norm in ("1", "2") and ligne is not None:
+        valeur = float(ligne) if sel_norm == "1" else -float(ligne)   # ligne exprimée côté domicile
+        return f"{domicile if sel_norm == '1' else exterieur} {valeur:+g} (handicap)"
+    return f"{marche_txt} : {sel}"
+
+
+def rediger_ticket_court(selections_finales):
+    """Ticket Telegram minimal (demande du 22/10/2026 : « simple et court, sur l'essentiel »,
+    « noms d'équipes complets, écrit clair ») : par jambe, le match avec les noms complets
+    puis le pari en français et la cote — sans guide, probabilité ni justification."""
+    blocs = []
+    for i, s in enumerate(selections_finales, start=1):
+        blocs.append(f"{i}. {s['match']}\n    {_libelle_pari_court(s)} @{s['pick']['cote']}")
+    return "\n".join(blocs)
+
+
 _COTE_RE = re.compile(r"@\s*([\d]+[.,][\d]+)")
 _EDGE_RE = re.compile(r"edge\s*(-?[\d]+(?:[.,][\d]+)?)\s*%", re.IGNORECASE)
 _CONFIANCE_RE = re.compile(r"Confiance\s*:\s*([A-Za-zÀ-ÿ]+)", re.IGNORECASE)
@@ -2644,9 +2833,9 @@ def agent3_calcul_pool_candidats(donnees):
         # détaillées manquent, un repli par équipe est dérivé des lignes de marché "Team 1"/
         # "Team 2" (même logique de repli que le total, jamais pour les corners — cohérent
         # avec "aucun repli pour les corners" ci-dessus).
-        corners_equipes = calculer_mu_corners_depuis_stats_detaillees(stats_detaillees.get("home"), stats_detaillees.get("away"))
+        corners_equipes = appliquer_avantage_domicile("corners", calculer_mu_corners_depuis_stats_detaillees(stats_detaillees.get("home"), stats_detaillees.get("away")))
         mu_corners = round(sum(corners_equipes), 2) if corners_equipes else None
-        cartons_equipes = calculer_mu_cartons_depuis_stats_detaillees(stats_detaillees.get("home"), stats_detaillees.get("away"))
+        cartons_equipes = appliquer_avantage_domicile("cartons", calculer_mu_cartons_depuis_stats_detaillees(stats_detaillees.get("home"), stats_detaillees.get("away")))
         if cartons_equipes:
             mu_cartons = round(sum(cartons_equipes), 2)
         else:
@@ -2675,10 +2864,10 @@ def agent3_calcul_pool_candidats(donnees):
         # réseau supplémentaire — None si les stats détaillées manquent (pas de repli marché
         # tenté, contrairement aux cartons : ces 3 statistiques n'ont pas de ligne 1xBet
         # "équilibrée" assez fiable par match pour servir de repli).
-        fautes_equipes = calculer_mu_fautes_depuis_stats_detaillees(stats_detaillees.get("home"), stats_detaillees.get("away"))
-        tirs_equipes = calculer_mu_tirs_depuis_stats_detaillees(stats_detaillees.get("home"), stats_detaillees.get("away"))
-        tirs_cadres_equipes = calculer_mu_tirs_depuis_stats_detaillees(
-            stats_detaillees.get("home"), stats_detaillees.get("away"), cadres=True)
+        fautes_equipes = appliquer_avantage_domicile("fautes", calculer_mu_fautes_depuis_stats_detaillees(stats_detaillees.get("home"), stats_detaillees.get("away")))
+        tirs_equipes = appliquer_avantage_domicile("tirs", calculer_mu_tirs_depuis_stats_detaillees(stats_detaillees.get("home"), stats_detaillees.get("away")))
+        tirs_cadres_equipes = appliquer_avantage_domicile("tirs_cadres", calculer_mu_tirs_depuis_stats_detaillees(
+            stats_detaillees.get("home"), stats_detaillees.get("away"), cadres=True))
         hors_jeux_equipes = calculer_mu_hors_jeux_depuis_stats_detaillees(stats_detaillees.get("home"), stats_detaillees.get("away"))
 
         candidats_modelises = evaluer_marches_toutes(marches, home_xg, away_xg, mu_corners, mu_cartons,
@@ -3307,34 +3496,15 @@ def agent4_rediger_coupons(resultats_profils):
         if not selections:
             sections.append(f"{profil['nom']}\n_Aucune sélection ne remplit les critères de ce profil aujourd'hui._")
             continue
-        print(f"\n🤖 [AGENT 4 — {profil['nom']}] rédaction...")
-        ticket_texte = agent4_ia_analyse_pronostic_redaction(selections)
-        if not ticket_texte:
-            sections.append(f"{profil['nom']}\n_Échec de la rédaction IA pour ce profil — réessaiera au prochain cycle._")
-            continue
-        cote_totale, proba_combinee = calculer_stats_combine(selections)
+        cote_totale, _ = calculer_stats_combine(selections)
         nb_matchs_distincts = len({s["match"] for s in selections})
-        avertissement_correlation = ""
-        if nb_matchs_distincts < len(selections):
-            # Plusieurs jambes sur le MÊME match ne sont pas statistiquement indépendantes
-            # (ex: "Total Under" et "Handicap domicile" du même match sont corrélés) — la
-            # probabilité combinée (produit des probas individuelles) suppose l'indépendance
-            # et devient donc optimiste dans ce cas. Toujours signalé, jamais caché.
-            avertissement_correlation = (
-                f"\n⚠️ _{len(selections)} jambes sur seulement {nb_matchs_distincts} matchs distincts "
-                f"(pas assez de matchs disponibles aujourd'hui) — plusieurs paris viennent du même "
-                f"match, donc la probabilité combinée ci-dessous est optimiste (jambes corrélées, "
-                f"pas indépendantes)._"
-            )
-        ligne_strategie = f"🧭 Stratégie : {item['strategie']}\n\n" if item.get("strategie") else ""
-        ligne_proba = f" · 🎲 Probabilité combinée réelle : *{proba_combinee}%*" if proba_combinee is not None else ""
+        # Plusieurs jambes sur le MÊME match sont corrélées : seul avertissement conservé, en une ligne.
+        avertissement = (f"\n⚠️ {len(selections)} jambes sur {nb_matchs_distincts} matchs (jambes corrélées)"
+                         if nb_matchs_distincts < len(selections) else "")
         sections.append(
-            f"{profil['nom']} — {len(selections)} jambes sur {nb_matchs_distincts} match{'s' if nb_matchs_distincts > 1 else ''}\n\n"
-            f"{ligne_strategie}{ticket_texte}\n\n"
-            f"💰 Cote totale : *{cote_totale}*{ligne_proba}"
-            f"{avertissement_correlation}"
+            f"*{profil['nom']} — cote {cote_totale}* ({len(selections)} jambes)\n\n"
+            f"{rediger_ticket_court(selections)}{avertissement}"
         )
-        pause_ia(2)
     return sections
 
 
@@ -3378,12 +3548,9 @@ def agent5_envoyer_coupons(sections):
     message pour plusieurs profils. Vérifie le succès RÉEL de chaque envoi (notifier_telegram
     renvoie False en cas d'échec) plutôt que de supposer que ça a marché. Renvoie True
     seulement si TOUS les messages sont partis."""
-    date_str = datetime.now().strftime("%d/%m/%Y à %H:%M")
-    entete = f"🎯 *TICKETS DU JOUR — {date_str}*\nanalyse IA sur cotes réelles · 1xBet\n━━━━━━━━━━━━━━━━━━━━\n\n"
-    pied = (
-        f"\n\n━━━━━━━━━━━━━━━━━━━━\n"
-        f"⚠️ _Analyse automatisée à titre indicatif — vérifie toujours les cotes en direct sur 1xBet avant de parier._"
-    )
+    # Message court (demande du 22/10/2026) : ni bandeau ni avertissement, juste le coupon.
+    entete = "🎯 "
+    pied = ""
 
     tout_envoye = True
     for i, section in enumerate(sections, start=1):

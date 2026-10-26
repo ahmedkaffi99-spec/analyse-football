@@ -38,6 +38,15 @@ class Config:
     shrinkage_comptage_tirs: float = 3.0          # Brier 0.218 à k=3 (vs 0.2292 à k=30)
     shrinkage_comptage_tirs_cadres: float = 3.0   # Brier 0.224 à k=3 (vs 0.2336 à k=30)
     shrinkage_comptage_fautes: float = 3.0        # Brier 0.2075 à k=3 (vs 0.2142 à k=30)
+    # Dispersion CONDITIONNELLE des comptages (variance résiduelle / mu autour du mu prédit), mesurée le
+    # 21/10/2026 sur 6 996 matchs (walk-forward, 5 championnats) : corners 1.16, tirs 1.35, tirs cadrés
+    # 1.12, fautes 1.22, cartons 1.01. 0 = ancien comportement (rapport variance/moyenne PAR ÉQUIPE de la
+    # ligue, qui mêle l'hétérogénéité entre équipes à la vraie variance de tirage).
+    dispersion_corners: float = 1.16
+    dispersion_cartons: float = 1.0
+    dispersion_tirs: float = 1.35
+    dispersion_tirs_cadres: float = 1.12
+    dispersion_fautes: float = 1.22
     min_matchs_equipe: int = 5        # en dessous : pas de prédiction (qualité de données)
     min_matchs_stats: int = 5         # pour corners/cartons/tirs (couverture des statistiques)
     # Modèle de buts

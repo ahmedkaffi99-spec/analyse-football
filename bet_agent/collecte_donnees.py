@@ -144,6 +144,12 @@ MARCHES_API_FOOTBALL_VALIDES = {
     "Over Under Full Time", "Over Under Team 1", "Over Under Team 2",
     "Corners - Over Under Full Time", "Yellow Cards - Over Under Full Time",
     "Shots - Over Under Full Time", "Asian Handicap",
+    # Ajoutés le 22/10/2026 (voir adaptateur_api_football.MAPPING_API_FOOTBALL)
+    # (handicaps de fautes/hors-jeux NON collectés : handicap = buts seulement, demande du 22/10/2026)
+    "Fouls - Over Under Full Time", "Fouls - Over Under Team 1", "Fouls - Over Under Team 2",
+    "Offsides - Over Under Full Time", "Offsides - Over Under Team 1", "Offsides - Over Under Team 2",
+    "Corners - Over Under Team 1", "Corners - Over Under Team 2",
+    "Shots On Target - Over Under Full Time",
 }
 
 _appels_odds_api_football_consommes = 0  # compteur réel, jamais estimé — voir rapport de run
@@ -1319,6 +1325,11 @@ def selectionner_matchs_du_jour(fixtures_oddspapi):
 # jusque-là seulement couverts par la liste manuelle codée en dur). IDs déjà utilisés dans
 # LIGUES_MAJEURES, par league_id API-Football (système d'identifiants différent d'OddsPapi,
 # qui utilise tournamentName/categoryName).
+# 5 championnats domestiques seuls (les autres identifiants de LIGUES_FILTRE_API_FOOTBALL sont les coupes d'Europe).
+LIGUES_DOMESTIQUES_ORDRE = (39, 140, 135, 78, 61)   # ordre du tour de rôle entre les championnats
+LIGUES_DOMESTIQUES_API_FOOTBALL = set(LIGUES_DOMESTIQUES_ORDRE)
+NB_MATCHS_POOL = int(os.getenv("NB_MATCHS_POOL") or "20")   # 24/10/2026 : 19 matchs ce jour-là, tous dans le pool   # matchs du pool quotidien : les 3 coupons les reprennent tous
+
 LIGUES_FILTRE_API_FOOTBALL = {
     2,    # UEFA Champions League
     3,    # UEFA Europa League
@@ -1365,6 +1376,14 @@ def selectionner_matchs_du_jour_api_football(fixtures_api_football, aujourd_hui=
             jour_ref = aujourd_hui or datetime.now(timezone.utc).date()
             if jour_match is not None and jour_match.astimezone(timezone.utc).date() != jour_ref:
                 continue  # match d'un autre jour (demain) : jamais mélangé aux matchs du jour
+        elif DATE_CIBLE_DEBUT and DATE_CIBLE_FIN:
+            # Période demandée (date_debut / date_fin du workflow) : seuls les matchs DE cette période (25/10/2026 : un run
+            # « 25 octobre » reprenait PSG – Lyon et Sevilla – Osasuna du 26, car les fixtures hier/aujourd'hui/demain
+            # étaient toutes retenues). Date du coup d'envoi en UTC, bornes incluses.
+            jour_match = _date_iso(depart)
+            if jour_match is not None and not (
+                    DATE_CIBLE_DEBUT <= jour_match.astimezone(timezone.utc).date().isoformat() <= DATE_CIBLE_FIN):
+                continue
         home = (fx.get("teams") or {}).get("home", {}).get("name") or ""
         away = (fx.get("teams") or {}).get("away", {}).get("name") or ""
         if contient_indicateur_reserve(home) or contient_indicateur_reserve(away):
@@ -1375,10 +1394,22 @@ def selectionner_matchs_du_jour_api_football(fixtures_api_football, aujourd_hui=
         if cle in vus:
             continue
         vus.add(cle)
-        candidats.append((home, away, depart or ""))
+        candidats.append((home, away, depart or "", league_id))
 
-    candidats.sort(key=lambda c: c[2])
-    matchs = [(h, a) for h, a, _ in candidats][:NB_CANDIDATS_A_SONDER]
+    # Pool de NB_MATCHS_POOL matchs (5 par défaut, demande du 22/10/2026 : « concentre-toi sur les 5 matchs
+    # des grands championnats et un peu de mélange ») : un match par championnat à tour de rôle
+    # (Premier League, La Liga, Serie A, Bundesliga, Ligue 1, du plus proche coup d'envoi au plus lointain)
+    # pour mélanger les ligues ; si les championnats ne suffisent pas, les coupes d'Europe complètent.
+    par_ligue = {lid: sorted((c for c in candidats if c[3] == lid), key=lambda c: c[2])
+                 for lid in LIGUES_DOMESTIQUES_ORDRE}
+    domestiques = []
+    while any(par_ligue.values()) and len(domestiques) < NB_MATCHS_POOL:
+        for lid in LIGUES_DOMESTIQUES_ORDRE:
+            if par_ligue[lid] and len(domestiques) < NB_MATCHS_POOL:
+                domestiques.append(par_ligue[lid].pop(0))
+    coupes = sorted((c for c in candidats if c[3] not in LIGUES_DOMESTIQUES_API_FOOTBALL), key=lambda c: c[2])
+    candidats = domestiques + coupes[:max(0, NB_MATCHS_POOL - len(domestiques))]
+    matchs = [(h, a) for h, a, _, _ in candidats][:NB_CANDIDATS_A_SONDER]
     if matchs:
         print(f"   ✓ {len(matchs)} match(s) sélectionné(s) (API-Football, 5 grands championnats + C1/C3) :")
         for h, a in matchs:

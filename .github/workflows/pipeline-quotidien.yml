@@ -51,8 +51,20 @@ on:
         description: "Minimum de jambes pour CE run : en dessous, aucun coupon (vide = pas de minimum)"
         type: string
         default: ""
+      nb_matchs_pool:
+        description: "Taille du pool de matchs pour CE run (vide = 20) — 5 = un match par championnat à tour de rôle (plan du 22/10), sélection automatique API-Football"
+        type: string
+        default: ""
       ttl_cotes_secondes:
         description: "Âge MAXIMUM accepté des cotes API-Football pour CE run, en secondes (vide = 21600, soit 6 h) — à relever (ex: 43200) pour un run de nuit, quand les cotes ne sont plus rafraîchies : les marchés plus vieux que ce seuil sont écartés"
+        type: string
+        default: ""
+      cote_min_jambe:
+        description: "Cote MINIMALE par jambe pour CE run (vide = 1.2) — par ex. 1.2"
+        type: string
+        default: ""
+      cote_max_jambe:
+        description: "Cote MAXIMALE par jambe pour CE run (vide = 1.8, 0 = sans plafond) — par ex. 2"
         type: string
         default: ""
       ignorer_diversite_croisee:
@@ -130,7 +142,10 @@ jobs:
       IGNORER_DIVERSITE_CROISEE: ${{ inputs.ignorer_diversite_croisee }}
       NB_JAMBES: ${{ inputs.nb_jambes }}
       NB_JAMBES_MIN: ${{ inputs.nb_jambes_min }}
+      NB_MATCHS_POOL: ${{ inputs.nb_matchs_pool }}
       TTL_COTES_API_FOOTBALL_SECONDES: ${{ inputs.ttl_cotes_secondes }}
+      COTE_MIN_JAMBE: ${{ inputs.cote_min_jambe }}
+      COTE_MAX_JAMBE: ${{ inputs.cote_max_jambe }}
       # Comparaison parallèle bet_agent/moteur + capture hist_cotes + moteur central (shadow) :
       # jamais utilisées pour la sélection ni Telegram (voir runs.py) — vars du dépôt, vides par
       # défaut tant que l'utilisateur ne les active pas explicitement (Settings > Variables).

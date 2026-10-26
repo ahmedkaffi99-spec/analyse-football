@@ -464,3 +464,53 @@ class TestRecupererArbitreCartonsMoyenne:
 
         monkeypatch.setattr(mf, "construire_features", plante)
         assert cd.recuperer_arbitre_cartons_moyenne("A. Taylor", 140, "2026-10-18T19:00:00+00:00") is None
+
+
+class TestPoolDeCinqMatchs:
+    """22/10/2026 : « concentre-toi sur les 5 matchs des grands championnats et un peu de mélange » —
+    pool de NB_MATCHS_POOL matchs, un par championnat à tour de rôle, coupes d'Europe en complément."""
+
+    def test_un_match_par_championnat_a_tour_de_role(self, monkeypatch):
+        monkeypatch.setattr(cd, "NB_MATCHS_POOL", 5)
+        fixtures = [_fixture_af("A1", "B1", 39), _fixture_af("A2", "B2", 39),
+                    _fixture_af("C1", "D1", 140), _fixture_af("E1", "F1", 135),
+                    _fixture_af("G1", "H1", 78), _fixture_af("I1", "J1", 61),
+                    _fixture_af("Coupe", "Adversaire", 3)]
+        matchs = cd.selectionner_matchs_du_jour_api_football(fixtures)
+        assert matchs == [("A1", "B1"), ("C1", "D1"), ("E1", "F1"), ("G1", "H1"), ("I1", "J1")]
+
+    def test_coupes_d_europe_completent_quand_les_championnats_ne_suffisent_pas(self, monkeypatch):
+        monkeypatch.setattr(cd, "NB_MATCHS_POOL", 4)
+        fixtures = [_fixture_af("A1", "B1", 39)] + [_fixture_af(f"Coupe{i}", f"Adv{i}", 3) for i in range(5)]
+        matchs = cd.selectionner_matchs_du_jour_api_football(fixtures)
+        assert matchs[0] == ("A1", "B1") and len(matchs) == 4
+
+    def test_jour_sans_championnat(self, monkeypatch):
+        monkeypatch.setattr(cd, "NB_MATCHS_POOL", 3)
+        fixtures = [_fixture_af(f"Coupe{i}", f"Adv{i}", 2) for i in range(6)]
+        assert len(cd.selectionner_matchs_du_jour_api_football(fixtures)) == 3
+
+
+class TestPeriodeDemandee:
+    """25/10/2026 : un run daté du 25 ne doit pas reprendre les matchs du 26 (fixtures hier/aujourd'hui/demain)."""
+
+    def test_seuls_les_matchs_de_la_periode_sont_retenus(self):
+        from datetime import timedelta
+        base = datetime.now(timezone.utc) + timedelta(days=3)
+        jour = base.date().isoformat()
+        lendemain = (base + timedelta(days=1)).date().isoformat()
+
+        def fx(home, away, quand):
+            return {"fixture": {"date": quand.isoformat(), "status": {"short": "NS"}}, "league": {"id": 39},
+                    "teams": {"home": {"name": home}, "away": {"name": away}}}
+
+        fixtures = [fx("Arsenal", "Chelsea", base.replace(hour=15, minute=0)),
+                    fx("Everton", "Fulham", (base + timedelta(days=1)).replace(hour=15, minute=0))]
+        with mock.patch.object(cd, "DATE_CIBLE_DEBUT", jour), mock.patch.object(cd, "DATE_CIBLE_FIN", jour), \
+                mock.patch.object(cd, "LIGUES_FILTRE_API_FOOTBALL", {39}):
+            matchs = cd.selectionner_matchs_du_jour_api_football(fixtures)
+        assert matchs == [("Arsenal", "Chelsea")]
+        with mock.patch.object(cd, "DATE_CIBLE_DEBUT", jour), mock.patch.object(cd, "DATE_CIBLE_FIN", lendemain), \
+                mock.patch.object(cd, "LIGUES_FILTRE_API_FOOTBALL", {39}):
+            matchs = cd.selectionner_matchs_du_jour_api_football(fixtures)
+        assert len(matchs) == 2

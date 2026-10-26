@@ -86,6 +86,32 @@ class TestStatistiquesFinalesApiFootball(unittest.TestCase):
             self.assertIsNone(vr.recuperer_statistiques_finales_api_football(123, "Solo"))
 
 
+class TestAmbiguiteEtLignesDeQuart(unittest.TestCase):
+    def test_noms_indiscernables_renvoient_none_plutot_qu_un_bloc_au_hasard(self):
+        blocs = [_bloc_stats("Atletico", Corner_Kicks=7), _bloc_stats("Atletico", Corner_Kicks=4)]
+        with mock.patch.object(cd, "_appel_statistiques_fixture", return_value=blocs):
+            self.assertIsNone(vr.recuperer_statistiques_finales_api_football(123, "Atletico"))
+
+    def test_total_ligne_de_quart_net_ou_non_verifiable(self):
+        # Over 2.25 : moitiés sur 2.0 et 2.5. 3 buts -> les deux gagnent ; 1 but -> les deux perdent.
+        self.assertEqual(vr.juger_total(2.25, "Over", 3), "gagne")
+        self.assertEqual(vr.juger_total(2.25, "Over", 1), "perdu")
+        self.assertEqual(vr.juger_total(2.25, "Under", 3), "perdu")
+        # 2 buts : moitié rendue (push) + moitié perdue -> demi-perte, non représentable.
+        self.assertIsNone(vr.juger_total(2.25, "Over", 2))
+        self.assertIsNone(vr.juger_total(2.75, "Under", 3))
+
+    def test_handicap_ligne_de_quart(self):
+        self.assertEqual(vr.juger_handicap(-0.75, "home", 2, 0), "gagne")
+        self.assertEqual(vr.juger_handicap(-0.75, "home", 0, 0), "perdu")
+        self.assertIsNone(vr.juger_handicap(-0.75, "home", 1, 0))
+
+    def test_lignes_entieres_et_demies_inchangees(self):
+        self.assertEqual(vr.juger_total(2.5, "Over", 3), "gagne")
+        self.assertEqual(vr.juger_total(2.0, "Over", 2), "push")
+        self.assertEqual(vr.juger_handicap(-1.0, "home", 1, 0), "push")
+
+
 class TestGraderPickStat(unittest.TestCase):
     """grader_pick_stat : mêmes règles que grader_pick (juger_total/juger_handicap), mais sur
     une statistique de fin de match au lieu des buts."""
@@ -277,3 +303,29 @@ class TestJambePerimee(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestHandicapTempsReglementaire(unittest.TestCase):
+    """22/10/2026, demande explicite : « handicap c'est le temps réglementaire » (90 minutes)."""
+
+    def _fixture_aet(self):
+        fx = _fixture_af("H", "A", "AET", 3, 2)           # buts finaux 3-2 APRÈS prolongation
+        fx["score"] = {"fulltime": {"home": 1, "away": 1}, "extratime": {"home": 2, "away": 1}}
+        return fx
+
+    def test_handicap_juge_sur_le_score_a_90_minutes_et_non_apres_prolongation(self):
+        home, away = vr.score_reglementaire_api_football(self._fixture_aet())
+        self.assertEqual((home, away), (1, 1))
+        # Domicile -0.5 : nul à 90 minutes = perdu (la victoire en prolongation ne compte pas)
+        self.assertEqual(vr.juger_handicap(-0.5, "1", home, away), "perdu")
+        # Extérieur +0.5 : nul à 90 minutes = gagné
+        self.assertEqual(vr.juger_handicap(-0.5, "2", home, away), "gagne")
+
+    def test_handicap_entier_nul_a_90_minutes_rembourse(self):
+        home, away = vr.score_reglementaire_api_football(self._fixture_aet())
+        self.assertEqual(vr.juger_handicap(0.0, "1", home, away), "push")
+
+    def test_match_aux_tirs_au_but_jamais_regle_sur_le_score_final(self):
+        fx = _fixture_af("H", "A", "PEN", 1, 1)
+        fx["score"] = {"fulltime": {"home": 0, "away": 0}, "penalty": {"home": 5, "away": 4}}
+        self.assertEqual(vr.score_reglementaire_api_football(fx), (0, 0))

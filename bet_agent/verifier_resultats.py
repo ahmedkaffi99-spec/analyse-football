@@ -51,6 +51,12 @@ STAT_API_FOOTBALL_PAR_CATEGORIE = {
     "Total Tirs": "Total Shots", "Handicap Tirs": "Total Shots",
     "Total Tirs Cadrés": "Shots on Goal", "Handicap Tirs Cadrés": "Shots on Goal",
     "Total Hors-jeux": "Offsides", "Handicap Hors-jeux": "Offsides",
+    # Totaux par équipe (ajoutés le 22/10/2026)
+    "Total Corners Équipe 1": "Corner Kicks", "Total Corners Équipe 2": "Corner Kicks",
+    "Total Fautes Équipe 1": "Fouls", "Total Fautes Équipe 2": "Fouls",
+    "Total Tirs Équipe 1": "Total Shots", "Total Tirs Équipe 2": "Total Shots",
+    "Total Tirs Cadrés Équipe 1": "Shots on Goal", "Total Tirs Cadrés Équipe 2": "Shots on Goal",
+    "Total Hors-jeux Équipe 1": "Offsides", "Total Hors-jeux Équipe 2": "Offsides",
 }
 
 # Suivi EN DIRECT (demande explicite du 01/10/2026, pendant un match réel suivi manuellement
@@ -78,6 +84,12 @@ STATUTS_INDETERMINES_PROLONGES = ("SUSP", "INT")
 # mécanisme de ce type n'existait avant ce correctif). Configurable (DELAI_PEREMPTION_JOURS),
 # jamais appliqué sans connaître le coup d'envoi réel.
 DELAI_PEREMPTION_JOURS = int(os.getenv("DELAI_PEREMPTION_JOURS", "10"))
+# Statistiques finales (corners, fautes, tirs, hors-jeux, cartons) : API-Football peut les publier
+# après le coup de sifflet final ou ne pas les renvoyer au premier appel (constaté le 22/10/2026 :
+# Lech Poznan–Sunderland, jambe « corners de Lech » classée non_verifiable définitivement dès le
+# premier passage). Une jambe dont la statistique manque est donc REJUGÉE à chaque passage pendant
+# ce délai (jours après le coup d'envoi) avant d'être classée non_verifiable.
+DELAI_STATS_JOURS = int(os.getenv("DELAI_STATS_JOURS", "2"))
 
 
 def jambe_perimee(coup_envoi, maintenant=None, delai_jours=None):
@@ -238,6 +250,10 @@ def recuperer_statistiques_finales_api_football(fixture_id_af, domicile):
     nom1 = unidecode(((b1.get("team") or {}).get("name") or "").lower())
     d = unidecode((domicile or "").lower())
     score0, score1 = fuzz.token_set_ratio(d, nom0), fuzz.token_set_ratio(d, nom1)
+    if score0 == score1:
+        # Noms indiscernables : attribuer au hasard le bloc 0 au domicile inverserait corners/
+        # cartons -> faux verdict possible. Mieux vaut "indisponible" que faux.
+        return None
     bloc_dom, bloc_ext = (b0, b1) if score0 >= score1 else (b1, b0)
     return bloc_dom.get("statistics"), bloc_ext.get("statistics")
 
@@ -250,7 +266,7 @@ def grader_pick_stat(categorie, handicap, selection, valeur_domicile, valeur_ext
     inventée)."""
     if valeur_domicile is None or valeur_exterieur is None:
         return None
-    if categorie in ("Total Cartons Équipe 1", "Total Cartons Équipe 2"):
+    if categorie.startswith("Total") and categorie.endswith(("Équipe 1", "Équipe 2")):
         valeur = valeur_domicile if categorie.endswith("1") else valeur_exterieur
         return juger_total(handicap, selection, valeur)
     if categorie.startswith("Total"):
@@ -292,12 +308,29 @@ def trouver_etat_live_api_football(home_nom, away_nom, fixtures_af, cd):
 # au score réel final plutôt qu'à une probabilité Poisson.
 # ============================================================
 
+def _est_ligne_quart(ligne):
+    return abs(ligne * 4 - round(ligne * 4)) < 1e-9 and abs(ligne * 2 - round(ligne * 2)) > 1e-9
+
+
+def _juger_ligne_quart(juger, ligne):
+    """Ligne de quart (.25/.75) = deux demi-mises sur les lignes adjacentes (ligne ± 0.25), comme
+    le modèle (proba_over, proba_handicap_couvert). Verdict net seulement si les deux moitiés
+    concordent (toutes deux gagnées ou toutes deux perdues) ; sinon demi-gain/demi-perte, que le
+    schéma gagne/perdu/push ne représente pas -> None (non vérifiable), jamais un faux verdict."""
+    bas, haut = juger(ligne - 0.25), juger(ligne + 0.25)
+    if bas == haut and bas in ("gagne", "perdu"):
+        return bas
+    return None
+
+
 def juger_total(handicap, selection, total):
     """total déjà calculé par l'appelant (buts du match entier, d'UNE SEULE équipe, ou toute
     autre statistique comparable — corners, cartons... voir grader_pick_stat) — générique
     depuis le 03/10/2026, pour être réutilisable au-delà des buts."""
     if handicap is None or total is None:
         return None
+    if _est_ligne_quart(handicap):
+        return _juger_ligne_quart(lambda l: juger_total(l, selection, total), handicap)
     if abs(total - handicap) < 1e-9:
         return "push"
     est_over = "over" in selection.lower()
@@ -355,6 +388,8 @@ def juger_handicap(handicap, selection, home_g, away_g):
     """Reproduit exactement la convention de proba_handicap_couvert : pour 'home', la marge
     est (buts domicile - buts extérieur) + handicap ; pour 'away', c'est l'inverse avec le
     handicap opposé — voir evaluer_marches et expliquer_marche dans analyser_et_envoyer.py."""
+    if handicap is not None and _est_ligne_quart(handicap):
+        return _juger_ligne_quart(lambda h: juger_handicap(h, selection, home_g, away_g), handicap)
     sel = selection.lower()
     if sel in ("home", "1"):
         marge = (home_g - away_g) + handicap

@@ -1856,14 +1856,29 @@ class TestTotalCartonsParEquipe(unittest.TestCase):
                     "selections": [{"selection": "Over", "cote": 1.8}, {"selection": "Under", "cote": 1.9}]}]
         self.assertEqual(ae.evaluer_marches_toutes(marches, 1.5, 1.2), [])
 
-    def test_corners_team_1_reste_ignore_jamais_confondu_avec_cartons(self):
-        # Seuls les cartons ont un mu par équipe câblé pour Total Team1/2 — les corners (et
-        # fautes/tirs/hors-jeux) restent ignorés, comme avant ce correctif.
+    def test_corners_team_1_utilise_le_mu_corners_de_l_equipe_jamais_celui_des_cartons(self):
+        # 22/10/2026 : les totaux par équipe de corners/fautes/tirs/hors-jeux sont maintenant modélisés
+        # avec le mu PAR ÉQUIPE de leur propre statistique (avant : ignorés).
         marches = [{"marche": "Corners - Over Under Team 1", "handicap": 4.5, "periode": "fulltime",
                     "selections": [{"selection": "Over", "cote": 1.8}, {"selection": "Under", "cote": 1.9}]}]
         candidats = ae.evaluer_marches_toutes(marches, 1.5, 1.2, mu_corners_equipes=(6.0, 4.0),
                                               mu_cartons_equipes=(1.8, 2.3))
-        self.assertEqual(candidats, [])
+        over = next(c for c in candidats if c["selection"] == "Over")
+        self.assertEqual(over["categorie"], "Total Corners Équipe 1")
+        self.assertGreater(over["proba_poisson_pct"], 60)   # mu=6 > ligne 4.5 (avec mu cartons 1.8 : ~1 %)
+
+    def test_fautes_et_hors_jeux_par_equipe_et_handicap(self):
+        marches = [
+            {"marche": "Fouls - Over Under Team 2", "handicap": 11.5, "periode": "fulltime",
+             "selections": [{"selection": "Over", "cote": 1.9}, {"selection": "Under", "cote": 1.9}]},
+            {"marche": "Offsides - Over Under Full Time", "handicap": 3.5, "periode": "fulltime",
+             "selections": [{"selection": "Over", "cote": 1.9}, {"selection": "Under", "cote": 1.9}]},
+            {"marche": "Fouls - Handicap", "handicap": -1.5, "periode": "fulltime",
+             "selections": [{"selection": "1", "cote": 2.5}, {"selection": "2", "cote": 1.5}]}]
+        categories = {c["categorie"] for c in ae.evaluer_marches_toutes(
+            marches, 1.5, 1.2, mu_fautes_equipes=(10.0, 13.0), mu_hors_jeux_equipes=(2.0, 2.0))}
+        # le handicap de fautes est calculé mais EXCLU (handicap = buts seulement, 22/10/2026)
+        self.assertEqual(categories, {"Total Fautes Équipe 2", "Total Hors-jeux"})
 
     def test_guide_et_onglet_distinguent_equipe_1_et_2(self):
         guide1, onglet1 = ae.expliquer_marche("Total Cartons Équipe 1", "Over", 2.0)
@@ -1981,35 +1996,15 @@ class TestCorrectifsP0(unittest.TestCase):
         self.assertIn("BTTS", categories)
         self.assertIn("Total", categories)
 
-    def test_total_tirs_exclu_du_calcul(self):
-        # 18/10/2026, audit Agent 8 (10 agents en parallèle) : "Total Tirs" écarté après un
-        # écart réel de -19,1 pts qui SURVIT à la déduplication par match (26 paris réels
-        # distincts, tous "Under", 50,0% réel pour 69,1% annoncé) — cause probable : Poisson
-        # pure au lieu d'une binomiale négative (surdispersion) pour ce marché.
-        self.assertIn("Total Tirs", ae.CATEGORIES_EXCLUES)
-        marches = [{"marche": "Total Shots", "handicap": 22.5, "periode": "fulltime",
-                    "selections": [{"selection": "Over", "cote": 1.9}, {"selection": "Under", "cote": 1.9}]},
-                   {"marche": "Over Under Full Time", "handicap": 2.5, "periode": "fulltime",
+    def test_total_tirs_reintegre_apres_correction_de_la_troncature(self):
+        # 22/10/2026 : exclu le 18/10 (50 % réel pour 69 % annoncé) à cause d'un bug de troncature
+        # des sommes de Poisson à 25 (corrigé le 21/10) ; réintégré, calibré au backtest.
+        self.assertNotIn("Total Tirs", ae.CATEGORIES_EXCLUES)
+        marches = [{"marche": "Shots - Over Under Full Time", "handicap": 24.5, "periode": "fulltime",
                     "selections": [{"selection": "Over", "cote": 1.9}, {"selection": "Under", "cote": 1.9}]}]
         categories = {c["categorie"] for c in ae.evaluer_marches_toutes(
-            marches, 1.5, 1.2, mu_tirs_equipes=(12.0, 10.0))}
-        self.assertNotIn("Total Tirs", categories)
-        self.assertIn("Total", categories)
-
-    def test_total_tirs_exclu_du_calcul(self):
-        # 18/10/2026, audit Agent 8 (10 agents en parallèle) : "Total Tirs" écarté après un
-        # écart réel de -19,1 pts qui SURVIT à la déduplication par match (26 paris réels
-        # distincts, tous "Under", 50,0% réel pour 69,1% annoncé) — cause probable : Poisson
-        # pure au lieu d'une binomiale négative (surdispersion) pour ce marché.
-        self.assertIn("Total Tirs", ae.CATEGORIES_EXCLUES)
-        marches = [{"marche": "Total Shots", "handicap": 22.5, "periode": "fulltime",
-                    "selections": [{"selection": "Over", "cote": 1.9}, {"selection": "Under", "cote": 1.9}]},
-                   {"marche": "Over Under Full Time", "handicap": 2.5, "periode": "fulltime",
-                    "selections": [{"selection": "Over", "cote": 1.9}, {"selection": "Under", "cote": 1.9}]}]
-        categories = {c["categorie"] for c in ae.evaluer_marches_toutes(
-            marches, 1.5, 1.2, mu_tirs_equipes=(12.0, 10.0))}
-        self.assertNotIn("Total Tirs", categories)
-        self.assertIn("Total", categories)
+            marches, 1.5, 1.2, mu_tirs_equipes=(12.5, 12.5))}
+        self.assertIn("Total Tirs", categories)
 
 
 class TestQuotaOddsPapiEpuiseArreteLesAppels(unittest.TestCase):
@@ -3049,3 +3044,135 @@ class TestVerifierFideliteTicket(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestVerificationTotauxParEquipeStatistiques(unittest.TestCase):
+    """22/10/2026 : les totaux par équipe de fautes/corners/tirs/hors-jeux doivent être jugés sur la
+    statistique de LEUR équipe (avant : seuls les cartons par équipe l'étaient)."""
+
+    def test_fautes_equipe_2_jugees_sur_les_fautes_exterieures(self):
+        import verifier_resultats as vr
+        self.assertEqual(vr.grader_pick_stat("Total Fautes Équipe 2", 11.5, "Over", 8, 13), "gagne")
+        self.assertEqual(vr.grader_pick_stat("Total Fautes Équipe 1", 11.5, "Over", 8, 13), "perdu")
+
+    def test_hors_jeux_equipe_et_total(self):
+        import verifier_resultats as vr
+        self.assertEqual(vr.grader_pick_stat("Total Hors-jeux Équipe 1", 1.5, "Under", 1, 4), "gagne")
+        self.assertEqual(vr.grader_pick_stat("Total Hors-jeux", 3.5, "Over", 1, 4), "gagne")
+
+    def test_handicap_fautes(self):
+        import verifier_resultats as vr
+        # domicile 14 fautes, extérieur 11 : Home -1.5 -> 14-11=3 > 1.5 gagne
+        self.assertEqual(vr.grader_pick_stat("Handicap Fautes", -1.5, "1", 14, 11), "gagne")
+
+
+class TestAvantageDuTerrainDesComptages(unittest.TestCase):
+    """22/10/2026 : le mu des comptages ignorait l'avantage du terrain (backtest : handicaps faux de 6 à 17 pts)."""
+
+    def test_corners_dom_augmentent_ext_diminuent_total_conserve(self):
+        h, a = ae.appliquer_avantage_domicile("corners", (5.0, 5.0))
+        self.assertGreater(h, 5.0)
+        self.assertLess(a, 5.0)
+        self.assertAlmostEqual(h + a, 10.0, places=1)
+
+    def test_cartons_et_fautes_favorisent_l_exterieur(self):
+        h, a = ae.appliquer_avantage_domicile("cartons", (2.0, 2.0))
+        self.assertLess(h, a)
+        h, a = ae.appliquer_avantage_domicile("fautes", (12.0, 12.0))
+        self.assertLess(h, a)
+
+    def test_famille_sans_facteur_et_none_inchanges(self):
+        self.assertEqual(ae.appliquer_avantage_domicile("hors_jeux", (2.0, 1.5)), (2.0, 1.5))
+        self.assertIsNone(ae.appliquer_avantage_domicile("corners", None))
+
+    def test_ratios_conformes_aux_moyennes_mesurees(self):
+        self.assertAlmostEqual(ae.FACTEUR_DOMICILE["corners"], 5.343 / ((5.343 + 4.307) / 2), places=2)
+        self.assertAlmostEqual(ae.FACTEUR_DOMICILE["tirs"], 14.002 / ((14.002 + 11.430) / 2), places=2)
+        self.assertAlmostEqual(ae.FACTEUR_DOMICILE["cartons"], 1.974 / ((1.974 + 2.252) / 2), places=2)
+
+    def test_prior_hors_jeux_recale(self):
+        self.assertEqual(ae.HORS_JEUX_PRIOR, 1.7)
+
+
+class TestHandicapButsSeulement(unittest.TestCase):
+    """22/10/2026, demande explicite : « handicap c'est but seul ou résultat »."""
+
+    def test_tous_les_handicaps_de_comptage_sont_exclus(self):
+        for c in ("Handicap Corners", "Handicap Cartons", "Handicap Fautes", "Handicap Hors-jeux",
+                  "Handicap Tirs", "Handicap Tirs Cadrés"):
+            self.assertIn(c, ae.CATEGORIES_EXCLUES)
+
+    def test_handicap_de_buts_reste_autorise(self):
+        self.assertNotIn("Handicap", ae.CATEGORIES_EXCLUES)
+        self.assertNotIn("Handicap Asiatique", ae.CATEGORIES_EXCLUES)
+        marches = [{"marche": "Asian Handicap", "handicap": -0.5, "periode": "fulltime",
+                    "selections": [{"selection": "1", "cote": 1.9}, {"selection": "2", "cote": 1.95}]}]
+        categories = {c["categorie"] for c in ae.evaluer_marches_toutes(marches, 1.9, 1.1)}
+        self.assertEqual(categories, {"Handicap"})
+
+    def test_marches_bruts_de_handicap_de_comptage_aussi_exclus(self):
+        for nom in ("Fouls - Handicap", "Offsides - Handicap", "Corners Asian Handicap", "Yellow Asian Handicap",
+                    "Shots - Handicap", "ShotOnTarget Handicap"):
+            self.assertTrue(ae.est_marche_exclu(nom), nom)
+        self.assertFalse(ae.est_marche_exclu("Asian Handicap"))
+
+
+class TestHandicapSeulementTempsReglementaire(unittest.TestCase):
+    """Les handicaps de mi-temps ne sont ni collectés ni modélisés : seul le « Asian Handicap » temps plein."""
+
+    def test_handicaps_de_mi_temps_non_mappes_et_rejetes(self):
+        import adaptateur_api_football as adf
+        for nom in ("Asian Handicap First Half", "Asian Handicap (2nd Half)", "Asian Handicap (1st Half)"):
+            self.assertNotIn(nom, adf.MAPPING_API_FOOTBALL)
+            self.assertFalse(ae.est_marche_match_entier({"marche": nom, "periode": "fulltime"}), nom)
+
+    def test_seul_asian_handicap_temps_plein_est_collecte(self):
+        import collecte_donnees as cd
+        handicaps = {m for m in cd.MARCHES_API_FOOTBALL_VALIDES if "handicap" in m.lower()}
+        self.assertEqual(handicaps, {"Asian Handicap"})
+
+
+class TestTicketCourt(unittest.TestCase):
+    """Telegram court (22/10/2026) : une ligne par jambe, en français, sans guide ni proba."""
+
+    @staticmethod
+    def _sel(match, categorie, marche, selection, cote, handicap=None):
+        return {"match": match, "pick": {"categorie": categorie, "marche": marche, "marche_affichage": marche,
+                                         "selection": selection, "cote": cote, "handicap": handicap}}
+
+    def test_libelles_en_francais(self):
+        sels = [
+            self._sel("Celje vs Red Bull Salzburg", "Total", "Over Under Full Time (4.0)", "Under", 1.28, 4),
+            self._sel("Olympiakos Piraeus vs Sparta Praha", "Total Corners Équipe 2", "Corners - Over Under Team 2 (2.5)", "Over", 1.36, 2.5),
+            self._sel("Sturm Graz vs Marseille", "Double Chance", "Double Chance Full Time", "12", 1.3),
+            self._sel("Celtic vs Celta Vigo", "Total Cartons", "Yellow Cards - Over Under Full Time (5.0)", "Under", 1.2, 5),
+            self._sel("Juventus vs Rennes", "Handicap", "Asian Handicap (-2.0)", "2", 1.33, -2),
+            self._sel("A vs B", "BTTS", "Both Teams To Score", "Yes", 1.7),
+        ]
+        lignes = ae.rediger_ticket_court(sels).split("\n")
+        self.assertEqual(lignes[0], "1. Celje vs Red Bull Salzburg")
+        self.assertEqual(lignes[1], "    Total buts : moins de 4 @1.28")
+        self.assertEqual(lignes[3], "    Total 2 (Sparta Praha) corners : plus de 2.5 @1.36")
+        self.assertEqual(lignes[5], "    Sturm Graz ou Marseille (pas de match nul) @1.3")
+        self.assertEqual(lignes[7], "    Total cartons jaunes : moins de 5 @1.2")
+        self.assertEqual(lignes[9], "    Rennes +2 (handicap) @1.33")
+        self.assertEqual(lignes[11], "    Les deux équipes marquent : Oui @1.7")
+
+    def test_resultat_du_match_en_vocabulaire_1xbet(self):
+        w1 = ae.rediger_ticket_court([self._sel("Real Sociedad vs Levante", "Full Time Result", "Full Time Result", "1", 1.63)])
+        self.assertIn("Real Sociedad gagne (1X2 : W1) @1.63", w1)
+        nul = ae.rediger_ticket_court([self._sel("A vs B", "Full Time Result", "Full Time Result", "X", 3.2)])
+        self.assertIn("Match nul (1X2 : X) @3.2", nul)
+        w2 = ae.rediger_ticket_court([self._sel("A vs B", "Full Time Result", "Full Time Result", "2", 2.1)])
+        self.assertIn("B gagne (1X2 : W2) @2.1", w2)
+
+    def test_marche_inconnu_garde_son_libelle(self):
+        ligne = ae.rediger_ticket_court([self._sel("A vs B", "Pair/Impair", "Odd/Even", "Odd", 1.9)])
+        self.assertIn("Odd/Even : Odd @1.9", ligne)
+
+    def test_section_agent4_courte(self):
+        item = {"profil": {"cle": "jour", "nom": "COUPON"},
+                "selections": [self._sel("A vs B", "Total", "Over Under Full Time (2.5)", "Over", 1.5, 2.5)]}
+        texte = ae.agent4_rediger_coupons([item])[0]
+        self.assertTrue(texte.startswith("*COUPON — cote 1.5* (1 jambes)"))
+        self.assertLess(len(texte), 250)
