@@ -3,14 +3,13 @@ aucune cote fabriquée, aucun doublon dans la même journée, la sélection/les 
 bet_agent ne sont jamais touchées (lecture seule du pool), et le jugement différé réutilise
 les mêmes règles que verification.py."""
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 
 from app.database import SessionLocal
 from app.models import Run
 from app.models_historique import HistCote
-from app.services import historique as hist
 from app.services.capture_historique import capturer_predictions, juger_cotes_en_attente
 
 HOME_ID, AWAY_ID = 100, 200

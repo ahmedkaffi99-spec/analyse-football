@@ -8,7 +8,6 @@ totaux, des totaux par équipe et des handicaps.
 
 import math
 import os
-from collections import defaultdict
 
 import analyser_et_envoyer as ae
 import backtest_marches_absents as bt

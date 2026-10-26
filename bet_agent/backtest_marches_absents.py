@@ -20,7 +20,6 @@ import math
 from collections import defaultdict
 
 import analyser_et_envoyer as ae
-from moteur import calibration as calib
 from moteur.features import Historique, en_datetime, est_termine
 from moteur.modeles import marches as mm
 

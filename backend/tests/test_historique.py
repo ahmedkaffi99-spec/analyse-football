@@ -1,7 +1,7 @@
 """Tests du backfill historique (moteur d'analyse) : aucun appel réseau, cd._appel_statistiques_
 fixture et SESSION.get sont remplacés par des doubles."""
 
-from datetime import datetime, timezone
+from datetime import datetime
 from types import SimpleNamespace
 
 import pytest

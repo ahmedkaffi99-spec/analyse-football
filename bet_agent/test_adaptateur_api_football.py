@@ -3,7 +3,7 @@
 
 from datetime import datetime, timedelta, timezone
 
-from adaptateur_api_football import (CATEGORIES_ODDSPAPI, CATEGORIES_SANS_LIGNE,
+from adaptateur_api_football import (CATEGORIES_ODDSPAPI,
                                      MAPPING_API_FOOTBALL, _normaliser_selection_api_football,
                                      calculer_age_secondes, categories_indisponibles,
                                      construire_resultat, extraire_cotations_brutes,

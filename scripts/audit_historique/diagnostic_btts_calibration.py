@@ -177,7 +177,6 @@ def appliquer_platt(modeles, lignes_cible):
 
 def main():
     import argparse
-    import json
 
     _preparer_chemins()
     from moteur.calibration import brier, log_loss
