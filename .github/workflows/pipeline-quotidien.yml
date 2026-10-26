@@ -6,9 +6,13 @@
 name: Pipeline quotidien
 
 on:
-  # Cron DÉSACTIVÉ le 26/10/2026 (demande explicite) : main porte l'ancien format de coupon et
-  # pouvait envoyer sur Telegram. Le pipeline ne part plus que sur lancement manuel.
-  # Ancien cron : "7 6-13 * * *"
+  schedule:
+    # Réactivé le 26/10/2026 (demande explicite), avec le nouveau format de coupons (refonte, PR #85).
+    # Un passage CHAQUE HEURE jusqu'à ce que les coupons du jour partent sur Telegram. Minute
+    # décalée (:07, pas :00) : GitHub saute souvent les crons placés pile sur l'heure. Chaque
+    # passage ne fait rien si les coupons du jour sont déjà partis ou si un run est en cours
+    # (--si-aucun-ticket-aujourdhui) — un seul envoi par jour, les passages suivants sont des no-op.
+    - cron: "7 6-13 * * *"  # 6h07-13h07 UTC = 7h07-15h07 Paris (été), 6h07-14h07 (hiver)
   workflow_dispatch:
     inputs:
       telegram:
