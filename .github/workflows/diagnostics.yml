@@ -39,6 +39,7 @@ on:
           - backtest-hors-jeux
           - catalogue-par-famille
           - deepseek-recherche-web
+          - bookmakers-cotes
         default: marches-disponibles
       date_debut:
         description: "Date cible de début (AAAA-MM-JJ) — utilisé seulement par 'marches-disponibles'"
@@ -1057,6 +1058,12 @@ jobs:
                           print(f'   bookmaker {bk.get(\"id\")} {bk.get(\"name\")} : {fautes}')
                   print(f'   {len(e.get(\"bookmakers\", []))} bookmaker(s) servis au total')
           "
+
+      - name: Bookmakers servis par API-Football — couverture, marchés, marge (choix des 10 à collecter)
+        # Lecture seule, ~9 appels : GET /odds?fixture= sans filtre bookmaker sur 8 matchs à venir.
+        if: inputs.verification == 'bookmakers-cotes'
+        working-directory: bet_agent
+        run: python diagnostic_bookmakers.py
 
       - name: Backtest réel — marchés ABSENTS des coupons (BTTS, handicaps, par équipe, pair/impair, score exact...)
         # Walk-forward sur les 5 championnats (hist_matchs, lecture seule), fonctions de PRODUCTION
