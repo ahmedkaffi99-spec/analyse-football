@@ -40,6 +40,7 @@ on:
           - catalogue-par-famille
           - deepseek-recherche-web
           - bookmakers-cotes
+          - backtest-bookmakers
         default: marches-disponibles
       date_debut:
         description: "Date cible de début (AAAA-MM-JJ) — utilisé seulement par 'marches-disponibles'"
@@ -1064,6 +1065,13 @@ jobs:
         if: inputs.verification == 'bookmakers-cotes'
         working-directory: bet_agent
         run: python diagnostic_bookmakers.py
+
+      - name: Backtest réel — cotes de chaque bookmaker à part (Brier, log-loss, marge, ROI aveugle)
+        # Lecture seule : matchs terminés des grandes ligues sur 7 jours dont API-Football sert encore les
+        # cotes d'avant-match (1 appel /fixtures par jour + 1 appel /odds par match, 80 matchs au plus).
+        if: inputs.verification == 'backtest-bookmakers'
+        working-directory: bet_agent
+        run: python backtest_bookmakers.py
 
       - name: Backtest réel — marchés ABSENTS des coupons (BTTS, handicaps, par équipe, pair/impair, score exact...)
         # Walk-forward sur les 5 championnats (hist_matchs, lecture seule), fonctions de PRODUCTION

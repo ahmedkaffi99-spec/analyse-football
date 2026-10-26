@@ -71,3 +71,27 @@ class TestConsensus(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestBacktestBookmakers(unittest.TestCase):
+    def test_issue_reelle(self):
+        import backtest_bookmakers as bt
+        self.assertEqual(bt.issue_reelle("Full Time Result", None, 2, 0), "1")
+        self.assertEqual(bt.issue_reelle("Full Time Result", None, 1, 1), "X")
+        self.assertEqual(bt.issue_reelle("Over Under Full Time", 2.5, 2, 1), "Over")
+        self.assertEqual(bt.issue_reelle("Over Under Full Time", 2.5, 1, 1), "Under")
+        self.assertEqual(bt.issue_reelle("Both Teams To Score", None, 1, 0), "No")
+        self.assertIsNone(bt.issue_reelle("Over Under Full Time", 3.5, 2, 1))
+
+    def test_evaluer_accumule_brier_et_consensus(self):
+        import backtest_bookmakers as bt
+        from collections import defaultdict
+        data = _reponse([_bm(11, "1xBet", 2.0, 3.4, 3.8, 1.9, 1.9), _bm(4, "Pinnacle", 2.05, 3.5, 3.9, 1.95, 1.9),
+                         _bm(8, "Bet365", 2.1, 3.3, 3.7, 1.9, 1.95)])
+        acc = defaultdict(lambda: {"n": 0, "brier": 0.0, "logloss": 0.0, "marge": 0.0, "roi": 0.0})
+        bt.evaluer(adf.cotes_par_bookmaker(data), 2, 0, acc)
+        self.assertEqual(acc[("Pinnacle", "Full Time Result")]["n"], 1)
+        self.assertEqual(acc[("★ Consensus", "Full Time Result")]["n"], 1)
+        self.assertGreater(acc[("1xBet", "Full Time Result")]["marge"], 0)
+        # Brier d'un 1X2 est dans [0, 2]
+        self.assertTrue(0 <= acc[("1xBet", "Full Time Result")]["brier"] <= 2)
