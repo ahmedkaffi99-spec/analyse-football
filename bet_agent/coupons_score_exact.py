@@ -1,5 +1,5 @@
-"""Coupons de SCORES EXACTS pour une liste de matchs (demande ponctuelle du 28/10/2026 : 3 coupons de 3 jambes
-sur 6 matchs). Le pipeline ne gère pas ce marché (ni cote, ni modèle, ni vérification) : script autonome,
+"""Coupons de SCORES EXACTS pour une liste de matchs (demande ponctuelle du 28/10/2026 : 3 coupons de 2 jambes,
+6 matchs au total). Le pipeline ne gère pas ce marché (ni cote, ni modèle, ni vérification) : script autonome,
 lecture seule, jamais d'envoi Telegram.
 
 Probabilité d'un score = 65 % marché (cote 1xBet sans marge, normalisée sur les scores servis) + 35 % modèle
@@ -71,22 +71,17 @@ def classement(probas, cotes):
 
 
 def construire_coupons(par_match):
-    """par_match : {nom: [(score, proba, cote), ...] trié}. 3 coupons de 3 jambes, un pari par match et par coupon,
-    jamais le même pari exact dans deux coupons :
-    1 = les 3 matchs dont le score le plus probable l'est le plus ; 2 = les 3 autres (même rang 1) ;
-    3 = le 2e meilleur score des 3 matchs où il est le plus probable.
+    """par_match : {nom: [(score, proba, cote), ...] trié}. 3 coupons de 2 jambes, les 6 matchs répartis une seule
+    fois (un match = une jambe), chacun avec son score exact le plus probable. Les matchs sont classés par la
+    probabilité de ce score : coupon 1 = les 2 plus probables, coupon 2 = les 2 suivants, coupon 3 = les 2 derniers.
     Renvoie [(titre, [(match, score, proba, cote)])]."""
-    if len(par_match) < 6:
+    if len(par_match) != 6:
         raise ValueError("6 matchs requis")
     noms = sorted(par_match, key=lambda n: -par_match[n][0][1])
-    rang1 = lambda n: (n,) + par_match[n][0]
-    rang2 = lambda n: (n,) + par_match[n][1]
-    c1 = [rang1(n) for n in noms[:3]]
-    c2 = [rang1(n) for n in noms[3:6]]
-    seconds = sorted(noms, key=lambda n: -par_match[n][1][1])[:3]
-    c3 = [rang2(n) for n in seconds]
-    return [("Coupon 1 — les 3 scores les plus probables", c1), ("Coupon 2 — les 3 autres matchs", c2),
-            ("Coupon 3 — deuxièmes meilleurs scores", c3)]
+    jambes = [(n,) + par_match[n][0] for n in noms]
+    titres = ["Coupon 1 — les 2 scores les plus probables", "Coupon 2 — probabilité moyenne",
+              "Coupon 3 — les 2 scores les moins probables"]
+    return [(titres[i], jambes[2 * i:2 * i + 2]) for i in range(3)]
 
 
 def resume_coupon(jambes):

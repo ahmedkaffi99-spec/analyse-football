@@ -1078,7 +1078,7 @@ jobs:
           EQUIPES: ${{ inputs.match_recherche }}
         run: python backtest_bookmakers.py
 
-      - name: Coupons de scores exacts (3 coupons de 3 jambes sur 6 matchs) — lecture seule, sans Telegram
+      - name: Coupons de scores exacts (3 coupons de 2 jambes, 6 matchs) — lecture seule, sans Telegram
         # Demande ponctuelle du 28/10/2026 : Milan-Bologna, Man City-Brighton, Bournemouth-Aston Villa,
         # Sunderland-Brentford, Fulham-Crystal Palace, Liverpool-Chelsea.
         if: inputs.verification == 'coupons-score-exact'

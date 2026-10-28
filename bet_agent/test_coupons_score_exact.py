@@ -36,12 +36,11 @@ class TestScoreExact(unittest.TestCase):
         coupons = cs.construire_coupons(par)
         self.assertEqual(len(coupons), 3)
         for _, jambes in coupons:
-            self.assertEqual(len(jambes), 3)
-            self.assertEqual(len({j[0] for j in jambes}), 3)       # un pari par match et par coupon
-        paris = [(j[0], j[1]) for _, jambes in coupons for j in jambes]
-        self.assertEqual(len(paris), len(set(paris)))               # jamais le même pari exact dans 2 coupons
-        self.assertEqual({j[0] for j in coupons[0][1]} | {j[0] for j in coupons[1][1]}, set(par))
-        self.assertEqual({j[0] for j in coupons[0][1]}, {"M0", "M1", "M2"})
+            self.assertEqual(len(jambes), 2)
+        matchs = [j[0] for _, jambes in coupons for j in jambes]
+        self.assertEqual(sorted(matchs), sorted(par))             # les 6 matchs, chacun une seule fois
+        self.assertEqual({j[0] for j in coupons[0][1]}, {"M0", "M1"})
+        self.assertEqual({j[0] for j in coupons[2][1]}, {"M4", "M5"})
 
     def test_resume_et_garde_6_matchs(self):
         cote, proba = cs.resume_coupon([("A", (1, 1), 0.1, 6.0), ("B", (1, 0), 0.2, 8.0)])
@@ -49,6 +48,8 @@ class TestScoreExact(unittest.TestCase):
         self.assertAlmostEqual(proba, 0.02)
         with self.assertRaises(ValueError):
             cs.construire_coupons({"A": self._match([0.1, 0.1])})
+        with self.assertRaises(ValueError):
+            cs.construire_coupons({f"M{i}": self._match([0.1, 0.1]) for i in range(7)})
 
 
 if __name__ == "__main__":
