@@ -41,6 +41,7 @@ on:
           - deepseek-recherche-web
           - bookmakers-cotes
           - backtest-bookmakers
+          - coupons-score-exact
         default: marches-disponibles
       date_debut:
         description: "Date cible de début (AAAA-MM-JJ) — utilisé seulement par 'marches-disponibles'"
@@ -1076,6 +1077,13 @@ jobs:
         env:
           EQUIPES: ${{ inputs.match_recherche }}
         run: python backtest_bookmakers.py
+
+      - name: Coupons de scores exacts (3 coupons de 3 jambes sur 6 matchs) — lecture seule, sans Telegram
+        # Demande ponctuelle du 28/10/2026 : Milan-Bologna, Man City-Brighton, Bournemouth-Aston Villa,
+        # Sunderland-Brentford, Fulham-Crystal Palace, Liverpool-Chelsea.
+        if: inputs.verification == 'coupons-score-exact'
+        working-directory: bet_agent
+        run: python coupons_score_exact.py
 
       - name: Backtest réel — marchés ABSENTS des coupons (BTTS, handicaps, par équipe, pair/impair, score exact...)
         # Walk-forward sur les 5 championnats (hist_matchs, lecture seule), fonctions de PRODUCTION
