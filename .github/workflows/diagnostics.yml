@@ -1087,8 +1087,11 @@ jobs:
         run: python coupons_score_exact.py
 
       - name: Matchs du jour par compétition, toutes compétitions (lecture seule)
+        # match_recherche non vide : paires « A vs B » séparées par « ; » -> coup d'envoi et fin estimée de chacune.
         if: inputs.verification == 'matchs-du-jour-toutes-competitions'
         working-directory: bet_agent
+        env:
+          PAIRES: ${{ inputs.match_recherche }}
         run: python lister_matchs_jour.py
 
       - name: Backtest réel — marchés ABSENTS des coupons (BTTS, handicaps, par équipe, pair/impair, score exact...)

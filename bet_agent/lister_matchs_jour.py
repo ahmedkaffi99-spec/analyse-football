@@ -12,7 +12,34 @@ import collecte_donnees as cd
 H = {"x-apisports-key": os.getenv("API_FOOTBALL_KEY") or ""}
 
 
+def horaires_paires(paires, jour):
+    """Coup d'envoi (UTC), statut et fin estimée (+1h50) de chaque paire « A vs B » — pour savoir quand commence
+    le premier match d'un lot de coupons et quand termine le dernier."""
+    from datetime import timedelta
+    r = requests.get(f"{adf.API_FOOTBALL_BASE}/fixtures", headers=H, params={"date": jour}, timeout=30)
+    fixtures = r.json().get("response") or []
+    lignes = []
+    for paire in paires:
+        dom, _, ext = paire.partition(" vs ")
+        fx, score = cd.trouver_fixture_api_football(dom.strip(), ext.strip(), fixtures)
+        if not fx:
+            lignes.append((None, paire, "introuvable", ""))
+            continue
+        debut = datetime.fromisoformat(fx["fixture"]["date"].replace("Z", "+00:00"))
+        statut = (fx["fixture"].get("status") or {}).get("short")
+        lignes.append((debut, paire, statut, f"{fx['league']['name']}"))
+    for debut, paire, statut, ligue in sorted(lignes, key=lambda x: (x[0] is None, x[0])):
+        if debut is None:
+            print(f"?? {paire} — introuvable")
+            continue
+        fin = debut + timedelta(minutes=110)
+        print(f"{debut:%H:%M} UTC → fin vers {fin:%H:%M} UTC  {paire}  [{ligue}] statut {statut}")
+
+
 def main():
+    if os.getenv("PAIRES"):
+        return horaires_paires([p.strip() for p in os.environ["PAIRES"].split(";") if p.strip()],
+                               os.getenv("JOUR") or datetime.now(timezone.utc).strftime("%Y-%m-%d"))
     jour = os.getenv("JOUR") or datetime.now(timezone.utc).strftime("%Y-%m-%d")
     r = requests.get(f"{adf.API_FOOTBALL_BASE}/fixtures", headers=H, params={"date": jour}, timeout=30)
     fixtures = r.json().get("response") or []
