@@ -2,9 +2,8 @@
 6 matchs au total). Le pipeline ne gère pas ce marché (ni cote, ni modèle, ni vérification) : script autonome,
 lecture seule, jamais d'envoi Telegram.
 
-Probabilité d'un score = 65 % marché (cote 1xBet sans marge, normalisée sur les scores servis) + 35 % modèle
-(Poisson indépendant sur les buts attendus du pipeline : stats 10 matchs, H2H, Elo) — même mélange que la
-production. Un score exact reste un pari très improbable (≈ 10 à 15 % le plus probable) : à lire comme tel."""
+Probabilité d'un score = 50 % marché (cote 1xBet sans marge, normalisée sur les scores servis) + 50 % modèle
+(Poisson indépendant sur les buts attendus du pipeline : stats 10 matchs, H2H, Elo). Un score exact reste un pari très improbable (≈ 10 à 15 % le plus probable) : à lire comme tel."""
 import itertools
 import math
 import os
@@ -14,7 +13,8 @@ from datetime import datetime, timedelta
 
 import requests
 
-POIDS_MARCHE = 0.65
+# 50/50 : le choix ne repose pas sur les cotes seules (demande du 28/10/2026) ; POIDS_MARCHE_SCORE_EXACT pour changer.
+POIDS_MARCHE = float(os.getenv("POIDS_MARCHE_SCORE_EXACT") or 0.5)
 MATCHS_DEMANDES = [("AC Milan", "Bologna"), ("Manchester City", "Brighton"), ("Bournemouth", "Aston Villa"),
                    ("Sunderland", "Brentford"), ("Fulham", "Crystal Palace"), ("Liverpool", "Chelsea")]
 NOMS_PARI = ("exact score", "correct score")
@@ -146,7 +146,12 @@ def main():
             print(f"   buts attendus modèle {mu[0]:.2f} / {mu[1]:.2f}")
         par_match[nom] = classement(melange(p_marche, p_modele), cotes)
         details[nom] = par_match[nom][:4]
-        print("   " + " | ".join(f"{s[0]}-{s[1]} {100 * p:.1f} % @{c:g}" for s, p, c in details[nom]))
+        print("   mélange : " + " | ".join(f"{s[0]}-{s[1]} {100 * p:.1f} % @{c:g}" for s, p, c in details[nom]))
+        if p_modele:
+            haut_modele = classement(p_modele, cotes)[:3]
+            haut_marche = classement(p_marche, cotes)[:3]
+            print("   modèle seul : " + " | ".join(f"{s[0]}-{s[1]} {100 * p:.1f} %" for s, p, c in haut_modele))
+            print("   marché seul : " + " | ".join(f"{s[0]}-{s[1]} {100 * p:.1f} % @{c:g}" for s, p, c in haut_marche))
     if len(par_match) < 6:
         print(f"\n⚠️ {len(par_match)} match(s) exploitable(s) sur 6 — pas de coupons complets.")
         return
