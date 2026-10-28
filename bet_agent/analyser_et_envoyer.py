@@ -157,6 +157,10 @@ TRANCHES_COTE_AGENT = (
 )
 
 
+MAX_COUPONS_PAR_MATCH = int(os.getenv("MAX_COUPONS_PAR_MATCH") or 2)
+NB_MATCHS_SEUIL_PLAFOND_COUPONS = 8   # sous ce nombre de matchs, le plafond rendrait les coupons impossibles : inactif
+
+
 def profils_agent_quotidien():
     def _entier(nom):
         valeur = (os.getenv(nom) or "").strip()
@@ -178,6 +182,9 @@ def profils_agent_quotidien():
                   # un match peut figurer dans plusieurs coupons (22/10/2026) mais, dans UN coupon, une seule sélection
                   # par match (24/10/2026, « interdit d'intégrer un match sur deux sélections sur un coupon »)
                   "match_repete_autorise": True, "jambes_max_par_match": 1,
+                  # 28/10/2026 : Bayern-Magdeburg (6-1) était dans 5 des 6 coupons du jour et en a fait tomber la plupart ;
+                  # un match ne figure plus que dans MAX_COUPONS_PAR_MATCH coupons (jours à 8 matchs ou plus seulement).
+                  "max_coupons_par_match": MAX_COUPONS_PAR_MATCH,
                   "un_seul_pari_par_event": True, "proba_min_pct": proba_min,
                   **({"proba_max_pct": min(proba_max, tr_proba_max) if proba_max > 0 else tr_proba_max}),
                   # diversification entre coupons (23/10/2026) : même risque (marché+équipe+sens, toute ligne) jamais repris
@@ -391,6 +398,7 @@ def extraire_contexte_web(m):
     return extraits
 
 
+import desequilibre  # noqa: E402
 import modele_probabilites as _modele  # noqa: E402
 import formatage_tickets as _formatage  # noqa: E402
 from modele_probabilites import (  # noqa: E402,F401
@@ -1938,6 +1946,7 @@ def agent3_calcul_pool_candidats(donnees):
         # comparer_candidat) restent TOUJOURS le nom_match brut, inchangés dans tous les cas —
         # seule la CLÉ DE POOL interne (jamais affichée) se désambiguïse, pour que le second
         # match reste sélectionnable au lieu de disparaître.
+        desequilibre.annoter_favori(candidats, marches)
         fixture_id = m["oddspapi"]["fixture_id"]
         cle_pool = nom_match
         # fixture_id absent (None) : impossible de prouver qu'il s'agit du même match réel que
