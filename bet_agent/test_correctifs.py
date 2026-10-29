@@ -3176,3 +3176,52 @@ class TestTicketCourt(unittest.TestCase):
         texte = ae.agent4_rediger_coupons([item])[0]
         self.assertTrue(texte.startswith("*COUPON — cote 1.5* (1 jambes)"))
         self.assertLess(len(texte), 250)
+
+
+class TestDeuxiemeChatTelegram(unittest.TestCase):
+    """29/10/2026 : « maintenant c'est deux chat id » — tout message du chat principal part aussi vers le 2e chat."""
+
+    def _poster(self, appels, refuses=()):
+        def poster(url, json=None, timeout=None):
+            appels.append(json["chat_id"])
+            reponse = mock.Mock()
+            reponse.status_code = 403 if json["chat_id"] in refuses else 200
+            reponse.text = "Forbidden: bot can't initiate conversation" if reponse.status_code == 403 else "ok"
+            return reponse
+        return poster
+
+    def test_envoi_au_chat_principal_puis_au_supplementaire(self):
+        appels = []
+        with mock.patch.object(ae, "TELEGRAM_TOKEN", "T"), mock.patch.object(ae, "TELEGRAM_CHAT_ID", "111"), \
+                mock.patch.object(ae, "_TELEGRAM_CHAT_ID_INITIAL", "111"), \
+                mock.patch.object(ae, "TELEGRAM_CHAT_IDS_SUPPLEMENTAIRES", ["222"]), \
+                mock.patch.object(ae.requests, "post", side_effect=self._poster(appels)):
+            self.assertTrue(ae.notifier_telegram("salut"))
+        self.assertEqual(appels, ["111", "222"])
+
+    def test_chat_supplementaire_injoignable_ne_fait_pas_echouer(self):
+        appels = []
+        with mock.patch.object(ae, "TELEGRAM_TOKEN", "T"), mock.patch.object(ae, "TELEGRAM_CHAT_ID", "111"), \
+                mock.patch.object(ae, "_TELEGRAM_CHAT_ID_INITIAL", "111"), \
+                mock.patch.object(ae, "TELEGRAM_CHAT_IDS_SUPPLEMENTAIRES", ["222"]), \
+                mock.patch.object(ae.requests, "post", side_effect=self._poster(appels, refuses={"222"})):
+            self.assertTrue(ae.notifier_telegram("salut"))
+        self.assertEqual(appels, ["111", "222"])
+
+    def test_chat_principal_remplace_pas_de_chat_supplementaire(self):
+        appels = []
+        with mock.patch.object(ae, "TELEGRAM_TOKEN", "T"), mock.patch.object(ae, "TELEGRAM_CHAT_ID", "999"), \
+                mock.patch.object(ae, "_TELEGRAM_CHAT_ID_INITIAL", "111"), \
+                mock.patch.object(ae, "TELEGRAM_CHAT_IDS_SUPPLEMENTAIRES", ["222"]), \
+                mock.patch.object(ae.requests, "post", side_effect=self._poster(appels)):
+            self.assertTrue(ae.notifier_telegram("pour le frère"))
+        self.assertEqual(appels, ["999"])
+
+    def test_echec_du_chat_principal_renvoie_false_et_pas_de_doublon(self):
+        appels = []
+        with mock.patch.object(ae, "TELEGRAM_TOKEN", "T"), mock.patch.object(ae, "TELEGRAM_CHAT_ID", "222"), \
+                mock.patch.object(ae, "_TELEGRAM_CHAT_ID_INITIAL", "222"), \
+                mock.patch.object(ae, "TELEGRAM_CHAT_IDS_SUPPLEMENTAIRES", ["222"]), \
+                mock.patch.object(ae.requests, "post", side_effect=self._poster(appels, refuses={"222"})):
+            self.assertFalse(ae.notifier_telegram("x"))
+        self.assertEqual(appels, ["222"])
