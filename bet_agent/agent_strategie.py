@@ -578,6 +578,14 @@ def valider(proposition, catalogue, profils, signatures_existantes=(), selection
         risques_deja_utilises = ({_cle_risque(s) for s in toutes_selections_verrouillees}
                                  if profil.get("diversifier_entre_coupons") else set())
         max_par_match = profil.get("jambes_max_par_match", ae.MAX_JAMBES_PAR_MATCH)
+        # Plafond de coupons par match (28/10/2026) : actif seulement quand le catalogue a assez de matchs pour que 3 coupons
+        # tiennent sans répéter tous les matchs (sinon il rendrait les coupons impossibles).
+        max_coupons = profil.get("max_coupons_par_match")
+        if max_coupons and len({c["match"] for c in catalogue.values()}) < ae.NB_MATCHS_SEUIL_PLAFOND_COUPONS:
+            max_coupons = None
+        coupons_par_match = {}
+        for s_prec in toutes_selections_verrouillees:
+            coupons_par_match[s_prec["match"]] = coupons_par_match.get(s_prec["match"], 0) + 1
         erreurs, selections, par_match, ids_vus = [], [], {}, set()
         for jambe in jambes:
             cid = str((jambe or {}).get("id", "")).strip().upper()
@@ -594,6 +602,11 @@ def valider(proposition, catalogue, profils, signatures_existantes=(), selection
                 erreurs.append(f"{cid} : {selection['match']} déjà utilisé dans un autre profil ce run "
                                "(même avec un marché ou une sélection différents) — choisis un autre match "
                                "pour ce profil")
+                continue
+            if max_coupons and coupons_par_match.get(selection["match"], 0) >= max_coupons:
+                erreurs.append(f"{cid} : {selection['match']} figure déjà dans {coupons_par_match[selection['match']]} coupon(s) "
+                               f"(maximum {max_coupons} par match, pour qu'un seul match raté ne fasse pas tomber tous les "
+                               "coupons) — choisis un autre match pour ce profil")
                 continue
             if _cle_pari(selection) in paris_deja_utilises:
                 erreurs.append(f"{cid} : même pari exact ({selection['match']}, {selection['pick']['marche']}, "

@@ -589,13 +589,24 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
         # prend alors tous les matchs du jour, sans descendre sous NB_JAMBES_PLANCHER_ABSOLU (6,
         # demande « plus de 5 jambes »). Sous ce plancher, l'agent s'abstient comme avant.
         nb_matchs_catalogue = len({c["match"] for c in etat["catalogue"].values()})
-        plancher_absolu = int(os.getenv("NB_JAMBES_PLANCHER_ABSOLU") or 6)
+        plancher_absolu = int(os.getenv("NB_JAMBES_PLANCHER_ABSOLU") or 4)   # 28/10/2026 : 6 -> 4 (jours à peu de matchs)
         if profil.get("nb_jambes_min", 1) > nb_matchs_catalogue >= plancher_absolu:
             profil = dict(profil, nb_jambes_min=nb_matchs_catalogue,
                           nb_jambes=min(profil["nb_jambes"], nb_matchs_catalogue))
             etat["profils"][etat["profil_index"]] = profil
             print(f"   ℹ️ Seulement {nb_matchs_catalogue} match(s) éligible(s) aujourd'hui : minimum de jambes "
                   f"ramené à {nb_matchs_catalogue} (un pari par match).")
+        # Plancher de cote adaptatif (28/10/2026) : avec peu de matchs et des jambes à 70-78 %, la cote totale ne peut pas
+        # atteindre le plancher du profil (5 matchs : au mieux 4,65 pour un plancher de 5). Il est ramené à ce qu'atteignent
+        # des jambes d'environ 1,3 ; au-dessus de 7 matchs rien ne change.
+        nb_legs_possibles = min(profil["nb_jambes"], nb_matchs_catalogue)
+        if nb_matchs_catalogue < 8 and nb_matchs_catalogue >= plancher_absolu:
+            plancher_adapte = round(1.3 ** nb_legs_possibles, 2)
+            if profil.get("cote_totale_min", st.COTE_TOTALE_MIN) > plancher_adapte:
+                profil = dict(profil, cote_totale_min=plancher_adapte)
+                etat["profils"][etat["profil_index"]] = profil
+                print(f"   ℹ️ {nb_matchs_catalogue} match(s) : plancher de cote totale ramené à {plancher_adapte} "
+                      "(jambes de l'ordre de 1,3).")
         return {
             "profil_en_cours": f"{etat['profil_index'] + 1}/{len(etat['profils'])}",
             # cote_min/cote_max NON transmis : la cote totale n'est plus une contrainte de

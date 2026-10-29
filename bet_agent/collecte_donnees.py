@@ -1338,6 +1338,14 @@ LIGUES_FILTRE_API_FOOTBALL = {
     135,  # Serie A (Italie)
     78,   # Bundesliga (Allemagne)
     61,   # Ligue 1 (France)
+    # Coupes nationales (28/10/2026 ; la Conference League reste exclue, demande du 13/10/2026) : 18 matchs le soir de League Cup / DFB-Pokal / Serie A, 5 seulement
+    # retenus faute de ces compétitions -> aucun coupon possible). Elles complètent le pool après les championnats.
+    45,   # FA Cup (Angleterre)
+    48,   # EFL Cup / League Cup (Angleterre)
+    81,   # DFB-Pokal (Allemagne)
+    137,  # Coppa Italia (Italie)
+    143,  # Copa del Rey (Espagne)
+    66,   # Coupe de France
 }
 
 
