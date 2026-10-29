@@ -53,6 +53,13 @@ ODDSPAPI_KEY = os.getenv("ODDSPAPI_KEY")
 from fournisseurs import oddspapi_actif  # noqa: E402
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+# Deuxième conversation (29/10/2026, demande explicite : « maintenant c'est deux chat id ») : tout message envoyé au chat
+# principal l'est aussi à ces chats (liste séparée par des virgules, modifiable sans code). Jamais ajoutés quand le chat
+# principal a été remplacé (envoi vers un autre bot/chat, ex. TELEGRAM_TOKEN_FRERE), pour ne rien envoyer avec le mauvais bot.
+TELEGRAM_CHAT_IDS_SUPPLEMENTAIRES = [c.strip() for c in
+                                     (os.getenv("TELEGRAM_CHAT_IDS_SUPPLEMENTAIRES") or "1446772592").split(",")
+                                     if c.strip()]
+_TELEGRAM_CHAT_ID_INITIAL = TELEGRAM_CHAT_ID
 
 ENTREE_JSON = "donnees_collectees.json"
 TICKET_DU_JOUR_JSON = "ticket_du_jour.json"
@@ -1365,12 +1372,18 @@ def appel_llm_petites_taches(prompt, max_tokens=300):
 # TELEGRAM
 # ============================================================
 
-def notifier_telegram(message):
-    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        print("❌ TELEGRAM_TOKEN ou TELEGRAM_CHAT_ID manquant")
-        return False
+def _chats_destinataires():
+    """[chat principal] + chats supplémentaires (sans doublon), les supplémentaires uniquement si le chat principal est
+    toujours celui d'origine du processus."""
+    chats = [TELEGRAM_CHAT_ID]
+    if TELEGRAM_CHAT_ID == _TELEGRAM_CHAT_ID_INITIAL:
+        chats += [c for c in TELEGRAM_CHAT_IDS_SUPPLEMENTAIRES if c != str(TELEGRAM_CHAT_ID)]
+    return chats
+
+
+def _envoyer_a_un_chat(chat_id, message):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
+    payload = {"chat_id": chat_id, "text": message, "parse_mode": "Markdown"}
     try:
         r = requests.post(url, json=payload, timeout=15)
         if r.status_code == 200:
@@ -1391,6 +1404,21 @@ def notifier_telegram(message):
     except Exception as e:
         print(f"❌ Erreur connexion Telegram : {e}")
         return False
+
+
+def notifier_telegram(message):
+    """Envoie le message au chat principal puis aux chats supplémentaires. Le résultat est celui du chat PRINCIPAL : un
+    chat supplémentaire injoignable (ex. il n'a pas encore démarré le bot, erreur 403) est signalé dans les logs mais
+    ne fait jamais échouer l'envoi ni ne le fait recommencer."""
+    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+        print("❌ TELEGRAM_TOKEN ou TELEGRAM_CHAT_ID manquant")
+        return False
+    chats = _chats_destinataires()
+    ok_principal = _envoyer_a_un_chat(chats[0], message)
+    for chat in chats[1:]:
+        if not _envoyer_a_un_chat(chat, message):
+            print(f"   ⚠️ Chat supplémentaire {chat} injoignable (a-t-il démarré le bot avec /start ?).")
+    return ok_principal
 
 
 # ============================================================
