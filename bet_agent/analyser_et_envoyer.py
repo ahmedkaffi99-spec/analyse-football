@@ -406,6 +406,7 @@ def extraire_contexte_web(m):
 
 
 import desequilibre  # noqa: E402
+import consensus_bookmakers  # noqa: E402
 import modele_probabilites as _modele  # noqa: E402
 import formatage_tickets as _formatage  # noqa: E402
 from modele_probabilites import (  # noqa: E402,F401
@@ -1096,6 +1097,7 @@ def _candidat(nom_marche, handicap, selection, proba, edge, categorie):
     return {
         "categorie": categorie,
         "marche": nom_avec_ligne,
+        "marche_brut": nom_marche,  # nom sans ligne : jointure avec consensus_bookmakers
         "marche_affichage": marche_affichage,
         "handicap": handicap,
         "selection": selection["selection"],
@@ -1975,6 +1977,9 @@ def agent3_calcul_pool_candidats(donnees):
         # seule la CLÉ DE POOL interne (jamais affichée) se désambiguïse, pour que le second
         # match reste sélectionnable au lieu de disparaître.
         desequilibre.annoter_favori(candidats, marches)
+        nb_annotes = consensus_bookmakers.annoter_candidats(candidats, m["oddspapi"].get("cotes_bookmakers"))
+        if nb_annotes:
+            print(f"      ✓ {nb_annotes} pari(s) comparé(s) au consensus des bookmakers")
         fixture_id = m["oddspapi"]["fixture_id"]
         cle_pool = nom_match
         # fixture_id absent (None) : impossible de prouver qu'il s'agit du même match réel que

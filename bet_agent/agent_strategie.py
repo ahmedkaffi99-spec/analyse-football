@@ -122,6 +122,8 @@ def construire_catalogue(pool, seuil_proba=SEUIL_PROBA_CATALOGUE, ecartes=frozen
             # l'utilisateur voit réellement sur 1xBet.
             lignes.append(f"- {cid} : {p.get('marche_affichage') or p['marche']} → {p['selection']} @ {p['cote']} — "
                           f"probabilité Python {p['proba_modele_pct']}%, edge {p['edge_pct']}%"
+                          + (f", consensus {p['consensus_pct']}% ({p['consensus_nb_bookmakers']} bookmakers)"
+                             if p.get("consensus_pct") is not None else "")
                           + (f" — {avis[cid]}" if cid in avis else ""))
     return catalogue, "\n".join(lignes)
 

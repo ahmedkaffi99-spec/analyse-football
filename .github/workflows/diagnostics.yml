@@ -39,6 +39,10 @@ on:
           - backtest-hors-jeux
           - catalogue-par-famille
           - deepseek-recherche-web
+          - bookmakers-cotes
+          - backtest-bookmakers
+          - coupons-score-exact
+          - matchs-du-jour-toutes-competitions
         default: marches-disponibles
       date_debut:
         description: "Date cible de début (AAAA-MM-JJ) — utilisé seulement par 'marches-disponibles'"
@@ -1057,6 +1061,38 @@ jobs:
                           print(f'   bookmaker {bk.get(\"id\")} {bk.get(\"name\")} : {fautes}')
                   print(f'   {len(e.get(\"bookmakers\", []))} bookmaker(s) servis au total')
           "
+
+      - name: Bookmakers servis par API-Football — couverture, marchés, marge (choix des 10 à collecter)
+        # Lecture seule, ~9 appels : GET /odds?fixture= sans filtre bookmaker sur 8 matchs à venir.
+        if: inputs.verification == 'bookmakers-cotes'
+        working-directory: bet_agent
+        run: python diagnostic_bookmakers.py
+
+      - name: Backtest réel — cotes de chaque bookmaker à part (Brier, log-loss, marge, ROI aveugle)
+        # Lecture seule : matchs terminés des grandes ligues sur 7 jours dont API-Football sert encore les
+        # cotes d'avant-match (1 appel /fixtures par jour + 1 appel /odds par match, 80 matchs au plus).
+        # match_recherche non vide : détail des cotes de chaque bookmaker pour les matchs terminés dont une équipe
+        # contient un des fragments (ex: « Real Sociedad,Paris »).
+        if: inputs.verification == 'backtest-bookmakers'
+        working-directory: bet_agent
+        env:
+          EQUIPES: ${{ inputs.match_recherche }}
+        run: python backtest_bookmakers.py
+
+      - name: Coupons de scores exacts (3 coupons de 2 jambes, 6 matchs) — lecture seule, sans Telegram
+        # Demande ponctuelle du 28/10/2026 : Milan-Bologna, Man City-Brighton, Bournemouth-Aston Villa,
+        # Sunderland-Brentford, Fulham-Crystal Palace, Liverpool-Chelsea.
+        if: inputs.verification == 'coupons-score-exact'
+        working-directory: bet_agent
+        run: python coupons_score_exact.py
+
+      - name: Matchs du jour par compétition, toutes compétitions (lecture seule)
+        # match_recherche non vide : paires « A vs B » séparées par « ; » -> coup d'envoi et fin estimée de chacune.
+        if: inputs.verification == 'matchs-du-jour-toutes-competitions'
+        working-directory: bet_agent
+        env:
+          PAIRES: ${{ inputs.match_recherche }}
+        run: python lister_matchs_jour.py
 
       - name: Backtest réel — marchés ABSENTS des coupons (BTTS, handicaps, par équipe, pair/impair, score exact...)
         # Walk-forward sur les 5 championnats (hist_matchs, lecture seule), fonctions de PRODUCTION

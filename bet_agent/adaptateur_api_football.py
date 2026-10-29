@@ -45,6 +45,10 @@ from datetime import datetime, timezone
 API_FOOTBALL_KEY = os.getenv("API_FOOTBALL_KEY")
 API_FOOTBALL_BASE = "https://v3.football.api-sports.io"
 API_FOOTBALL_BOOKMAKER_1XBET = 11  # confirmé par appel réel le 09/10/2026, jamais supposé
+# Les 10 bookmakers que API-Football sert réellement (diagnostic bookmakers-cotes du 26/10/2026,
+# 6 matchs de grandes ligues : tous les 10 sur les 6) — ids confirmés par appel réel.
+BOOKMAKERS_COLLECTES = {2: "Marathonbet", 3: "Betfair", 4: "Pinnacle", 5: "SBO", 7: "William Hill",
+                        8: "Bet365", 9: "Dafabet", 11: "1xBet", 32: "Betano", 36: "BetVictor"}
 
 
 def maintenant_utc():
@@ -255,6 +259,21 @@ def extraire_cotations_brutes(data, bookmaker_id=API_FOOTBALL_BOOKMAKER_1XBET):
     return cotations, maj_fournisseur, None
 
 
+def cotes_par_bookmaker(data, bookmakers=None):
+    """Parsing PUR d'un GET /odds?fixture= SANS filtre bookmaker : {nom_bookmaker: marches} au format
+    traduire_en_marches_oddspapi, pour chaque bookmaker de `bookmakers` ({id: nom}, défaut
+    BOOKMAKERS_COLLECTES) qui a servi au moins un marché reconnu. Rien n'est deviné ni complété."""
+    sortie = {}
+    for bid, nom in (bookmakers or BOOKMAKERS_COLLECTES).items():
+        cotations, _, erreur = extraire_cotations_brutes(data, bookmaker_id=bid)
+        if erreur or not cotations:
+            continue
+        marches, _ = traduire_en_marches_oddspapi(cotations)
+        if marches:
+            sortie[nom] = marches
+    return sortie
+
+
 def traduire_en_marches_oddspapi(cotations_brutes):
     """Regroupe les cotations canoniques en marchés au format OddsPapi (marche_id, marche,
     type, handicap, periode, selections) — compatible avec analyser_et_envoyer.py SANS le
@@ -346,6 +365,21 @@ def construire_resultat(data, fixture_id, statut_http, erreur_http, recu_le_utc,
 # ============================================================
 # APPEL RÉSEAU RÉEL — jamais exécuté à l'import, jamais appelé par ce fichier lui-même.
 # ============================================================
+
+def capturer_cotes_tous_bookmakers(fixture_id_api_football):
+    """1 appel réel GET /odds?fixture= (sans filtre bookmaker) -> {nom_bookmaker: marches}, ou None si
+    l'appel échoue (429, réseau, réponse illisible) — jamais d'exception, jamais de cote inventée."""
+    import requests
+
+    try:
+        r = requests.get(f"{API_FOOTBALL_BASE}/odds", headers={"x-apisports-key": API_FOOTBALL_KEY or ""},
+                         params={"fixture": fixture_id_api_football}, timeout=20)
+        if r.status_code != 200:
+            return None
+        return cotes_par_bookmaker(r.json()) or None
+    except Exception:
+        return None
+
 
 def capturer_api_football_adapte(fixture_id_api_football, ttl_secondes=90):
     """1 appel réel GET /odds?fixture=&bookmaker=11 + construit un ResultatAdaptateur. Jamais
