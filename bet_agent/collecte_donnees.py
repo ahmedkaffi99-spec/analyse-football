@@ -188,6 +188,16 @@ def recuperer_marches_pour_fixture_api_football(fixture_id_api_football):
     marches_valides = [m for m in resultat.marches if m["marche"] in MARCHES_API_FOOTBALL_VALIDES]
     return marches_valides if marches_valides else None
 
+def recuperer_cotes_bookmakers_api_football(fixture_id_api_football):
+    """Cotes des 10 bookmakers servis par API-Football pour ce match ({bookmaker: marchés}) — 1 appel /odds de
+    plus par match, même limiteur. None si indisponible : n'empêche jamais la collecte ni la sélection."""
+    global _appels_odds_api_football_consommes
+    import adaptateur_api_football as adf
+
+    _respecter_rate_limit_api_football()
+    _appels_odds_api_football_consommes += 1
+    return adf.capturer_cotes_tous_bookmakers(fixture_id_api_football)
+
 # ------------------------------------------------------------
 # SÉLECTION MANUELLE — active ce mode si tu as déjà vérifié toi-même quels matchs
 # ont des marchés ouverts sur 1xbet (évite de perdre des matchs sans marché après
@@ -1338,6 +1348,14 @@ LIGUES_FILTRE_API_FOOTBALL = {
     135,  # Serie A (Italie)
     78,   # Bundesliga (Allemagne)
     61,   # Ligue 1 (France)
+    # Coupes nationales (28/10/2026 ; la Conference League reste exclue, demande du 13/10/2026) : 18 matchs le soir de League Cup / DFB-Pokal / Serie A, 5 seulement
+    # retenus faute de ces compétitions -> aucun coupon possible). Elles complètent le pool après les championnats.
+    45,   # FA Cup (Angleterre)
+    48,   # EFL Cup / League Cup (Angleterre)
+    81,   # DFB-Pokal (Allemagne)
+    137,  # Coppa Italia (Italie)
+    143,  # Copa del Rey (Espagne)
+    66,   # Coupe de France
 }
 
 
@@ -1820,11 +1838,17 @@ def collecter_donnees():
         # appelé pour ce match (ni ici, ni fixtures_oddspapi en amont, qui vaut toujours []).
         fx_op = None
         tous_marches = None
+        cotes_bookmakers = None
         fixture_id_oddspapi = None
         if FOURNISSEUR_COTES == "api_football":
             if donnees_af and donnees_af.get("fixture_id_api_football"):
                 fixture_id_oddspapi = donnees_af["fixture_id_api_football"]  # même champ de sortie, source API-Football (voir docstring adaptateur_api_football.py)
                 tous_marches = recuperer_marches_pour_fixture_api_football(donnees_af["fixture_id_api_football"])
+                if tous_marches:
+                    cotes_bookmakers = recuperer_cotes_bookmakers_api_football(donnees_af["fixture_id_api_football"])
+                    if cotes_bookmakers:
+                        print(f"      ✓ Cotes de {len(cotes_bookmakers)} bookmaker(s) collectées "
+                              f"({', '.join(sorted(cotes_bookmakers))})")
             else:
                 print("      ⚠️ Pas de fixture API-Football identifié — aucune cote "
                       "(FOURNISSEUR_COTES=api_football).")
@@ -1955,6 +1979,7 @@ def collecter_donnees():
                 "start_time": (fx_op.get("startTime") if fx_op
                                else (donnees_af or {}).get("fixture_date")),
                 "tous_marches": tous_marches,
+                "cotes_bookmakers": cotes_bookmakers,
             },
             "serper": contexte_web,
             "stats_historiques": {"home": stats_home, "away": stats_away},

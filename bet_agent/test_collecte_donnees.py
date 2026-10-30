@@ -305,10 +305,17 @@ class TestSelectionMatchsDuJourApiFootball:
         fixtures = [
             _fixture_af("Galatasaray", "Barcelona", 2),      # UEFA Champions League — retenu
             _fixture_af("Real Betis", "FC Porto", 3),        # UEFA Europa League — retenu
-            _fixture_af("Obscur FC", "Autre FC", 848),       # Conference League — PAS demandée, exclue
+            _fixture_af("Obscur FC", "Autre FC", 848),       # Conference League — PAS demandée, exclue (toujours)
         ]
         matchs = cd.selectionner_matchs_du_jour_api_football(fixtures)
         assert sorted(matchs) == sorted([("Galatasaray", "Barcelona"), ("Real Betis", "FC Porto")])
+
+    def test_coupes_nationales_incluses(self):
+        # 28/10/2026 : League Cup, DFB-Pokal, Coppa Italia... étaient ignorées (5 matchs retenus sur 18 ce soir-là).
+        fixtures = [_fixture_af("Liverpool", "Chelsea", 48), _fixture_af("Bayern Munich", "Magdeburg", 81),
+                    _fixture_af("Inter", "Torino", 137), _fixture_af("Obscur FC", "Autre FC", 999)]
+        matchs = cd.selectionner_matchs_du_jour_api_football(fixtures)
+        assert sorted(matchs) == sorted([("Liverpool", "Chelsea"), ("Bayern Munich", "Magdeburg"), ("Inter", "Torino")])
 
     def test_match_deja_commence_ou_termine_exclu(self):
         fixtures = [_fixture_af("Arsenal", "Chelsea", 39, statut="1H"),
