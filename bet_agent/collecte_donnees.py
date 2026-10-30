@@ -124,6 +124,11 @@ SERPER_API_KEY = os.getenv("SERPER_API_KEY")
 # Handicap n'est jamais activé via API-Football (convention de signe non confirmée) — ce
 # marché est simplement absent des cotes collectées dans ce mode, jamais deviné ni simulé.
 FOURNISSEUR_COTES = os.getenv("FOURNISSEUR_COTES", "api_football").strip().lower()
+# SANS_API_FOOTBALL=1 : abonnement API-Football terminé — cotes et fixtures OddsPapi, stats/Elo/H2H
+# calculés depuis les 5 saisons stockées (historique_local.py). Prime sur FOURNISSEUR_COTES.
+SANS_API_FOOTBALL = os.getenv("SANS_API_FOOTBALL", "").strip().lower() in ("1", "true", "oui")
+if SANS_API_FOOTBALL:
+    FOURNISSEUR_COTES = "oddspapi"
 # TTL relevé à 6h (21600s), était 120s (demande du 10/10/2026, pensé pour une comparaison
 # ponctuelle à cote fraîche, jamais pour être la source réelle des cotes publiées). Constaté en
 # run réel le 13/10/2026 (run 137/138) : le "update" fourni par API-Football pour CE bookmaker
@@ -1804,7 +1809,8 @@ def collecter_donnees():
     # En mode FOURNISSEUR_COTES=api_football, tous_fixtures_af a déjà été récupéré plus haut
     # (réutilisé pour la sélection ET pour cette boucle — jamais un 2e appel équivalent).
     if tous_fixtures_af is None:
-        tous_fixtures_af = recuperer_fixtures_api_football() if matchs_a_traiter else []
+        tous_fixtures_af = (recuperer_fixtures_api_football()
+                            if matchs_a_traiter and not SANS_API_FOOTBALL else [])
     if not matchs_a_traiter:
         print("   ⏭️ Aucun match candidat (OddsPapi indisponible ou sans cote) — API-Football non "
               "interrogé pour cette liste de fixtures, quota préservé.")
@@ -1906,11 +1912,31 @@ def collecter_donnees():
             stats_away = stats_equipe_en_cache(("api_football", donnees_af["away_id"]),
                                                lambda: trouver_ligue_et_stats(donnees_af["away_id"], nom_away_stats))
 
+        # --- Repli SANS API-Football : stats, 10 derniers matchs, H2H et Elo depuis hist_matchs.
+        stats_detaillees_hist = {"home": None, "away": None}
+        head_to_head_hist, elo_hist = None, None
+        if SANS_API_FOOTBALL:
+            import historique_local as hl
+            equipe_h, equipe_a = hl.resoudre_equipe(home_demande), hl.resoudre_equipe(away_demande)
+            if equipe_h and equipe_a:
+                depart = fx_op.get("startTime") if fx_op else None
+                avant = hl._date({"date": depart}) if depart else None
+                print(f"      ✓ Historique 5 saisons : {equipe_h[1]} / {equipe_a[1]}")
+                stats_home = hl.stats_equipe(equipe_h[0], equipe_h[1], equipe_h[2], avant)
+                stats_away = hl.stats_equipe(equipe_a[0], equipe_a[1], equipe_a[2], avant)
+                stats_detaillees_hist = {"home": hl.stats_detaillees(equipe_h[0], avant),
+                                         "away": hl.stats_detaillees(equipe_a[0], avant)}
+                head_to_head_hist = hl.head_to_head(equipe_h[0], equipe_a[0], avant)
+                if depart and equipe_h[2] == equipe_a[2]:
+                    elo_hist = recuperer_elo(equipe_h[0], equipe_a[0], equipe_h[2], depart)
+            else:
+                print("      ⚠️ Équipe(s) absente(s) de l'historique stocké — repli sur l'estimation par les cotes.")
+
         # --- Stats détaillées (10 derniers matchs) : buts, corners, cartons, fautes, tirs,
         # possession, hors-jeux, passes, clean sheets, forme — 15 métriques, demande
         # explicite du 30/09/2026. Désactivé par défaut (STATS_DETAILLEES_ACTIVE, coût en
         # quota API-Football élevé) — voir recuperer_stats_10_derniers_matchs.
-        stats_detaillees_home, stats_detaillees_away = None, None
+        stats_detaillees_home, stats_detaillees_away = stats_detaillees_hist["home"], stats_detaillees_hist["away"]
         if STATS_DETAILLEES_ACTIVE and donnees_af and donnees_af.get("home_id"):
             print(f"      → Recherche stats détaillées {nom_home_stats} (10 derniers matchs, API-Football)...")
             stats_detaillees_home = stats_equipe_en_cache(
@@ -1941,7 +1967,7 @@ def collecter_donnees():
         # du 30/09/2026 ("appelle tous les endpoints, ne limite rien"). /predictions (API-
         # Football) désactivé depuis le 03/10/2026 : c'est un pronostic externe, pas une donnée
         # brute — l'analyse ne doit reposer que sur notre propre modèle statistique.
-        head_to_head, blessures, predictions = None, None, None
+        head_to_head, blessures, predictions = head_to_head_hist, None, None
         if donnees_af and donnees_af.get("home_id") and donnees_af.get("away_id"):
             print(f"      → Recherche confrontations directes {nom_home_stats} vs {nom_away_stats} (API-Football)...")
             head_to_head = recuperer_head_to_head(donnees_af["home_id"], donnees_af["away_id"],
@@ -1951,7 +1977,7 @@ def collecter_donnees():
             blessures = recuperer_blessures(donnees_af["fixture_id_api_football"], donnees_af.get("home_id"),
                                              donnees_af.get("away_id"), nom_home_stats, nom_away_stats)
 
-        elo = None
+        elo = elo_hist
         if donnees_af and donnees_af.get("home_id") and donnees_af.get("away_id"):
             elo = recuperer_elo(donnees_af["home_id"], donnees_af["away_id"],
                                  donnees_af.get("league_id"), donnees_af.get("fixture_date"))

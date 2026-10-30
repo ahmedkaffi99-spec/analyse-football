@@ -121,6 +121,9 @@ jobs:
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       ODDSPAPI_KEY: ${{ secrets.ODDSPAPI_KEY }}
       API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+      # Abonnement API-Football terminé le 30/10/2026 : cotes OddsPapi + stats/Elo/H2H depuis les 5 saisons
+      # stockées (hist_matchs). Remettre "" après renouvellement du compte.
+      SANS_API_FOOTBALL: "1"
       API_FOOTBALL_QUOTA_PAR_MINUTE: ${{ secrets.API_FOOTBALL_QUOTA_PAR_MINUTE }}
       STATS_DETAILLEES_ACTIVE: ${{ secrets.STATS_DETAILLEES_ACTIVE }}
       SAISON_MAX_PLAN_GRATUIT: ${{ secrets.SAISON_MAX_PLAN_GRATUIT }}
