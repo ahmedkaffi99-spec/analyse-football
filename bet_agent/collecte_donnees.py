@@ -1540,7 +1540,9 @@ DATE_CIBLE_FIN = os.getenv("DATE_CIBLE_FIN")
 def _telecharger_fixtures_oddspapi():
     if DATE_CIBLE_DEBUT and DATE_CIBLE_FIN:
         date_from = f"{DATE_CIBLE_DEBUT}T00:00:00Z"
-        date_to = f"{DATE_CIBLE_FIN}T00:00:00Z"
+        # fin INCLUSIVE : date_debut == date_fin donnait une fenêtre vide (from == to) — OddsPapi
+        # renvoyait alors des matchs sans rapport avec le jour demandé.
+        date_to = (datetime.strptime(DATE_CIBLE_FIN, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%dT00:00:00Z")
     else:
         date_from = datetime.now(timezone.utc).strftime("%Y-%m-%dT00:00:00Z")
         date_to = (datetime.now(timezone.utc) + timedelta(days=2)).strftime("%Y-%m-%dT00:00:00Z")
