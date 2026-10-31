@@ -1919,7 +1919,8 @@ def collecter_donnees():
             import historique_local as hl
             equipe_h, equipe_a = hl.resoudre_equipe(home_demande), hl.resoudre_equipe(away_demande)
             if equipe_h and equipe_a:
-                depart = fx_op.get("startTime") if fx_op else None
+                depart = (fx_op.get("startTime") if fx_op else None) or (
+                    f"{DATE_CIBLE_DEBUT}T12:00:00+00:00" if DATE_CIBLE_DEBUT else None)
                 avant = hl._date({"date": depart}) if depart else None
                 print(f"      ✓ Historique 5 saisons : {equipe_h[1]} / {equipe_a[1]}")
                 stats_home = hl.stats_equipe(equipe_h[0], equipe_h[1], equipe_h[2], avant)
