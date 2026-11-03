@@ -23,7 +23,7 @@ from app.models import Run
 from app.services import pipeline
 from app.services.bilan import envoyer_bilans
 from app.services.runs import cloturer_runs_interrompus, executer_run
-from app.services import plan_verification
+from app.services import github_actions, plan_verification
 from app.services.verification import etat_live_jambes, verification_due, verifier_coupons_en_attente
 
 
@@ -88,6 +88,9 @@ def tache_verifier(args):
             for pv in plan_verification_a_cloturer(db):
                 pv.rapport_final_envoye = True
             db.commit()
+            if getattr(args, "si_du", False) and not plan_verification.plans_ouverts(db):
+                # Rapport final envoyé pour tous les coupons planifiés : plus aucun passage jusqu'au prochain run.
+                github_actions.activer_workflow(actif=False)
     return 0
 
 
@@ -116,6 +119,8 @@ def tache_planifier(args):
     if plan is None:
         print("ℹ️ Aucun coupon avec des jambes : rien à planifier.")
         return 0
+    if args.telegram:
+        github_actions.activer_workflow(actif=True)  # les vérifications ne tournent que pendant la vie des coupons
     jour = datetime.fromisoformat(plan["vagues"][0]["coup_envoi_premier"]).astimezone(plan_verification.DJIBOUTI).date().isoformat() \
         if plan["vagues"] else "—"
     print(plan_verification.message_plan(plan, jour))

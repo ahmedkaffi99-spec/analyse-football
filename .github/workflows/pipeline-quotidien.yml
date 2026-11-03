@@ -110,6 +110,7 @@ concurrency:
 
 permissions:
   contents: read
+  actions: write  # activer/désactiver le workflow de vérification (il ne tourne que pendant la vie des coupons)
 
 jobs:
   run:
@@ -118,6 +119,8 @@ jobs:
     env:
       PYTHONUNBUFFERED: "1"  # journaux affichés en direct (sinon visibles seulement à la fin)
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}        # active le workflow de vérification après l'envoi des coupons
+      GITHUB_REPOSITORY: ${{ github.repository }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       ODDSPAPI_KEY: ${{ secrets.ODDSPAPI_KEY }}
       API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}

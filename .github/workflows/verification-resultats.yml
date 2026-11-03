@@ -4,12 +4,11 @@ name: Vérification des résultats
 
 on:
   schedule:
-    # Vérification autonome des coupons (dont ceux du run automatique du midi) : toutes les 5 min, le code
-    # (`verifier --si-du`) ne vérifie que si un point de la grille du plan (1re vérification + k x 10 min) vient de tomber,
-    # ou, une fois par heure, en filet de sécurité (jambes sans heure connue, vieux coupons). Rien n'attend : hors
-    # heure prévue, le passage s'arrête en quelques secondes sans toucher au schéma ni à l'API. Une exécution manuelle
-    # à la minute exacte reste possible (workflow_dispatch).
-    - cron: "*/5 12-23,0-2 * * *"
+    # Vérification autonome : tous les quarts d'heure (23h15, 23h30, 23h45, 00h00...), le code (`verifier --si-du`)
+    # ne vérifie que si un point de la grille du plan vient de tomber. Ce workflow est ACTIVÉ par l'agent de
+    # planification dès que les coupons sont envoyés et DÉSACTIVÉ après le rapport final : aucun passage à vide
+    # le reste du temps. Il est réactivé le lendemain par le run automatique du midi.
+    - cron: "*/15 12-23,0-2 * * *"
   workflow_dispatch:
     inputs:
       telegram:
@@ -27,6 +26,7 @@ concurrency:
 
 permissions:
   contents: read
+  actions: write  # activer/désactiver le workflow de vérification (il ne tourne que pendant la vie des coupons)
 
 jobs:
   verifier:
@@ -77,6 +77,8 @@ jobs:
         env:
           TELEGRAM_MANUEL: ${{ inputs.telegram }}
           EVENEMENT: ${{ github.event_name }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
           PLANIFIER_COUPONS: ${{ inputs.planifier_coupons }}
         run: |
           if [ -n "$PLANIFIER_COUPONS" ]; then

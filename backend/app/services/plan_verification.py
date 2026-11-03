@@ -18,10 +18,10 @@ DJIBOUTI = timezone(timedelta(hours=3))  # heure d'affichage de l'utilisateur (U
 ECART_MEME_VAGUE_MIN = 20     # coups d'envoi à moins de 20 min : ils se terminent ensemble, vérifiés ensemble
 PREMIERE_VERIF_MIN = 90       # 21h45 -> 23h15 (demande de l'utilisateur)
 FIN_ESTIMEE_MIN = 115         # 90 min + mi-temps + arrêts de jeu
-CADENCE_MIN = 10              # 23h15, 23h25, 23h35... (demande de l'utilisateur : toutes les 10 min)
+CADENCE_MIN = 15              # 23h15, 23h30, 23h45, 00h00... (quarts d'heure, comme le cron)
 LIMITE_HEURES = 4             # au-delà : rapport final partiel
 BORNES_PREMIERE_MIN = (90, 90)    # 21h45 -> 23h15 exactement : l'IA n'y touche pas
-BORNES_CADENCE_MIN = (10, 30)
+BORNES_CADENCE_MIN = (15, 30)
 
 
 def _utc(dt):
@@ -155,8 +155,8 @@ def message_plan(plan, jour):
         lignes.append("   " + ", ".join(v["matchs"]))
         lignes.append(f"   ⏱️ 1re vérification à *{hhmm(ph)}* pile, puis toutes les {v['cadence_min']} min "
                       f"({hhmm(ph + timedelta(minutes=v['cadence_min']))}, "
-                      f"{hhmm(ph + timedelta(minutes=2 * v['cadence_min']))}…), une exécution lancée à chaque heure exacte, "
-                      f"arrêt dès que tout est jugé ; "
+                      f"{hhmm(ph + timedelta(minutes=2 * v['cadence_min']))}…), une exécution par heure prévue qui enregistre ce qu'elle trouve puis s'arrête, "
+                      f"fin dès que les 3 coupons sont jugés ; "
                       f"fin estimée {hhmm(datetime.fromisoformat(v['fin_estimee']))}, dernière tentative {hhmm(datetime.fromisoformat(v['limite']))}")
     if plan["sans_heure"]:
         lignes.append(f"\n⚠️ {len(plan['sans_heure'])} match(s) sans heure connue : vérifiés une fois par heure.")
@@ -237,7 +237,7 @@ def echeances_depassees(db, maintenant=None):
             and datetime.fromisoformat(pv.plan["echeance_rapport_final"]) <= maintenant]
 
 
-FENETRE_CRON_MIN = 5   # le cron de vérification passe toutes les 5 min : un point de la grille est traité au passage suivant
+FENETRE_CRON_MIN = 15  # le cron passe tous les quarts d'heure : un point de la grille est traité au passage qui le suit
 
 
 def points_dus(db, maintenant=None):
@@ -251,3 +251,8 @@ def points_dus(db, maintenant=None):
             if maintenant - timedelta(minutes=FENETRE_CRON_MIN) < t <= maintenant:
                 dus.append((v, t))
     return dus
+
+
+def plans_ouverts(db):
+    """Plans dont le rapport final n'a pas encore été envoyé."""
+    return list(db.scalars(select(PlanVerification).where(PlanVerification.rapport_final_envoye.is_(False))))

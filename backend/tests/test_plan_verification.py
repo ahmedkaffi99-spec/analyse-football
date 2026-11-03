@@ -91,15 +91,15 @@ def test_replanifier_remplace_l_ancien_plan(client):
         assert db.query(PlanVerification).count() == 1
 
 
-def test_grille_toutes_les_10_minutes_a_partir_de_23h30(client):
+def test_grille_tous_les_quarts_d_heure_a_partir_de_23h30(client):
     """Match de 19h00 UTC (22h00 Djibouti) : 1re vérification à +90 min (23h30), puis 23h40, 23h50... jusqu'à la limite."""
     client.post("/api/imports", json={"collecte": collecte_exemple(), "ticket": ticket_exemple()})
     with SessionLocal() as db:
         plan = pv.planifier(db, run_id=1, avec_ia=False)
     points = pv.points_de_verification(plan["vagues"][0])
-    assert [pv.hhmm(p) for p in points[:3]] == ["23h30", "23h40", "23h50"]
+    assert [pv.hhmm(p) for p in points[:3]] == ["23h30", "23h45", "00h00"]
     assert points[-1] <= datetime.fromisoformat(plan["vagues"][0]["limite"])
-    assert (points[1] - points[0]) == timedelta(minutes=10)
+    assert (points[1] - points[0]) == timedelta(minutes=15)
 
 
 def test_filet_horaire_sans_attente(client):
@@ -110,20 +110,20 @@ def test_filet_horaire_sans_attente(client):
         assert pv.vagues_actives(db, coup_envoi + timedelta(minutes=100))               # 20h40 UTC : fenêtre ouverte
         assert not pv.vagues_actives(db, coup_envoi + timedelta(minutes=89))            # avant 20h30 UTC
         assert verification_due(db, datetime(2026, 9, 25, 21, 5, tzinfo=timezone.utc))[0] is True    # passage horaire
-        assert verification_due(db, datetime(2026, 9, 25, 21, 46, tzinfo=timezone.utc))[0] is False  # entre deux points de la grille
+        assert verification_due(db, datetime(2026, 9, 25, 21, 46, tzinfo=timezone.utc))[0] is True   # point 21h45 tombé
 
 
 def test_cron_autonome_traite_chaque_point_de_la_grille(client):
-    """Coupons du run automatique : sans session, le cron de 5 min lance la vérification juste après chaque point."""
+    """Coupons du run automatique : sans session, le cron (quarts d'heure) vérifie juste après chaque point."""
     client.post("/api/imports", json={"collecte": collecte_exemple(), "ticket": ticket_exemple()})
     coup_envoi = datetime(2026, 9, 25, 19, 0, tzinfo=timezone.utc)
     p1 = coup_envoi + timedelta(minutes=90)  # 20h30 UTC
     with SessionLocal() as db:
         pv.planifier(db, run_id=1, avec_ia=False)
-        assert verification_due(db, p1 + timedelta(minutes=2))[0] is True            # passage 20h32 : point 20h30 tombé
-        assert verification_due(db, p1 + timedelta(minutes=6))[0] is False           # 20h36 : plus rien avant 20h40
-        assert verification_due(db, p1 + timedelta(minutes=12))[0] is True           # 20h42 : point 20h40
-        assert pv.points_dus(db, p1 - timedelta(minutes=1)) == []                    # avant la 1re vérification
+        assert verification_due(db, p1 + timedelta(minutes=2))[0] is True             # passage 20h32 : point 20h30 tombé
+        assert verification_due(db, p1 + timedelta(minutes=16))[0] is True            # passage 20h46 : point 20h45
+        assert pv.points_dus(db, p1 - timedelta(minutes=1)) == []                     # avant la 1re vérification
+        assert len(pv.points_dus(db, p1 + timedelta(minutes=2))) == 1
 
 
 def test_run_automatique_envoye_declenche_la_planification(client, monkeypatch):
@@ -150,3 +150,24 @@ def test_run_automatique_envoye_declenche_la_planification(client, monkeypatch):
     args.telegram = False
     taches.tache_run(args)
     assert appels == []
+
+
+def test_workflow_active_puis_desactive(monkeypatch):
+    from app.services import github_actions as ga
+    appels = []
+
+    class Rep:
+        status_code = 204
+
+    monkeypatch.setenv("GITHUB_TOKEN", "x")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "o/r")
+    assert ga.activer_workflow(actif=True, poster=lambda url, **k: appels.append(url) or Rep()) is True
+    assert ga.activer_workflow(actif=False, poster=lambda url, **k: appels.append(url) or Rep()) is True
+    assert appels[0].endswith("/actions/workflows/verification-resultats.yml/enable")
+    assert appels[1].endswith("/actions/workflows/verification-resultats.yml/disable")
+
+
+def test_workflow_sans_jeton_ne_fait_rien(monkeypatch):
+    from app.services import github_actions as ga
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    assert ga.activer_workflow(poster=lambda *a, **k: (_ for _ in ()).throw(AssertionError("appel inattendu"))) is False
