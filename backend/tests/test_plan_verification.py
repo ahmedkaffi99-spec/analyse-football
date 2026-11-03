@@ -91,17 +91,20 @@ def test_replanifier_remplace_l_ancien_plan(client):
         assert db.query(PlanVerification).count() == 1
 
 
-def test_rafale_23h15_puis_chaque_minute_jusqu_a_23h20(client, monkeypatch):
-    """Match de 21h45 : 1re vérification à 23h15 pile, puis chaque minute jusqu'à 23h20 (heures de Djibouti)."""
+def test_grille_toutes_les_10_minutes_a_partir_de_23h15(client, monkeypatch):
+    """Match de 21h45 : 1re vérification à 23h15 pile, puis 23h25, 23h35... (heures de Djibouti)."""
     from app import taches
     client.post("/api/imports", json={"collecte": collecte_exemple(), "ticket": ticket_exemple()})
     coup_envoi = datetime(2026, 9, 25, 19, 0, tzinfo=timezone.utc)
     debut = coup_envoi + timedelta(minutes=90)
     with SessionLocal() as db:
         pv.planifier(db, run_id=1, avec_ia=False)
-        assert pv.prochaine_rafale(db, debut - timedelta(minutes=17)) is None          # trop tôt pour attendre
-        vague, d = pv.prochaine_rafale(db, debut - timedelta(minutes=10))
-        assert d == debut and vague["rafale_min"] == 5
+        assert pv.prochains_points(db, debut - timedelta(minutes=17)) == []           # trop tôt pour attendre
+        assert pv.prochains_points(db, debut - timedelta(minutes=10)) == [debut]
+        assert pv.prochains_points(db, debut + timedelta(minutes=9)) == [debut + timedelta(minutes=10),
+                                                                         debut + timedelta(minutes=20)]  # 16 min d'horizon
+        # cron en retard de 1 min : le point manqué est quand même vérifié
+        assert pv.prochains_points(db, debut + timedelta(minutes=1))[0] == debut
 
         horloge = [debut - timedelta(minutes=10)]
         dormis, verifs = [], []
@@ -111,8 +114,8 @@ def test_rafale_23h15_puis_chaque_minute_jusqu_a_23h20(client, monkeypatch):
             horloge[0] += timedelta(seconds=secondes)
 
         monkeypatch.setattr(taches, "verifier_coupons_en_attente", lambda db_: verifs.append(horloge[0]) or {})
-        taches.executer_rafale(db, vague, d, maintenant=lambda: horloge[0], dormir=dormir)
-    assert dormis[0] == 600                                    # attend 10 min jusqu'à l'heure exacte
-    assert verifs[0] == debut                                  # 1re vérification pile à l'heure
-    assert len(verifs) == 6                                    # 0,1,2,3,4,5 min -> 23h15 ... 23h20
-    assert verifs[-1] == debut + timedelta(minutes=5)
+        points = [debut, debut + timedelta(minutes=10)]
+        taches.executer_points(db, points, maintenant=lambda: horloge[0], dormir=dormir)
+    assert dormis[0] == 600                                    # attend jusqu'à l'heure exacte
+    assert verifs == points                                    # 23h15 puis 23h25 pile
+    assert pv.hhmm(verifs[0]) == "22h15" and pv.hhmm(verifs[1]) == "22h25"  # 19h00 UTC + 90 min = 22h15 Djibouti

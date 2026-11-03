@@ -18,13 +18,12 @@ DJIBOUTI = timezone(timedelta(hours=3))  # heure d'affichage de l'utilisateur (U
 ECART_MEME_VAGUE_MIN = 20     # coups d'envoi à moins de 20 min : ils se terminent ensemble, vérifiés ensemble
 PREMIERE_VERIF_MIN = 90       # 21h45 -> 23h15 (demande de l'utilisateur)
 FIN_ESTIMEE_MIN = 115         # 90 min + mi-temps + arrêts de jeu
-CADENCE_MIN = 15
+CADENCE_MIN = 10              # 23h15, 23h25, 23h35... (demande de l'utilisateur : toutes les 10 min)
 LIMITE_HEURES = 4             # au-delà : rapport final partiel
-RAFALE_MIN = 5                # 23h15 puis chaque minute jusqu'à 23h20 (demande de l'utilisateur)
-RAFALE_PAS_MIN = 1
+TOLERANCE_RETARD_MIN = 2      # cron en retard : un point de la grille manqué de moins de 2 min est quand même vérifié
 HORIZON_ATTENTE_MIN = 16      # le cron passe toutes les 15 min : le job attend jusqu'à 16 min l'heure exacte
 BORNES_PREMIERE_MIN = (90, 90)    # 21h45 -> 23h15 exactement : l'IA n'y touche pas
-BORNES_CADENCE_MIN = (15, 30)     # le cron passe toutes les 15 min : jamais de cadence annoncée plus fine
+BORNES_CADENCE_MIN = (10, 30)
 
 
 def _utc(dt):
@@ -75,7 +74,6 @@ def construire_vagues(matchs):
             "numero": i + 1, "match_ids": [m["match_id"] for m in v], "matchs": [m["libelle"] for m in v],
             "coup_envoi_premier": _iso(debut), "coup_envoi_dernier": _iso(dernier),
             "premiere_verif": _iso(debut + timedelta(minutes=PREMIERE_VERIF_MIN)),
-            "rafale_min": RAFALE_MIN, "rafale_pas_min": RAFALE_PAS_MIN,
             "cadence_min": CADENCE_MIN,
             "fin_estimee": _iso(dernier + timedelta(minutes=FIN_ESTIMEE_MIN)),
             "limite": _iso(dernier + timedelta(hours=LIMITE_HEURES)),
@@ -157,9 +155,9 @@ def message_plan(plan, jour):
                       f"{hhmm(datetime.fromisoformat(v['coup_envoi_premier']))}"
                       + (f"–{hhmm(datetime.fromisoformat(v['coup_envoi_dernier']))}" if v["coup_envoi_dernier"] != v["coup_envoi_premier"] else ""))
         lignes.append("   " + ", ".join(v["matchs"]))
-        fin_rafale = ph + timedelta(minutes=v.get("rafale_min", RAFALE_MIN))
-        lignes.append(f"   ⏱️ 1re vérification à *{hhmm(ph)}* pile, puis chaque minute jusqu'à {hhmm(fin_rafale)}, "
-                      f"ensuite toutes les {v['cadence_min']} min ; "
+        lignes.append(f"   ⏱️ 1re vérification à *{hhmm(ph)}* pile, puis toutes les {v['cadence_min']} min "
+                      f"({hhmm(ph + timedelta(minutes=v['cadence_min']))}, "
+                      f"{hhmm(ph + timedelta(minutes=2 * v['cadence_min']))}…) ; "
                       f"fin estimée {hhmm(datetime.fromisoformat(v['fin_estimee']))}, dernière tentative {hhmm(datetime.fromisoformat(v['limite']))}")
     if plan["sans_heure"]:
         lignes.append(f"\n⚠️ {len(plan['sans_heure'])} match(s) sans heure connue : vérifiés une fois par heure.")
@@ -204,24 +202,35 @@ def planifier(db, run_id=None, coupon_ids=None, notifier=None, avec_ia=True):
     return plan
 
 
-def vagues_actives(db, maintenant=None):
-    """Vagues dont la fenêtre [première vérification, limite] est ouverte et qui ont encore une jambe en attente,
-    avec respect de la cadence (le cron passe toutes les 15 min). [(plan_id, vague, raison)]"""
+def points_de_verification(vague, maintenant, horizon_min=0):
+    """Heures exactes de la grille (première vérification + k × cadence, jusqu'à la limite) comprises entre
+    maintenant - TOLERANCE_RETARD_MIN et maintenant + horizon_min."""
+    debut = datetime.fromisoformat(vague["premiere_verif"])
+    limite = datetime.fromisoformat(vague["limite"])
+    pas = timedelta(minutes=max(vague.get("cadence_min", CADENCE_MIN), 1))
+    bas = _utc(maintenant) - timedelta(minutes=TOLERANCE_RETARD_MIN)
+    haut = _utc(maintenant) + timedelta(minutes=horizon_min)
+    points, t = [], debut
+    while t <= limite and t <= haut:
+        if t >= bas:
+            points.append(t)
+        t += pas
+    return points
+
+
+def vagues_actives(db, maintenant=None, horizon_min=0):
+    """[(plan_id, vague, points)] : vagues ayant un point de la grille dans [maintenant - tolérance, maintenant +
+    horizon] et encore une jambe en attente."""
     maintenant = _utc(maintenant or datetime.now(timezone.utc))
     actives = []
     for pv in db.scalars(select(PlanVerification).where(PlanVerification.rapport_final_envoye.is_(False))):
         for v in pv.plan.get("vagues", []):
-            debut = datetime.fromisoformat(v["premiere_verif"])
-            limite = datetime.fromisoformat(v["limite"])
-            if not (debut <= maintenant <= limite):
+            points = points_de_verification(v, maintenant, horizon_min)
+            if not points:
                 continue
-            ecoule = (maintenant - debut).total_seconds() / 60
-            if ecoule % max(v.get("cadence_min", CADENCE_MIN), 1) >= 15:
-                continue  # entre deux vérifications espacées de plus de 15 min
-            en_attente = db.scalar(select(Jambe.id).where(Jambe.resultat == "en_attente",
-                                                          Jambe.match_id.in_(v["match_ids"])).limit(1))
-            if en_attente is not None:
-                actives.append((pv.id, v, f"vague {v['numero']} (1re vérification prévue {hhmm(debut)})"))
+            if db.scalar(select(Jambe.id).where(Jambe.resultat == "en_attente",
+                                                Jambe.match_id.in_(v["match_ids"])).limit(1)) is not None:
+                actives.append((pv.id, v, points))
     return actives
 
 
@@ -233,17 +242,9 @@ def echeances_depassees(db, maintenant=None):
             and datetime.fromisoformat(pv.plan["echeance_rapport_final"]) <= maintenant]
 
 
-def prochaine_rafale(db, maintenant=None):
-    """(vague, debut) de la vague dont la première vérification tombe dans les HORIZON_ATTENTE_MIN prochaines minutes
-    (ou a commencé il y a moins de RAFALE_MIN minutes) et qui a encore une jambe en attente ; sinon None."""
-    maintenant = _utc(maintenant or datetime.now(timezone.utc))
-    for pv in db.scalars(select(PlanVerification).where(PlanVerification.rapport_final_envoye.is_(False))):
-        for v in pv.plan.get("vagues", []):
-            debut = datetime.fromisoformat(v["premiere_verif"])
-            fin = debut + timedelta(minutes=v.get("rafale_min", RAFALE_MIN))
-            if not (debut - timedelta(minutes=HORIZON_ATTENTE_MIN) <= maintenant <= fin):
-                continue
-            if db.scalar(select(Jambe.id).where(Jambe.resultat == "en_attente",
-                                                Jambe.match_id.in_(v["match_ids"])).limit(1)) is not None:
-                return v, debut
-    return None
+def prochains_points(db, maintenant=None):
+    """Heures exactes à vérifier dans les HORIZON_ATTENTE_MIN prochaines minutes (toutes vagues confondues, triées)."""
+    points = set()
+    for _, _, pts in vagues_actives(db, maintenant, HORIZON_ATTENTE_MIN):
+        points.update(pts)
+    return sorted(points)
