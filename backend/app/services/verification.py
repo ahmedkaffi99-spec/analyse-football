@@ -216,7 +216,10 @@ def verification_due(db, maintenant=None):
     est passée et dont la fenêtre n'est pas close ; sinon, une fois par heure (rattrapage) s'il reste des jambes
     en attente sans coup d'envoi connu ou hors fenêtre. Ne touche pas à l'API : c'est le filtre du cron."""
     maintenant = maintenant or datetime.now(timezone.utc)
-    from app.services.plan_verification import echeances_depassees, vagues_actives
+    from app.services.plan_verification import echeances_depassees, hhmm, points_dus, vagues_actives
+    dus = points_dus(db, maintenant)  # point de la grille du plan tombé depuis le dernier passage du cron (5 min)
+    if dus:
+        return True, f"vague {dus[0][0]['numero']} : vérification prévue à {hhmm(dus[0][1])}"
     if vagues_actives(db, maintenant) and maintenant.minute < VERIF_RATTRAPAGE_MINUTES:
         return True, "filet horaire : fenêtre d'une vague ouverte avec des jambes en attente"
     if echeances_depassees(db, maintenant):

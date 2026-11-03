@@ -110,4 +110,43 @@ def test_filet_horaire_sans_attente(client):
         assert pv.vagues_actives(db, coup_envoi + timedelta(minutes=100))               # 20h40 UTC : fenêtre ouverte
         assert not pv.vagues_actives(db, coup_envoi + timedelta(minutes=89))            # avant 20h30 UTC
         assert verification_due(db, datetime(2026, 9, 25, 21, 5, tzinfo=timezone.utc))[0] is True    # passage horaire
-        assert verification_due(db, datetime(2026, 9, 25, 21, 40, tzinfo=timezone.utc))[0] is False  # entre deux passages
+        assert verification_due(db, datetime(2026, 9, 25, 21, 46, tzinfo=timezone.utc))[0] is False  # entre deux points de la grille
+
+
+def test_cron_autonome_traite_chaque_point_de_la_grille(client):
+    """Coupons du run automatique : sans session, le cron de 5 min lance la vérification juste après chaque point."""
+    client.post("/api/imports", json={"collecte": collecte_exemple(), "ticket": ticket_exemple()})
+    coup_envoi = datetime(2026, 9, 25, 19, 0, tzinfo=timezone.utc)
+    p1 = coup_envoi + timedelta(minutes=90)  # 20h30 UTC
+    with SessionLocal() as db:
+        pv.planifier(db, run_id=1, avec_ia=False)
+        assert verification_due(db, p1 + timedelta(minutes=2))[0] is True            # passage 20h32 : point 20h30 tombé
+        assert verification_due(db, p1 + timedelta(minutes=6))[0] is False           # 20h36 : plus rien avant 20h40
+        assert verification_due(db, p1 + timedelta(minutes=12))[0] is True           # 20h42 : point 20h40
+        assert pv.points_dus(db, p1 - timedelta(minutes=1)) == []                    # avant la 1re vérification
+
+
+def test_run_automatique_envoye_declenche_la_planification(client, monkeypatch):
+    """Run du midi (cron --telegram) : une fois les coupons partis, l'agent planifie les vérifications."""
+    import argparse
+    from app import taches
+    from app.models import Run
+
+    def faux_run(run_id, **_k):
+        with SessionLocal() as db:
+            run = db.get(Run, run_id)
+            run.statut, run.envoye_telegram = "termine", True
+            db.commit()
+
+    appels = []
+    monkeypatch.setattr(taches, "executer_run", faux_run)
+    monkeypatch.setattr(taches, "tache_planifier", lambda args: appels.append(args.run_id) or 0)
+    args = argparse.Namespace(telegram=True, si_aucun_ticket_aujourdhui=False, sans_redaction=True, depuis_run=None,
+                              moteur="agent", profils_json="", ignorer_diversite_croisee=False)
+    assert taches.tache_run(args) == 0
+    assert len(appels) == 1
+
+    appels.clear()                                  # sans Telegram : pas de planification
+    args.telegram = False
+    taches.tache_run(args)
+    assert appels == []

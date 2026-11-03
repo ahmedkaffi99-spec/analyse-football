@@ -4,10 +4,12 @@ name: Vérification des résultats
 
 on:
   schedule:
-    # Filet de sécurité : l'agent de planification lance une exécution manuelle à CHAQUE heure exacte prévue (23h15,
-    # 23h25...) — rien n'attend. Ce cron ne sert que de rattrapage : `verifier --si-du` ne vérifie, une fois par heure,
-    # que s'il reste des jambes en attente (fenêtre de vague ouverte, matchs sans heure connue ou vieux coupons).
-    - cron: "*/15 12-23,0-2 * * *"
+    # Vérification autonome des coupons (dont ceux du run automatique du midi) : toutes les 5 min, le code
+    # (`verifier --si-du`) ne vérifie que si un point de la grille du plan (1re vérification + k x 10 min) vient de tomber,
+    # ou, une fois par heure, en filet de sécurité (jambes sans heure connue, vieux coupons). Rien n'attend : hors
+    # heure prévue, le passage s'arrête en quelques secondes sans toucher au schéma ni à l'API. Une exécution manuelle
+    # à la minute exacte reste possible (workflow_dispatch).
+    - cron: "*/5 12-23,0-2 * * *"
   workflow_dispatch:
     inputs:
       telegram:

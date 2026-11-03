@@ -235,3 +235,19 @@ def echeances_depassees(db, maintenant=None):
     return [pv for pv in db.scalars(select(PlanVerification).where(PlanVerification.rapport_final_envoye.is_(False)))
             if pv.plan.get("echeance_rapport_final")
             and datetime.fromisoformat(pv.plan["echeance_rapport_final"]) <= maintenant]
+
+
+FENETRE_CRON_MIN = 5   # le cron de vérification passe toutes les 5 min : un point de la grille est traité au passage suivant
+
+
+def points_dus(db, maintenant=None):
+    """[(vague, heure_du_point)] : points de la grille tombés dans les FENETRE_CRON_MIN dernières minutes, pour les
+    vagues qui ont encore une jambe en attente. Utilisé par le cron autonome (coupons du run automatique du midi,
+    sans session pour lancer chaque vérification à la minute)."""
+    maintenant = _utc(maintenant or datetime.now(timezone.utc))
+    dus = []
+    for _, v in vagues_actives(db, maintenant):
+        for t in points_de_verification(v):
+            if maintenant - timedelta(minutes=FENETRE_CRON_MIN) < t <= maintenant:
+                dus.append((v, t))
+    return dus
