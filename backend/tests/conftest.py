@@ -31,7 +31,7 @@ def sans_api_football_reelle(monkeypatch):
     from app.services import pipeline
 
     _, _, vr = pipeline.modules()
-    monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda: [])
+    monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda *_a, **_k: [])
 
 
 @pytest.fixture

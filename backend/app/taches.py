@@ -23,7 +23,8 @@ from app.models import Run
 from app.services import pipeline
 from app.services.bilan import envoyer_bilans
 from app.services.runs import cloturer_runs_interrompus, executer_run
-from app.services.verification import etat_live_jambes, verifier_coupons_en_attente
+from app.services import github_actions, plan_verification
+from app.services.verification import etat_live_jambes, verification_due, verifier_coupons_en_attente
 
 
 def ticket_deja_produit_aujourdhui(db):
@@ -63,7 +64,14 @@ def tache_run(args):
         print(f"🏁 Run {run_id} : {run.statut}" + (f" — {run.detail}" if run.detail else ""))
         for c in run.coupons:
             print(f"   {c.nom} : {len(c.jambes)} jambe(s), cote {c.cote_totale}")
-        return 1 if run.statut == "erreur" else 0
+        envoye = bool(run.envoye_telegram)
+        statut = run.statut
+    if envoye and args.telegram and statut == "termine":
+        try:  # le plan ne doit jamais faire échouer un run dont les coupons sont déjà partis
+            tache_planifier(argparse.Namespace(run_id=run_id, coupons="", telegram=True, sans_ia=False))
+        except Exception as e:
+            print(f"⚠️ Planification de la vérification impossible : {e}")
+    return 1 if statut == "erreur" else 0
 
 
 def tache_verifier(args):
@@ -72,7 +80,50 @@ def tache_verifier(args):
         print(f"🔎 Jambes jugées : {dict(compte) or 'aucune (rien en attente ou matchs pas terminés)'}")
         if args.telegram:
             _, ae, _ = pipeline.modules()
-            print(f"📤 Bilan(s) Telegram envoyé(s) : {envoyer_bilans(db, ae.notifier_telegram)}")
+            # Heure limite du plan dépassée : rapport final envoyé même si un match manque (partiel).
+            echus = plan_verification.echeances_depassees(db)
+            runs_forces = {pv.run_id for pv in echus}
+            envoyes = envoyer_bilans(db, ae.notifier_telegram, forcer_runs=runs_forces)
+            print(f"📤 Bilan(s) Telegram envoyé(s) : {envoyes}")
+            for pv in plan_verification_a_cloturer(db):
+                pv.rapport_final_envoye = True
+            db.commit()
+            if getattr(args, "si_du", False) and not plan_verification.plans_ouverts(db):
+                # Rapport final envoyé pour tous les coupons planifiés : plus aucun passage jusqu'au prochain run.
+                github_actions.activer_workflow(actif=False)
+    return 0
+
+
+def plan_verification_a_cloturer(db):
+    """Plans dont tous les coupons ont leur bilan envoyé : plus rien à planifier."""
+    from app.models import Coupon, PlanVerification
+    clos = []
+    for pv in db.scalars(select(PlanVerification).where(PlanVerification.rapport_final_envoye.is_(False))):
+        coupons = list(db.scalars(select(Coupon).where(Coupon.run_id == pv.run_id)))
+        if coupons and all(c.bilan_envoye or not c.jambes for c in coupons):
+            clos.append(pv)
+    return clos
+
+
+def tache_planifier(args):
+    """Agent de planification : analyse les matchs des coupons envoyés, planifie les vérifications et annonce le plan."""
+    _, ae, _ = pipeline.modules()
+    ids = [int(x) for x in (args.coupons or "").split(",") if x.strip().isdigit()]
+    with SessionLocal() as db:
+        run_id = args.run_id
+        if not ids and run_id is None:
+            run_id = db.scalar(select(Run.id).where(Run.statut == "termine").order_by(Run.id.desc()).limit(1))
+        plan = plan_verification.planifier(db, run_id=run_id, coupon_ids=ids or None,
+                                           notifier=ae.notifier_telegram if args.telegram else None,
+                                           avec_ia=not args.sans_ia)
+    if plan is None:
+        print("ℹ️ Aucun coupon avec des jambes : rien à planifier.")
+        return 0
+    if args.telegram:
+        github_actions.activer_workflow(actif=True)  # les vérifications ne tournent que pendant la vie des coupons
+    jour = datetime.fromisoformat(plan["vagues"][0]["coup_envoi_premier"]).astimezone(plan_verification.DJIBOUTI).date().isoformat() \
+        if plan["vagues"] else "—"
+    print(plan_verification.message_plan(plan, jour))
     return 0
 
 
@@ -445,6 +496,14 @@ def main(argv=None):
                             "dans tous les cas. Moteur agent uniquement.")
     p_verif = sous.add_parser("verifier", help="juge les jambes dont le match est terminé")
     p_verif.add_argument("--telegram", action="store_true", help="envoie le bilan quand tout est jugé")
+    p_verif.add_argument("--si-du", action="store_true",
+                         help="ne vérifie que si un match est arrivé à l'heure de sa vérification (coup d'envoi + 90 min)")
+    p_plan = sous.add_parser("planifier-verification",
+                             help="agent IA : planifie l'heure exacte des vérifications et du rapport final")
+    p_plan.add_argument("--run-id", type=int, help="run (défaut : dernier run terminé)")
+    p_plan.add_argument("--coupons", type=str, default="", help="numéros de coupons séparés par des virgules")
+    p_plan.add_argument("--telegram", action="store_true", help="annonce le plan sur Telegram")
+    p_plan.add_argument("--sans-ia", action="store_true", help="plan déterministe, sans appel IA")
     p_live = sous.add_parser("live", help="suivi en direct (API-Football) des jambes en attente, informatif")
     p_live.add_argument("--telegram", action="store_true", help="envoie le rapport en direct sur Telegram")
     p_live.add_argument("--run-id", type=int, help="limite au run (défaut : tous les runs en attente)")
@@ -467,10 +526,17 @@ def main(argv=None):
         return tache_modeles_gratuits(args)
     if args.tache == "tester-ia":
         return tache_tester_ia(args)
+    if args.tache == "verifier" and args.si_du:
+        # Avant init_db : un passage « rien à faire » ne doit ni modifier le schéma ni appeler l'API.
+        with SessionLocal() as db:
+            due, raison = verification_due(db)
+        print(f"{'⏱️ Vérification due' if due else '💤 Rien à vérifier'} — {raison}")
+        if not due:
+            return 0
     init_db()
     with SessionLocal() as db:
         cloturer_runs_interrompus(db)
-    taches = {"run": tache_run, "verifier": tache_verifier, "live": tache_live, "envoyer": tache_envoyer,
+    taches = {"run": tache_run, "verifier": tache_verifier, "planifier-verification": tache_planifier, "live": tache_live, "envoyer": tache_envoyer,
               "tester-api": tache_tester_api, "backfill": tache_backfill}
     return taches[args.tache](args)
 

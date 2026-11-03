@@ -149,7 +149,7 @@ def test_repli_api_football_quand_oddspapi_indisponible(client, monkeypatch):
     client.post("/api/imports", json={"collecte": collecte_exemple(), "ticket": ticket_exemple()})
     _, _, vr = pipeline.modules()
     monkeypatch.setattr(vr, "recuperer_fixtures_du_jour", lambda: {})  # OddsPapi indisponible
-    monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda: [
+    monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda *_a, **_k: [
         {"teams": {"home": {"name": "RC Lens"}, "away": {"name": "AJ Auxerre"}},
          "fixture": {"status": {"short": "FT"}}, "goals": {"home": 2, "away": 1}}])
 
@@ -204,14 +204,14 @@ def test_verification_api_football_d_abord_sans_appel_oddspapi(client, monkeypat
     # test_verification_perime_apres_le_delai pour celle-ci) : délai désactivé ici pour garder
     # "pas_termine" malgré le coup d'envoi ancien (25/09/2026) de collecte_exemple().
     monkeypatch.setattr(vr, "DELAI_PEREMPTION_JOURS", 999999)
-    monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda: [
+    monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda *_a, **_k: [
         {"teams": {"home": {"name": "RC Lens"}, "away": {"name": "AJ Auxerre"}},
          "fixture": {"status": {"short": "2H"}}, "goals": {"home": 1, "away": 0}}])
 
     resultat = client.post("/api/coupons/verification").json()
     assert resultat["pas_termine"] == 3 and appels_oddspapi == []
 
-    monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda: [
+    monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda *_a, **_k: [
         {"teams": {"home": {"name": "RC Lens"}, "away": {"name": "AJ Auxerre"}},
          "fixture": {"status": {"short": "FT"}}, "goals": {"home": 2, "away": 1}}])
     resultat = client.post("/api/coupons/verification").json()
@@ -227,7 +227,7 @@ def test_verification_perime_apres_le_delai_jamais_un_verdict_devine(client, mon
     client.post("/api/imports", json={"collecte": collecte_exemple(), "ticket": ticket_exemple()})
     _, _, vr = pipeline.modules()
     monkeypatch.setattr(vr, "recuperer_fixtures_du_jour", lambda: {})
-    monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda: [])  # introuvable
+    monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda *_a, **_k: [])  # introuvable
 
     resultat = client.post("/api/coupons/verification").json()
     assert resultat["perime"] == 3
@@ -247,7 +247,7 @@ def test_verification_match_annule_remboursement_jamais_un_score_devine(client, 
     client.post("/api/imports", json={"collecte": collecte_exemple(), "ticket": ticket_exemple()})
     _, _, vr = pipeline.modules()
     monkeypatch.setattr(vr, "recuperer_fixtures_du_jour", lambda: {})
-    monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda: [
+    monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda *_a, **_k: [
         {"teams": {"home": {"name": "RC Lens"}, "away": {"name": "AJ Auxerre"}},
          "fixture": {"status": {"short": "PST"}}, "goals": {"home": None, "away": None}}])
 
@@ -263,7 +263,7 @@ def test_verification_match_suspendu_reste_en_attente_tant_que_non_perime(client
     _, _, vr = pipeline.modules()
     monkeypatch.setattr(vr, "DELAI_PEREMPTION_JOURS", 999999)
     monkeypatch.setattr(vr, "recuperer_fixtures_du_jour", lambda: {})
-    monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda: [
+    monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda *_a, **_k: [
         {"teams": {"home": {"name": "RC Lens"}, "away": {"name": "AJ Auxerre"}},
          "fixture": {"status": {"short": "SUSP"}}, "goals": {"home": 1, "away": 0}}])
 
@@ -282,7 +282,7 @@ def test_verification_aet_juge_sur_le_score_reglementaire_pas_le_score_final(cli
     client.post("/api/imports", json={"collecte": collecte_exemple(), "ticket": ticket_exemple()})
     _, _, vr = pipeline.modules()
     monkeypatch.setattr(vr, "recuperer_fixtures_du_jour", lambda: {})
-    monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda: [
+    monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda *_a, **_k: [
         {"teams": {"home": {"name": "RC Lens"}, "away": {"name": "AJ Auxerre"}},
          "fixture": {"status": {"short": "AET"}},
          "score": {"fulltime": {"home": 1, "away": 0}},  # score réglementaire : Total(2.5)=1 -> perdu (Over)/gagné (Under)
@@ -327,7 +327,7 @@ def test_verification_stats_absentes_rejugees_puis_jugees(client, monkeypatch):
     monkeypatch.setattr(vr, "DELAI_STATS_JOURS", 999999)
     monkeypatch.setattr(vr, "DELAI_PEREMPTION_JOURS", 999999)
     monkeypatch.setattr(vr, "recuperer_fixtures_du_jour", lambda: {})
-    monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda: [
+    monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda *_a, **_k: [
         {"teams": {"home": {"name": "RC Lens"}, "away": {"name": "AJ Auxerre"}},
          "fixture": {"status": {"short": "FT"}}, "goals": {"home": 2, "away": 1}}])
     monkeypatch.setattr(cd, "_appel_statistiques_fixture", lambda fixture_id: [])  # statistiques pas encore publiées
@@ -356,7 +356,7 @@ def test_verification_stats_absentes_non_verifiable_apres_le_delai(client, monke
     cd, _, vr = pipeline.modules()
     # Le coup d'envoi de collecte_exemple() (25/09/2026) est bien au-delà de DELAI_STATS_JOURS (2 jours).
     monkeypatch.setattr(vr, "recuperer_fixtures_du_jour", lambda: {})
-    monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda: [
+    monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda *_a, **_k: [
         {"teams": {"home": {"name": "RC Lens"}, "away": {"name": "AJ Auxerre"}},
          "fixture": {"status": {"short": "FT"}}, "goals": {"home": 2, "away": 1}}])
     monkeypatch.setattr(cd, "_appel_statistiques_fixture", lambda fixture_id: [])

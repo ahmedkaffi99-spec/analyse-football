@@ -13,7 +13,7 @@ ICONES = {"gagne": "✅", "perdu": "❌", "push": "➖ remboursé", "non_verifia
 VERDICTS = {"gagne": "✅ GAGNÉ", "perdu": "❌ PERDU", "incertain": "❓ INCERTAIN (au moins une jambe non vérifiable)"}
 
 
-def construire_message(coupons):
+def construire_message(coupons, partiel=False):
     sections = []
     for c in sorted(coupons, key=lambda c: c.profil):
         if not c.jambes:
@@ -43,11 +43,13 @@ def construire_message(coupons):
     separateur = "\n\n━━━━━━━━━━━━━━━━━━━━\n\n"
     nb = len(coupons)
     suffixe = f" — {nb} PROFILS" if nb > 1 else ""
-    return (f"🏁 *RÉSULTATS DU JOUR{suffixe} — {jour}*\n━━━━━━━━━━━━━━━━━━━━\n\n"
-            + separateur.join(sections))
+    entete = f"🏁 *RÉSULTATS DU JOUR{suffixe} — {jour}*\n━━━━━━━━━━━━━━━━━━━━\n\n"
+    if partiel:
+        entete += "⚠️ *Rapport final partiel* : heure limite atteinte, certains matchs n'ont pas pu être jugés (⏳).\n\n"
+    return entete + separateur.join(sections)
 
 
-def envoyer_bilans(db, notifier):
+def envoyer_bilans(db, notifier, forcer_runs=()):
     """notifier(message) -> bool (analyser_et_envoyer.notifier_telegram). Renvoie le nombre de
     bilans envoyés. Un run dont un coupon est encore en attente est laissé pour plus tard."""
     par_run = defaultdict(list)
@@ -56,9 +58,11 @@ def envoyer_bilans(db, notifier):
 
     envoyes = 0
     for coupons in par_run.values():
-        if not any(c.jambes for c in coupons) or any(c.statut == "en_attente" for c in coupons):
+        incomplet = any(c.statut == "en_attente" for c in coupons)
+        forcer = coupons[0].run_id in forcer_runs
+        if not any(c.jambes for c in coupons) or (incomplet and not forcer):
             continue
-        if notifier(construire_message(coupons)):
+        if notifier(construire_message(coupons, partiel=incomplet)):
             for c in coupons:
                 c.bilan_envoye = True
             db.commit()

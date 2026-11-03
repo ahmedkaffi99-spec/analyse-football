@@ -179,7 +179,7 @@ def test_juger_cotes_en_attente_total_gagne_via_api_football(monkeypatch):
 
         cd, _, vr = pipeline.modules()
         fx = _FixtureAF("Home FC", "Away FC", "FT", 2, 1).vers_brut()  # total = 3 > 2.5 -> Over gagne
-        monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda: [fx])
+        monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda *_a, **_k: [fx])
 
         resultat = juger_cotes_en_attente(db)
         assert resultat["jugees"] == 1
@@ -199,7 +199,7 @@ def test_juger_cotes_en_attente_match_pas_termine_laisse_en_attente(monkeypatch)
 
         _, _, vr = pipeline.modules()
         monkeypatch.setattr(vr, "DELAI_PEREMPTION_JOURS", 999999)  # pas le sujet de ce test
-        monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda: [])
+        monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda *_a, **_k: [])
         monkeypatch.setattr(vr, "recuperer_fixtures_du_jour", lambda: {})
 
         resultat = juger_cotes_en_attente(db)
@@ -228,7 +228,7 @@ def test_juger_cotes_en_attente_match_annule_remboursement(monkeypatch):
 
         _, _, vr = pipeline.modules()
         monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour",
-                            lambda: [_fixture_af("Home FC", "Away FC", "CANC")])
+                            lambda *_a, **_k: [_fixture_af("Home FC", "Away FC", "CANC")])
 
         resultat = juger_cotes_en_attente(db)
         assert resultat["jugees"] == 1
@@ -250,7 +250,7 @@ def test_juger_cotes_en_attente_match_suspendu_reste_en_attente(monkeypatch):
         _, _, vr = pipeline.modules()
         monkeypatch.setattr(vr, "DELAI_PEREMPTION_JOURS", 999999)
         monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour",
-                            lambda: [_fixture_af("Home FC", "Away FC", "SUSP", 1, 0)])
+                            lambda *_a, **_k: [_fixture_af("Home FC", "Away FC", "SUSP", 1, 0)])
 
         resultat = juger_cotes_en_attente(db)
         assert resultat["pas_termine"] == 1
@@ -272,7 +272,7 @@ def test_juger_cotes_en_attente_perime_apres_le_delai(monkeypatch):
         from app.services import pipeline
 
         _, _, vr = pipeline.modules()
-        monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda: [])
+        monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda *_a, **_k: [])
         monkeypatch.setattr(vr, "recuperer_fixtures_du_jour", lambda: {})
 
         resultat = juger_cotes_en_attente(db)
@@ -295,7 +295,7 @@ def test_juger_cotes_en_attente_aet_utilise_le_score_reglementaire(monkeypatch):
         _, _, vr = pipeline.modules()
         # score.fulltime = 1-0 (total=1, Over 2.5 perdu) ; goals = 3-0 (total=3, Over 2.5
         # gagné si (par erreur) utilisé) -> le test distingue bien les deux lectures.
-        monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda: [
+        monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda *_a, **_k: [
             _fixture_af("Home FC", "Away FC", "AET", home_g=3, away_g=0, score_fulltime=(1, 0))])
 
         resultat = juger_cotes_en_attente(db)

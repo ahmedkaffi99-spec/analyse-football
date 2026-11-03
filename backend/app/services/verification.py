@@ -2,7 +2,8 @@
 verifier_resultats.py (grader_pick & co) — même règles que le bilan Telegram du soir."""
 
 from collections import Counter
-from datetime import datetime, timezone
+import os
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import and_, or_, select
 
@@ -52,7 +53,10 @@ def verifier_jambes(db, jambes):
     # diminuée") : quota de 7 500/jour contre 250 pour OddsPapi, et ce passage tourne chaque
     # heure de 15h à 23h. OddsPapi n'est appelé que pour un match introuvable côté
     # API-Football — jamais pour un match trouvé mais pas encore terminé.
-    fixtures_af = vr.recuperer_fixtures_api_football_du_jour()
+    fixtures_af = vr.recuperer_fixtures_api_football_du_jour(
+        vr.dates_hors_fenetre((j.match.coup_envoi for j in a_juger if j.match),
+                              jours_coupons=[j.coupon.jour for j in a_juger
+                                             if not (j.match and j.match.coup_envoi)]))
     fixtures = None  # OddsPapi, chargé à la demande (repli), une seule fois pour tout le passage
     scores = {}
 
@@ -172,7 +176,10 @@ def etat_live_jambes(db, run_id=None):
     if not jambes:
         return []
 
-    fixtures_af = vr.recuperer_fixtures_api_football_du_jour()
+    fixtures_af = vr.recuperer_fixtures_api_football_du_jour(
+        vr.dates_hors_fenetre((j.match.coup_envoi for j in jambes if j.match),
+                              jours_coupons=[j.coupon.jour for j in jambes
+                                             if not (j.match and j.match.coup_envoi)]))
     etats_par_match = {}
     resultats = []
     for jambe in jambes:
@@ -193,3 +200,46 @@ def etat_live_jambes(db, run_id=None):
             "verdict_si_ca_finissait_maintenant": vr.grader_pick(pick, but_dom, but_ext) or "non_verifiable",
         })
     return resultats
+
+
+# Planification : le moment de vérifier se déduit du coup d'envoi enregistré — aucun besoin d'IA, une règle
+# déterministe est plus fiable et ne coûte rien. 21h45 de coup d'envoi -> première vérification à 23h15
+# (+90 min), puis une vérification à chaque passage du cron (15 min) tant que le match n'est pas jugé,
+# jusqu'à VERIF_FENETRE_HEURES après le coup d'envoi (prolongations/arrêts de jeu inclus).
+VERIF_DELAI_MINUTES = int(os.getenv("VERIF_DELAI_MINUTES", "90"))
+VERIF_FENETRE_HEURES = float(os.getenv("VERIF_FENETRE_HEURES", "4"))
+VERIF_RATTRAPAGE_MINUTES = 15  # passage « de rattrapage » une fois par heure (matchs sans coup d'envoi, vieux coupons)
+
+
+def verification_due(db, maintenant=None):
+    """(doit_verifier, raison). True si une jambe en attente a un match dont l'heure de première vérification
+    est passée et dont la fenêtre n'est pas close ; sinon, une fois par heure (rattrapage) s'il reste des jambes
+    en attente sans coup d'envoi connu ou hors fenêtre. Ne touche pas à l'API : c'est le filtre du cron."""
+    maintenant = maintenant or datetime.now(timezone.utc)
+    from app.services.plan_verification import echeances_depassees, hhmm, points_dus, vagues_actives
+    dus = points_dus(db, maintenant)  # point de la grille du plan tombé depuis le dernier passage du cron (5 min)
+    if dus:
+        return True, f"vague {dus[0][0]['numero']} : vérification prévue à {hhmm(dus[0][1])}"
+    if vagues_actives(db, maintenant) and maintenant.minute < VERIF_RATTRAPAGE_MINUTES:
+        return True, "filet horaire : fenêtre d'une vague ouverte avec des jambes en attente"
+    if echeances_depassees(db, maintenant):
+        return True, "échéance du rapport final dépassée"
+    jambes = list(db.scalars(select(Jambe).where(Jambe.resultat == "en_attente")))
+    if not jambes:
+        return False, "aucune jambe en attente"
+    en_retard = False
+    for j in jambes:
+        ce = j.match.coup_envoi if j.match else None
+        if ce is None:
+            en_retard = True
+            continue
+        if ce.tzinfo is None:
+            ce = ce.replace(tzinfo=timezone.utc)
+        premiere = ce + timedelta(minutes=VERIF_DELAI_MINUTES)
+        if maintenant < premiere:
+            continue
+        en_retard = True  # fenêtre ouverte ou close : les heures exactes sont lancées par l'agent de planification,
+        #                   le cron ne sert que de filet, une fois par heure
+    if en_retard and maintenant.minute < VERIF_RATTRAPAGE_MINUTES:
+        return True, "rattrapage horaire (jambes sans coup d'envoi connu ou hors fenêtre)"
+    return False, "aucun match à vérifier pour l'instant"
