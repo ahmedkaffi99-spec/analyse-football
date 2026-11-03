@@ -118,4 +118,4 @@ def test_grille_toutes_les_10_minutes_a_partir_de_23h15(client, monkeypatch):
         taches.executer_points(db, points, maintenant=lambda: horloge[0], dormir=dormir)
     assert dormis[0] == 600                                    # attend jusqu'à l'heure exacte
     assert verifs == points                                    # 23h15 puis 23h25 pile
-    assert pv.hhmm(verifs[0]) == "22h15" and pv.hhmm(verifs[1]) == "22h25"  # 19h00 UTC + 90 min = 22h15 Djibouti
+    assert pv.hhmm(verifs[0]) == "23h30" and pv.hhmm(verifs[1]) == "23h40"  # 19h00 UTC + 90 min = 20h30 UTC = 23h30 Djibouti
