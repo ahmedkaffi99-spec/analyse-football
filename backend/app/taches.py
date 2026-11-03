@@ -19,11 +19,11 @@ from datetime import datetime, time, timezone
 from sqlalchemy import select
 
 from app.database import SessionLocal, init_db
-from app.models import Run
+from app.models import Coupon, Run
 from app.services import pipeline
 from app.services.bilan import envoyer_bilans
 from app.services.runs import cloturer_runs_interrompus, executer_run
-from app.services import github_actions, plan_verification
+from app.services import analyse_coupons, github_actions, plan_verification
 from app.services.verification import etat_live_jambes, verification_due, verifier_coupons_en_attente
 
 
@@ -105,6 +105,19 @@ def plan_verification_a_cloturer(db):
     return clos
 
 
+def _analyser_coupons_envoyes(plan, notifier, avec_ia):
+    """Après le plan : analyse des coupons (idées de sélection, lecture des cotes, risques), envoyée sur Telegram."""
+    try:
+        with SessionLocal() as db:
+            coupons = list(db.scalars(select(Coupon).where(Coupon.id.in_(plan.get("coupon_ids", [])))))
+            message = analyse_coupons.message_analyse(coupons, avec_ia=avec_ia) if coupons else None
+        if message:
+            notifier(message)
+            print(message)  # visible dans le journal du run
+    except Exception as e:  # l'analyse ne doit jamais bloquer le plan déjà envoyé
+        print(f"⚠️ Analyse des coupons impossible : {str(e)[:160]}")
+
+
 def tache_planifier(args):
     """Agent de planification : analyse les matchs des coupons envoyés, planifie les vérifications et annonce le plan."""
     _, ae, _ = pipeline.modules()
@@ -121,6 +134,8 @@ def tache_planifier(args):
         return 0
     if args.telegram:
         github_actions.activer_workflow(actif=True)  # les vérifications ne tournent que pendant la vie des coupons
+        if not getattr(args, "sans_analyse", False):
+            _analyser_coupons_envoyes(plan, ae.notifier_telegram, not args.sans_ia)
     jour = datetime.fromisoformat(plan["vagues"][0]["coup_envoi_premier"]).astimezone(plan_verification.DJIBOUTI).date().isoformat() \
         if plan["vagues"] else "—"
     print(plan_verification.message_plan(plan, jour))
@@ -504,6 +519,7 @@ def main(argv=None):
     p_plan.add_argument("--coupons", type=str, default="", help="numéros de coupons séparés par des virgules")
     p_plan.add_argument("--telegram", action="store_true", help="annonce le plan sur Telegram")
     p_plan.add_argument("--sans-ia", action="store_true", help="plan déterministe, sans appel IA")
+    p_plan.add_argument("--sans-analyse", action="store_true", help="n'envoie pas l'analyse des coupons après le plan")
     p_live = sous.add_parser("live", help="suivi en direct (API-Football) des jambes en attente, informatif")
     p_live.add_argument("--telegram", action="store_true", help="envoie le rapport en direct sur Telegram")
     p_live.add_argument("--run-id", type=int, help="limite au run (défaut : tous les runs en attente)")
