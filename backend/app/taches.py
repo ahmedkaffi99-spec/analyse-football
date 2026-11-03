@@ -23,7 +23,7 @@ from app.models import Run
 from app.services import pipeline
 from app.services.bilan import envoyer_bilans
 from app.services.runs import cloturer_runs_interrompus, executer_run
-from app.services.verification import etat_live_jambes, verifier_coupons_en_attente
+from app.services.verification import etat_live_jambes, verification_due, verifier_coupons_en_attente
 
 
 def ticket_deja_produit_aujourdhui(db):
@@ -445,6 +445,8 @@ def main(argv=None):
                             "dans tous les cas. Moteur agent uniquement.")
     p_verif = sous.add_parser("verifier", help="juge les jambes dont le match est terminé")
     p_verif.add_argument("--telegram", action="store_true", help="envoie le bilan quand tout est jugé")
+    p_verif.add_argument("--si-du", action="store_true",
+                         help="ne vérifie que si un match est arrivé à l'heure de sa vérification (coup d'envoi + 90 min)")
     p_live = sous.add_parser("live", help="suivi en direct (API-Football) des jambes en attente, informatif")
     p_live.add_argument("--telegram", action="store_true", help="envoie le rapport en direct sur Telegram")
     p_live.add_argument("--run-id", type=int, help="limite au run (défaut : tous les runs en attente)")
@@ -467,6 +469,13 @@ def main(argv=None):
         return tache_modeles_gratuits(args)
     if args.tache == "tester-ia":
         return tache_tester_ia(args)
+    if args.tache == "verifier" and args.si_du:
+        # Avant init_db : un passage « rien à faire » ne doit ni modifier le schéma ni appeler l'API.
+        with SessionLocal() as db:
+            due, raison = verification_due(db)
+        print(f"{'⏱️ Vérification due' if due else '💤 Rien à vérifier'} — {raison}")
+        if not due:
+            return 0
     init_db()
     with SessionLocal() as db:
         cloturer_runs_interrompus(db)
