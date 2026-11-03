@@ -113,6 +113,7 @@ def _analyser_coupons_envoyes(plan, notifier, avec_ia):
             message = analyse_coupons.message_analyse(coupons, avec_ia=avec_ia) if coupons else None
         if message:
             notifier(message)
+            print(message)  # visible dans le journal du run
     except Exception as e:  # l'analyse ne doit jamais bloquer le plan déjà envoyé
         print(f"⚠️ Analyse des coupons impossible : {str(e)[:160]}")
 
