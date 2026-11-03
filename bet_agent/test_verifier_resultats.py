@@ -342,3 +342,10 @@ class TestDatesHorsFenetre(unittest.TestCase):
                  datetime(2026, 10, 31, 20, 0, tzinfo=timezone.utc),   # même jour que le premier
                  None]
         self.assertEqual(vr.dates_hors_fenetre(coups, maintenant), ["2026-10-31"])
+
+    def test_coupon_sans_coup_envoi_utilise_le_jour_du_coupon(self):
+        from datetime import datetime, timezone
+        import verifier_resultats as vr
+        maintenant = datetime(2026, 11, 3, 13, 0, tzinfo=timezone.utc)
+        dates = vr.dates_hors_fenetre([None], maintenant, jours_coupons=["2026-10-30"])
+        self.assertEqual(dates, ["2026-10-30", "2026-10-31", "2026-11-01"])
