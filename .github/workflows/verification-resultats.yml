@@ -30,7 +30,7 @@ permissions:
 jobs:
   verifier:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30  # un passage peut attendre jusqu'à 16 min l'heure exacte puis vérifier chaque minute pendant 5 min
     env:
       PYTHONUNBUFFERED: "1"  # journaux affichés en direct (sinon visibles seulement à la fin)
       DATABASE_URL: ${{ secrets.DATABASE_URL }}

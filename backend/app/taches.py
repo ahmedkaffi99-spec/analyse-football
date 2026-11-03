@@ -74,9 +74,47 @@ def tache_run(args):
     return 1 if statut == "erreur" else 0
 
 
+def executer_rafale(db, vague, debut, maintenant=None, dormir=None):
+    """Attend l'heure exacte de la première vérification (ex. 23h15), vérifie, puis re-vérifie chaque minute jusqu'à la
+    fin de la rafale (23h20) — arrêt anticipé dès que tous les matchs de la vague sont jugés."""
+    import time as _time
+    from datetime import timedelta
+    from app.models import Jambe
+    dormir = dormir or _time.sleep
+    maintenant = maintenant or (lambda: datetime.now(timezone.utc))
+    pas = timedelta(minutes=vague.get("rafale_pas_min", plan_verification.RAFALE_PAS_MIN))
+    fin = debut + timedelta(minutes=vague.get("rafale_min", plan_verification.RAFALE_MIN))
+    attente = (debut - maintenant()).total_seconds()
+    if attente > 0:
+        print(f"⏳ Attente de l'heure exacte {plan_verification.hhmm(debut)} (Djibouti) — {int(attente)} s")
+        dormir(attente)
+    cible = max(debut, maintenant())
+    total = {}
+    while cible <= fin:
+        compte = verifier_coupons_en_attente(db)
+        for k, n in compte.items():
+            total[k] = total.get(k, 0) + n
+        print(f"🔎 {plan_verification.hhmm(cible)} : {dict(compte) or 'rien de jugé'}")
+        reste = db.scalar(select(Jambe.id).where(Jambe.resultat == "en_attente",
+                                                 Jambe.match_id.in_(vague["match_ids"])).limit(1))
+        if reste is None:
+            break
+        cible += pas
+        pause = (cible - maintenant()).total_seconds()
+        if cible > fin or pause > pas.total_seconds() * 2:
+            break
+        if pause > 0:
+            dormir(pause)
+    return total
+
+
 def tache_verifier(args):
     with SessionLocal() as db:
-        compte = verifier_coupons_en_attente(db)
+        rafale = plan_verification.prochaine_rafale(db) if getattr(args, "si_du", False) else None
+        if rafale:
+            compte = executer_rafale(db, *rafale)
+        else:
+            compte = verifier_coupons_en_attente(db)
         print(f"🔎 Jambes jugées : {dict(compte) or 'aucune (rien en attente ou matchs pas terminés)'}")
         if args.telegram:
             _, ae, _ = pipeline.modules()

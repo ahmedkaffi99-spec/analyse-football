@@ -37,7 +37,8 @@ def test_ajustements_ia_valides_et_bornes():
     vagues, analyse = pv.valider_ajustements(vagues, {
         "vagues": [{"numero": 1, "premiere_verif_apres_coup_envoi_min": 100, "cadence_min": 30}], "analyse": " ok "})
     assert vagues[0]["cadence_min"] == 30 and analyse == "ok"
-    assert pv.hhmm(datetime.fromisoformat(vagues[0]["premiere_verif"])) == "22h25"
+    # la première vérification reste EXACTEMENT à +90 min (22h15) : l'IA ne peut pas la déplacer
+    assert pv.hhmm(datetime.fromisoformat(vagues[0]["premiere_verif"])) == "22h15"
     # hors bornes ou illisible : ignoré, valeurs par défaut conservées
     v2 = pv.construire_vagues([_m(1, 0)])
     v2, _ = pv.valider_ajustements(v2, {"vagues": [{"numero": 1, "premiere_verif_apres_coup_envoi_min": 120, "cadence_min": 10}]})
@@ -88,3 +89,30 @@ def test_replanifier_remplace_l_ancien_plan(client):
         pv.planifier(db, run_id=1, avec_ia=False)
         pv.planifier(db, run_id=1, avec_ia=False)
         assert db.query(PlanVerification).count() == 1
+
+
+def test_rafale_23h15_puis_chaque_minute_jusqu_a_23h20(client, monkeypatch):
+    """Match de 21h45 : 1re vérification à 23h15 pile, puis chaque minute jusqu'à 23h20 (heures de Djibouti)."""
+    from app import taches
+    client.post("/api/imports", json={"collecte": collecte_exemple(), "ticket": ticket_exemple()})
+    coup_envoi = datetime(2026, 9, 25, 19, 0, tzinfo=timezone.utc)
+    debut = coup_envoi + timedelta(minutes=90)
+    with SessionLocal() as db:
+        pv.planifier(db, run_id=1, avec_ia=False)
+        assert pv.prochaine_rafale(db, debut - timedelta(minutes=17)) is None          # trop tôt pour attendre
+        vague, d = pv.prochaine_rafale(db, debut - timedelta(minutes=10))
+        assert d == debut and vague["rafale_min"] == 5
+
+        horloge = [debut - timedelta(minutes=10)]
+        dormis, verifs = [], []
+
+        def dormir(secondes):
+            dormis.append(secondes)
+            horloge[0] += timedelta(seconds=secondes)
+
+        monkeypatch.setattr(taches, "verifier_coupons_en_attente", lambda db_: verifs.append(horloge[0]) or {})
+        taches.executer_rafale(db, vague, d, maintenant=lambda: horloge[0], dormir=dormir)
+    assert dormis[0] == 600                                    # attend 10 min jusqu'à l'heure exacte
+    assert verifs[0] == debut                                  # 1re vérification pile à l'heure
+    assert len(verifs) == 6                                    # 0,1,2,3,4,5 min -> 23h15 ... 23h20
+    assert verifs[-1] == debut + timedelta(minutes=5)

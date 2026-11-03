@@ -20,7 +20,10 @@ PREMIERE_VERIF_MIN = 90       # 21h45 -> 23h15 (demande de l'utilisateur)
 FIN_ESTIMEE_MIN = 115         # 90 min + mi-temps + arrêts de jeu
 CADENCE_MIN = 15
 LIMITE_HEURES = 4             # au-delà : rapport final partiel
-BORNES_PREMIERE_MIN = (80, 100)   # autour des 90 min demandées (21h45 -> 23h15)
+RAFALE_MIN = 5                # 23h15 puis chaque minute jusqu'à 23h20 (demande de l'utilisateur)
+RAFALE_PAS_MIN = 1
+HORIZON_ATTENTE_MIN = 16      # le cron passe toutes les 15 min : le job attend jusqu'à 16 min l'heure exacte
+BORNES_PREMIERE_MIN = (90, 90)    # 21h45 -> 23h15 exactement : l'IA n'y touche pas
 BORNES_CADENCE_MIN = (15, 30)     # le cron passe toutes les 15 min : jamais de cadence annoncée plus fine
 
 
@@ -72,6 +75,7 @@ def construire_vagues(matchs):
             "numero": i + 1, "match_ids": [m["match_id"] for m in v], "matchs": [m["libelle"] for m in v],
             "coup_envoi_premier": _iso(debut), "coup_envoi_dernier": _iso(dernier),
             "premiere_verif": _iso(debut + timedelta(minutes=PREMIERE_VERIF_MIN)),
+            "rafale_min": RAFALE_MIN, "rafale_pas_min": RAFALE_PAS_MIN,
             "cadence_min": CADENCE_MIN,
             "fin_estimee": _iso(dernier + timedelta(minutes=FIN_ESTIMEE_MIN)),
             "limite": _iso(dernier + timedelta(hours=LIMITE_HEURES)),
@@ -153,7 +157,9 @@ def message_plan(plan, jour):
                       f"{hhmm(datetime.fromisoformat(v['coup_envoi_premier']))}"
                       + (f"–{hhmm(datetime.fromisoformat(v['coup_envoi_dernier']))}" if v["coup_envoi_dernier"] != v["coup_envoi_premier"] else ""))
         lignes.append("   " + ", ".join(v["matchs"]))
-        lignes.append(f"   ⏱️ 1re vérification à *{hhmm(ph)}*, puis toutes les {v['cadence_min']} min ; "
+        fin_rafale = ph + timedelta(minutes=v.get("rafale_min", RAFALE_MIN))
+        lignes.append(f"   ⏱️ 1re vérification à *{hhmm(ph)}* pile, puis chaque minute jusqu'à {hhmm(fin_rafale)}, "
+                      f"ensuite toutes les {v['cadence_min']} min ; "
                       f"fin estimée {hhmm(datetime.fromisoformat(v['fin_estimee']))}, dernière tentative {hhmm(datetime.fromisoformat(v['limite']))}")
     if plan["sans_heure"]:
         lignes.append(f"\n⚠️ {len(plan['sans_heure'])} match(s) sans heure connue : vérifiés une fois par heure.")
@@ -225,3 +231,19 @@ def echeances_depassees(db, maintenant=None):
     return [pv for pv in db.scalars(select(PlanVerification).where(PlanVerification.rapport_final_envoye.is_(False)))
             if pv.plan.get("echeance_rapport_final")
             and datetime.fromisoformat(pv.plan["echeance_rapport_final"]) <= maintenant]
+
+
+def prochaine_rafale(db, maintenant=None):
+    """(vague, debut) de la vague dont la première vérification tombe dans les HORIZON_ATTENTE_MIN prochaines minutes
+    (ou a commencé il y a moins de RAFALE_MIN minutes) et qui a encore une jambe en attente ; sinon None."""
+    maintenant = _utc(maintenant or datetime.now(timezone.utc))
+    for pv in db.scalars(select(PlanVerification).where(PlanVerification.rapport_final_envoye.is_(False))):
+        for v in pv.plan.get("vagues", []):
+            debut = datetime.fromisoformat(v["premiere_verif"])
+            fin = debut + timedelta(minutes=v.get("rafale_min", RAFALE_MIN))
+            if not (debut - timedelta(minutes=HORIZON_ATTENTE_MIN) <= maintenant <= fin):
+                continue
+            if db.scalar(select(Jambe.id).where(Jambe.resultat == "en_attente",
+                                                Jambe.match_id.in_(v["match_ids"])).limit(1)) is not None:
+                return v, debut
+    return None
