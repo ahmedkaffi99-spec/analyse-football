@@ -18,7 +18,7 @@ def _fixture_af(home, away, statut_court, but_home, but_away, elapsed=None):
 def test_etat_live_pour_un_match_en_cours(client, monkeypatch):
     client.post("/api/imports", json={"collecte": collecte_exemple(), "ticket": ticket_exemple()})
     _, _, vr = pipeline.modules()
-    monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda: [
+    monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda *_a, **_k: [
         _fixture_af("RC Lens", "AJ Auxerre", "2H", 2, 0, 64)])
 
     with SessionLocal() as db:
@@ -40,7 +40,7 @@ def test_etat_live_pour_un_match_en_cours(client, monkeypatch):
 def test_etat_live_vide_si_aucun_match_en_cours(client, monkeypatch):
     client.post("/api/imports", json={"collecte": collecte_exemple(), "ticket": ticket_exemple()})
     _, _, vr = pipeline.modules()
-    monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda: [
+    monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda *_a, **_k: [
         _fixture_af("RC Lens", "AJ Auxerre", "NS", None, None)])
 
     with SessionLocal() as db:
@@ -51,7 +51,7 @@ def test_etat_live_vide_si_aucun_match_en_cours(client, monkeypatch):
 def test_commande_cli_live_fonctionne_sans_telegram(client, monkeypatch, capsys):
     client.post("/api/imports", json={"collecte": collecte_exemple(), "ticket": ticket_exemple()})
     _, _, vr = pipeline.modules()
-    monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda: [
+    monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda *_a, **_k: [
         _fixture_af("RC Lens", "AJ Auxerre", "1H", 0, 0, 20)])
 
     assert taches.main(["live"]) == 0

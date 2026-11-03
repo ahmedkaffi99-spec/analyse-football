@@ -52,7 +52,8 @@ def verifier_jambes(db, jambes):
     # diminuée") : quota de 7 500/jour contre 250 pour OddsPapi, et ce passage tourne chaque
     # heure de 15h à 23h. OddsPapi n'est appelé que pour un match introuvable côté
     # API-Football — jamais pour un match trouvé mais pas encore terminé.
-    fixtures_af = vr.recuperer_fixtures_api_football_du_jour()
+    fixtures_af = vr.recuperer_fixtures_api_football_du_jour(
+        vr.dates_hors_fenetre(j.match.coup_envoi for j in a_juger if j.match))
     fixtures = None  # OddsPapi, chargé à la demande (repli), une seule fois pour tout le passage
     scores = {}
 
@@ -172,7 +173,8 @@ def etat_live_jambes(db, run_id=None):
     if not jambes:
         return []
 
-    fixtures_af = vr.recuperer_fixtures_api_football_du_jour()
+    fixtures_af = vr.recuperer_fixtures_api_football_du_jour(
+        vr.dates_hors_fenetre(j.match.coup_envoi for j in jambes if j.match))
     etats_par_match = {}
     resultats = []
     for jambe in jambes:

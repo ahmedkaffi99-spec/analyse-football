@@ -329,3 +329,16 @@ class TestHandicapTempsReglementaire(unittest.TestCase):
         fx = _fixture_af("H", "A", "PEN", 1, 1)
         fx["score"] = {"fulltime": {"home": 0, "away": 0}, "penalty": {"home": 5, "away": 4}}
         self.assertEqual(vr.score_reglementaire_api_football(fx), (0, 0))
+
+
+class TestDatesHorsFenetre(unittest.TestCase):
+    def test_dates_hors_fenetre(self):
+        from datetime import datetime, timezone
+        import verifier_resultats as vr
+        maintenant = datetime(2026, 11, 3, 13, 0, tzinfo=timezone.utc)
+        coups = [datetime(2026, 10, 31, 15, 0, tzinfo=timezone.utc),   # hors fenêtre
+                 datetime(2026, 11, 2, 20, 0, tzinfo=timezone.utc),    # hier : dans la fenêtre
+                 datetime(2026, 11, 3, 20, 45, tzinfo=timezone.utc),   # aujourd'hui
+                 datetime(2026, 10, 31, 20, 0, tzinfo=timezone.utc),   # même jour que le premier
+                 None]
+        self.assertEqual(vr.dates_hors_fenetre(coups, maintenant), ["2026-10-31"])

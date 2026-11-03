@@ -163,13 +163,45 @@ def home_est_participant1(home_nom, p1_nom, p2_nom):
 # terminés (confirmé via l'historique 1xBet de l'utilisateur).
 # ============================================================
 
-def recuperer_fixtures_api_football_du_jour():
+def dates_hors_fenetre(coups_envoi, maintenant=None):
+    """Dates (AAAA-MM-JJ, UTC) des coups d'envoi qui sortent de la fenêtre hier/aujourd'hui/demain de
+    recuperer_fixtures_api_football : sans elles, un coupon du 31/10 jugé le 03/11 ne retrouvait jamais
+    ses matchs (« pas_termine » à vie jusqu'à péremption)."""
+    maintenant = maintenant or datetime.now(timezone.utc)
+    fenetre = {(maintenant + timedelta(days=d)).strftime("%Y-%m-%d") for d in (-1, 0, 1)}
+    dates = set()
+    for ce in coups_envoi:
+        if ce is None:
+            continue
+        if ce.tzinfo is None:
+            ce = ce.replace(tzinfo=timezone.utc)
+        jour = ce.astimezone(timezone.utc).strftime("%Y-%m-%d")
+        if jour not in fenetre:
+            dates.add(jour)
+    return sorted(dates)
+
+
+def recuperer_fixtures_api_football_du_jour(dates_supplementaires=()):
     import collecte_donnees as cd
     try:
-        return cd.recuperer_fixtures_api_football()
+        fixtures = cd.recuperer_fixtures_api_football()
     except Exception as e:
         print(f"⚠️ Repli API-Football impossible : {e}")
-        return []
+        fixtures = []
+    for jour in dates_supplementaires:
+        try:
+            cd._respecter_rate_limit_api_football()
+            r = cd.SESSION.get("https://v3.football.api-sports.io/fixtures",
+                               headers={"x-apisports-key": cd.API_FOOTBALL_KEY},
+                               params={"date": jour}, timeout=15)
+            data = r.json()
+            if data.get("errors"):
+                raise RuntimeError(data["errors"])
+            fixtures += data.get("response", [])
+            print(f"   → +{len(data.get('response', []))} matchs API-Football du {jour} (hors fenêtre habituelle)")
+        except Exception as e:
+            print(f"⚠️ Fixtures API-Football du {jour} indisponibles : {e}")
+    return fixtures
 
 
 def trouver_fixture_api_football(home_nom, away_nom, fixtures_af, cd):

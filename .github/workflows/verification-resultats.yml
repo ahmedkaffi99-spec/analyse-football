@@ -4,7 +4,7 @@ name: Vérification des résultats
 
 on:
   schedule:
-    - cron: "13 15-23 * * *"  # toutes les heures de 15h à 23h UTC (minute décalée : GitHub saute souvent :00)
+    - cron: "13 15-23,0-3 * * *"  # 15h13-3h13 UTC (inclut la nuit : matchs de 23h locale finis après minuit UTC) ; minute décalée : GitHub saute souvent :00
   workflow_dispatch:
     inputs:
       telegram:
