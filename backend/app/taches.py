@@ -116,7 +116,9 @@ def tache_planifier(args):
     if plan is None:
         print("ℹ️ Aucun coupon avec des jambes : rien à planifier.")
         return 0
-    print(plan_verification.message_plan(plan, "—"))
+    jour = datetime.fromisoformat(plan["vagues"][0]["coup_envoi_premier"]).astimezone(plan_verification.DJIBOUTI).date().isoformat() \
+        if plan["vagues"] else "—"
+    print(plan_verification.message_plan(plan, jour))
     return 0
 
 

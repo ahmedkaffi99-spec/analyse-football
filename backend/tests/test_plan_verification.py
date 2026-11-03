@@ -35,12 +35,12 @@ def test_plan_final_et_message():
 def test_ajustements_ia_valides_et_bornes():
     vagues = pv.construire_vagues([_m(1, 0)])
     vagues, analyse = pv.valider_ajustements(vagues, {
-        "vagues": [{"numero": 1, "premiere_verif_apres_coup_envoi_min": 100, "cadence_min": 10}], "analyse": " ok "})
-    assert vagues[0]["cadence_min"] == 10 and analyse == "ok"
+        "vagues": [{"numero": 1, "premiere_verif_apres_coup_envoi_min": 100, "cadence_min": 30}], "analyse": " ok "})
+    assert vagues[0]["cadence_min"] == 30 and analyse == "ok"
     assert pv.hhmm(datetime.fromisoformat(vagues[0]["premiere_verif"])) == "22h25"
     # hors bornes ou illisible : ignoré, valeurs par défaut conservées
     v2 = pv.construire_vagues([_m(1, 0)])
-    v2, _ = pv.valider_ajustements(v2, {"vagues": [{"numero": 1, "premiere_verif_apres_coup_envoi_min": 5, "cadence_min": 1}]})
+    v2, _ = pv.valider_ajustements(v2, {"vagues": [{"numero": 1, "premiere_verif_apres_coup_envoi_min": 120, "cadence_min": 10}]})
     assert v2[0]["cadence_min"] == pv.CADENCE_MIN
     assert pv.hhmm(datetime.fromisoformat(v2[0]["premiere_verif"])) == "22h15"
     assert pv.valider_ajustements(v2, "n'importe quoi")[1] is None
@@ -80,3 +80,11 @@ def test_rapport_final_partiel_force_a_l_echeance(client):
         assert envoyer_bilans(db, lambda m: messages.append(m) or True) == 0      # jambes en attente : rien
         assert envoyer_bilans(db, lambda m: messages.append(m) or True, forcer_runs={1}) == 1
     assert "Rapport final partiel" in messages[0]
+
+
+def test_replanifier_remplace_l_ancien_plan(client):
+    client.post("/api/imports", json={"collecte": collecte_exemple(), "ticket": ticket_exemple()})
+    with SessionLocal() as db:
+        pv.planifier(db, run_id=1, avec_ia=False)
+        pv.planifier(db, run_id=1, avec_ia=False)
+        assert db.query(PlanVerification).count() == 1

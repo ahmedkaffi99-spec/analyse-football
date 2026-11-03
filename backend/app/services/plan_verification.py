@@ -20,8 +20,8 @@ PREMIERE_VERIF_MIN = 90       # 21h45 -> 23h15 (demande de l'utilisateur)
 FIN_ESTIMEE_MIN = 115         # 90 min + mi-temps + arrêts de jeu
 CADENCE_MIN = 15
 LIMITE_HEURES = 4             # au-delà : rapport final partiel
-BORNES_PREMIERE_MIN = (60, 120)
-BORNES_CADENCE_MIN = (5, 30)
+BORNES_PREMIERE_MIN = (80, 100)   # autour des 90 min demandées (21h45 -> 23h15)
+BORNES_CADENCE_MIN = (15, 30)     # le cron passe toutes les 15 min : jamais de cadence annoncée plus fine
 
 
 def _utc(dt):
@@ -187,6 +187,10 @@ def planifier(db, run_id=None, coupon_ids=None, notifier=None, avec_ia=True):
     plan = finaliser(vagues, sans_heure, analyse or analyse_automatique(vagues))
     plan["coupon_ids"] = [c.id for c in coupons]
     run = coupons[0].run_id
+    # Un seul plan actif par run : replanifier remplace l'ancien (jamais deux plans qui se chevauchent).
+    for ancien in db.scalars(select(PlanVerification).where(PlanVerification.run_id == run,
+                                                            PlanVerification.rapport_final_envoye.is_(False))):
+        db.delete(ancien)
     db.add(PlanVerification(run_id=run, plan=plan))
     db.commit()
     if notifier:
