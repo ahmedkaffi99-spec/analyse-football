@@ -74,33 +74,9 @@ def tache_run(args):
     return 1 if statut == "erreur" else 0
 
 
-def executer_points(db, points, vagues_ids=None, maintenant=None, dormir=None):
-    """Attend chaque heure exacte de la grille (ex. 23h15, 23h25, 23h35...) et vérifie à ce moment-là."""
-    import time as _time
-    dormir = dormir or _time.sleep
-    maintenant = maintenant or (lambda: datetime.now(timezone.utc))
-    total = {}
-    for point in points:
-        attente = (point - maintenant()).total_seconds()
-        if attente > 0:
-            print(f"⏳ Attente de {plan_verification.hhmm(point)} (Djibouti) — {int(attente)} s")
-            dormir(attente)
-        compte = verifier_coupons_en_attente(db)
-        for k, n in compte.items():
-            total[k] = total.get(k, 0) + n
-        print(f"🔎 {plan_verification.hhmm(point)} : {dict(compte) or 'rien de jugé'}")
-        if not plan_verification.vagues_actives(db, point):
-            break  # toutes les jambes des vagues concernées sont jugées
-    return total
-
-
 def tache_verifier(args):
     with SessionLocal() as db:
-        points = plan_verification.prochains_points(db) if getattr(args, "si_du", False) else []
-        if points:
-            compte = executer_points(db, points)
-        else:
-            compte = verifier_coupons_en_attente(db)
+        compte = verifier_coupons_en_attente(db)
         print(f"🔎 Jambes jugées : {dict(compte) or 'aucune (rien en attente ou matchs pas terminés)'}")
         if args.telegram:
             _, ae, _ = pipeline.modules()

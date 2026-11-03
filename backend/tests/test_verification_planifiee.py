@@ -21,17 +21,12 @@ def test_pas_de_verification_avant_90_minutes(client):
     assert due is False
 
 
-def test_verification_due_a_l_heure_exacte_puis_a_chaque_passage(client):
+def test_filet_horaire_du_cron(client):
+    """Les heures exactes sont lancées par l'agent de planification ; le cron ne vérifie qu'une fois par heure."""
     client.post("/api/imports", json={"collecte": collecte_exemple(), "ticket": ticket_exemple()})
-    assert _due(20, 30)[0] is True   # 19h00 + 90 min
-    assert _due(21, 45)[0] is True   # toujours dans la fenêtre de 4 h
-    assert _due(22, 59)[0] is True
-
-
-def test_fenetre_close_puis_rattrapage_horaire(client):
-    client.post("/api/imports", json={"collecte": collecte_exemple(), "ticket": ticket_exemple()})
-    assert _due(23, 30)[0] is False  # 19h00 + 4 h = 23h00 passé, pas le passage de rattrapage
-    assert _due(23, 10)[0] is True   # minute < 15 : rattrapage horaire
+    assert _due(20, 30)[0] is False   # 19h00 + 90 min mais minute >= 15 : pas le passage horaire
+    assert _due(21, 5)[0] is True     # passage horaire (minute < 15), jambes en attente
+    assert _due(23, 10)[0] is True    # rattrapage horaire même après la fin de la fenêtre
 
 
 def test_rien_en_attente(client):

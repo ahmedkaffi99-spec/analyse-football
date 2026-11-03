@@ -20,8 +20,6 @@ PREMIERE_VERIF_MIN = 90       # 21h45 -> 23h15 (demande de l'utilisateur)
 FIN_ESTIMEE_MIN = 115         # 90 min + mi-temps + arrêts de jeu
 CADENCE_MIN = 10              # 23h15, 23h25, 23h35... (demande de l'utilisateur : toutes les 10 min)
 LIMITE_HEURES = 4             # au-delà : rapport final partiel
-TOLERANCE_RETARD_MIN = 2      # cron en retard : un point de la grille manqué de moins de 2 min est quand même vérifié
-HORIZON_ATTENTE_MIN = 16      # le cron passe toutes les 15 min : le job attend jusqu'à 16 min l'heure exacte
 BORNES_PREMIERE_MIN = (90, 90)    # 21h45 -> 23h15 exactement : l'IA n'y touche pas
 BORNES_CADENCE_MIN = (10, 30)
 
@@ -157,7 +155,8 @@ def message_plan(plan, jour):
         lignes.append("   " + ", ".join(v["matchs"]))
         lignes.append(f"   ⏱️ 1re vérification à *{hhmm(ph)}* pile, puis toutes les {v['cadence_min']} min "
                       f"({hhmm(ph + timedelta(minutes=v['cadence_min']))}, "
-                      f"{hhmm(ph + timedelta(minutes=2 * v['cadence_min']))}…) ; "
+                      f"{hhmm(ph + timedelta(minutes=2 * v['cadence_min']))}…), une exécution lancée à chaque heure exacte, "
+                      f"arrêt dès que tout est jugé ; "
                       f"fin estimée {hhmm(datetime.fromisoformat(v['fin_estimee']))}, dernière tentative {hhmm(datetime.fromisoformat(v['limite']))}")
     if plan["sans_heure"]:
         lignes.append(f"\n⚠️ {len(plan['sans_heure'])} match(s) sans heure connue : vérifiés une fois par heure.")
@@ -202,35 +201,31 @@ def planifier(db, run_id=None, coupon_ids=None, notifier=None, avec_ia=True):
     return plan
 
 
-def points_de_verification(vague, maintenant, horizon_min=0):
-    """Heures exactes de la grille (première vérification + k × cadence, jusqu'à la limite) comprises entre
-    maintenant - TOLERANCE_RETARD_MIN et maintenant + horizon_min."""
+def points_de_verification(vague):
+    """Heures exactes de la grille : première vérification + k × cadence, jusqu'à la limite. Chacune est lancée comme
+    UNE exécution à son heure (jamais un job qui attend) ; on s'arrête dès que tous les matchs de la vague sont jugés."""
     debut = datetime.fromisoformat(vague["premiere_verif"])
     limite = datetime.fromisoformat(vague["limite"])
     pas = timedelta(minutes=max(vague.get("cadence_min", CADENCE_MIN), 1))
-    bas = _utc(maintenant) - timedelta(minutes=TOLERANCE_RETARD_MIN)
-    haut = _utc(maintenant) + timedelta(minutes=horizon_min)
     points, t = [], debut
-    while t <= limite and t <= haut:
-        if t >= bas:
-            points.append(t)
+    while t <= limite:
+        points.append(t)
         t += pas
     return points
 
 
-def vagues_actives(db, maintenant=None, horizon_min=0):
-    """[(plan_id, vague, points)] : vagues ayant un point de la grille dans [maintenant - tolérance, maintenant +
-    horizon] et encore une jambe en attente."""
+def vagues_actives(db, maintenant=None):
+    """[(plan_id, vague)] dont la fenêtre [première vérification, limite] est ouverte et qui ont encore une jambe en
+    attente — filet de sécurité du cron horaire si une exécution à l'heure exacte a été manquée."""
     maintenant = _utc(maintenant or datetime.now(timezone.utc))
     actives = []
     for pv in db.scalars(select(PlanVerification).where(PlanVerification.rapport_final_envoye.is_(False))):
         for v in pv.plan.get("vagues", []):
-            points = points_de_verification(v, maintenant, horizon_min)
-            if not points:
+            if not (datetime.fromisoformat(v["premiere_verif"]) <= maintenant <= datetime.fromisoformat(v["limite"])):
                 continue
             if db.scalar(select(Jambe.id).where(Jambe.resultat == "en_attente",
                                                 Jambe.match_id.in_(v["match_ids"])).limit(1)) is not None:
-                actives.append((pv.id, v, points))
+                actives.append((pv.id, v))
     return actives
 
 
@@ -240,11 +235,3 @@ def echeances_depassees(db, maintenant=None):
     return [pv for pv in db.scalars(select(PlanVerification).where(PlanVerification.rapport_final_envoye.is_(False)))
             if pv.plan.get("echeance_rapport_final")
             and datetime.fromisoformat(pv.plan["echeance_rapport_final"]) <= maintenant]
-
-
-def prochains_points(db, maintenant=None):
-    """Heures exactes à vérifier dans les HORIZON_ATTENTE_MIN prochaines minutes (toutes vagues confondues, triées)."""
-    points = set()
-    for _, _, pts in vagues_actives(db, maintenant, HORIZON_ATTENTE_MIN):
-        points.update(pts)
-    return sorted(points)

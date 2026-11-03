@@ -67,7 +67,7 @@ def test_planifier_enregistre_et_active_a_l_heure(client, monkeypatch):
         avant = coup_envoi + timedelta(minutes=89)
         assert not pv.vagues_actives(db, avant)
         assert pv.vagues_actives(db, coup_envoi + timedelta(minutes=90))        # 20h30 UTC = 23h30 Djibouti
-        assert verification_due(db, coup_envoi + timedelta(minutes=105))[0] is True
+        assert verification_due(db, datetime(2026, 9, 25, 21, 5, tzinfo=timezone.utc))[0] is True   # filet horaire
         assert not pv.vagues_actives(db, coup_envoi + timedelta(hours=5))      # fenêtre close
         assert pv.echeances_depassees(db, coup_envoi + timedelta(hours=5))
     assert envoyes and "PLAN DE VÉRIFICATION" in envoyes[0]
@@ -91,31 +91,23 @@ def test_replanifier_remplace_l_ancien_plan(client):
         assert db.query(PlanVerification).count() == 1
 
 
-def test_grille_toutes_les_10_minutes_a_partir_de_23h15(client, monkeypatch):
-    """Match de 21h45 : 1re vérification à 23h15 pile, puis 23h25, 23h35... (heures de Djibouti)."""
-    from app import taches
+def test_grille_toutes_les_10_minutes_a_partir_de_23h30(client):
+    """Match de 19h00 UTC (22h00 Djibouti) : 1re vérification à +90 min (23h30), puis 23h40, 23h50... jusqu'à la limite."""
+    client.post("/api/imports", json={"collecte": collecte_exemple(), "ticket": ticket_exemple()})
+    with SessionLocal() as db:
+        plan = pv.planifier(db, run_id=1, avec_ia=False)
+    points = pv.points_de_verification(plan["vagues"][0])
+    assert [pv.hhmm(p) for p in points[:3]] == ["23h30", "23h40", "23h50"]
+    assert points[-1] <= datetime.fromisoformat(plan["vagues"][0]["limite"])
+    assert (points[1] - points[0]) == timedelta(minutes=10)
+
+
+def test_filet_horaire_sans_attente(client):
     client.post("/api/imports", json={"collecte": collecte_exemple(), "ticket": ticket_exemple()})
     coup_envoi = datetime(2026, 9, 25, 19, 0, tzinfo=timezone.utc)
-    debut = coup_envoi + timedelta(minutes=90)
     with SessionLocal() as db:
         pv.planifier(db, run_id=1, avec_ia=False)
-        assert pv.prochains_points(db, debut - timedelta(minutes=17)) == []           # trop tôt pour attendre
-        assert pv.prochains_points(db, debut - timedelta(minutes=10)) == [debut]
-        assert pv.prochains_points(db, debut + timedelta(minutes=9)) == [debut + timedelta(minutes=10),
-                                                                         debut + timedelta(minutes=20)]  # 16 min d'horizon
-        # cron en retard de 1 min : le point manqué est quand même vérifié
-        assert pv.prochains_points(db, debut + timedelta(minutes=1))[0] == debut
-
-        horloge = [debut - timedelta(minutes=10)]
-        dormis, verifs = [], []
-
-        def dormir(secondes):
-            dormis.append(secondes)
-            horloge[0] += timedelta(seconds=secondes)
-
-        monkeypatch.setattr(taches, "verifier_coupons_en_attente", lambda db_: verifs.append(horloge[0]) or {})
-        points = [debut, debut + timedelta(minutes=10)]
-        taches.executer_points(db, points, maintenant=lambda: horloge[0], dormir=dormir)
-    assert dormis[0] == 600                                    # attend jusqu'à l'heure exacte
-    assert verifs == points                                    # 23h15 puis 23h25 pile
-    assert pv.hhmm(verifs[0]) == "23h30" and pv.hhmm(verifs[1]) == "23h40"  # 19h00 UTC + 90 min = 20h30 UTC = 23h30 Djibouti
+        assert pv.vagues_actives(db, coup_envoi + timedelta(minutes=100))               # 20h40 UTC : fenêtre ouverte
+        assert not pv.vagues_actives(db, coup_envoi + timedelta(minutes=89))            # avant 20h30 UTC
+        assert verification_due(db, datetime(2026, 9, 25, 21, 5, tzinfo=timezone.utc))[0] is True    # passage horaire
+        assert verification_due(db, datetime(2026, 9, 25, 21, 40, tzinfo=timezone.utc))[0] is False  # entre deux passages

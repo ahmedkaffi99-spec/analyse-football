@@ -216,10 +216,9 @@ def verification_due(db, maintenant=None):
     est passée et dont la fenêtre n'est pas close ; sinon, une fois par heure (rattrapage) s'il reste des jambes
     en attente sans coup d'envoi connu ou hors fenêtre. Ne touche pas à l'API : c'est le filtre du cron."""
     maintenant = maintenant or datetime.now(timezone.utc)
-    from app.services.plan_verification import HORIZON_ATTENTE_MIN, echeances_depassees, hhmm, vagues_actives
-    actives = vagues_actives(db, maintenant, HORIZON_ATTENTE_MIN)  # plan établi après l'envoi des coupons
-    if actives:
-        return True, f"vague {actives[0][1]['numero']} : vérification prévue à {hhmm(actives[0][2][0])}"
+    from app.services.plan_verification import echeances_depassees, vagues_actives
+    if vagues_actives(db, maintenant) and maintenant.minute < VERIF_RATTRAPAGE_MINUTES:
+        return True, "filet horaire : fenêtre d'une vague ouverte avec des jambes en attente"
     if echeances_depassees(db, maintenant):
         return True, "échéance du rapport final dépassée"
     jambes = list(db.scalars(select(Jambe).where(Jambe.resultat == "en_attente")))
@@ -236,9 +235,8 @@ def verification_due(db, maintenant=None):
         premiere = ce + timedelta(minutes=VERIF_DELAI_MINUTES)
         if maintenant < premiere:
             continue
-        if maintenant <= ce + timedelta(hours=VERIF_FENETRE_HEURES):
-            return True, f"match de {ce:%H:%M} UTC : vérification due depuis {premiere:%H:%M} UTC ({j.libelle_match})"
-        en_retard = True
+        en_retard = True  # fenêtre ouverte ou close : les heures exactes sont lancées par l'agent de planification,
+        #                   le cron ne sert que de filet, une fois par heure
     if en_retard and maintenant.minute < VERIF_RATTRAPAGE_MINUTES:
         return True, "rattrapage horaire (jambes sans coup d'envoi connu ou hors fenêtre)"
     return False, "aucun match à vérifier pour l'instant"

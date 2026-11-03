@@ -4,10 +4,9 @@ name: Vérification des résultats
 
 on:
   schedule:
-    # Passage toutes les 15 min de 12h à 3h UTC : le code (verifier --si-du) ne vérifie QUE si un match est arrivé à
-    # l'heure de sa vérification (coup d'envoi + 90 min, ex. 21h45 -> 23h15) puis à chaque passage jusqu'à 4 h
-    # après le coup d'envoi ; sinon il sort en quelques secondes, sans toucher au schéma ni à l'API.
-    # Une fois par heure, rattrapage des jambes sans coup d'envoi connu (coupons enregistrés pendant une panne).
+    # Filet de sécurité : l'agent de planification lance une exécution manuelle à CHAQUE heure exacte prévue (23h15,
+    # 23h25...) — rien n'attend. Ce cron ne sert que de rattrapage : `verifier --si-du` ne vérifie, une fois par heure,
+    # que s'il reste des jambes en attente (fenêtre de vague ouverte, matchs sans heure connue ou vieux coupons).
     - cron: "*/15 12-23,0-2 * * *"
   workflow_dispatch:
     inputs:
@@ -30,7 +29,7 @@ permissions:
 jobs:
   verifier:
     runs-on: ubuntu-latest
-    timeout-minutes: 30  # un passage peut attendre jusqu'à 16 min l'heure exacte puis vérifier chaque minute pendant 5 min
+    timeout-minutes: 15
     env:
       PYTHONUNBUFFERED: "1"  # journaux affichés en direct (sinon visibles seulement à la fin)
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
