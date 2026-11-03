@@ -125,3 +125,16 @@ class Jambe(Base):
 
     coupon: Mapped[Coupon] = relationship(back_populates="jambes")
     match: Mapped[Match | None] = relationship()
+
+
+class PlanVerification(Base):
+    """Plan de vérification d'un run, établi après l'envoi des coupons : vagues de matchs (coups d'envoi
+    proches), heure exacte de première vérification, cadence, échéance, heure estimée du rapport final.
+    Lu par `verifier --si-du` pour lancer les vérifications à l'heure prévue."""
+    __tablename__ = "plans_verification"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), index=True)
+    cree_le: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=maintenant)
+    plan: Mapped[dict] = mapped_column(JSON)
+    rapport_final_envoye: Mapped[bool] = mapped_column(Boolean, default=False)
