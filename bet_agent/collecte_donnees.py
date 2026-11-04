@@ -188,6 +188,13 @@ def recuperer_marches_pour_fixture_api_football(fixture_id_api_football):
     marches_valides = [m for m in resultat.marches if m["marche"] in MARCHES_API_FOOTBALL_VALIDES]
     return marches_valides if marches_valides else None
 
+# Les 9 autres bookmakers sont RETIRÉS (04/11/2026, demande explicite : « garde 1xBet seul ») : le backtest réel (80 matchs,
+# 7 jours) montre que leur consensus ne prédit pas mieux que 1xBet seul (Brier 1X2 0,5140 contre 0,5125) et que 1xBet a la
+# marge la plus basse (2,1 % en 1X2). Plus de collecte ni de consensus ni de garde-fou : seules les cotes 1xBet sont utilisées,
+# et on économise un appel API-Football par match. Réactivable : COLLECTER_AUTRES_BOOKMAKERS=1.
+COLLECTER_AUTRES_BOOKMAKERS = os.getenv("COLLECTER_AUTRES_BOOKMAKERS", "").strip().lower() in ("1", "true", "oui")
+
+
 def recuperer_cotes_bookmakers_api_football(fixture_id_api_football):
     """Cotes des 10 bookmakers servis par API-Football pour ce match ({bookmaker: marchés}) — 1 appel /odds de
     plus par match, même limiteur. None si indisponible : n'empêche jamais la collecte ni la sélection."""
@@ -1844,7 +1851,7 @@ def collecter_donnees():
             if donnees_af and donnees_af.get("fixture_id_api_football"):
                 fixture_id_oddspapi = donnees_af["fixture_id_api_football"]  # même champ de sortie, source API-Football (voir docstring adaptateur_api_football.py)
                 tous_marches = recuperer_marches_pour_fixture_api_football(donnees_af["fixture_id_api_football"])
-                if tous_marches:
+                if tous_marches and COLLECTER_AUTRES_BOOKMAKERS:
                     cotes_bookmakers = recuperer_cotes_bookmakers_api_football(donnees_af["fixture_id_api_football"])
                     if cotes_bookmakers:
                         print(f"      ✓ Cotes de {len(cotes_bookmakers)} bookmaker(s) collectées "

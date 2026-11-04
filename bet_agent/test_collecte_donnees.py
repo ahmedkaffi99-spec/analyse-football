@@ -521,3 +521,20 @@ class TestPeriodeDemandee:
                 mock.patch.object(cd, "LIGUES_FILTRE_API_FOOTBALL", {39}):
             matchs = cd.selectionner_matchs_du_jour_api_football(fixtures)
         assert len(matchs) == 2
+
+
+class TestSeul1xBet:
+    """04/11/2026 : « garde 1xBet seul » — les 9 autres bookmakers ne sont plus collectés par défaut."""
+
+    def test_autres_bookmakers_non_collectes_par_defaut(self):
+        assert cd.COLLECTER_AUTRES_BOOKMAKERS is False
+
+    def test_sans_cotes_des_autres_bookmakers_ni_consensus_ni_veto(self):
+        import agents_familles as af
+        import consensus_bookmakers as cb
+        pick = {"marche_brut": "Full Time Result", "handicap": None, "selection": "1", "cote": 2.0,
+                "categorie": "1X2", "edge_pct": 1.0}
+        assert cb.annoter_candidats([pick], None) == 0
+        assert "ecart_consensus_pts" not in pick
+        raison = af.veto_python(pick)
+        assert raison is None or "consensus" not in raison
