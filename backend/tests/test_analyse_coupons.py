@@ -21,6 +21,10 @@ def test_faits_et_analyse_deterministe(client):
         assert j["proba_implicite_cote_pct"] == round(100 / j["cote"], 1)
         texte = ac.analyse_deterministe(faits)
         assert faits[0]["coupon"] in texte and "cote" in texte
+        if faits[0]["proba_combinee_pct"] is not None and faits[0]["cote_totale"]:
+            assert faits[0]["esperance_par_unite"] == round(
+                faits[0]["proba_combinee_pct"] / 100 * faits[0]["cote_totale"], 2)
+            assert "espérance" in texte
 
 
 def test_journal_agent_alimente_les_idees_de_selection(client):

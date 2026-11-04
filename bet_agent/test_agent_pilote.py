@@ -1,5 +1,6 @@
 """Tests hors-ligne de l'agent pilote DeepSeek (executer() branché sur collecte/analyse
 réelles, moteur piloter() simulé) : python -m unittest test_agent_pilote"""
+import pytest
 import json
 import os
 import unittest
@@ -10,6 +11,15 @@ import agents_familles
 import collecte_donnees as cd
 import analyser_et_envoyer as ae
 import agent_strategie as st
+
+
+@pytest.fixture(autouse=True)
+def _edge_plafond_historique(monkeypatch):
+    """Ces scénarios utilisent des edges de 5 à 15 % : plafond d'edge historique (20 %) pour qu'ils restent
+    représentatifs ; le plafond par défaut de 3 % est testé dans test_plafond_edge_defaut_3_pct."""
+    import agents_familles
+    monkeypatch.setattr(agents_familles, "EDGE_MAX_AGENT", 20.0)
+
 
 
 # Pools factices à cotes volontairement petites (1.6-2.0), sans rapport avec le plancher

@@ -49,8 +49,9 @@ def faits_coupons(coupons):
                            "partage_avec": sorted(par_match[j.libelle_match] - {c.nom})})
         probas = [x["proba_modele_pct"] for x in jambes if x["proba_modele_pct"] is not None]
         combinee = round(math.prod(p / 100 for p in probas) * 100, 1) if probas and len(probas) == len(jambes) else None
+        esperance = round(combinee / 100 * c.cote_totale, 2) if combinee is not None and c.cote_totale else None
         faits.append({"coupon": c.nom, "cle": c.profil, "cote_totale": c.cote_totale, "nb_jambes": len(jambes),
-                      "proba_combinee_pct": combinee, "strategie_agent": strategies.get(c.profil, ""),
+                      "proba_combinee_pct": combinee, "esperance_par_unite": esperance, "strategie_agent": strategies.get(c.profil, ""),
                       "jambes_fragiles": [x["match"] + " — " + x["marche"] + " " + x["selection"]
                                           for x in jambes if x["proba_modele_pct"] is not None
                                           and x["proba_modele_pct"] < SEUIL_FRAGILE_PCT],
@@ -63,7 +64,9 @@ def analyse_deterministe(faits):
     blocs = []
     for f in faits:
         lignes = [f"{f['coupon']} — cote {f['cote_totale']}, {f['nb_jambes']} jambes"
-                  + (f", chance de passer ≈ {f['proba_combinee_pct']} %" if f["proba_combinee_pct"] is not None else "")]
+                  + (f", chance de passer ≈ {f['proba_combinee_pct']} %" if f["proba_combinee_pct"] is not None else "")
+                  + (f", espérance ≈ {f['esperance_par_unite']} par unité misée (1,00 = équilibre)"
+                     if f.get("esperance_par_unite") is not None else "")]
         if f["strategie_agent"]:
             lignes.append(f"Idée de sélection : {f['strategie_agent'][:380]}")
         valeur = sorted((x for x in f["jambes"] if x["ecart_pts"] is not None), key=lambda x: -x["ecart_pts"])
@@ -97,7 +100,7 @@ def analyse_par_ia(faits, appel_llm):
         "(🟢 petite cote, 🟠 cote moyenne, 🔴 haute cote) : 1) les idées qui ont influencé la sélection (forme, absences, "
         "contexte, style de jeu — UNIQUEMENT ce qui figure dans les raisons ou la stratégie), 2) la lecture des cotes (cote "
         "contre probabilité du modèle, où est la valeur), 3) le risque principal (jambe fragile, match partagé avec un autre "
-        "coupon). N'invente aucune information. Si une raison manque, dis simplement que l'idée vient du modèle statistique.")
+        "coupon). Indique l'espérance par unité misée (esperance_par_unite : 1,00 = équilibre, en dessous le coupon perd en moyenne). N'invente aucune information. Si une raison manque, dis simplement que l'idée vient du modèle statistique.")
     try:
         texte = _nettoyer(appel_llm(prompt, 1200))
         return texte if len(texte) > 80 else None
