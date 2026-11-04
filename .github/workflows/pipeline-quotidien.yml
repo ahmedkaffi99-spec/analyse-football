@@ -63,6 +63,10 @@ on:
         description: "Âge MAXIMUM accepté des cotes API-Football pour CE run, en secondes (vide = 21600, soit 6 h) — à relever (ex: 43200) pour un run de nuit, quand les cotes ne sont plus rafraîchies : les marchés plus vieux que ce seuil sont écartés"
         type: string
         default: ""
+      seuil_proba_min:
+        description: "Probabilité MINIMALE par jambe pour CE run, en % (vide = 70) — à baisser (ex: 30) quand on autorise des jambes à cote élevée"
+        type: string
+        default: ""
       cote_min_jambe:
         description: "Cote MINIMALE par jambe pour CE run (vide = 1.2) — par ex. 1.2"
         type: string
@@ -157,6 +161,7 @@ jobs:
       NB_JAMBES_MIN: ${{ inputs.nb_jambes_min }}
       NB_MATCHS_POOL: ${{ inputs.nb_matchs_pool }}
       TTL_COTES_API_FOOTBALL_SECONDES: ${{ inputs.ttl_cotes_secondes }}
+      SEUIL_PROBA_MIN: ${{ inputs.seuil_proba_min }}
       COTE_MIN_JAMBE: ${{ inputs.cote_min_jambe }}
       COTE_MAX_JAMBE: ${{ inputs.cote_max_jambe }}
       # Comparaison parallèle bet_agent/moteur + capture hist_cotes + moteur central (shadow) :
