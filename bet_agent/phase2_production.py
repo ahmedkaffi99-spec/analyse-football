@@ -79,10 +79,10 @@ def p_pinnacle(pick, fd):
     """Probabilité juste de CLÔTURE Pinnacle de ce pari, ou None si le marché n'existe pas chez Football-Data."""
     cat, sel, h = pick["categorie"], (pick["selection"] or "").lower(), pick.get("handicap")
     if cat == "Total" and h == 2.5:
-        p = pm.sans_marge(fd["ou_clo"])
+        p = pm.sans_marge(fd["ou_clo"]) or pm.sans_marge(fd.get("ou_clo_b365"))     # Pinnacle, sinon clôture Bet365 (tracé)
         return None if p is None else p["O" if "over" in sel else "U"]
     if cat == "Handicap" and fd.get("ah") and h is not None and abs(h - fd["ah"]["clo"]) < 1e-9 and pc.demi_ligne(h):
-        p = pm.sans_marge(fd["ah_clo"])
+        p = pm.sans_marge(fd["ah_clo"]) or pm.sans_marge(fd.get("ah_clo_b365"))
         return None if p is None else p["H" if sel in ("home", "1") else "A"]
     p3 = pm.sans_marge(fd["1x2_clo"])
     if p3 is None:
@@ -170,7 +170,7 @@ def tableau_comparaison(evts, titre):
     for e in evts:
         e["p_melange_pin"] = 0.35 * e["p_modele"] + 0.65 * e["p_pin"]
         e["p_alea"] = taux
-    approches = [("Pinnacle clôture seul", "p_pin"), ("Modèle production seul", "p_modele"),
+    approches = [("Référence clôture (Pinnacle 1X2 ; Bet365 O/U-AH)", "p_pin"), ("Modèle production seul", "p_modele"),
                  ("Production final (65 % 1xBet + 35 % modèle)", "p_final"), ("Marché 1xBet seul (instant collecte)", "p_marche"),
                  ("Modèle production 35 % + Pinnacle 65 %", "p_melange_pin"), ("Référence aléatoire (taux de base constant)", "p_alea")]
     lignes = [f"{titre} — {len(evts)} événements communs (taux de base {taux*100:.1f} %)",
@@ -279,6 +279,8 @@ def main():
         n_pin = sum(1 for r in fd if r["1x2_clo"]["1"] is not None)
         n_ou = sum(1 for r in fd if r["ou_clo"]["O"] is not None)
         n_ah = sum(1 for r in fd if r["ah_clo"]["H"] is not None)
+        print(f"Repli Bet365 clôture : Over/Under {sum(1 for r in fd if r['ou_clo_b365']['O'] is not None)}/{len(fd)} ; "
+              f"handicap {sum(1 for r in fd if r['ah_clo_b365']['H'] is not None)}/{len(fd)}")
         print(f"Colonnes vues (1re ligne) : {fd[0].get('_pin_cols')}")
         print(f"Matchs avec cotes de clôture Pinnacle : 1X2 {n_pin}/{len(fd)} ; Over/Under 2,5 {n_ou}/{len(fd)} ; handicap {n_ah}/{len(fd)}")
     print(rapport(cands, fd, scores))

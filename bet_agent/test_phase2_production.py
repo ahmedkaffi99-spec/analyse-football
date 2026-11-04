@@ -39,4 +39,4 @@ def test_un_par_evenement_et_comparaison_sur_memes_evenements():
     ev = pp.un_par_evenement(bets)
     assert len(ev) == 40
     txt = "\n".join(pp.tableau_comparaison(ev, "test"))
-    assert "40 événements communs" in txt and "Pinnacle clôture seul" in txt and "aléatoire" in txt
+    assert "40 événements communs" in txt and "Référence clôture (Pinnacle 1X2 ; Bet365 O/U-AH)" in txt and "aléatoire" in txt
