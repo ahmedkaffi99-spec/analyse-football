@@ -228,3 +228,26 @@ class CoteGratuite(Base):
     ligne: Mapped[float | None] = mapped_column(Float)
     selection: Mapped[str] = mapped_column(String(10))
     cote: Mapped[float] = mapped_column(Float)
+    # Provenance (audit) : d'où vient exactement la valeur et dans quel fichier (empreinte SHA-256 du CSV téléchargé)
+    url_source: Mapped[str | None] = mapped_column(String(200))
+    hash_fichier: Mapped[str | None] = mapped_column(String(64))
+
+
+class CaptureGratuiteJournal(Base):
+    """Journal de CHAQUE tentative de capture gratuite (réussie, vide ou en erreur) : fiabilité mesurable, jamais de
+    capture silencieuse. Append-only : aucune ligne n'est supprimée ni modifiée."""
+    __tablename__ = "captures_gratuites_journal"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    debut: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True, default=maintenant)
+    fin: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    statut: Mapped[str] = mapped_column(String(10))          # ok | vide | erreur
+    url_source: Mapped[str | None] = mapped_column(String(200))
+    octets: Mapped[int | None] = mapped_column(Integer)
+    hash_fichier: Mapped[str | None] = mapped_column(String(64))
+    lignes_csv: Mapped[int | None] = mapped_column(Integer)  # lignes de matchs lues dans le CSV
+    matchs: Mapped[int | None] = mapped_column(Integer)
+    cotes_lues: Mapped[int | None] = mapped_column(Integer)
+    inserees: Mapped[int | None] = mapped_column(Integer)    # nouvelles valeurs (changement de cote ou première observation)
+    inchangees: Mapped[int | None] = mapped_column(Integer)  # valeurs identiques à la dernière observation (non réinsérées)
+    erreur: Mapped[str | None] = mapped_column(String(500))
