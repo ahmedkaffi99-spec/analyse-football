@@ -42,6 +42,15 @@ def init_db():
             connexion.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{SCHEMA}"'))
     Base.metadata.create_all(engine)
     if engine.dialect.name == "postgresql":
+        # Phase 3 — migrations ADDITIVES et idempotentes (create_all ne modifie pas une table existante) : aucune donnée
+        # existante n'est touchée, les nouvelles colonnes restent NULL pour l'historique.
+        with engine.begin() as connexion:
+            for table, col, typ in (("cotes", "capture_le", "TIMESTAMPTZ"),
+                                    ("jambes", "proba_modele_seul_pct", "DOUBLE PRECISION"),
+                                    ("jambes", "proba_marche_pct", "DOUBLE PRECISION"),
+                                    ("jambes", "collecte_le", "TIMESTAMPTZ")):
+                connexion.execute(text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {typ}"))
+    if engine.dialect.name == "postgresql":
         # Supabase expose le schéma public via son API REST et donne par défaut des droits aux
         # rôles "anon" (clé publique) et "authenticated" sur les nouvelles tables. Double
         # protection, réappliquée à chaque démarrage (sans effet si déjà en place) :

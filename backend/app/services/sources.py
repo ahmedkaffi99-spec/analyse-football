@@ -13,6 +13,15 @@ SOURCES_INITIALES = [
     ("api-football", "https://www.api-football.com", "autorisee", True,
      "Accès via abonnement et clé API de l'utilisateur, selon les conditions du fournisseur (quota respecté)."),
     ("oddspapi", "https://oddspapi.io", "autorisee", True, "Accès via clé API de l'utilisateur, quota respecté."),
+    ("statsbomb", "https://github.com/statsbomb/open-data", "autorisee", True,
+     "Données ouvertes gratuites ; condition : citer StatsBomb comme source (et son logo en cas de publication) — mention portée par la provenance de "
+     "chaque ligne. L'accord utilisateur complet n'a pas été lu intégralement : à relire avant toute publication. Aucune saison en cours (recherche)."),
+    ("clubelo", "http://clubelo.com", "a_verifier", False,
+     "API CSV gratuite d'Elo par club ; conditions d'utilisation non retrouvées -> pas d'automatisation avant confirmation."),
+    ("openfootball", "https://github.com/openfootball", "a_verifier", False,
+     "Calendriers/résultats en données ouvertes (domaine public annoncé) ; licence à confirmer par dépôt avant collecte."),
+    ("football-data-org", "https://www.football-data.org", "a_verifier", False,
+     "API gratuite avec clé personnelle (inscription à faire par l'utilisateur) et limite de débit ; conditions à lire avant usage."),
     ("understat", "https://understat.com", "inconnue", False,
      "AUCUNE collecte automatisée tant qu'une confirmation écrite des conditions et droits n'est pas obtenue (décision du 2026-11-04). "
      "L'e-mail informel de 2018 rapporté par un tiers n'est pas une autorisation."),

@@ -36,6 +36,7 @@ def enregistrer_collecte(db, run, donnees):
     """Crée les matchs et leurs cotes. Renvoie un index {fixture_id OddsPapi ou 'A vs B': Match}
     pour rattacher ensuite chaque jambe de coupon à son match."""
     index = {}
+    maintenant_utc = datetime.now(timezone.utc)
     for m in donnees.get("matchs", []):
         af = m.get("api_football") or {}
         demande = m.get("match_demande") or {}
@@ -45,7 +46,8 @@ def enregistrer_collecte(db, run, donnees):
             domicile=af.get("home_name") or demande.get("home") or "?",
             exterieur=af.get("away_name") or demande.get("away") or "?",
             ligue=af.get("league_name"),
-            coup_envoi=parse_datetime(af.get("fixture_date")),
+            # Repli sur le coup d'envoi OddsPapi quand API-Football manque (sinon NULL : 357 jambes sans coup d'envoi constatées)
+            coup_envoi=parse_datetime(af.get("fixture_date")) or parse_datetime(op.get("start_time")),
             fixture_id_oddspapi=op.get("fixture_id"),
             fixture_id_api_football=af.get("fixture_id_api_football"),
             donnees={cle: m.get(cle) for cle in (
@@ -55,9 +57,10 @@ def enregistrer_collecte(db, run, donnees):
         for marche in op.get("tous_marches") or []:
             for s in marche.get("selections", []):
                 match.cotes.append(Cote(
-                    marche_id=str(marche.get("marche_id"))[:32], marche=marche.get("marche") or "",
-                    handicap=marche.get("handicap"), periode=marche.get("periode"),
-                    selection=str(s.get("selection")), cote=float(s.get("cote")),
+                    marche_id=str(marche.get("marche_id"))[:32], marche=(marche.get("marche") or "")[:120],
+                    handicap=marche.get("handicap"),
+                    periode=(str(marche.get("periode"))[:32] if marche.get("periode") is not None else None),
+                    selection=str(s.get("selection"))[:64], cote=float(s.get("cote")), capture_le=maintenant_utc,
                 ))
         db.add(match)
         if match.fixture_id_oddspapi:
@@ -97,6 +100,8 @@ def enregistrer_coupons(db, run, resultats_profils, index_matchs=None, textes=No
                 fixture_id_oddspapi=fixture_id, categorie=pick["categorie"], marche=pick["marche"],
                 handicap=pick.get("handicap"), selection=str(pick["selection"]), cote=float(pick["cote"]),
                 proba_modele_pct=pick.get("proba_modele_pct"), edge_pct=pick.get("edge_pct"),
+                proba_modele_seul_pct=pick.get("proba_poisson_pct"), proba_marche_pct=pick.get("proba_marche_pct"),
+                collecte_le=datetime.now(timezone.utc),
                 guide=pick.get("guide"), onglet=pick.get("onglet"),
             ))
         db.add(coupon)
