@@ -7,6 +7,15 @@ import agents_familles as af
 import analyser_et_envoyer as ae
 
 
+@pytest.fixture(autouse=True)
+def _edge_plafond_historique(monkeypatch):
+    """Ces scénarios utilisent des edges de 5 à 15 % : plafond d'edge historique (20 %) pour qu'ils restent
+    représentatifs ; le plafond par défaut de 3 % est testé dans test_plafond_edge_defaut_3_pct."""
+    import agents_familles
+    monkeypatch.setattr(agents_familles, "EDGE_MAX_AGENT", 20.0)
+
+
+
 def _cand(match, categorie, selection, cote, proba, edge, marche="M"):
     return {"match": match, "pick": {"categorie": categorie, "marche": marche, "marche_affichage": marche,
                                       "selection": selection, "cote": cote, "proba_modele_pct": proba,
@@ -467,3 +476,17 @@ def test_probabilite_maximale_par_jambe_refusee_au_dessus_du_plafond():
     acceptes, problemes, _ = st.valider(ok, catalogue, [base])
     assert "p1" in acceptes, problemes
     assert "PROBABILITÉ MAXIMALE PAR JAMBE" in st.construire_prompt(pool, [base], "cat")
+
+
+def test_plafond_edge_defaut_3_pct(monkeypatch):
+    """Edge > 3 % : écarté d'office (bilan du 03/11 : 55 % réels sur 3-6 %, 60 % au-delà, contre 77-80 % si edge < 0)."""
+    import importlib
+    import agents_familles as af
+    monkeypatch.delenv("EDGE_MAX_AGENT_PCT", raising=False)
+    importlib.reload(af)
+    assert af.EDGE_MAX_AGENT == 3.0
+    assert "edge suspect" in af.veto_python({"edge_pct": 3.5, "categorie": "Total"})
+    raison = af.veto_python({"edge_pct": 2.9, "categorie": "Total"})
+    assert raison is None or "edge suspect" not in raison
+    raison = af.veto_python({"edge_pct": -4.0, "categorie": "Total"})
+    assert raison is None or "edge suspect" not in raison

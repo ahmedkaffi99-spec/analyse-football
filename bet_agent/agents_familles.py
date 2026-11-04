@@ -22,7 +22,12 @@ import analyser_et_envoyer as ae
 import desequilibre
 import consensus_bookmakers
 
-EDGE_MAX_AGENT = 20.0
+# Plafond d'edge : 20 % -> 3 % le 04/11/2026 (bilan du 03/11, 182 jambes jugées depuis le 22/10, dédoublonnées, runs envoyés).
+# Par tranche d'edge : < 0 -> 77-80 % de réussite (ROI +4 à +7 % par jambe) ; 0 à 3 % -> 68 % (-2,6 %) ; 3 à 6 % -> 55 %
+# (-16,8 %) ; 6 % et plus -> 60 % (-8 %). Un edge positif signifie que le modèle contredit le marché, et c'est le marché qui a
+# raison : écarter les jambes à edge > 3 % passe le ROI par jambe de +2,2 % à +3,8 % (16 jambes écartées — échantillon
+# faible, à remesurer). Configurable : EDGE_MAX_AGENT_PCT (20 pour retrouver l'ancien comportement).
+EDGE_MAX_AGENT = float(os.getenv("EDGE_MAX_AGENT_PCT") or 3.0)
 PART_MAX_ECARTEE = 0.5
 
 # (id, nom, catégories exactes, faits mesurés). Tout ce qui n'est dans aucune liste → "derives".
