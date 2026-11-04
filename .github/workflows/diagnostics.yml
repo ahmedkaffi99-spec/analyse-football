@@ -50,6 +50,7 @@ on:
           - phase2-production-vs-pinnacle
           - phase3-statsbomb
           - phase4-historique-fd
+          - phase5-comptages
         default: marches-disponibles
       date_debut:
         description: "Date cible de début (AAAA-MM-JJ) — utilisé seulement par 'marches-disponibles'"
@@ -1504,3 +1505,8 @@ jobs:
         if: inputs.verification == 'phase4-historique-fd'
         working-directory: backend
         run: python -m app.services.historique_fd importer
+
+      - name: Phase 5 - moteurs de comptage (corners, cartons, tirs, tirs cadrés, fautes) sur fd_matchs, walk-forward, lecture seule
+        if: inputs.verification == 'phase5-comptages'
+        working-directory: backend
+        run: python ../bet_agent/phase5_comptages.py
