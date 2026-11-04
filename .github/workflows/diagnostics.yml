@@ -45,6 +45,7 @@ on:
           - matchs-du-jour-toutes-competitions
           - phase2-comparaison
           - phase2-capture-gratuite
+          - phase2-sonde-understat
         default: marches-disponibles
       date_debut:
         description: "Date cible de début (AAAA-MM-JJ) — utilisé seulement par 'marches-disponibles'"
@@ -1470,3 +1471,8 @@ jobs:
         if: inputs.verification == 'phase2-capture-gratuite'
         working-directory: backend
         run: python -m app.services.capture_cotes_gratuites
+
+      - name: Phase 2 - sonde de licence Understat (une passe, robots.txt + accueil, aucune collecte)
+        if: inputs.verification == 'phase2-sonde-understat'
+        working-directory: bet_agent
+        run: python phase2_sonde_understat.py
