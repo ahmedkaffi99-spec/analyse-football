@@ -127,9 +127,6 @@ jobs:
       # Abonnement API-Football terminé le 30/10/2026 : cotes OddsPapi + stats/Elo/H2H depuis les 5 saisons
       # stockées (hist_matchs). Remettre "" après renouvellement du compte.
       SANS_API_FOOTBALL: "1"
-      # Poids du MARCHÉ dans la probabilité finale (0,65 -> 0,90, décision du 2026-11-04, preuves : docs/decision-poids-marche.md).
-      # Remettre la ligne à "" (ou la supprimer) pour revenir à 0,65.
-      POIDS_MARCHE_OVERRIDE: "0.90"
       API_FOOTBALL_QUOTA_PAR_MINUTE: ${{ secrets.API_FOOTBALL_QUOTA_PAR_MINUTE }}
       STATS_DETAILLEES_ACTIVE: ${{ secrets.STATS_DETAILLEES_ACTIVE }}
       SAISON_MAX_PLAN_GRATUIT: ${{ secrets.SAISON_MAX_PLAN_GRATUIT }}
