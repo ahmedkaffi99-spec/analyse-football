@@ -277,7 +277,10 @@ def main():
     print(f"Football-Data : {len(fd)} matchs chargés ({saisons})")
     if fd:
         n_pin = sum(1 for r in fd if r["1x2_clo"]["1"] is not None)
-        print(f"Colonnes Pinnacle vues : {fd[0].get('_pin_cols')} ; matchs avec 1X2 clôture Pinnacle : {n_pin}/{len(fd)}")
+        n_ou = sum(1 for r in fd if r["ou_clo"]["O"] is not None)
+        n_ah = sum(1 for r in fd if r["ah_clo"]["H"] is not None)
+        print(f"Colonnes vues (1re ligne) : {fd[0].get('_pin_cols')}")
+        print(f"Matchs avec cotes de clôture Pinnacle : 1X2 {n_pin}/{len(fd)} ; Over/Under 2,5 {n_ou}/{len(fd)} ; handicap {n_ah}/{len(fd)}")
     print(rapport(cands, fd, scores))
 
 

@@ -61,7 +61,7 @@ def parser(texte, ligue):
             "ou_ouv": {"O": _f(row, "P>2.5", "PP>2.5"), "U": _f(row, "P<2.5", "PP<2.5")},
             "ou_clo": {"O": _f(row, "PC>2.5", "PPC>2.5"), "U": _f(row, "PC<2.5", "PPC<2.5")},
             "ah": ah,
-            "_pin_cols": [c for c in row if c.startswith(("PS", "PP", "PC", "P>", "P<"))][:12],
+            "_pin_cols": [c for c in row if c.startswith(("PS", "PP", "PC", "P>", "P<", "AH", "Max>", "Avg>", "B365>", "B365A", "B365C"))],
             "ah_ouv": {"H": _f(row, "PAHH", "PPAHH"), "A": _f(row, "PAHA", "PPAHA")},
             "ah_clo": {"H": _f(row, "PCAHH", "PPCAHH"), "A": _f(row, "PCAHA", "PPCAHA")},
         })
