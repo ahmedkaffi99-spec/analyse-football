@@ -283,3 +283,49 @@ class MappingEquipe(Base):
     nom_canonique: Mapped[str | None] = mapped_column(String(120))
     confiance: Mapped[str] = mapped_column(String(12), default="a_valider")   # exact | alias | a_valider
     valide_le: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class SbMatch(Base):
+    """StatsBomb Open Data (github.com/statsbomb/open-data) : un match + son xG calculé à partir des tirs. Provenance complète
+    (URL, empreinte SHA-256 du fichier, date de collecte, mention d'attribution). Valeurs absentes = NULL, jamais estimées."""
+    __tablename__ = "sb_matchs"
+
+    match_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    competition_id: Mapped[int] = mapped_column(Integer, index=True)
+    saison_id: Mapped[int] = mapped_column(Integer, index=True)
+    competition: Mapped[str | None] = mapped_column(String(120))
+    saison: Mapped[str | None] = mapped_column(String(20))
+    date_match: Mapped[date | None] = mapped_column(Date, index=True)
+    domicile: Mapped[str] = mapped_column(String(120))
+    exterieur: Mapped[str] = mapped_column(String(120))
+    buts_dom: Mapped[int | None] = mapped_column(Integer)
+    buts_ext: Mapped[int | None] = mapped_column(Integer)
+    xg_dom: Mapped[float | None] = mapped_column(Float)         # somme des xG des tirs (hors séance de tirs au but)
+    xg_ext: Mapped[float | None] = mapped_column(Float)
+    tirs_dom: Mapped[int | None] = mapped_column(Integer)
+    tirs_ext: Mapped[int | None] = mapped_column(Integer)
+    coherent: Mapped[bool | None] = mapped_column(Boolean)      # buts reconstitués depuis les événements == score officiel
+    source: Mapped[str] = mapped_column(String(40), default="statsbomb-open-data")
+    url_source: Mapped[str | None] = mapped_column(String(200))
+    hash_fichier: Mapped[str | None] = mapped_column(String(64))
+    collecte_le: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=maintenant)
+    licence_ref: Mapped[str] = mapped_column(String(120), default="StatsBomb Open Data - attribution requise")
+
+
+class SbTir(Base):
+    __tablename__ = "sb_tirs"
+
+    tir_id: Mapped[str] = mapped_column(String(40), primary_key=True)     # UUID de l'événement StatsBomb
+    match_id: Mapped[int] = mapped_column(Integer, index=True)
+    equipe: Mapped[str | None] = mapped_column(String(120))
+    joueur: Mapped[str | None] = mapped_column(String(120))
+    periode: Mapped[int | None] = mapped_column(Integer)
+    minute: Mapped[int | None] = mapped_column(Integer)
+    xg: Mapped[float | None] = mapped_column(Float)
+    resultat: Mapped[str | None] = mapped_column(String(30))
+    type_tir: Mapped[str | None] = mapped_column(String(30))
+    partie_corps: Mapped[str | None] = mapped_column(String(30))
+    x: Mapped[float | None] = mapped_column(Float)
+    y: Mapped[float | None] = mapped_column(Float)
+    url_source: Mapped[str | None] = mapped_column(String(200))
+    hash_fichier: Mapped[str | None] = mapped_column(String(64))

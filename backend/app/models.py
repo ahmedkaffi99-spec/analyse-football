@@ -74,6 +74,8 @@ class Cote(Base):
     periode: Mapped[str | None] = mapped_column(String(32))
     selection: Mapped[str] = mapped_column(String(64))
     cote: Mapped[float] = mapped_column(Float)
+    # Phase 3 (additif) : instant de collecte de cette cote (NULL pour l'historique antérieur : jamais rétro-rempli)
+    capture_le: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     match: Mapped[Match] = relationship(back_populates="cotes")
 
@@ -117,8 +119,12 @@ class Jambe(Base):
     handicap: Mapped[float | None] = mapped_column(Float)
     selection: Mapped[str] = mapped_column(String(64))
     cote: Mapped[float] = mapped_column(Float)
-    proba_modele_pct: Mapped[float | None] = mapped_column(Float)
+    proba_modele_pct: Mapped[float | None] = mapped_column(Float)   # probabilité FINALE (mélange marché/modèle)
     edge_pct: Mapped[float | None] = mapped_column(Float)
+    # Phase 3 (additif) : composantes de la probabilité finale, indispensables pour évaluer le modèle seul / le marché seul
+    proba_modele_seul_pct: Mapped[float | None] = mapped_column(Float)
+    proba_marche_pct: Mapped[float | None] = mapped_column(Float)
+    collecte_le: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     guide: Mapped[str | None] = mapped_column(Text)
     onglet: Mapped[str | None] = mapped_column(String(160))
     resultat: Mapped[str] = mapped_column(String(20), default="en_attente", index=True)

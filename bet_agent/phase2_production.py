@@ -242,6 +242,19 @@ def rapport(cands, fd_lignes, scores=None):
         pts = [(e[cle], y(e)) for e in tout if e["issue"] != "push"]
         lg, ece = pm.table_calibration(pts, 10)
         out.append(f"Calibration {nom} : ECE={ece:.4f} | " + " ".join(f"{t*10}-{t*10+10}%:{n}:{a*100:.0f}→{r*100:.0f}" for t, n, a, r in lg))
+    # --- 3 bis) poids du modèle dans la probabilité finale : p = (1-w) × marché 1xBet + w × modèle de production
+    out.append("\n=== POIDS DU MODÈLE (w) : Brier de (1-w)×marché 1xBet + w×modèle ; Δ vs marché seul (w=0), erreur type appariée ===")
+    for nom, ens in (("tous les paris jugés", tout), ("événements avec référence", [e for e in tout if e.get("p_pin") is not None])):
+        ev = [e for e in ens if e["issue"] != "push"]
+        if len(ev) < 30:
+            continue
+        base = [(e["p_marche"] - y(e)) ** 2 for e in ev]
+        lig = []
+        for w in (0.0, 0.05, 0.10, 0.15, 0.25, 0.35, 0.5, 1.0):
+            br = [(((1 - w) * e["p_marche"] + w * e["p_modele"]) - y(e)) ** 2 for e in ev]
+            md, ed = pm.moyenne_et_erreur_type([a - b for a, b in zip(br, base)])
+            lig.append(f"w={w:.2f}: {sum(br)/len(br):.4f} ({md:+.4f}±{ed:.4f})")
+        out.append(f"  {nom} (n={len(ev)}) : " + " | ".join(lig))
     # --- 4) ROI simulé, EV, CLV, drawdown : règle de production (edge final ≥ 0, cotes 1,25-3,00) vs aléatoire
     out.append("\n=== ROI SIMULÉ (mise unitaire à la cote 1xBet), EV annoncée vs réalisée, CLV vs clôture Pinnacle, drawdown ===")
     for b in cands:

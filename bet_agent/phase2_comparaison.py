@@ -16,7 +16,7 @@ import phase2_reference as pr
 
 URL = "https://www.football-data.co.uk/mmz4281/{saison}/{ligue}.csv"
 REFIT_JOURS = 14
-POIDS = (0.0, 0.15, 0.35, 0.5, 1.0)           # poids du MODÈLE dans le mélange (0 = marché seul, 1 = modèle seul)
+POIDS = (0.0, 0.05, 0.10, 0.15, 0.35, 0.5, 1.0)           # poids du MODÈLE dans le mélange (0 = marché seul, 1 = modèle seul)
 MODELES = ("poisson", "dixon_coles", "binomiale_negative")
 
 

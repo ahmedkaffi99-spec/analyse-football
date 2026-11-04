@@ -47,6 +47,7 @@ on:
           - phase2-capture-gratuite
           - phase2-sonde-understat
           - phase2-production-vs-pinnacle
+          - phase3-statsbomb
         default: marches-disponibles
       date_debut:
         description: "Date cible de début (AAAA-MM-JJ) — utilisé seulement par 'marches-disponibles'"
@@ -1482,3 +1483,11 @@ jobs:
         if: inputs.verification == 'phase2-production-vs-pinnacle'
         working-directory: backend
         run: python ../bet_agent/phase2_production.py
+
+      - name: Phase 3 - StatsBomb Open Data (couverture, import d'un échantillon, contrôle de cohérence)
+        if: inputs.verification == 'phase3-statsbomb'
+        working-directory: backend
+        run: |
+          python -m app.services.statsbomb couverture | head -60
+          python -m app.services.statsbomb importer 9 281 40
+          python -m app.services.statsbomb importer 7 235 25
