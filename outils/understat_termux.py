@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Collecte Understat pour Termux — Python standard UNIQUEMENT (aucun pip), base SQLite locale, provenance sur chaque ligne.
+"""[VERROUILLÉ — voir autorisation_ecrite()] Collecte Understat pour Termux — Python standard UNIQUEMENT (aucun pip), base SQLite locale, provenance sur chaque ligne.
 Usage :
   python understat_termux.py maj [saison]   # ligues + matchs terminés + tirs des matchs pas encore en base (max 15 pages/passage)
   python understat_termux.py etat           # ce qu'il y a en base
@@ -146,9 +146,20 @@ def etat(con=None):
               "SELECT count(*) FROM us_matchs WHERE termine=1 AND match_id NOT IN (SELECT DISTINCT match_id FROM us_tirs)").fetchone()[0])
 
 
+def autorisation_ecrite():
+    """VERROU (décision du 2026-11-04) : aucune collecte tant que la référence d'une confirmation écrite d'Understat n'est pas
+    fournie dans UNDERSTAT_AUTORISATION_ECRITE (ex. date + objet de l'e-mail). L'e-mail informel de 2018 ne compte pas."""
+    ref = (os.environ.get("UNDERSTAT_AUTORISATION_ECRITE") or "").strip()
+    return ref if len(ref) >= 10 else None
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "etat"
     if cmd == "maj":
+        if not autorisation_ecrite():
+            print("REFUS : collecte Understat désactivée tant qu'aucune confirmation écrite des conditions/droits n'est obtenue "
+                  "(variable UNDERSTAT_AUTORISATION_ECRITE vide). Rien n'a été téléchargé.")
+            sys.exit(2)
         maj(int(sys.argv[2]) if len(sys.argv) > 2 else None)
     else:
         etat()

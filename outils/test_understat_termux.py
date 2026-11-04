@@ -41,3 +41,12 @@ def test_page_sans_donnees_donne_none():
 def test_saison_courante():
     from datetime import datetime
     assert u.saison_courante(datetime(2026, 11, 4)) == 2026 and u.saison_courante(datetime(2026, 3, 1)) == 2025
+
+
+def test_verrou_autorisation(monkeypatch):
+    monkeypatch.delenv("UNDERSTAT_AUTORISATION_ECRITE", raising=False)
+    assert u.autorisation_ecrite() is None
+    monkeypatch.setenv("UNDERSTAT_AUTORISATION_ECRITE", "court")
+    assert u.autorisation_ecrite() is None
+    monkeypatch.setenv("UNDERSTAT_AUTORISATION_ECRITE", "e-mail Understat 2026-11-20 objet: autorisation")
+    assert u.autorisation_ecrite()

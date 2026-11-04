@@ -251,3 +251,35 @@ class CaptureGratuiteJournal(Base):
     inserees: Mapped[int | None] = mapped_column(Integer)    # nouvelles valeurs (changement de cote ou première observation)
     inchangees: Mapped[int | None] = mapped_column(Integer)  # valeurs identiques à la dernière observation (non réinsérées)
     erreur: Mapped[str | None] = mapped_column(String(500))
+
+
+class SourceDonnees(Base):
+    """Registre des sources de données externes et de leur STATUT JURIDIQUE. Toute collecte automatisée doit passer par
+    app.services.sources.exiger_autorisation(...) : sans `collecte_autorisee` explicite (décision humaine tracée dans
+    `preuve_ref`), la collecte est refusée. Aucune ligne n'est supprimée ; les changements de statut sont ajoutés à
+    `historique`."""
+    __tablename__ = "sources_donnees"
+
+    nom: Mapped[str] = mapped_column(String(40), primary_key=True)
+    url: Mapped[str | None] = mapped_column(String(200))
+    licence_statut: Mapped[str] = mapped_column(String(20), default="inconnue")   # inconnue | a_verifier | autorisee | refusee
+    collecte_autorisee: Mapped[bool] = mapped_column(Boolean, default=False)
+    preuve_ref: Mapped[str | None] = mapped_column(String(300))   # lien/référence de la confirmation écrite ou des conditions lues
+    notes: Mapped[str | None] = mapped_column(String(500))
+    verifie_le: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    historique: Mapped[str | None] = mapped_column(String(2000))
+
+
+class MappingEquipe(Base):
+    """Correspondance validée entre le nom d'une équipe dans une source et l'identifiant canonique (API-Football). Jamais de
+    rapprochement flou silencieux : `confiance` et `valide_le` tracent chaque lien."""
+    __tablename__ = "mapping_equipes"
+    __table_args__ = (UniqueConstraint("source", "nom_source", name="uq_mapping_equipe"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source: Mapped[str] = mapped_column(String(40), index=True)
+    nom_source: Mapped[str] = mapped_column(String(120))
+    id_api_football: Mapped[int | None] = mapped_column(Integer, index=True)
+    nom_canonique: Mapped[str | None] = mapped_column(String(120))
+    confiance: Mapped[str] = mapped_column(String(12), default="a_valider")   # exact | alias | a_valider
+    valide_le: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
