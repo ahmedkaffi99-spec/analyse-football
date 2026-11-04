@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import and_, or_, select
 
 from app.models import Coupon, Jambe
-from app.services import pipeline
+from app.services import pipeline, stats_fd
 
 VERDICT_VERS_RESULTAT = {"gagne": "gagne", "perdu": "perdu", "push": "push", None: "non_verifiable"}
 
@@ -40,8 +40,9 @@ def verifier_jambes(db, jambes):
             return True
         # Jambe de statistique classée non_verifiable par manque de statistique : rejugée tant que le
         # délai DELAI_STATS_JOURS n'est pas écoulé (les statistiques arrivent parfois après le match).
+        # (sans exiger de fixture API-Football : le repli Football-Data peut apporter la statistique plus tard)
         return (j.resultat == "non_verifiable" and j.categorie in vr.STAT_API_FOOTBALL_PAR_CATEGORIE
-                and j.match is not None and j.match.fixture_id_api_football is not None
+                and j.match is not None
                 and not vr.jambe_perimee(j.match.coup_envoi, maintenant, delai_jours=vr.DELAI_STATS_JOURS))
 
     a_juger = [j for j in jambes if _a_rejuger(j)]
@@ -121,7 +122,12 @@ def verifier_jambes(db, jambes):
                 val_dom = cd._valeur_stat(bloc_dom, type_stat)
                 val_ext = cd._valeur_stat(bloc_ext, type_stat)
                 verdict = vr.grader_pick_stat(jambe.categorie, jambe.handicap, jambe.selection, val_dom, val_ext)
-            if verdict is None and fixture_af:
+            if verdict is None and jambe.match is not None:
+                # Repli Football-Data (5 championnats) quand API-Football n'a pas la statistique (abonnement terminé, valeur non suivie...).
+                fd = stats_fd.valeurs(db, domicile, exterieur, jambe.match.coup_envoi, type_stat)
+                if fd is not None:
+                    verdict = vr.grader_pick_stat(jambe.categorie, jambe.handicap, jambe.selection, fd[0], fd[1])
+            if verdict is None and jambe.match is not None:
                 # Statistique absente (réponse vide, valeur non suivie, panne) : rejugée au prochain passage
                 # tant que le délai DELAI_STATS_JOURS n'est pas écoulé — jamais classée non_verifiable à vie
                 # dès le premier essai (cas Lech Poznan–Sunderland du 22/10/2026).

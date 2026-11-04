@@ -34,6 +34,13 @@ def telecharger(saison, ligue, essais=3):
     raise derniere
 
 
+def saison_courante(aujourdhui=None):
+    """Code Football-Data de la saison en cours (juillet -> juin) : 2026-11-04 -> '2627'."""
+    d = aujourdhui or date.today()
+    debut = d.year if d.month >= 7 else d.year - 1
+    return f"{debut % 100:02d}{(debut + 1) % 100:02d}"
+
+
 def decoder(brut):
     try:
         t = brut.decode("utf-8-sig")
@@ -207,6 +214,9 @@ if __name__ == "__main__":
     with SessionLocal() as session:
         sources.initialiser(session)
         sources.exiger_autorisation(session, "football-data")
+        if len(sys.argv) > 1 and sys.argv[1] == "saison-courante":      # mise à jour légère (5 fichiers) : nouveaux matchs terminés seulement
+            print("import saison courante :", importer(session, [saison_courante()]))
+            sys.exit(0)
         if len(sys.argv) < 2 or sys.argv[1] == "importer":
             print("import :", importer(session))
         for l in rapport_qualite(session):
