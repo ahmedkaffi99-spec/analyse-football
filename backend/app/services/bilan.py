@@ -49,6 +49,28 @@ def construire_message(coupons, partiel=False):
     return entete + separateur.join(sections)
 
 
+LIMITE_TELEGRAM = 3800  # Telegram refuse au-delà de 4096 caractères (« message is too long »)
+
+
+def decouper_message(texte, limite=LIMITE_TELEGRAM):
+    """Découpe un message trop long en morceaux ≤ limite, en coupant d'abord entre sections (lignes de séparation),
+    puis entre lignes — jamais au milieu d'une ligne de pari."""
+    if len(texte) <= limite:
+        return [texte]
+    morceaux, courant = [], ""
+    for bloc in texte.split("\n\n"):
+        for ligne in ([bloc] if len(bloc) <= limite else bloc.split("\n")):
+            candidat = f"{courant}\n\n{ligne}" if courant else ligne
+            if len(candidat) > limite and courant:
+                morceaux.append(courant)
+                courant = ligne
+            else:
+                courant = candidat
+    if courant:
+        morceaux.append(courant)
+    return morceaux
+
+
 def envoyer_bilans(db, notifier, forcer_runs=()):
     """notifier(message) -> bool (analyser_et_envoyer.notifier_telegram). Renvoie le nombre de
     bilans envoyés. Un run dont un coupon est encore en attente est laissé pour plus tard."""
@@ -62,7 +84,9 @@ def envoyer_bilans(db, notifier, forcer_runs=()):
         forcer = coupons[0].run_id in forcer_runs
         if not any(c.jambes for c in coupons) or (incomplet and not forcer):
             continue
-        if notifier(construire_message(coupons, partiel=incomplet)):
+        morceaux = decouper_message(construire_message(coupons, partiel=incomplet))
+        # bilan marqué envoyé SEULEMENT si tous les morceaux sont partis
+        if all([notifier(m) for m in morceaux]):
             for c in coupons:
                 c.bilan_envoye = True
             db.commit()

@@ -171,3 +171,32 @@ def test_workflow_sans_jeton_ne_fait_rien(monkeypatch):
     from app.services import github_actions as ga
     monkeypatch.delenv("GITHUB_TOKEN", raising=False)
     assert ga.activer_workflow(poster=lambda *a, **k: (_ for _ in ()).throw(AssertionError("appel inattendu"))) is False
+
+
+def test_bilan_trop_long_decoupe_en_morceaux():
+    from app.services.bilan import LIMITE_TELEGRAM, decouper_message
+    section = "\n".join(f"✅ Match {i} — Total buts : plus de 2.5 @1.4" for i in range(60))
+    texte = "ENTETE\n\n" + "\n\n━━━━\n\n".join(section for _ in range(3))
+    assert len(texte) > 4096
+    morceaux = decouper_message(texte)
+    assert len(morceaux) > 1 and all(len(m) <= LIMITE_TELEGRAM for m in morceaux)
+    assert "".join(morceaux).count("Match 59") == 3          # rien de perdu
+    assert decouper_message("court") == ["court"]
+
+
+def test_bilan_marque_envoye_seulement_si_tous_les_morceaux_partent(client):
+    from app.models import Coupon
+    from app.services import bilan
+    client.post("/api/imports", json={"collecte": collecte_exemple(), "ticket": ticket_exemple()})
+    with SessionLocal() as db:
+        for c in db.query(Coupon):
+            c.statut = "gagne"
+        db.commit()
+        monkey = bilan.decouper_message
+        bilan.decouper_message = lambda t: [t, t]            # 2 morceaux, le 2e échoue
+        try:
+            reponses = iter([True, False])
+            assert bilan.envoyer_bilans(db, lambda m: next(reponses)) == 0
+            assert all(not c.bilan_envoye for c in db.query(Coupon))
+        finally:
+            bilan.decouper_message = monkey
