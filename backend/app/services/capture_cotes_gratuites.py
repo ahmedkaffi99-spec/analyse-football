@@ -142,8 +142,12 @@ def capturer(db, brut=None):
         j.cotes_lues = len(lignes)
         j.matchs = len({(l["ligue"], l["date_match"], l["domicile"], l["exterieur"]) for l in lignes})
         if not lignes:
-            entete = texte.splitlines()[0][:150] if texte else ""
-            j.statut, j.erreur = "vide", f"aucune cote lue ({len(lignes_csv)} lignes de matchs) ; en-tête : {entete}"[:500]
+            tous = list(csv.DictReader(io.StringIO(texte)))
+            divs = sorted({(r.get("Div") or "").strip() for r in tous})
+            dates = sorted({(r.get("Date") or "") for r in tous})[:6]
+            j.statut = "vide"
+            j.erreur = (f"aucune cote lue pour {sorted(LIGUES)} : fichier de {len(tous)} matchs, championnats présents {divs}, "
+                        f"dates {dates}")[:500]
         else:
             j.inserees, j.inchangees = enregistrer(db, lignes)
             j.statut = "ok"
