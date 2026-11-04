@@ -363,3 +363,32 @@ def test_verification_stats_absentes_non_verifiable_apres_le_delai(client, monke
 
     resultat = client.post("/api/coupons/verification").json()
     assert resultat["non_verifiable"] == 1 and resultat["stats_indisponibles"] == 0
+
+
+def test_verification_stats_repli_football_data_sans_api_football(client, monkeypatch):
+    """Sans statistiques API-Football (abonnement terminé), la jambe corners est jugée avec les totaux Football-Data (fd_matchs)."""
+    from datetime import date
+
+    from app.database import SessionLocal
+    from app.models_historique import FdMatch
+
+    profils = [{"cle": "profil1", "nom": "🛡️ COUPON 1", "selections": [{
+        "match": "Lens vs Auxerre", "home_nom": "Lens", "away_nom": "Auxerre", "fixture_id_oddspapi": "idLENSAUX",
+        "pick": {"categorie": "Total Corners", "marche": "Corners - Over Under Full Time (9.5)",
+                 "handicap": 9.5, "selection": "Over", "cote": 1.8,
+                 "proba_modele_pct": 60.0, "edge_pct": 1.0, "guide": "g", "onglet": "o"}}]}]
+    ticket = {"date": "2026-09-25", "genere_a": "2026-09-25T12:05:00", "profils": profils, "resultat_envoye": False}
+    client.post("/api/imports", json={"collecte": collecte_exemple(), "ticket": ticket})
+    cd, _, vr = pipeline.modules()
+    monkeypatch.setattr(vr, "recuperer_fixtures_du_jour", lambda: {})
+    monkeypatch.setattr(vr, "recuperer_fixtures_api_football_du_jour", lambda *_a, **_k: [
+        {"teams": {"home": {"name": "RC Lens"}, "away": {"name": "AJ Auxerre"}},
+         "fixture": {"status": {"short": "FT"}}, "goals": {"home": 2, "away": 1}}])
+    monkeypatch.setattr(cd, "_appel_statistiques_fixture", lambda fixture_id: [])          # API-Football : rien
+    with SessionLocal() as db:
+        db.add(FdMatch(ligue="F1", saison="2627", date_match=date(2026, 9, 25), domicile="Lens", exterieur="Auxerre",
+                       buts_dom=2, buts_ext=1, stats={"HC": 7, "AC": 4}))
+        db.commit()
+    resultat = client.post("/api/coupons/verification").json()
+    assert resultat["gagne"] == 1                                                          # 7 + 4 = 11 corners > 9.5
+    assert client.get("/api/coupons").json()[0]["jambes"][0]["resultat"] == "gagne"

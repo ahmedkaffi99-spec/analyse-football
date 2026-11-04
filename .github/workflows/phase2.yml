@@ -52,6 +52,11 @@ jobs:
         working-directory: backend
         run: python -m app.services.capture_cotes_gratuites
 
+      - name: Mise à jour de la saison courante Football-Data (nouveaux matchs terminés, 5 fichiers, insert-only)
+        if: github.event_name == 'schedule' || inputs.action == 'capture'
+        working-directory: backend
+        run: python -m app.services.historique_fd saison-courante
+
       - name: Comparaison walk-forward (lecture seule)
         if: github.event_name == 'workflow_dispatch' && inputs.action == 'comparaison'
         working-directory: bet_agent

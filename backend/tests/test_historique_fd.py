@@ -38,3 +38,8 @@ def test_fichier_manquant_est_rapporte():
     with SessionLocal() as db:
         cr = hf.importer(db, ["2425"], ["E0"], telecharge=casse)
         assert cr["fichiers"] == 0 and len(cr["echecs"]) == 1
+
+
+def test_saison_courante():
+    from datetime import date as d
+    assert hf.saison_courante(d(2026, 11, 4)) == "2627" and hf.saison_courante(d(2027, 3, 1)) == "2627" and hf.saison_courante(d(2026, 6, 30)) == "2526"
