@@ -127,6 +127,10 @@ jobs:
       # Abonnement API-Football renouvelé (plan Pro, confirmé par l'utilisateur le 04/11/2026) : retour à API-Football
       # pour les cotes, stats, Elo et H2H (OddsPapi n'est plus appelé). Remettre "1" si le compte expire.
       SANS_API_FOOTBALL: ""
+      # Retour au comportement exact du 03/11/2026 (demande de l'utilisateur le 04/11) : plafond d'edge 20 % et collecte des
+      # 10 bookmakers avec garde-fou. Supprimer ces deux lignes pour retrouver le plafond de 3 % et 1xBet seul.
+      EDGE_MAX_AGENT_PCT: "20"
+      COLLECTER_AUTRES_BOOKMAKERS: "1"
       API_FOOTBALL_QUOTA_PAR_MINUTE: ${{ secrets.API_FOOTBALL_QUOTA_PAR_MINUTE }}
       STATS_DETAILLEES_ACTIVE: ${{ secrets.STATS_DETAILLEES_ACTIVE }}
       SAISON_MAX_PLAN_GRATUIT: ${{ secrets.SAISON_MAX_PLAN_GRATUIT }}
