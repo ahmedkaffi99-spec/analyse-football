@@ -1203,9 +1203,8 @@ def recuperer_predictions(fixture_id, nom_home, nom_away):
 
 def assez_tot_avant_coup_envoi(depart_iso, maintenant=None):
     """Faux si le match commence dans moins de MINUTES_MIN_SELECTION_AUTO minutes (ou est
-    déjà commencé). Une heure illisible ou absente n'exclut pas le match.
-    IGNORER_COUP_ENVOI=1 : filtre désactivé (heures OddsPapi parfois fausses)."""
-    if os.getenv("IGNORER_COUP_ENVOI") == "1" or not depart_iso:
+    déjà commencé). Une heure illisible ou absente n'exclut pas le match."""
+    if not depart_iso:
         return True
     try:
         depart = datetime.fromisoformat(str(depart_iso).replace("Z", "+00:00"))
