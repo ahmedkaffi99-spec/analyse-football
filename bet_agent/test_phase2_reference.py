@@ -61,3 +61,10 @@ def test_rapport_texte():
     tous = monde(200)
     t = pr.comparer(tous, [b for b in tous if b["selection"] == 0], n_sim=100)
     assert "aléatoire" in t and "rang" in t and "simulations 1-10" in t
+
+
+def test_cles_de_types_mixtes_ne_cassent_pas_le_tri():
+    tous = [{"match": m, "groupe": "g", "selection": s, "cote": 2.0, "issue": "gagne", "date": 1}
+            for m in ("a1", 7, None) for s in (0, 1)]
+    choisis = [b for b in tous if b["selection"] == 0]
+    assert len(pr.simuler_aleatoire(tous, choisis, 3, graine=1)) == 3

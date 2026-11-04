@@ -169,7 +169,17 @@ if __name__ == "__main__":
     sys.path.insert(0, str(RACINE / "backend"))
     from app.database import SessionLocal, init_db
 
-    init_db()
+    import time
+    from sqlalchemy.exc import OperationalError
+    for essai in range(1, 5):               # init_db peut croiser un autre job (verrous) : nouvelle tentative, jamais d'abandon silencieux
+        try:
+            init_db()
+            break
+        except OperationalError as e:
+            print(f"init_db tentative {essai}/4 : {str(e)[:120]}")
+            if essai == 4:
+                raise
+            time.sleep(10 * essai)
     with SessionLocal() as session:
         assurer_colonnes(session)
         journal = capturer(session)

@@ -87,7 +87,7 @@ def simuler_aleatoire(tous, choisis, n_sim=1000, graine=2026):
     for b in choisis:
         k = (b["match"], b["groupe"])
         nb[k] = nb.get(k, 0) + 1
-    groupes = sorted(nb)                     # ordre stable => reproductible
+    groupes = sorted(nb, key=repr)           # ordre stable (clés de types mixtes possibles) => reproductible
     rng = random.Random(graine)
     sims = []
     for _ in range(n_sim):
