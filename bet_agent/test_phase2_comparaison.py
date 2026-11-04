@@ -41,3 +41,13 @@ def test_pas_de_fuite_de_donnees_futures():
 
 def test_demi_ligne():
     assert pc.demi_ligne(-0.5) and pc.demi_ligne(1.5) and not pc.demi_ligne(-0.25) and not pc.demi_ligne(0.0)
+
+
+def test_handicap_ligne_ouverture_differente_exclue_de_la_simulation():
+    matchs = pc.parser(csv_synthetique(), "E0")
+    for i, m in enumerate(matchs):
+        m["ah"] = {"ouv": -0.5, "clo": -0.5 if i % 2 == 0 else -1.5}      # une ligne sur deux a bougé
+    tests = pc.predire(matchs, matchs[300]["date"])
+    tous, _ = pc.construire_paris(tests, "ah", "dixon_coles", 0.0, 1.0)
+    stables = sum(1 for m in tests if m["ah"]["ouv"] == m["ah"]["clo"])
+    assert 0 < stables < len(tests) and len(tous) == 2 * stables       # 2 sélections par match à ligne stable, rien pour les autres

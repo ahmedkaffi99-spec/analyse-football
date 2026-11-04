@@ -206,6 +206,10 @@ def construire_paris(tests, marche, source, seuil=0.03, poids=1.0):
         ouv, clo = pm.sans_marge(m[co]), pm.sans_marge(m[cc])
         if ouv is None or clo is None or not m["p"].get(marche):
             continue
+        # Handicap : les cotes d'ouverture ne valent que pour la ligne d'OUVERTURE ; si la ligne a bougé, parier à l'ouverture et juger
+        # à la ligne de clôture serait incohérent (bogue corrigé le 2026-11-04) -> on exclut les matchs dont la ligne a changé.
+        if marche == "ah" and abs((m["ah"]["ouv"] if m["ah"] else 0) - (m["ah"]["clo"] if m["ah"] else 99)) > 1e-9:
+            continue
         p = m["p"][marche][source]
         if poids < 1:
             p = pm.melanger(ouv, p, poids)
