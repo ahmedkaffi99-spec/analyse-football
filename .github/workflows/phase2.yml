@@ -1,0 +1,58 @@
+# Phase 2 — aucune dépense : données gratuites uniquement (Football-Data.co.uk).
+#  - capture : instantané des cotes à venir (série temporelle) dans la table cotes_gratuites, toutes les 6 h ;
+#  - comparaison : backtest walk-forward Poisson / Dixon-Coles / binomiale négative vs marché (lecture seule,
+#    aucune écriture en base, aucun Telegram).
+name: Phase 2 - données gratuites
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Que lancer ?"
+        type: choice
+        options: [comparaison, capture]
+        default: comparaison
+      saisons:
+        description: "Saisons Football-Data (ex: 2021,2122,2223,2324,2425)"
+        type: string
+        default: "2021,2122,2223,2324,2425"
+      ligues:
+        description: "Ligues (E0=Premier League, F1, D1, I1, SP1)"
+        type: string
+        default: "E0,F1,D1,I1,SP1"
+
+concurrency:
+  group: phase2-${{ github.event_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  phase2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      PYTHONUNBUFFERED: "1"
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: pip install -r backend/requirements.txt
+
+      - name: Capture gratuite des cotes (série temporelle)
+        if: github.event_name == 'schedule' || inputs.action == 'capture'
+        working-directory: backend
+        run: python -m app.services.capture_cotes_gratuites
+
+      - name: Comparaison walk-forward (lecture seule)
+        if: github.event_name == 'workflow_dispatch' && inputs.action == 'comparaison'
+        working-directory: bet_agent
+        run: python phase2_comparaison.py "${{ inputs.saisons }}" "${{ inputs.ligues }}"

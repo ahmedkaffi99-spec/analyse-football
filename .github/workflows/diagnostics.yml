@@ -43,6 +43,10 @@ on:
           - backtest-bookmakers
           - coupons-score-exact
           - matchs-du-jour-toutes-competitions
+          - phase2-comparaison
+          - phase2-capture-gratuite
+          - phase2-sonde-understat
+          - phase2-production-vs-pinnacle
         default: marches-disponibles
       date_debut:
         description: "Date cible de début (AAAA-MM-JJ) — utilisé seulement par 'marches-disponibles'"
@@ -1458,3 +1462,23 @@ jobs:
         if: inputs.verification == 'modeles-openrouter-gratuits'
         working-directory: backend
         run: python -m app.taches modeles-gratuits
+
+      - name: Phase 2 - comparaison walk-forward Poisson / Dixon-Coles / binomiale négative vs marché (lecture seule)
+        if: inputs.verification == 'phase2-comparaison'
+        working-directory: bet_agent
+        run: python phase2_comparaison.py "${{ inputs.date_debut }}" "${{ inputs.date_fin }}"
+
+      - name: Phase 2 - capture gratuite de cotes (série temporelle, football-data.co.uk)
+        if: inputs.verification == 'phase2-capture-gratuite'
+        working-directory: backend
+        run: python -m app.services.capture_cotes_gratuites
+
+      - name: Phase 2 - sonde de licence Understat (une passe, robots.txt + accueil, aucune collecte)
+        if: inputs.verification == 'phase2-sonde-understat'
+        working-directory: bet_agent
+        run: python phase2_sonde_understat.py
+
+      - name: Phase 2 - moteur de PRODUCTION rejoué vs Pinnacle (lecture seule, aucune écriture, aucun Telegram)
+        if: inputs.verification == 'phase2-production-vs-pinnacle'
+        working-directory: backend
+        run: python ../bet_agent/phase2_production.py

@@ -205,3 +205,81 @@ class HistDecisionCentrale(Base):
         return {"id": self.id, "run_id": self.run_id, "horodatage": self.horodatage,
                 "coupon_bet_agent": self.coupon_bet_agent, "coupon_moteur": self.coupon_moteur,
                 "coupon_central": self.coupon_central, "raisons": self.raisons, "metriques": self.metriques}
+
+
+class CoteGratuite(Base):
+    """Phase 2 — série temporelle de cotes issues de SOURCES GRATUITES (fixtures.csv de Football-Data.co.uk, aucun quota
+    ni coût). Une ligne par (instantané, match, bookmaker, marché, sélection) : permet de mesurer l'évolution
+    ouverture -> clôture (Closing Line Value) sans consommer d'API payante. Table additive, lue uniquement par les
+    analyses ; n'est jamais utilisée par la sélection des coupons."""
+    __tablename__ = "cotes_gratuites"
+    __table_args__ = (UniqueConstraint("capture_le", "ligue", "date_match", "domicile", "exterieur", "bookmaker",
+                                       "marche", "selection", name="uq_cote_gratuite"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    capture_le: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True, default=maintenant)
+    source: Mapped[str] = mapped_column(String(40), default="football-data.co.uk")
+    ligue: Mapped[str] = mapped_column(String(10), index=True)
+    date_match: Mapped[date] = mapped_column(Date, index=True)
+    domicile: Mapped[str] = mapped_column(String(120))
+    exterieur: Mapped[str] = mapped_column(String(120))
+    bookmaker: Mapped[str] = mapped_column(String(20))
+    marche: Mapped[str] = mapped_column(String(20))   # 1x2 | ou25 | ah
+    ligne: Mapped[float | None] = mapped_column(Float)
+    selection: Mapped[str] = mapped_column(String(10))
+    cote: Mapped[float] = mapped_column(Float)
+    # Provenance (audit) : d'où vient exactement la valeur et dans quel fichier (empreinte SHA-256 du CSV téléchargé)
+    url_source: Mapped[str | None] = mapped_column(String(200))
+    hash_fichier: Mapped[str | None] = mapped_column(String(64))
+
+
+class CaptureGratuiteJournal(Base):
+    """Journal de CHAQUE tentative de capture gratuite (réussie, vide ou en erreur) : fiabilité mesurable, jamais de
+    capture silencieuse. Append-only : aucune ligne n'est supprimée ni modifiée."""
+    __tablename__ = "captures_gratuites_journal"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    debut: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True, default=maintenant)
+    fin: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    statut: Mapped[str] = mapped_column(String(20))          # ok | sans_match_cible | vide | erreur
+    url_source: Mapped[str | None] = mapped_column(String(200))
+    octets: Mapped[int | None] = mapped_column(Integer)
+    hash_fichier: Mapped[str | None] = mapped_column(String(64))
+    lignes_csv: Mapped[int | None] = mapped_column(Integer)  # lignes de matchs lues dans le CSV
+    matchs: Mapped[int | None] = mapped_column(Integer)
+    cotes_lues: Mapped[int | None] = mapped_column(Integer)
+    inserees: Mapped[int | None] = mapped_column(Integer)    # nouvelles valeurs (changement de cote ou première observation)
+    inchangees: Mapped[int | None] = mapped_column(Integer)  # valeurs identiques à la dernière observation (non réinsérées)
+    erreur: Mapped[str | None] = mapped_column(String(500))
+
+
+class SourceDonnees(Base):
+    """Registre des sources de données externes et de leur STATUT JURIDIQUE. Toute collecte automatisée doit passer par
+    app.services.sources.exiger_autorisation(...) : sans `collecte_autorisee` explicite (décision humaine tracée dans
+    `preuve_ref`), la collecte est refusée. Aucune ligne n'est supprimée ; les changements de statut sont ajoutés à
+    `historique`."""
+    __tablename__ = "sources_donnees"
+
+    nom: Mapped[str] = mapped_column(String(40), primary_key=True)
+    url: Mapped[str | None] = mapped_column(String(200))
+    licence_statut: Mapped[str] = mapped_column(String(20), default="inconnue")   # inconnue | a_verifier | autorisee | refusee
+    collecte_autorisee: Mapped[bool] = mapped_column(Boolean, default=False)
+    preuve_ref: Mapped[str | None] = mapped_column(String(300))   # lien/référence de la confirmation écrite ou des conditions lues
+    notes: Mapped[str | None] = mapped_column(String(500))
+    verifie_le: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    historique: Mapped[str | None] = mapped_column(String(2000))
+
+
+class MappingEquipe(Base):
+    """Correspondance validée entre le nom d'une équipe dans une source et l'identifiant canonique (API-Football). Jamais de
+    rapprochement flou silencieux : `confiance` et `valide_le` tracent chaque lien."""
+    __tablename__ = "mapping_equipes"
+    __table_args__ = (UniqueConstraint("source", "nom_source", name="uq_mapping_equipe"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source: Mapped[str] = mapped_column(String(40), index=True)
+    nom_source: Mapped[str] = mapped_column(String(120))
+    id_api_football: Mapped[int | None] = mapped_column(Integer, index=True)
+    nom_canonique: Mapped[str | None] = mapped_column(String(120))
+    confiance: Mapped[str] = mapped_column(String(12), default="a_valider")   # exact | alias | a_valider
+    valide_le: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
