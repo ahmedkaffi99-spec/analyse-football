@@ -26,12 +26,16 @@ def telecharger(saison, ligue):
         return r.read().decode("latin-1")
 
 
-def _f(row, col):
-    try:
-        v = float(row.get(col, "") or "nan")
-        return v if v == v and v > 1.0 else None
-    except ValueError:
-        return None
+def _f(row, *cols):
+    """Première colonne valide parmi `cols` (Football-Data a utilisé PS* puis PP* pour Pinnacle selon les saisons/fichiers)."""
+    for col in cols:
+        try:
+            v = float(row.get(col, "") or "nan")
+        except ValueError:
+            continue
+        if v == v and v > 1.0:
+            return v
+    return None
 
 
 def parser(texte, ligue):
@@ -52,13 +56,13 @@ def parser(texte, ligue):
             pass
         out.append({
             "ligue": ligue, "date": date, "dom": row["HomeTeam"], "ext": row["AwayTeam"], "gd": gd, "ge": ge,
-            "1x2_ouv": {"1": _f(row, "PSH"), "X": _f(row, "PSD"), "2": _f(row, "PSA")},
-            "1x2_clo": {"1": _f(row, "PSCH"), "X": _f(row, "PSCD"), "2": _f(row, "PSCA")},
-            "ou_ouv": {"O": _f(row, "P>2.5"), "U": _f(row, "P<2.5")},
-            "ou_clo": {"O": _f(row, "PC>2.5"), "U": _f(row, "PC<2.5")},
+            "1x2_ouv": {"1": _f(row, "PSH", "PPH"), "X": _f(row, "PSD", "PPD"), "2": _f(row, "PSA", "PPA")},
+            "1x2_clo": {"1": _f(row, "PSCH", "PPCH"), "X": _f(row, "PSCD", "PPCD"), "2": _f(row, "PSCA", "PPCA")},
+            "ou_ouv": {"O": _f(row, "P>2.5", "PP>2.5"), "U": _f(row, "P<2.5", "PP<2.5")},
+            "ou_clo": {"O": _f(row, "PC>2.5", "PPC>2.5"), "U": _f(row, "PC<2.5", "PPC<2.5")},
             "ah": ah,
-            "ah_ouv": {"H": _f(row, "PAHH"), "A": _f(row, "PAHA")},
-            "ah_clo": {"H": _f(row, "PCAHH"), "A": _f(row, "PCAHA")},
+            "ah_ouv": {"H": _f(row, "PAHH", "PPAHH"), "A": _f(row, "PAHA", "PPAHA")},
+            "ah_clo": {"H": _f(row, "PCAHH", "PPCAHH"), "A": _f(row, "PCAHA", "PPCAHA")},
         })
     out.sort(key=lambda m: m["date"])
     return out
