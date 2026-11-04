@@ -48,6 +48,7 @@ on:
           - phase2-sonde-understat
           - phase2-production-vs-pinnacle
           - phase3-statsbomb
+          - phase4-historique-fd
         default: marches-disponibles
       date_debut:
         description: "Date cible de début (AAAA-MM-JJ) — utilisé seulement par 'marches-disponibles'"
@@ -1491,3 +1492,8 @@ jobs:
           python -m app.services.statsbomb couverture | head -60
           python -m app.services.statsbomb importer 9 281 40
           python -m app.services.statsbomb importer 7 235 25
+
+      - name: Phase 4 - base historique Football-Data (import insert-only de 11 saisons x 5 championnats + rapport de qualité)
+        if: inputs.verification == 'phase4-historique-fd'
+        working-directory: backend
+        run: python -m app.services.historique_fd importer

@@ -329,3 +329,29 @@ class SbTir(Base):
     y: Mapped[float | None] = mapped_column(Float)
     url_source: Mapped[str | None] = mapped_column(String(200))
     hash_fichier: Mapped[str | None] = mapped_column(String(64))
+
+
+class FdMatch(Base):
+    """Phase 4 — base historique Football-Data (résultats + statistiques + cotes d'ouverture/clôture), INSERT-ONLY.
+    `cotes` (JSON) : clés `<bookmaker>_<marché>_<ouv|clo>` -> liste de cotes (1X2 : [1, X, 2] ; ou25 : [over, under] ; ah : [dom, ext]) et
+    `ah_ligne_ouv` / `ah_ligne_clo`. Valeurs absentes = clé absente (jamais estimées). Provenance : URL du fichier + empreinte SHA-256."""
+    __tablename__ = "fd_matchs"
+    __table_args__ = (UniqueConstraint("ligue", "saison", "date_match", "domicile", "exterieur", name="uq_fd_match"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ligue: Mapped[str] = mapped_column(String(10), index=True)
+    saison: Mapped[str] = mapped_column(String(6), index=True)          # code Football-Data, ex. "2425"
+    date_match: Mapped[date] = mapped_column(Date, index=True)
+    domicile: Mapped[str] = mapped_column(String(120))
+    exterieur: Mapped[str] = mapped_column(String(120))
+    buts_dom: Mapped[int | None] = mapped_column(Integer)
+    buts_ext: Mapped[int | None] = mapped_column(Integer)
+    mt_dom: Mapped[int | None] = mapped_column(Integer)
+    mt_ext: Mapped[int | None] = mapped_column(Integer)
+    arbitre: Mapped[str | None] = mapped_column(String(80))
+    stats: Mapped[dict | None] = mapped_column(JSON)                    # tirs, cadrés, corners, fautes, cartons (HS, AS, HST...)
+    cotes: Mapped[dict | None] = mapped_column(JSON)
+    source: Mapped[str] = mapped_column(String(40), default="football-data.co.uk")
+    url_source: Mapped[str | None] = mapped_column(String(200))
+    hash_fichier: Mapped[str | None] = mapped_column(String(64))
+    collecte_le: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=maintenant)
