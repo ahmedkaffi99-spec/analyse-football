@@ -12,6 +12,7 @@ import urllib.request
 from datetime import datetime
 
 import phase2_modeles as pm
+import phase2_reference as pr
 
 URL = "https://www.football-data.co.uk/mmz4281/{saison}/{ligue}.csv"
 REFIT_JOURS = 14
@@ -182,6 +183,49 @@ def paris_et_clv(tests, marche, source, seuil=0.03):
     return n, mc, ec, mr, er
 
 
+def issue(marche, m, s):
+    """gagne/perdu/push de la sélection s (handicap demi-ligne et totaux .5 : jamais de push)."""
+    return "gagne" if gagnante(marche, m) == s else "perdu"
+
+
+def construire_paris(tests, marche, source, seuil=0.03, poids=1.0):
+    """(tous, choisis) à l'OUVERTURE Pinnacle. tous = toutes les sélections du marché ; choisis = celles où la probabilité
+    de la stratégie (modèle pur si poids=1, sinon mélange poids×modèle + (1-poids)×ouverture) dépasse la proba juste
+    d'ouverture de `seuil`. clv_ref = proba juste de clôture."""
+    tous, choisis = [], []
+    for m in tests:
+        co, cc = (("ah_ouv", "ah_clo") if marche == "ah" else (f"{marche}_ouv", f"{marche}_clo"))
+        ouv, clo = pm.sans_marge(m[co]), pm.sans_marge(m[cc])
+        if ouv is None or clo is None or not m["p"].get(marche):
+            continue
+        p = m["p"][marche][source]
+        if poids < 1:
+            p = pm.melanger(ouv, p, poids)
+        for sel in p:
+            b = {"match": (m["ligue"], m["date"], m["dom"], m["ext"]), "groupe": marche, "selection": sel,
+                 "cote": m[co][sel], "issue": issue(marche, m, sel), "date": m["date"], "clv_ref": clo[sel],
+                 "ligue": m["ligue"]}
+            tous.append(b)
+            if p[sel] - ouv[sel] >= seuil:
+                choisis.append(b)
+    return tous, choisis
+
+
+def rapport_reference(tests):
+    out = ["\n=== RÉFÉRENCE ALÉATOIRE (mêmes matchs, marchés, périodes, règle, cotes) vs stratégie 'proba(modèle) ≥ juste d'ouverture + 3 pts' ==="]
+    for marche, titre in (("1x2", "1X2"), ("ou", "Over/Under 2,5"), ("ah", "Handicap asiatique (demi-lignes)")):
+        for source, poids, lib in (("dixon_coles", 1.0, "Dixon-Coles seul"), ("dixon_coles", 0.35, "Dixon-Coles 35 % + ouverture 65 %")):
+            tous, choisis = construire_paris(tests, marche, source, 0.03, poids)
+            out.append(f"[{titre}] stratégie : {lib}")
+            out.append(pr.comparer(tous, choisis, 1000, 2026))
+            if lib == "Dixon-Coles seul" and choisis:
+                out.append("  par championnat : " + " ; ".join(
+                    f"{lg} n={r['n']} ROI={r['roi']*100:+.1f}% CLV={r['clv']*100:+.1f}%"
+                    for lg in sorted({b['ligue'] for b in choisis})
+                    for r in [pr.resume([b for b in choisis if b['ligue'] == lg])] if r["n"]))
+    return "\n".join(out)
+
+
 def rapport(tests):
     out = [f"MATCHS TESTÉS (hors échantillon, walk-forward) : {len(tests)}"]
     for marche, titre in (("1x2", "1X2"), ("ou", "Over/Under 2,5"), ("ah", "Handicap asiatique (demi-lignes seules)")):
@@ -207,6 +251,7 @@ def rapport(tests):
     out.append(f"{'événement':10} {'observé':>8} " + " ".join(f"{k:>20}" for k in MODELES))
     for k in obs:
         out.append(f"{k:10} {obs[k]*100:7.1f}% " + " ".join(f"{att[n][k]*100:19.1f}%" for n in MODELES))
+    out.append(rapport_reference(tests))
     return "\n".join(out)
 
 

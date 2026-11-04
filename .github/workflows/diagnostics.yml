@@ -46,6 +46,7 @@ on:
           - phase2-comparaison
           - phase2-capture-gratuite
           - phase2-sonde-understat
+          - phase2-production-vs-pinnacle
         default: marches-disponibles
       date_debut:
         description: "Date cible de début (AAAA-MM-JJ) — utilisé seulement par 'marches-disponibles'"
@@ -1476,3 +1477,8 @@ jobs:
         if: inputs.verification == 'phase2-sonde-understat'
         working-directory: bet_agent
         run: python phase2_sonde_understat.py
+
+      - name: Phase 2 - moteur de PRODUCTION rejoué vs Pinnacle (lecture seule, aucune écriture, aucun Telegram)
+        if: inputs.verification == 'phase2-production-vs-pinnacle'
+        working-directory: backend
+        run: python ../bet_agent/phase2_production.py
