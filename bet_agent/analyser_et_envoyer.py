@@ -1694,8 +1694,10 @@ MINUTES_MIN_FILET_SECURITE = 0
 def coup_envoi_assez_loin(depart_iso, maintenant=None):
     """Faux si le match a déjà commencé (ou MINUTES_MIN_FILET_SECURITE minutes avant, si
     jamais remonté au-delà de 0). Indispensable quand l'analyse reprend une collecte faite
-    plus tôt (--depuis-run). Heure illisible : gardé."""
-    if not depart_iso:
+    plus tôt (--depuis-run). Heure illisible : gardé.
+    IGNORER_COUP_ENVOI=1 (run ponctuel, liste manuelle) : les heures OddsPapi sont parfois
+    fausses (04/11/2026 : 10h-15h UTC au lieu de 17h45/20h) -> filtre désactivé."""
+    if os.getenv("IGNORER_COUP_ENVOI") == "1" or not depart_iso:
         return True
     try:
         depart = datetime.fromisoformat(str(depart_iso).replace("Z", "+00:00"))
