@@ -124,6 +124,7 @@ def assurer_colonnes(db):
     if db.bind.dialect.name == "postgresql":
         for col, typ in (("url_source", "VARCHAR(200)"), ("hash_fichier", "VARCHAR(64)")):
             db.execute(text(f"ALTER TABLE cotes_gratuites ADD COLUMN IF NOT EXISTS {col} {typ}"))
+        db.execute(text("ALTER TABLE captures_gratuites_journal ALTER COLUMN statut TYPE VARCHAR(20)"))   # table créée avec VARCHAR(10)
         db.commit()
 
 
@@ -145,8 +146,11 @@ def capturer(db, brut=None):
             tous = list(csv.DictReader(io.StringIO(texte)))
             divs = sorted({(r.get("Div") or "").strip() for r in tous})
             dates = sorted({(r.get("Date") or "") for r in tous})[:6]
-            j.statut = "vide"
-            j.erreur = (f"aucune cote lue pour {sorted(LIGUES)} : fichier de {len(tous)} matchs, championnats présents {divs}, "
+            # Fichier valide (colonne Div, des matchs) mais sans nos championnats (ex. milieu de semaine) : NORMAL, pas une panne.
+            # Fichier sans match ou sans colonne Div : format inattendu -> « vide » (échec bruyant).
+            valide = bool(tous) and "Div" in (tous[0] or {})
+            j.statut = "sans_match_cible" if valide else "vide"
+            j.erreur = (f"aucune cote pour {sorted(LIGUES)} : fichier de {len(tous)} matchs, championnats présents {divs}, "
                         f"dates {dates}")[:500]
         else:
             j.inserees, j.inchangees = enregistrer(db, lignes)
@@ -172,4 +176,4 @@ if __name__ == "__main__":
         print(f"Capture gratuite : statut={journal.statut} octets={journal.octets} lignes_csv={journal.lignes_csv} "
               f"matchs={journal.matchs} cotes_lues={journal.cotes_lues} inserees={journal.inserees} "
               f"inchangees={journal.inchangees} hash={str(journal.hash_fichier)[:12]} erreur={journal.erreur}")
-    sys.exit(0 if journal.statut == "ok" else 1)
+    sys.exit(0 if journal.statut in ("ok", "sans_match_cible") else 1)

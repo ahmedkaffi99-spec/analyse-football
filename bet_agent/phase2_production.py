@@ -129,20 +129,14 @@ def rejouer_runs(db, depuis):
                 fx = c["fixture_id_oddspapi"]
                 if None in (pk.get("proba_poisson_pct"), pk.get("proba_marche_pct"), pk.get("proba_modele_pct")):
                     continue
-                if fx not in scores:
-                    stats["sans_score"] += 1
-                    continue
-                issue = vr.grader_pick(pk, *scores[fx])
-                if issue not in ("gagne", "perdu", "push"):
-                    continue
                 garde[(fx, pk["marche"], pk["selection"])] = {       # la collecte la plus récente écrase la précédente
-                    "match": fx, "groupe": pk["marche"], "selection": pk["selection"], "cote": pk["cote"], "issue": issue,
+                    "match": fx, "groupe": pk["marche"], "selection": pk["selection"], "cote": pk["cote"], "issue": None,
                     "categorie": pk["categorie"], "handicap": pk.get("handicap"), "pick": pk, "date": run.lance_le,
                     "p_modele": pk["proba_poisson_pct"] / 100, "p_marche": pk["proba_marche_pct"] / 100,
                     "p_final": pk["proba_modele_pct"] / 100, "edge": pk.get("edge_pct"),
                     "dom": c["home_nom"], "ext": c["away_nom"], "date_iso": c["date_iso"], "ligue": c.get("competition")}
-    print(f"Rejeu : {stats}")
-    return list(garde.values())
+    print(f"Rejeu : {stats} ; candidats distincts : {len(garde)} ; scores connus en base : {len(scores)}")
+    return list(garde.values()), scores
 
 
 def un_par_evenement(bets):
@@ -191,26 +185,35 @@ def tableau_comparaison(evts, titre):
     return lignes
 
 
-def rapport(cands, fd_lignes):
-    out = [f"\nCANDIDATS REJOUÉS ET JUGÉS (un par match×marché×sélection, dernière collecte) : {len(cands)} "
+def rapport(cands, fd_lignes, scores=None):
+    import verifier_resultats as vr
+    scores = scores or {}
+    out = [f"\nCANDIDATS REJOUÉS (un par match×marché×sélection, dernière collecte) : {len(cands)} "
            f"sur {len({c['match'] for c in cands})} matchs"]
-    # --- rapprochement Pinnacle (tracé)
-    nb_ok, non_trouves = 0, set()
-    cache = {}
+    # --- rapprochement Football-Data (tracé) puis jugement : score Football-Data (match terminé) sinon score en base
+    non_trouves, cache = set(), {}
+    src = {"football-data": 0, "base": 0, "aucun": 0}
     for c in cands:
         k = (c["dom"], c["ext"], c["date_iso"])
         if k not in cache:
             cache[k] = rapprocher(c["dom"], c["ext"], c["date_iso"], fd_lignes)
         fd, s = cache[k]
-        if fd is None:
+        score = None
+        if fd is not None:
+            c["p_pin"], c["fd_ligue"] = p_pinnacle(c["pick"], fd), fd["ligue"]
+            score = (fd["gd"], fd["ge"])
+            src["football-data"] += 1
+        else:
             non_trouves.add(f"{c['dom']} - {c['ext']}")
             c["p_pin"] = None
-            continue
-        c["p_pin"] = p_pinnacle(c["pick"], fd)
-        c["fd_ligue"] = fd["ligue"]
+            score = scores.get(c["match"])
+            src["base" if score else "aucun"] += 1
+        c["issue"] = vr.grader_pick(c["pick"], *score) if score else None
+    cands[:] = [c for c in cands if c["issue"] in ("gagne", "perdu", "push")]
     nb_matchs_fd = sum(1 for v in cache.values() if v[0] is not None)
+    out.append(f"Jugement : {src} (par candidat). Candidats jugés : {len(cands)} sur {len({c['match'] for c in cands})} matchs")
     out.append(f"Rapprochement Football-Data : {nb_matchs_fd}/{len(cache)} matchs retrouvés (date ±1 jour, noms ≥ 80/100). "
-               f"Non retrouvés ({len(non_trouves)}) : {sorted(non_trouves)[:12]}")
+               f"Hors 5 championnats ou non retrouvés ({len(non_trouves)}) : {sorted(non_trouves)[:10]}")
     avec_pin = [c for c in cands if c.get("p_pin") is not None]
     out.append(f"Paris avec probabilité Pinnacle correspondante (même événement exact) : {len(avec_pin)}")
     # --- 1) comparaison à 4 approches sur événements communs, par marché
@@ -269,10 +272,13 @@ def main():
     from app.database import SessionLocal
     saisons = ["2627"]
     with SessionLocal() as db:
-        cands = rejouer_runs(db, DEPUIS)
+        cands, scores = rejouer_runs(db, DEPUIS)
     fd = charger_fd(saisons)
     print(f"Football-Data : {len(fd)} matchs chargés ({saisons})")
-    print(rapport(cands, fd))
+    if fd:
+        n_pin = sum(1 for r in fd if r["1x2_clo"]["1"] is not None)
+        print(f"Colonnes Pinnacle vues : {fd[0].get('_pin_cols')} ; matchs avec 1X2 clôture Pinnacle : {n_pin}/{len(fd)}")
+    print(rapport(cands, fd, scores))
 
 
 if __name__ == "__main__":

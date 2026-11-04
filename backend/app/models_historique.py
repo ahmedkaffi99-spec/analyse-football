@@ -241,7 +241,7 @@ class CaptureGratuiteJournal(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     debut: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True, default=maintenant)
     fin: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    statut: Mapped[str] = mapped_column(String(10))          # ok | vide | erreur
+    statut: Mapped[str] = mapped_column(String(20))          # ok | sans_match_cible | vide | erreur
     url_source: Mapped[str | None] = mapped_column(String(200))
     octets: Mapped[int | None] = mapped_column(Integer)
     hash_fichier: Mapped[str | None] = mapped_column(String(64))

@@ -42,4 +42,7 @@ def test_capture_journalisee_et_sans_doublon():
 def test_fichier_vide_ou_illisible_est_signale_pas_silencieux():
     with SessionLocal() as db:
         assert cg.capturer(db, b"Div,Date\n").statut == "vide"
+        autre = b"Div,Date,HomeTeam,AwayTeam,B365H\nE1,03/11/2026,A,B,2.0\n"
+        j = cg.capturer(db, autre)                       # fichier valide mais sans nos championnats : pas une panne
+        assert j.statut == "sans_match_cible" and "E1" in j.erreur
         assert cg.capturer(db, b"\xff\xfe").statut in ("vide", "erreur")
