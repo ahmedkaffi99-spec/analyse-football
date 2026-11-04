@@ -26,3 +26,9 @@ Rien n'est supprimé ni modifié ; une relance n'ajoute que les nouveaux matchs.
 ## Erratum — handicap asiatique (rapports Phase 2 et premiers chiffres Phase 4)
 La simulation pariait aux cotes d'**ouverture** mais jugeait à la ligne de **clôture** ; quand la ligne avait bougé entre les deux, cote et ligne ne correspondaient pas.
 Les ROI/CLV du handicap des rapports précédents (dont « +3,0 %, 94e percentile » en Phase 2) sont donc **invalides**. Corrigé : seuls les matchs à ligne stable sont simulés (test automatique ajouté) ; les chiffres corrigés figurent dans la section suivante. Les Brier/calibration (comparés à la clôture, même ligne) n'étaient pas concernés.
+
+## Handicap asiatique corrigé (9 saisons, matchs à ligne stable entre ouverture et clôture)
+* Dixon-Coles seul (n=1 022) : ROI **−1,33 %** (IC95 bootstrap −7,4 ; +4,4), CLV −2,25 % ; hasard : ROI −2,24 % [−8,1 ; +3,8], CLV −2,11 % [−2,4 ; −1,8] → **62e percentile (p=0,378), CLV identique au hasard : aucun avantage**.
+* Dixon-Coles 35 % + ouverture 65 % (n=341) : ROI −3,94 %, CLV −2,05 % ; hasard −2,06 % / −2,15 % : même constat.
+* Par championnat (modèle seul, n=146 à 237) : D1 +0,2 %, E0 +2,0 %, F1 −5,6 %, I1 −1,6 %, SP1 −1,7 % ; CLV de −1,7 % à −2,7 % partout.
+* **Conclusion** : le « signal faible » du handicap annoncé en Phase 2 (+3 %, CLV supérieur au hasard) **était un artefact de la bogue** ; corrigé, le handicap se comporte comme les autres marchés (pas d'avantage détectable du modèle sur le marché).

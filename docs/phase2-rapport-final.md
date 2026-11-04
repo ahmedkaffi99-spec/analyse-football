@@ -1,5 +1,8 @@
 # Phase 2 — Rapport final (2026-11-04)
 
+> **ERRATUM (2026-11-04, Phase 4)** : les ROI/CLV du **handicap asiatique** de ce rapport (dont « +3,0 %, 94e percentile » et « CLV hors de l'IC du hasard ») sont **invalides** : la simulation pariait aux cotes d'ouverture mais jugeait à la ligne de clôture. Corrigé (matchs à ligne stable seulement, 9 saisons) : ROI −1,3 % contre −2,2 % pour le hasard (62e percentile), CLV identique au hasard → **aucun avantage**. Voir `docs/phase4-historique.md`. Les Brier, la calibration et les conclusions sur le 1X2, l'Over/Under et la production ne sont pas concernés.
+
+
 Branche : `claude/phase2-audit-comparaison` (rien dans `main`, aucune dépense, aucun pari, aucune donnée historique modifiée).
 Tout ce qui suit vient de runs réels (GitHub Actions, lecture seule) ; les limites sont indiquées à chaque point.
 
