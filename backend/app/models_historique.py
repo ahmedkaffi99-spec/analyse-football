@@ -205,3 +205,26 @@ class HistDecisionCentrale(Base):
         return {"id": self.id, "run_id": self.run_id, "horodatage": self.horodatage,
                 "coupon_bet_agent": self.coupon_bet_agent, "coupon_moteur": self.coupon_moteur,
                 "coupon_central": self.coupon_central, "raisons": self.raisons, "metriques": self.metriques}
+
+
+class CoteGratuite(Base):
+    """Phase 2 — série temporelle de cotes issues de SOURCES GRATUITES (fixtures.csv de Football-Data.co.uk, aucun quota
+    ni coût). Une ligne par (instantané, match, bookmaker, marché, sélection) : permet de mesurer l'évolution
+    ouverture -> clôture (Closing Line Value) sans consommer d'API payante. Table additive, lue uniquement par les
+    analyses ; n'est jamais utilisée par la sélection des coupons."""
+    __tablename__ = "cotes_gratuites"
+    __table_args__ = (UniqueConstraint("capture_le", "ligue", "date_match", "domicile", "exterieur", "bookmaker",
+                                       "marche", "selection", name="uq_cote_gratuite"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    capture_le: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True, default=maintenant)
+    source: Mapped[str] = mapped_column(String(40), default="football-data.co.uk")
+    ligue: Mapped[str] = mapped_column(String(10), index=True)
+    date_match: Mapped[date] = mapped_column(Date, index=True)
+    domicile: Mapped[str] = mapped_column(String(120))
+    exterieur: Mapped[str] = mapped_column(String(120))
+    bookmaker: Mapped[str] = mapped_column(String(20))
+    marche: Mapped[str] = mapped_column(String(20))   # 1x2 | ou25 | ah
+    ligne: Mapped[float | None] = mapped_column(Float)
+    selection: Mapped[str] = mapped_column(String(10))
+    cote: Mapped[float] = mapped_column(Float)

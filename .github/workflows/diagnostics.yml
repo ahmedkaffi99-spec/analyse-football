@@ -43,6 +43,8 @@ on:
           - backtest-bookmakers
           - coupons-score-exact
           - matchs-du-jour-toutes-competitions
+          - phase2-comparaison
+          - phase2-capture-gratuite
         default: marches-disponibles
       date_debut:
         description: "Date cible de début (AAAA-MM-JJ) — utilisé seulement par 'marches-disponibles'"
@@ -1458,3 +1460,13 @@ jobs:
         if: inputs.verification == 'modeles-openrouter-gratuits'
         working-directory: backend
         run: python -m app.taches modeles-gratuits
+
+      - name: Phase 2 - comparaison walk-forward Poisson / Dixon-Coles / binomiale négative vs marché (lecture seule)
+        if: inputs.verification == 'phase2-comparaison'
+        working-directory: bet_agent
+        run: python phase2_comparaison.py "${{ inputs.date_debut }}" "${{ inputs.date_fin }}"
+
+      - name: Phase 2 - capture gratuite de cotes (série temporelle, football-data.co.uk)
+        if: inputs.verification == 'phase2-capture-gratuite'
+        working-directory: backend
+        run: python -m app.services.capture_cotes_gratuites
