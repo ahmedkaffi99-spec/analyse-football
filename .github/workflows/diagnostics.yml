@@ -41,6 +41,7 @@ on:
           - deepseek-recherche-web
           - bookmakers-cotes
           - backtest-bookmakers
+          - backtest-poids-marche
           - coupons-score-exact
           - matchs-du-jour-toutes-competitions
           - phase2-comparaison
@@ -1083,6 +1084,12 @@ jobs:
         env:
           EQUIPES: ${{ inputs.match_recherche }}
         run: python backtest_bookmakers.py
+
+      - name: Backtest réel — poids du modèle dans le mélange marché/modèle (1xBet sans marge contre modèle de production)
+        # Demande du 04/11/2026 : le modèle apporte-t-il quelque chose au marché ? Lecture seule (hist_matchs + API-Football).
+        if: inputs.verification == 'backtest-poids-marche'
+        working-directory: bet_agent
+        run: python backtest_poids_marche.py
 
       - name: Coupons de scores exacts (3 coupons de 2 jambes, 6 matchs) — lecture seule, sans Telegram
         # Demande ponctuelle du 28/10/2026 : Milan-Bologna, Man City-Brighton, Bournemouth-Aston Villa,
