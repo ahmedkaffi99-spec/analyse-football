@@ -53,3 +53,8 @@ def test_modeles_ombre_vide_par_defaut(monkeypatch):
     assert ombre.modeles_ombre() == []
     monkeypatch.setenv("MODELES_OMBRE", " a/b , base ,")
     assert ombre.modeles_ombre() == ["a/b", "base"]
+
+
+def test_modeles_ombre_aucun_desactive(monkeypatch):
+    monkeypatch.setenv("MODELES_OMBRE", "aucun")
+    assert ombre.modeles_ombre() == []
