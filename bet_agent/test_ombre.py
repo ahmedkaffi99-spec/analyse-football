@@ -58,3 +58,47 @@ def test_modeles_ombre_vide_par_defaut(monkeypatch):
 def test_modeles_ombre_aucun_desactive(monkeypatch):
     monkeypatch.setenv("MODELES_OMBRE", "aucun")
     assert ombre.modeles_ombre() == []
+
+
+def test_composer_ombre_parallele_borne_dans_le_temps(monkeypatch):
+    """Un modèle trop lent est abandonné à l'échéance (erreur « délai dépassé ») sans bloquer les autres."""
+    import time
+    import agent_strategie
+
+    def faux_composer(pool, profils, appel=None, nb_tours=2, catalogue_pret=None):
+        if appel == "lent":
+            time.sleep(5)
+        return {"coupons": {}, "analyse_matchs": []}
+    monkeypatch.setattr(agent_strategie, "composer_coupons", faux_composer)
+    monkeypatch.setattr(ombre.st, "composer_coupons", faux_composer)
+    debut = time.time()
+    sortie = ombre.composer_ombre({}, [], {"P1": _cand("A vs B", "Total", "Over")}, "txt", modeles=["base"], appel_base="lent",
+                                  duree_max_s=0.4)
+    assert time.time() - debut < 2
+    assert "délai dépassé" in sortie[0]["erreur"]
+
+
+def test_appel_openrouter_repli_sans_raisonnement_si_400():
+    appels = []
+
+    class R:
+        def __init__(self, code):
+            self.status_code = code
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"choices": [{"message": {"content": "ok"}}], "usage": {"prompt_tokens": 10, "completion_tokens": 5, "cost": 0.001}}
+
+    def poster(url, **kw):
+        appels.append("reasoning" in kw["json"])
+        return R(400 if "reasoning" in kw["json"] else 200)
+    assert ombre.AppelOpenRouter("m/x", "cle", 1.0, poster=poster)("p") == "ok"
+    assert appels == [True, False]
+
+
+def test_appel_openrouter_echeance_depassee():
+    appel = ombre.AppelOpenRouter("m/x", "cle", 1.0, poster=lambda *a, **k: None, echeance=0)
+    with pytest.raises(TimeoutError):
+        appel("p")
