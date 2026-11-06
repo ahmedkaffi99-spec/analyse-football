@@ -740,7 +740,7 @@ def valider(proposition, catalogue, profils, signatures_existantes=(), selection
     return acceptes, problemes, calculs
 
 
-def composer_coupons(pool, profils, appel=None, nb_tours=NB_TOURS_MAX, catalogue_pret=None, controle_budget=True):
+def composer_coupons(pool, profils, appel=None, nb_tours=NB_TOURS_MAX, catalogue_pret=None, controle_budget=True, diagnostic=None):
     """Boucle IA ⇄ Python. Renvoie {"coupons": {cle: {...}}, "analyse_matchs": [...]} avec les
     profils validés (les autres absents → repli automatique), ou None si l'IA n'a rien produit.
     controle_budget=False : ne tient pas compte du budget IA de la PRODUCTION (la comparaison en ombre a son propre plafond en dollars ;
@@ -787,6 +787,8 @@ def composer_coupons(pool, profils, appel=None, nb_tours=NB_TOURS_MAX, catalogue
             break
         for p in problemes:
             print(f"      ↩️ {p}")
+        if diagnostic is not None:   # comparaison en ombre : garder les rejets de Python pour expliquer l'absence de coupon
+            diagnostic.extend(problemes)
         prompt = (prompt_base
                   + "\n\nTA PROPOSITION PRÉCÉDENTE :\n" + json.dumps(proposition, ensure_ascii=False)
                   + "\n\nVÉRIFICATION PAR PYTHON :\n" + "\n".join(calculs + problemes)

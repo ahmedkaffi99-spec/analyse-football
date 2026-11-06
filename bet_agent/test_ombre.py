@@ -65,7 +65,7 @@ def test_composer_ombre_parallele_borne_dans_le_temps(monkeypatch):
     import time
     import agent_strategie
 
-    def faux_composer(pool, profils, appel=None, nb_tours=2, catalogue_pret=None, controle_budget=True):
+    def faux_composer(pool, profils, appel=None, nb_tours=2, catalogue_pret=None, controle_budget=True, diagnostic=None):
         if appel == "lent":
             time.sleep(5)
         return {"coupons": {}, "analyse_matchs": []}
@@ -110,7 +110,7 @@ def test_composer_ombre_ignore_le_budget_de_production_et_explique_l_absence_de_
     import agent_strategie
     vus = {}
 
-    def faux_composer(pool, profils, appel=None, nb_tours=2, catalogue_pret=None, controle_budget=True):
+    def faux_composer(pool, profils, appel=None, nb_tours=2, catalogue_pret=None, controle_budget=True, diagnostic=None):
         vus["controle_budget"] = controle_budget
         try:
             appel("p", 100)
@@ -129,3 +129,26 @@ def test_composer_ombre_ignore_le_budget_de_production_et_explique_l_absence_de_
 
 
 _CLASSE_ORIGINALE = ombre.AppelOpenRouter
+
+
+def test_rejets_de_python_dans_l_erreur_du_modele(monkeypatch):
+    import agent_strategie
+
+    def faux_composer(pool, profils, appel=None, nb_tours=2, catalogue_pret=None, controle_budget=True, diagnostic=None):
+        appel("p", 100)
+        diagnostic.extend(["P3 : même pari exact déjà pris", "2 paris sur A vs B (maximum 1)"])
+        return None
+
+    class R:
+        status_code = 200
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"choices": [{"message": {"content": "{}"}}], "usage": {"prompt_tokens": 5, "completion_tokens": 2, "cost": 0.001}}
+    monkeypatch.setattr(agent_strategie, "composer_coupons", faux_composer)
+    monkeypatch.setattr(ombre.st, "composer_coupons", faux_composer)
+    monkeypatch.setattr(ombre, "AppelOpenRouter", lambda m, c, b, echeance=None: _CLASSE_ORIGINALE(m, c, b, poster=lambda *a, **k: R(), echeance=echeance))
+    sortie = ombre.composer_ombre({}, [], {"P1": _cand("A vs B", "Total", "Over")}, "txt", modeles=["m/x"], cle="k")
+    assert "rejets de Python : P3 : même pari exact déjà pris | 2 paris sur A vs B" in sortie[0]["erreur"]
