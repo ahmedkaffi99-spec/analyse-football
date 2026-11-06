@@ -841,3 +841,17 @@ def test_pilote_modele_impose_ne_laisse_que_ce_modele(monkeypatch):
     assert pilote._secours_d_emblee() is True
     monkeypatch.delenv("PILOTE_MODELE")
     assert [c[0] for c in pilote._fournisseurs_secours()] == ["DeepSeek"]   # comportement habituel inchangé
+
+
+def test_donnees_reprises_evitent_toute_collecte(monkeypatch):
+    """--depuis-run avec le moteur agent : la collecte d'un run du jour est réutilisée, collecter_donnees n'est jamais appelé."""
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "cle-test")
+    reponses = [_msg_outil("collecter_donnees", {}), _msg_outil("voir_catalogue", {}),
+                _msg_outil("proposer_coupon", {"strategie": "s", "jambes": [{"id": "P1", "raison": "r"}]}),
+                _msg_outil("envoyer_telegram", {})]
+    with mock.patch.object(cd, "collecter_donnees", side_effect=AssertionError("pas de nouvelle collecte")), \
+            mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=POOL_SIX_MATCHS), \
+            mock.patch.object(ae, "agent5_envoyer_coupons", return_value=True), \
+            mock.patch.object(pilote, "_appel_api", side_effect=[(r, 65536) for r in reponses]):
+        resultat = pilote.executer(telegram=False, profils=[PROFIL_1], donnees_reprises=DONNEES_FACTICES)
+    assert resultat["donnees"] is DONNEES_FACTICES and resultat["resultats_profils"][0]["selections"]

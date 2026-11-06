@@ -88,9 +88,9 @@ def executer_run(run_id, envoyer_telegram=False, rediger=True, depuis_run=None, 
         pipeline.reinitialiser_caches(cd, ae)
 
         if moteur == "agent":
-            if depuis_run:
-                raise ValueError("--depuis-run n'est pas supporté avec le moteur agent (il pilote "
-                                 "sa propre collecte, il n'y a pas de fichier à reprendre)")
+            # Reprise de collecte avec le moteur agent (06/11/2026) : la collecte archivée d'un run du JOUR est relue, l'agent ne
+            # rappelle aucune API sportive ; le reste (catalogue, vetos, pilote) est identique.
+            donnees_reprises = charger_collecte_du_jour(db, depuis_run) if depuis_run else None
             agent_pilote = pipeline.charger_agent_pilote()
             DOSSIER_DONNEES.mkdir(parents=True, exist_ok=True)
             cd.SORTIE_JSON = str(DOSSIER_DONNEES / f"collecte_run_{run_id}.json")
@@ -110,9 +110,10 @@ def executer_run(run_id, envoyer_telegram=False, rediger=True, depuis_run=None, 
             # 20/10/2026) — jamais ae.PROFILS_COUPON (2-5 jambes), réservé au mode manuel.
             if profils_personnalises is None:
                 profils_personnalises = ae.profils_agent_quotidien()
+            options_reprise = {"donnees_reprises": donnees_reprises} if donnees_reprises is not None else {}
             resultat_agent = agent_pilote.executer(telegram=envoyer_telegram, profils=profils_personnalises,
                                                    ignorer_diversite_croisee=ignorer_diversite_croisee,
-                                                   contexte_supplementaire=bilan)
+                                                   contexte_supplementaire=bilan, **options_reprise)
             donnees = resultat_agent.get("donnees")
             resultats = resultat_agent.get("resultats_profils") or []
             envoye = bool(resultat_agent.get("envoye"))

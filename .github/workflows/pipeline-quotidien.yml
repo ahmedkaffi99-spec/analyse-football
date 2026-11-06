@@ -17,42 +17,141 @@ on:
     # que les coupons du jour sont partis (garde --si-aucun-ticket-aujourdhui, y compris coupons envoyés la veille).
     - cron: "7,27,47 6-13 * * *"  # 6h07-13h47 UTC (9h07-16h47 à Djibouti)
   workflow_dispatch:
-    # Formulaire « smart » en 4 réglages (06/11/2026) : un MODE (qui décide du pilote, des modèles et de l'ombre), un JOUR, l'interrupteur
-    # Telegram, et trois options facultatives. Plus de contrainte que les 3 bandes de cote totale (5-10, 12-18, 20-35).
+    # Formulaire complet (06/11/2026) : chaque liste « defaut » garde le comportement smart habituel (3 coupons, bandes 5-10 / 12-18 / 20-35).
     inputs:
-      mode:
-        description: "MODE — standard : DeepSeek pilote (habituel) | gpt : GPT-6.1 Sol pilote avec les mêmes outils | duel : DeepSeek PUIS GPT en pilote, mêmes réglages, jamais envoyé (comparaison loyale) | gpt-rapide : GPT-6.1 Sol compose seul, sans recherche web (aperçu rapide)"
-        type: choice
-        options:
-          - standard
-          - gpt
-          - duel
-          - gpt-rapide
-        default: standard
-      jour:
-        description: "JOUR des matchs visés (le même jour, fuseau de Djibouti)"
-        type: choice
-        options:
-          - aujourdhui
-          - demain
-          - apres-demain
-        default: aujourdhui
       telegram:
-        description: "Envoyer les coupons sur Telegram (éteint = essai, rien n'est envoyé ; le mode duel n'envoie jamais)"
+        description: "1. Envoyer les coupons sur Telegram : allumé = envoi, éteint = essai (le mode duel n'envoie jamais)"
         type: boolean
         default: false
+      moteur:
+        description: "2. Moteur (agent par défaut ; central et deterministe sont les anciens moteurs)"
+        type: choice
+        options:
+          - "agent"
+          - "central"
+          - "deterministe"
+        default: "agent"
+      depuis_run:
+        description: "3. Reprendre la collecte d'un run du JOUR (numéro, moteur agent compris) : aucun appel aux API sportives. Vide = nouvelle collecte"
+        type: string
+        default: ""
+      date_debut:
+        description: "4. Date de début des matchs visés (AAAA-MM-JJ) — vide = aujourd'hui"
+        type: string
+        default: ""
+      date_fin:
+        description: "4. Date de fin (AAAA-MM-JJ) — vide = aujourd'hui+2j ; pour un seul jour, même date que le début"
+        type: string
+        default: ""
       matchs_manuels:
-        description: "Option : matchs imposés \"Equipe A - Equipe B, Equipe C - Equipe D\" (vide = sélection automatique)"
+        description: "5. Matchs imposés : Equipe A - Equipe B, Equipe C - Equipe D (vide = sélection automatique)"
         type: string
         default: ""
-      profils_json:
-        description: "Option : bandes de cote personnalisées (JSON de profils) — vide = les 3 bandes smart 5-10, 12-18, 20-35"
-        type: string
-        default: ""
-      modeles_ombre:
-        description: "Option : modèles comparés en ombre, jamais envoyés (identifiants OpenRouter séparés par des virgules) — vide = GPT-6.1 Sol en mode standard, rien dans les autres modes ; « aucun » = coupée"
-        type: string
-        default: ""
+      nb_coupons:
+        description: "6. Nombre de coupons (defaut = 3)"
+        type: choice
+        options:
+          - "defaut"
+          - "1"
+          - "2"
+          - "3"
+          - "4"
+          - "5"
+        default: "defaut"
+      cote_totale:
+        description: "6. Cote totale de CHAQUE coupon (defaut = bandes smart 5-10, 12-18, 20-35)"
+        type: choice
+        options:
+          - "defaut"
+          - "5-10"
+          - "10-18"
+          - "12-18"
+          - "18-25"
+          - "20-35"
+          - "35-60"
+          - "50-100"
+        default: "defaut"
+      nb_jambes_min:
+        description: "7. Nombre MINIMUM de jambes par coupon (defaut = 1)"
+        type: choice
+        options:
+          - "defaut"
+          - "1"
+          - "2"
+          - "3"
+          - "4"
+          - "5"
+          - "6"
+          - "7"
+          - "8"
+          - "9"
+          - "10"
+        default: "defaut"
+      nb_jambes_max:
+        description: "8. Nombre MAXIMUM de jambes par coupon (defaut = 12)"
+        type: choice
+        options:
+          - "defaut"
+          - "1"
+          - "2"
+          - "3"
+          - "4"
+          - "5"
+          - "6"
+          - "7"
+          - "8"
+          - "9"
+          - "10"
+          - "12"
+        default: "defaut"
+      cote_min_jambe:
+        description: "9. Cote MINIMALE par jambe (defaut = aucun plancher)"
+        type: choice
+        options:
+          - "defaut"
+          - "1.1"
+          - "1.2"
+          - "1.3"
+          - "1.4"
+          - "1.5"
+          - "1.8"
+          - "2"
+        default: "defaut"
+      cote_max_jambe:
+        description: "9. Cote MAXIMALE par jambe (defaut = aucun plafond)"
+        type: choice
+        options:
+          - "defaut"
+          - "1.5"
+          - "1.8"
+          - "2"
+          - "2.5"
+          - "3"
+          - "3.1"
+          - "4"
+          - "5"
+        default: "defaut"
+      modele:
+        description: "10. Modèle qui pilote le run (duel = DeepSeek puis GPT-6.1 Sol, mêmes réglages, jamais envoyé)"
+        type: choice
+        options:
+          - "deepseek"
+          - "gpt-6.1-sol"
+          - "gemini-4-argon"
+          - "claude-sonnet-5.5"
+          - "duel"
+        default: "deepseek"
+      ignorer_diversite:
+        description: "11. Run ponctuel : désactive la diversité de catégorie entre coupons"
+        type: boolean
+        default: false
+      un_pari_par_match:
+        description: "12. Un seul pari par match dans un coupon : actif (1 par match) ou desactive (jusqu'à 3 paris d'events différents par match)"
+        type: choice
+        options:
+          - "actif"
+          - "desactive"
+        default: "actif"
 
 concurrency:
   # Un seul groupe : les runs en parallèle provoquent des interblocages de la base (DeadlockDetected) et saturent API-Football
@@ -69,47 +168,39 @@ jobs:
     timeout-minutes: 5
     outputs:
       matrice: ${{ steps.p.outputs.matrice }}
+      moteur: ${{ steps.p.outputs.moteur }}
       telegram: ${{ steps.p.outputs.telegram }}
-      date: ${{ steps.p.outputs.date }}
-      ttl: ${{ steps.p.outputs.ttl }}
       ombre: ${{ steps.p.outputs.ombre }}
       vote: ${{ steps.p.outputs.vote }}
+      date_debut: ${{ steps.p.outputs.date_debut }}
+      date_fin: ${{ steps.p.outputs.date_fin }}
+      ttl: ${{ steps.p.outputs.ttl }}
+      cote_min_jambe: ${{ steps.p.outputs.cote_min_jambe }}
+      cote_max_jambe: ${{ steps.p.outputs.cote_max_jambe }}
+      depuis_run: ${{ steps.p.outputs.depuis_run }}
+      ignorer_diversite: ${{ steps.p.outputs.ignorer_diversite }}
+      profils: ${{ steps.p.outputs.profils }}
     steps:
+      - uses: actions/checkout@v4
       - id: p
         env:
-          MODE: ${{ inputs.mode }}
-          JOUR: ${{ inputs.jour }}
-          TELEGRAM_IN: ${{ inputs.telegram }}
-          OMBRE_IN: ${{ inputs.modeles_ombre }}
-          VOTE_VAR: ${{ vars.MODELES_VOTE }}
           EVENEMENT: ${{ github.event_name }}
-        run: |
-          MODE="${MODE:-standard}"
-          TELEGRAM="$TELEGRAM_IN"
-          OMBRE="$OMBRE_IN"
-          GPT="openai/gpt-6.1-sol"
-          VOTE="aucun"   # le vote final n'a lieu qu'en mode standard (DeepSeek pilote, GPT et Gemini comparés)
-          case "$MODE" in
-            standard)   MATRICE='[{"etiquette":"DeepSeek","pilote":"","compositeur":""}]'; VOTE="${VOTE_VAR:-openai/gpt-6.1-sol,google/gemini-4-argon}" ;;
-            gpt)        MATRICE="[{\"etiquette\":\"GPT-6.1 Sol\",\"pilote\":\"$GPT\",\"compositeur\":\"\"}]"; OMBRE="${OMBRE:-aucun}" ;;
-            duel)       MATRICE="[{\"etiquette\":\"DeepSeek\",\"pilote\":\"\",\"compositeur\":\"\"},{\"etiquette\":\"GPT-6.1 Sol\",\"pilote\":\"$GPT\",\"compositeur\":\"\"}]"; TELEGRAM=false; OMBRE="aucun" ;;
-            gpt-rapide) MATRICE="[{\"etiquette\":\"GPT-6.1 Sol rapide\",\"pilote\":\"\",\"compositeur\":\"$GPT\"}]"; OMBRE="${OMBRE:-aucun}" ;;
-            *) echo "::error::mode inconnu : $MODE"; exit 1 ;;
-          esac
-          DATE=""
-          TTL=""
-          if [ "$EVENEMENT" = "workflow_dispatch" ]; then
-            TTL=43200
-            case "${JOUR:-aujourdhui}" in aujourdhui) D=0 ;; demain) D=1 ;; apres-demain) D=2 ;; *) echo "::error::jour inconnu"; exit 1 ;; esac
-            DATE=$(TZ=Africa/Djibouti date -d "+$D day" +%F)
-          fi
-          echo "matrice=$MATRICE" >> "$GITHUB_OUTPUT"
-          echo "telegram=$TELEGRAM" >> "$GITHUB_OUTPUT"
-          echo "date=$DATE" >> "$GITHUB_OUTPUT"
-          echo "ttl=$TTL" >> "$GITHUB_OUTPUT"
-          echo "ombre=$OMBRE" >> "$GITHUB_OUTPUT"
-          echo "vote=$VOTE" >> "$GITHUB_OUTPUT"
-          echo "Mode $MODE · jour ${DATE:-par défaut} · Telegram ${TELEGRAM:-non} · ombre ${OMBRE:-défaut}"
+          TELEGRAM_IN: ${{ inputs.telegram }}
+          MOTEUR: ${{ inputs.moteur }}
+          DEPUIS_RUN: ${{ inputs.depuis_run }}
+          DATE_DEBUT: ${{ inputs.date_debut }}
+          DATE_FIN: ${{ inputs.date_fin }}
+          NB_COUPONS: ${{ inputs.nb_coupons }}
+          COTE_TOTALE: ${{ inputs.cote_totale }}
+          NB_JAMBES_MIN: ${{ inputs.nb_jambes_min }}
+          NB_JAMBES_MAX: ${{ inputs.nb_jambes_max }}
+          COTE_MIN_JAMBE: ${{ inputs.cote_min_jambe }}
+          COTE_MAX_JAMBE: ${{ inputs.cote_max_jambe }}
+          MODELE: ${{ inputs.modele }}
+          IGNORER_DIVERSITE: ${{ inputs.ignorer_diversite }}
+          UN_PARI_PAR_MATCH: ${{ inputs.un_pari_par_match }}
+          VOTE_VAR: ${{ vars.MODELES_VOTE }}
+        run: python backend/app/preparer_formulaire.py
 
   run:
     needs: preparer
@@ -136,7 +227,6 @@ jobs:
       # réussite pour 70,6 % annoncés ; 0-3 % -> 65,3 % ; 3-6 % -> 60,7 % ; 6 % et plus -> 52,8 % pour 63,2 % annoncés (modèle trop optimiste).
       # Les cotes restent celles de 1xBet SEUL (demande du 04/11). Valeurs possibles : 3 (prudent), 20 (libre, comportement du 03/11).
       EDGE_MAX_AGENT_PCT: "6"
-      COMPOSITEUR_MODELE: ${{ matrix.compositeur }}
       PILOTE_MODELE: ${{ matrix.pilote }}
       API_FOOTBALL_QUOTA_PAR_MINUTE: ${{ secrets.API_FOOTBALL_QUOTA_PAR_MINUTE }}
       STATS_DETAILLEES_ACTIVE: ${{ secrets.STATS_DETAILLEES_ACTIVE }}
@@ -160,17 +250,18 @@ jobs:
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       EVENEMENT: ${{ github.event_name }}
       TELEGRAM_MANUEL: ${{ needs.preparer.outputs.telegram }}
-      MOTEUR: agent   # seul moteur utilisé (pilote IA + règles de Python)
-      DATE_CIBLE_DEBUT: ${{ needs.preparer.outputs.date }}
-      DATE_CIBLE_FIN: ${{ needs.preparer.outputs.date }}
+      MOTEUR: ${{ needs.preparer.outputs.moteur }}
+      DEPUIS_RUN: ${{ needs.preparer.outputs.depuis_run }}
+      IGNORER_DIVERSITE_CROISEE: ${{ needs.preparer.outputs.ignorer_diversite }}
+      DATE_CIBLE_DEBUT: ${{ needs.preparer.outputs.date_debut }}
+      DATE_CIBLE_FIN: ${{ needs.preparer.outputs.date_fin }}
       MATCHS_MANUELS: ${{ inputs.matchs_manuels }}
       # SMART COUPON (demande du 06/11/2026) : l'IA choisit librement ; seules contraintes = les 3 bandes de cote totale
       # (5-10, 12-18, 20-35). Un run manuel peut toujours imposer ses propres profils via l'entrée profils_json.
-      PROFILS_JSON: >-
-        ${{ inputs.profils_json || '[{"cle":"coupon1","nom":"🟢 SMART COUPON — cote 5 à 10","cote_min":5,"cote_max":10,"cote_totale_min":5,"cote_totale_max":10,"nb_jambes_min":1,"nb_jambes":12,"proba_min_pct":30,"proba_max_pct":100,"jambes_max_par_match":1,"match_repete_autorise":true,"max_coupons_par_match":3,"un_seul_pari_par_event":true,"consigne":"Smart coupon : tu choisis LIBREMENT les paris et le nombre de jambes les plus probables et les mieux valorisés ; seule contrainte : la cote totale doit être dans la bande de ce profil (une seule sélection par match dans un coupon)."},{"cle":"coupon2","nom":"🟠 SMART COUPON — cote 12 à 18","cote_min":12,"cote_max":18,"cote_totale_min":12,"cote_totale_max":18,"nb_jambes_min":1,"nb_jambes":12,"proba_min_pct":30,"proba_max_pct":100,"jambes_max_par_match":1,"match_repete_autorise":true,"max_coupons_par_match":3,"un_seul_pari_par_event":true,"consigne":"Smart coupon : tu choisis LIBREMENT les paris et le nombre de jambes les plus probables et les mieux valorisés ; seule contrainte : la cote totale doit être dans la bande de ce profil (une seule sélection par match dans un coupon)."},{"cle":"coupon3","nom":"🔴 SMART COUPON — cote 20 à 35","cote_min":20,"cote_max":35,"cote_totale_min":20,"cote_totale_max":35,"nb_jambes_min":1,"nb_jambes":12,"proba_min_pct":30,"proba_max_pct":100,"jambes_max_par_match":1,"match_repete_autorise":true,"max_coupons_par_match":3,"un_seul_pari_par_event":true,"consigne":"Smart coupon : tu choisis LIBREMENT les paris et le nombre de jambes les plus probables et les mieux valorisés ; seule contrainte : la cote totale doit être dans la bande de ce profil (une seule sélection par match dans un coupon)."}]' }}
+      PROFILS_JSON: ${{ needs.preparer.outputs.profils }}   # généré par backend/app/preparer_formulaire.py (smart par défaut)
       TTL_COTES_API_FOOTBALL_SECONDES: ${{ needs.preparer.outputs.ttl }}
-      COTE_MIN_JAMBE: "1.01"   # smart coupon : pas de plancher de cote par jambe
-      COTE_MAX_JAMBE: "0"      # 0 = pas de plafond de cote par jambe
+      COTE_MIN_JAMBE: ${{ needs.preparer.outputs.cote_min_jambe }}
+      COTE_MAX_JAMBE: ${{ needs.preparer.outputs.cote_max_jambe }}
       SEUIL_PROBA_MIN: "30"   # probabilité minimale par jambe
       # Comparaison parallèle bet_agent/moteur + capture hist_cotes + moteur central (shadow) :
       # jamais utilisées pour la sélection ni Telegram (voir runs.py) — vars du dépôt, vides par
