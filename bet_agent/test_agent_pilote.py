@@ -444,6 +444,31 @@ class TestProfilsPersonnalisesEtDiversiteIgnoree(unittest.TestCase):
         textes_envoyes = envoi.call_args.args[0]
         self.assertEqual(len(textes_envoyes), 6)
 
+    def test_mode_compositeur_unique_remplace_le_pilote(self):
+        """COMPOSITEUR_MODELE : le modèle choisi compose les profils sur le catalogue, sans aucun appel au pilote DeepSeek."""
+        import ombre
+
+        def faux_composer(pool, profils, catalogue, texte, modeles, **k):
+            lignes = [v[0] for v in POOL_SIX_MATCHS.values()]
+            sel = lambda i: {"match": lignes[i]["match"], "pick": lignes[i]["pick"]}
+            return [{"modele": modeles[0], "erreur": None, "tokens_entree": 100, "tokens_sortie": 10, "cout_usd": 0.01, "appels": 1,
+                     "coupons": [{"profil": "p1", "dans_la_bande": True, "selections": [sel(0)]},
+                                 {"profil": "p2", "dans_la_bande": True, "selections": [sel(1)]}]}]
+
+        with mock.patch.dict(os.environ, {"COMPOSITEUR_MODELE": "openai/gpt-6.1-sol"}), \
+                mock.patch.object(cd, "collecter_donnees", return_value=None), \
+                mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(DONNEES_FACTICES))), \
+                mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=POOL_SIX_MATCHS), \
+                mock.patch.object(ombre, "composer_ombre", side_effect=faux_composer), \
+                mock.patch.object(ae, "agent5_envoyer_coupons", return_value=True) as envoi, \
+                mock.patch.object(pilote, "_appel_api", side_effect=AssertionError("DeepSeek ne doit pas être appelé")):
+            resultat = pilote.executer(telegram=True, profils=self.PROFILS_6[:3], ignorer_diversite_croisee=True)
+
+        self.assertTrue(resultat["termine"] and resultat["envoye"])
+        self.assertEqual([bool(r["selections"]) for r in resultat["resultats_profils"]], [True, True, False])
+        self.assertEqual(len(envoi.call_args.args[0]), 3)   # le profil sans coupon est une abstention, pas un trou
+        self.assertEqual(resultat["journal"]["composition"]["cout_usd"], 0.01)
+
     def test_prompt_et_schemas_mentionnent_le_bon_nombre_de_profils(self):
         prompt = pilote.construire_prompt_systeme(self.PROFILS_6)
         self.assertIn("6 coupons", prompt)
