@@ -4,10 +4,12 @@ sans jamais rien envoyer sur Telegram, avec les tokens et le coût réels de cha
 
 Désactivé par défaut : la comparaison de modèles ne tourne que si MODELES_OMBRE (liste d'identifiants OpenRouter séparés par des
 virgules) est renseignée ; « base » = le modèle actuel (DeepSeek, sans mesure de coût). Plafond de dépense par run :
-OMBRE_BUDGET_USD (défaut 1.50) ; nombre de tours de correction : OMBRE_NB_TOURS (défaut 2)."""
+OMBRE_BUDGET_USD (défaut 1.50) ; nombre de tours de correction : OMBRE_NB_TOURS (défaut 2) ; durée totale maximale :
+OMBRE_DUREE_MAX_S (défaut 360) ; effort de raisonnement demandé aux modèles : OMBRE_RAISONNEMENT (low/medium/high, défaut medium)."""
 
 import math
 import os
+import threading
 import time
 
 import requests
@@ -42,20 +44,34 @@ class BudgetEpuise(Exception):
 
 
 class AppelOpenRouter:
-    """Appelable (prompt, max_tokens, json_attendu) pour composer_coupons ; cumule tokens et coût réels (usage OpenRouter)."""
+    """Appelable (prompt, max_tokens, json_attendu) pour composer_coupons ; cumule tokens et coût réels (usage OpenRouter).
+    Borné dans le temps (échéance absolue + délai par appel) et dans l'effort de raisonnement (OMBRE_RAISONNEMENT, défaut medium) :
+    le 06/11/2026, des appels séquentiels à des modèles de raisonnement ont tenu le pipeline plus de 15 minutes."""
 
-    def __init__(self, modele, cle, budget_usd, poster=requests.post):
+    def __init__(self, modele, cle, budget_usd, poster=requests.post, echeance=None, delai_appel=150):
         self.modele, self.cle, self.budget_usd, self.poster = modele, cle, budget_usd, poster
+        self.echeance, self.delai_appel = echeance, delai_appel
         self.tokens_entree = self.tokens_sortie = self.appels = 0
         self.cout_usd = 0.0
+
+    def _poster(self, prompt, max_tokens, avec_raisonnement):
+        restant = (self.echeance - time.time()) if self.echeance is not None else self.delai_appel
+        if restant <= 5:
+            raise TimeoutError(f"échéance de comparaison dépassée pour {self.modele}")
+        corps = {"model": self.modele, "messages": [{"role": "user", "content": prompt}],
+                 "max_tokens": max_tokens, "usage": {"include": True}}
+        effort = os.getenv("OMBRE_RAISONNEMENT") or "medium"
+        if avec_raisonnement and effort != "aucun":
+            corps["reasoning"] = {"effort": effort}
+        return self.poster(URL_OPENROUTER, timeout=min(self.delai_appel, restant),
+                           headers={"Authorization": f"Bearer {self.cle}", "Content-Type": "application/json"}, json=corps)
 
     def __call__(self, prompt, max_tokens=3000, json_attendu=False):
         if self.cout_usd >= self.budget_usd:
             raise BudgetEpuise(f"plafond de {self.budget_usd:g} $ atteint pour {self.modele}")
-        r = self.poster(URL_OPENROUTER, timeout=240,
-                        headers={"Authorization": f"Bearer {self.cle}", "Content-Type": "application/json"},
-                        json={"model": self.modele, "messages": [{"role": "user", "content": prompt}],
-                              "max_tokens": max_tokens, "usage": {"include": True}})
+        r = self._poster(prompt, max_tokens, True)
+        if getattr(r, "status_code", 200) == 400:   # paramètre de raisonnement refusé par ce fournisseur : on réessaie sans
+            r = self._poster(prompt, max_tokens, False)
         r.raise_for_status()
         data = r.json()
         usage = data.get("usage") or {}
@@ -74,34 +90,55 @@ def _resume_coupon(cle, profil, selections):
             "selections": selections}
 
 
+def _composer_un_modele(modele, pool, profils, catalogue, catalogue_texte, cle, appel_base, budget_usd, nb_tours, echeance, sortie):
+    t0 = time.time()
+    mesure = None
+    try:
+        if modele == "base":
+            appel = appel_base or ae.appel_llm
+        else:
+            if not cle:
+                sortie[modele] = {"modele": modele, "erreur": "OPENROUTER_API_KEY absente", "coupons": []}
+                return
+            appel = mesure = AppelOpenRouter(modele, cle, budget_usd, echeance=echeance)
+        try:
+            resultat = st.composer_coupons(pool, profils, appel=appel, nb_tours=nb_tours, catalogue_pret=(catalogue, catalogue_texte))
+            erreur = None
+        except Exception as e:
+            resultat, erreur = None, f"{type(e).__name__}: {str(e)[:200]}"
+        coupons = []
+        if resultat:
+            par_cle = {p["cle"]: p for p in profils}
+            for cle_p, v in resultat["coupons"].items():
+                coupons.append(_resume_coupon(cle_p, par_cle[cle_p], v["selections"]))
+        sortie[modele] = {"modele": modele, "erreur": erreur, "coupons": coupons, "secondes": round(time.time() - t0),
+                          "tokens_entree": getattr(mesure, "tokens_entree", None), "tokens_sortie": getattr(mesure, "tokens_sortie", None),
+                          "cout_usd": round(mesure.cout_usd, 4) if mesure else None, "appels": getattr(mesure, "appels", None)}
+    except Exception as e:   # jamais de fil muet : un résultat d'erreur est toujours écrit
+        sortie[modele] = {"modele": modele, "erreur": f"{type(e).__name__}: {str(e)[:200]}", "coupons": []}
+
+
 def composer_ombre(pool, profils, catalogue, catalogue_texte, modeles=None, cle=None, appel_base=None,
-                   budget_usd=None, nb_tours=None):
-    """Compose les coupons avec chaque modèle sur le même catalogue. Renvoie une liste de résultats par modèle."""
+                   budget_usd=None, nb_tours=None, duree_max_s=None):
+    """Compose les coupons avec chaque modèle sur le même catalogue, EN PARALLÈLE et dans une durée totale bornée
+    (OMBRE_DUREE_MAX_S, défaut 360 s) : un modèle qui n'a pas fini à l'échéance est enregistré en erreur « délai dépassé »
+    sans bloquer le pipeline (fils daemon). Renvoie une liste de résultats par modèle, dans l'ordre demandé."""
     modeles = modeles if modeles is not None else modeles_ombre()
     cle = cle or os.getenv("OPENROUTER_API_KEY")
     budget_usd = budget_usd if budget_usd is not None else float(os.getenv("OMBRE_BUDGET_USD") or 1.5)
     nb_tours = nb_tours or int(os.getenv("OMBRE_NB_TOURS") or 2)
+    duree_max_s = duree_max_s if duree_max_s is not None else float(os.getenv("OMBRE_DUREE_MAX_S") or 360)
+    echeance = time.time() + duree_max_s
+    sortie, fils = {}, []
+    for modele in modeles:
+        t = threading.Thread(target=_composer_un_modele, daemon=True, name=f"ombre-{modele}",
+                             args=(modele, pool, profils, catalogue, catalogue_texte, cle, appel_base, budget_usd, nb_tours, echeance, sortie))
+        t.start()
+        fils.append(t)
+    for t in fils:
+        t.join(max(0.0, echeance - time.time()))
     resultats = []
     for modele in modeles:
-        t0 = time.time()
-        if modele == "base":
-            appel, mesure = (appel_base or ae.appel_llm), None
-        else:
-            if not cle:
-                resultats.append({"modele": modele, "erreur": "OPENROUTER_API_KEY absente", "coupons": []})
-                continue
-            appel = mesure = AppelOpenRouter(modele, cle, budget_usd)
-        try:
-            sortie = st.composer_coupons(pool, profils, appel=appel, nb_tours=nb_tours, catalogue_pret=(catalogue, catalogue_texte))
-            erreur = None
-        except Exception as e:
-            sortie, erreur = None, f"{type(e).__name__}: {str(e)[:200]}"
-        coupons = []
-        if sortie:
-            par_cle = {p["cle"]: p for p in profils}
-            for cle_p, v in sortie["coupons"].items():
-                coupons.append(_resume_coupon(cle_p, par_cle[cle_p], v["selections"]))
-        resultats.append({"modele": modele, "erreur": erreur, "coupons": coupons, "secondes": round(time.time() - t0),
-                          "tokens_entree": getattr(mesure, "tokens_entree", None), "tokens_sortie": getattr(mesure, "tokens_sortie", None),
-                          "cout_usd": round(mesure.cout_usd, 4) if mesure else None, "appels": getattr(mesure, "appels", None)})
+        resultats.append(sortie.get(modele) or {"modele": modele, "coupons": [],
+                                                 "erreur": f"délai dépassé ({duree_max_s:g} s) : composition abandonnée"})
     return resultats
