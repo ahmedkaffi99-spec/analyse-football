@@ -117,10 +117,10 @@ def tache_apprendre(args):
     from app.services import apprentissage
     with SessionLocal() as db:
         if args.jour:
-            texte = apprentissage.etudier_jour(db, datetime.fromisoformat(args.jour).date(), avec_ia=not args.sans_ia)
+            texte = apprentissage.etudier_jour(db, datetime.fromisoformat(args.jour).date(), avec_ia=not args.sans_ia, refaire=args.refaire)
             print(texte or f"ℹ️ Rien à étudier pour {args.jour} (déjà étudié, ou coupons pas tous jugés).")
         else:
-            jours = apprentissage.etudier_recents(db, jours=args.jours, avec_ia=not args.sans_ia)
+            jours = apprentissage.etudier_recents(db, jours=args.jours, avec_ia=not args.sans_ia, refaire=args.refaire)
             print(f"🧠 Études enregistrées : {[j.isoformat() for j in jours] or 'aucune'}")
         print("\n--- Mémoire transmise à l'agent ---\n" + (apprentissage.memoire_pour_prompt(db) or "(vide)"))
     return 0
@@ -562,6 +562,7 @@ def main(argv=None):
     p_appr.add_argument("--jour", help="AAAA-MM-JJ : étudie ce jour seulement")
     p_appr.add_argument("--jours", type=int, default=14, help="sinon : étudie les N derniers jours jugés (défaut 14)")
     p_appr.add_argument("--sans-ia", action="store_true", help="leçons déterministes uniquement")
+    p_appr.add_argument("--refaire", action="store_true", help="recalcule et remplace les études déjà enregistrées")
     sous.add_parser("tester-api", help="vérifie l'Edge Function api en ligne (jeton du Vault)")
     sous.add_parser("modeles-gratuits", help="liste les modèles gratuits d'OpenRouter (identifiants exacts)")
     sous.add_parser("tester-ia", help="teste les clés Groq, Gemini et OpenRouter avec une vraie réponse")

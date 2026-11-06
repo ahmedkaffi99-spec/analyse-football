@@ -10,6 +10,11 @@ on:
         required: false
         default: "14"
         type: string
+      refaire:
+        description: "Recalculer et remplacer les études déjà enregistrées"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -55,4 +60,10 @@ jobs:
         working-directory: backend
         env:
           JOURS: ${{ inputs.jours }}
-        run: python -m app.taches apprendre --jours "${JOURS:-14}"
+          REFAIRE: ${{ inputs.refaire }}
+        run: |
+          if [ "$REFAIRE" = "true" ]; then
+            python -m app.taches apprendre --jours "${JOURS:-14}" --refaire
+          else
+            python -m app.taches apprendre --jours "${JOURS:-14}"
+          fi
