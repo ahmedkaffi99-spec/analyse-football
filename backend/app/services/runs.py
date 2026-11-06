@@ -99,6 +99,13 @@ def executer_run(run_id, envoyer_telegram=False, rediger=True, depuis_run=None, 
             # pilote pour qu'il pèse ses choix du jour à la lumière des résultats réels passés,
             # pas seulement du catalogue du jour. None tant qu'aucun coupon n'est encore clos.
             bilan = resume_pour_ia(db)
+            # Mémoire d'apprentissage (06/11/2026) : études des erreurs des jours précédents + fiabilité réelle glissante.
+            try:
+                from app.services.apprentissage import memoire_pour_prompt
+                memoire = memoire_pour_prompt(db)
+                bilan = "\n\n".join(x for x in (bilan, memoire) if x) or None
+            except Exception as e:  # la mémoire ne doit jamais empêcher un run
+                print(f"ℹ️ Mémoire d'apprentissage indisponible : {str(e)[:120]}")
             # Sans profils personnalisés : profils quotidiens de l'agent (3 coupons de 5-10 jambes par défaut,
             # 20/10/2026) — jamais ae.PROFILS_COUPON (2-5 jambes), réservé au mode manuel.
             if profils_personnalises is None:
