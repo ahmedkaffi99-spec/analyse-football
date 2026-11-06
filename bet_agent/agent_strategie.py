@@ -139,12 +139,18 @@ def construire_prompt(pool, profils, catalogue_texte):
     description_profils = "\n".join(
         f"- {p['cle']} = {p['nom']} : entre {p.get('nb_jambes_min', NB_JAMBES_MIN_DEFAUT)} et {p['nb_jambes']} "
         "paris — choisis TOI-MÊME, dans cette fourchette, les paris les plus défendables selon la qualité des "
-        "données du jour (pas d'obligation d'atteindre le maximum). La cote totale qui en résulte n'est PAS une "
-        "contrainte précise à viser, SEUL un plancher est vérifié par Python pour CE profil : cote totale >= "
-        f"{p.get('cote_totale_min', COTE_TOTALE_MIN):g} (ce plancher varie selon le profil — ne force jamais un "
-        "pari seulement pour faire monter ou descendre la cote au-delà de ce qu'il faut pour l'atteindre)."
-        + (f" PLAFOND DE COTE TOTALE POUR CE PROFIL (vérifié par Python) : cote totale <= {p['cote_totale_max']:g}."
-           if p.get("cote_totale_max") else "")
+        "données du jour (pas d'obligation d'atteindre le maximum). "
+        + ((f"SMART COUPON — BANDE DE COTE TOTALE : {p.get('cote_totale_min', COTE_TOTALE_MIN):g} à "
+            f"{p['cote_totale_max']:g} (Python vérifie le plancher ET le plafond). Tu es LIBRE du nombre de jambes et de "
+            "la cote de chaque jambe : choisis la combinaison qui a le plus de chances de passer INTÉGRALEMENT tout en "
+            "tombant dans la bande. Moins de jambes = moins de marge de bookmaker cumulée = plus de chances ; si les "
+            "paris les plus sûrs donnent une cote totale trop basse, monte en cote par jambe (paris à 1.8, 2, 3 ou plus "
+            "du catalogue) plutôt que d'empiler beaucoup de jambes à 1.2. Ne sors jamais de la bande.")
+           if p.get("cote_totale_max") else
+           ("La cote totale qui en résulte n'est PAS une contrainte précise à viser, SEUL un plancher est vérifié par "
+            f"Python pour CE profil : cote totale >= {p.get('cote_totale_min', COTE_TOTALE_MIN):g} (ce plancher varie "
+            "selon le profil — ne force jamais un pari seulement pour faire monter ou descendre la cote au-delà de ce "
+            "qu'il faut pour l'atteindre)."))
         + (" TOUS LES MATCHS DU CATALOGUE doivent figurer dans CE coupon (vérifié par Python), avec "
            + ("EXACTEMENT UN pari par match (1xBet refuse deux paris du même match)"
               if p.get("jambes_max_par_match", ae.MAX_JAMBES_PAR_MATCH) == 1
@@ -201,12 +207,13 @@ def construire_prompt(pool, profils, catalogue_texte):
         "pari(s) d'un même match (la limite exacte de chaque profil est donnée ci-dessus), jamais deux paris "
         "contradictoires, jamais de doublon — combine des matchs DIFFÉRENTS plutôt que d'empiler les paris sur "
         "un même match.\n"
-        "3. La cote totale (produit des cotes) doit tomber dans la cible du profil. Python la calcule et te la "
-        "renverra : vise juste, sans calculer au centime.\n"
+        "3. La cote totale (produit des cotes) doit tomber dans la bande du profil (plancher et plafond vérifiés). "
+        "Python la calcule et te la renverra : vise juste, sans calculer au centime. Tu es libre du nombre de "
+        "jambes et des cotes individuelles ; l'objectif est la combinaison la plus probable dans la bande.\n"
         "4. Qualité avant quantité : écarte les matchs aux données faibles ou dont la presse signale un risque "
         "(absences clés, rotation, enjeu faible). Le CATALOGUE est déjà FILTRÉ ET TRIÉ par Python : il ne "
         "contient plus les 200-300 marchés bruts d'un match, seulement les paris dont la PROBABILITÉ calculée "
-        "(Poisson, à partir des vrais buts attendus) dépasse 60%, du plus probable au moins probable — un match "
+        "(Poisson, à partir des vrais buts attendus) dépasse le seuil indiqué pour chaque match, du plus probable au moins probable — un match "
         "absent du catalogue veut dire que Python n'y a rien trouvé d'assez solide, ne cherche pas à en inventer "
         "un. C'est CETTE PROBABILITÉ (affichée avec l'edge) qui est TA BASE PRINCIPALE de décision, pas une "
         "estimation personnelle. Traite les matchs UN PAR UN : analyse et compare les paris déjà retenus d'un "

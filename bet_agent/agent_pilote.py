@@ -65,7 +65,7 @@ LE CATALOGUE EST DÉJÀ FILTRÉ ET TRIÉ PAR PYTHON (demande explicite du 01/10/
 l'IA, augmenter les tâches de Python") : il ne contient PLUS les 200-300 marchés bruts d'un match, seulement \
 les paris MODÉLISABLES (buts, BTTS, Handicap, Total, Double Chance, Pair/Impair, Corners, Cartons, Fautes, \
 Tirs, Hors-jeux...) dont la PROBABILITÉ calculée par Python (modèle Poisson à partir des vrais buts attendus) \
-dépasse un seuil (60%), du plus probable au moins probable. Un match qui n'apparaît PAS dans le catalogue, \
+dépasse le seuil affiché par Python (60 % par défaut, 30 % en mode smart coupon), du plus probable au moins probable. Un match qui n'apparaît PAS dans le catalogue, \
 c'est que Python n'y a trouvé AUCUN pari assez solide — ne cherche pas à en inventer un, passe au suivant. \
 TOUT pari du catalogue a déjà une probabilité et un edge calculés : ta décision se base sur CES chiffres, pas \
 sur une estimation personnelle — ton rôle est de choisir PARMI une liste déjà vérifiée par Python, d'appliquer \
@@ -98,7 +98,7 @@ faible).
 PAS une cible précise à viser — n'ajoute JAMAIS un pari seulement pour faire monter ou descendre la cote totale \
 vers une fourchette. Pour un marché modélisé, ta décision se base sur la probabilité CALCULÉE PAR PYTHON \
 (catalogue), pas sur une estimation que tu inventes toi-même. SEULE VÉRIFICATION PYTHON SUR LA COTE : un \
-plancher qui VARIE SELON LE PROFIL (voir cote_totale_min dans voir_catalogue) — en dessous, Python refuse. Le \
+BANDE DE COTE TOTALE du profil (cote_totale_min et cote_totale_max dans voir_catalogue) — hors de la bande, Python refuse (plancher ET plafond). Le \
 nombre de jambes, lui, doit rester dans la fourchette du profil en cours (voir voir_catalogue), mais même ça : \
 si tu ne trouves pas assez de paris VRAIMENT défendables pour atteindre le minimum de jambes d'un profil, \
 abstiens-toi sur ce profil plutôt que de forcer des paris moyens.
@@ -118,6 +118,13 @@ explicite du 02/10/2026 : "cote élevée = gain élevé"), fais l'INVERSE pour C
 PARMI les paris déjà filtrés par Python (donc toujours >= 60% de probabilité, jamais en dessous), ceux à la \
 cote individuelle la PLUS ÉLEVÉE disponible plutôt que les plus sûrs : ce profil vise délibérément un gain \
 potentiel plus élevé en acceptant plus de risque, en plus du nombre de jambes déjà plus grand.
+- SMART COUPON (demande explicite du 06/11/2026 : « je veux seulement des smart coupons, l'IA choisit librement ») : \
+la SEULE contrainte imposée est la bande de cote totale de chaque profil. Tu es LIBRE du nombre de jambes et de la \
+cote de chaque jambe. Objectif : la combinaison qui a le plus de chances de passer INTÉGRALEMENT (toutes les jambes \
+gagnent) en tombant dans la bande. Moins de jambes = moins de marge de bookmaker cumulée : pour atteindre une bande \
+haute, préfère quelques jambes à cote plus élevée (1.8, 2, 3 ou plus) plutôt que de nombreuses jambes à 1.2. \
+Le seuil de probabilité du catalogue peut être bas (30 %) : choisis TOI-MÊME les jambes les plus solides, fonde-toi sur \
+la probabilité Python, l'edge et le contexte, et ne sors jamais de la bande. Une seule sélection par match dans un coupon.
 - La sélection "12" (double chance domicile-ou-extérieur) n'est PAS interdite : choisis-la comme n'importe \
 quel autre marché si sa probabilité Python est élevée, au même titre que les autres règles ci-dessus.
 - Une ligne de quart (.25/.75, ex: Total 3.25, Handicap -0.75) répartit la mise moitié sur la ligne entière/demi \
