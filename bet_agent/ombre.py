@@ -53,6 +53,7 @@ class AppelOpenRouter:
         self.echeance, self.delai_appel = echeance, delai_appel
         self.tokens_entree = self.tokens_sortie = self.appels = 0
         self.cout_usd = 0.0
+        self.erreurs = []   # composer_coupons avale les exceptions : on garde la dernière cause pour le rapport
 
     def _poster(self, prompt, max_tokens, avec_raisonnement):
         restant = (self.echeance - time.time()) if self.echeance is not None else self.delai_appel
@@ -67,6 +68,13 @@ class AppelOpenRouter:
                            headers={"Authorization": f"Bearer {self.cle}", "Content-Type": "application/json"}, json=corps)
 
     def __call__(self, prompt, max_tokens=3000, json_attendu=False):
+        try:
+            return self._appeler(prompt, max_tokens)
+        except Exception as e:
+            self.erreurs.append(f"{type(e).__name__}: {str(e)[:180]}")
+            raise
+
+    def _appeler(self, prompt, max_tokens):
         if self.cout_usd >= self.budget_usd:
             raise BudgetEpuise(f"plafond de {self.budget_usd:g} $ atteint pour {self.modele}")
         r = self._poster(prompt, max_tokens, True)
@@ -102,7 +110,8 @@ def _composer_un_modele(modele, pool, profils, catalogue, catalogue_texte, cle, 
                 return
             appel = mesure = AppelOpenRouter(modele, cle, budget_usd, echeance=echeance)
         try:
-            resultat = st.composer_coupons(pool, profils, appel=appel, nb_tours=nb_tours, catalogue_pret=(catalogue, catalogue_texte))
+            resultat = st.composer_coupons(pool, profils, appel=appel, nb_tours=nb_tours, catalogue_pret=(catalogue, catalogue_texte),
+                                           controle_budget=False)
             erreur = None
         except Exception as e:
             resultat, erreur = None, f"{type(e).__name__}: {str(e)[:200]}"
@@ -111,6 +120,13 @@ def _composer_un_modele(modele, pool, profils, catalogue, catalogue_texte, cle, 
             par_cle = {p["cle"]: p for p in profils}
             for cle_p, v in resultat["coupons"].items():
                 coupons.append(_resume_coupon(cle_p, par_cle[cle_p], v["selections"]))
+        if erreur is None and not coupons:   # explication plutôt qu'un silence : dernière erreur d'appel, sinon rejet par Python
+            if mesure is not None and mesure.erreurs:
+                erreur = "appel(s) en échec : " + mesure.erreurs[-1]
+            elif mesure is not None and mesure.appels:
+                erreur = f"aucun coupon valide après {mesure.appels} appel(s) (règles de Python non respectées)"
+            else:
+                erreur = "aucun appel effectué"
         sortie[modele] = {"modele": modele, "erreur": erreur, "coupons": coupons, "secondes": round(time.time() - t0),
                           "tokens_entree": getattr(mesure, "tokens_entree", None), "tokens_sortie": getattr(mesure, "tokens_sortie", None),
                           "cout_usd": round(mesure.cout_usd, 4) if mesure else None, "appels": getattr(mesure, "appels", None)}
