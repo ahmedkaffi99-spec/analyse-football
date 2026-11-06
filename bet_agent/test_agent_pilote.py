@@ -855,3 +855,49 @@ def test_donnees_reprises_evitent_toute_collecte(monkeypatch):
             mock.patch.object(pilote, "_appel_api", side_effect=[(r, 65536) for r in reponses]):
         resultat = pilote.executer(telegram=False, profils=[PROFIL_1], donnees_reprises=DONNEES_FACTICES)
     assert resultat["donnees"] is DONNEES_FACTICES and resultat["resultats_profils"][0]["selections"]
+
+
+def test_vote_final_remplace_un_coupon_du_pilote_par_celui_d_un_autre_modele(monkeypatch):
+    """Intégration du vote : le pilote compose, un autre modèle propose un coupon plus probable pour la même bande ; Telegram reçoit le meilleur."""
+    import ombre
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "cle-test")
+    monkeypatch.setenv("MODELES_VOTE", "openai/gpt-6.1-sol")
+    lignes = [v[0] for v in POOL_SIX_MATCHS.values()]
+    fort = {"match": lignes[5]["match"], "pick": dict(lignes[5]["pick"], proba_modele_pct=90.0)}
+
+    def faux_composer(pool, profils, catalogue, texte, modeles, **k):
+        return [{"modele": modeles[0], "erreur": None, "tokens_entree": 10, "tokens_sortie": 1, "cout_usd": 0.01, "appels": 1,
+                 "coupons": [{"profil": profils[0]["cle"], "dans_la_bande": True, "selections": [fort]}]}]
+
+    reponses = [_msg_outil("collecter_donnees", {}), _msg_outil("voir_catalogue", {}),
+                _msg_outil("proposer_coupon", {"strategie": "s", "jambes": [{"id": "P1", "raison": "r"}]}),
+                _msg_outil("envoyer_telegram", {})]
+    with mock.patch.object(cd, "collecter_donnees", return_value=None), \
+            mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(DONNEES_FACTICES))), \
+            mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=POOL_SIX_MATCHS), \
+            mock.patch.object(ombre, "composer_ombre", side_effect=faux_composer), \
+            mock.patch.object(ae, "agent5_envoyer_coupons", return_value=True) as envoi, \
+            mock.patch.object(pilote, "_appel_api", side_effect=[(r, 65536) for r in reponses]):
+        resultat = pilote.executer(telegram=True, profils=[PROFIL_1])
+
+    assert resultat["resultats_profils"][0]["selections"][0]["match"] == fort["match"]
+    assert fort["match"] in envoi.call_args.args[0][0]
+    assert resultat["journal"]["vote"][0].startswith(f"{PROFIL_1['cle']} : openai/gpt-6.1-sol retenu")
+    assert resultat["ombre"]["resultats_vote"][0]["modele"] == "openai/gpt-6.1-sol"
+
+
+def test_vote_final_en_echec_conserve_les_coupons_du_pilote(monkeypatch):
+    import ombre
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "cle-test")
+    monkeypatch.setenv("MODELES_VOTE", "openai/gpt-6.1-sol")
+    reponses = [_msg_outil("collecter_donnees", {}), _msg_outil("voir_catalogue", {}),
+                _msg_outil("proposer_coupon", {"strategie": "s", "jambes": [{"id": "P1", "raison": "r"}]}),
+                _msg_outil("envoyer_telegram", {})]
+    with mock.patch.object(cd, "collecter_donnees", return_value=None), \
+            mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(DONNEES_FACTICES))), \
+            mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=POOL_SIX_MATCHS), \
+            mock.patch.object(ombre, "composer_ombre", side_effect=RuntimeError("OpenRouter en panne")), \
+            mock.patch.object(ae, "agent5_envoyer_coupons", return_value=True) as envoi, \
+            mock.patch.object(pilote, "_appel_api", side_effect=[(r, 65536) for r in reponses]):
+        resultat = pilote.executer(telegram=True, profils=[PROFIL_1])
+    assert resultat["envoye"] and len(envoi.call_args.args[0]) == 1

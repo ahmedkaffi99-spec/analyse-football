@@ -146,8 +146,8 @@ def juger_cotes_en_attente(db):
     for row in a_juger:
         domicile, exterieur = row.domicile, row.exterieur
         but_dom = but_ext = None
-        if vr.trouver_fixture_api_football(domicile, exterieur, fixtures_af, cd):
-            etat, score = vr.trouver_score_api_football(domicile, exterieur, fixtures_af, cd)
+        if vr.trouver_fixture_api_football(domicile, exterieur, fixtures_af, cd, row.coup_envoi):
+            etat, score = vr.trouver_score_api_football(domicile, exterieur, fixtures_af, cd, row.coup_envoi)
             if etat == "annule":
                 # Match reporté/annulé/abandonné : jamais un score deviné, remboursement direct.
                 row.resultat, row.juge_le = "annule", maintenant

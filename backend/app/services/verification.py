@@ -86,9 +86,10 @@ def verifier_jambes(db, jambes):
         domicile = jambe.domicile or jambe.libelle_match.split(" vs ")[0]
         exterieur = jambe.libelle_match.split(" vs ")[-1]
         but_dom = but_ext = None
-        fixture_trouvee = vr.trouver_fixture_api_football(domicile, exterieur, fixtures_af, cd)
+        coup_envoi_attendu = jambe.match.coup_envoi if jambe.match else None
+        fixture_trouvee = vr.trouver_fixture_api_football(domicile, exterieur, fixtures_af, cd, coup_envoi_attendu)
         if fixture_trouvee:
-            etat, score = vr.trouver_score_api_football(domicile, exterieur, fixtures_af, cd)
+            etat, score = vr.trouver_score_api_football(domicile, exterieur, fixtures_af, cd, coup_envoi_attendu)
             if etat == "annule":
                 # Match reporté/annulé/abandonné (PST/CANC/ABD) : jamais un score deviné,
                 # remboursement direct — convention standard, pas un gagné/perdu/push normal.
