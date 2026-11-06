@@ -20,7 +20,7 @@ on:
     # Formulaire complet (06/11/2026) : chaque liste « defaut » garde le comportement smart habituel (3 coupons, bandes 5-10 / 12-18 / 20-35).
     inputs:
       telegram:
-        description: "1. Envoyer les coupons sur Telegram : allumé = envoi, éteint = essai (le mode duel n'envoie jamais)"
+        description: "1. Envoyer les coupons sur Telegram : allumé = envoi, éteint = essai (rien n'est envoyé)"
         type: boolean
         default: false
       moteur:
@@ -58,8 +58,60 @@ on:
           - "4"
           - "5"
         default: "defaut"
-      cote_totale:
-        description: "6. Cote totale de CHAQUE coupon (defaut = bandes smart 5-10, 12-18, 20-35)"
+      cote_coupon_1:
+        description: "6. Cote totale du coupon 1 (defaut = 5-10)"
+        type: choice
+        options:
+          - "defaut"
+          - "5-10"
+          - "10-18"
+          - "12-18"
+          - "18-25"
+          - "20-35"
+          - "35-60"
+          - "50-100"
+        default: "defaut"
+      cote_coupon_2:
+        description: "6. Cote totale du coupon 2 (defaut = 12-18) — ignorée si le nombre de coupons est inférieur à 2"
+        type: choice
+        options:
+          - "defaut"
+          - "5-10"
+          - "10-18"
+          - "12-18"
+          - "18-25"
+          - "20-35"
+          - "35-60"
+          - "50-100"
+        default: "defaut"
+      cote_coupon_3:
+        description: "6. Cote totale du coupon 3 (defaut = 20-35) — ignorée si le nombre de coupons est inférieur à 3"
+        type: choice
+        options:
+          - "defaut"
+          - "5-10"
+          - "10-18"
+          - "12-18"
+          - "18-25"
+          - "20-35"
+          - "35-60"
+          - "50-100"
+        default: "defaut"
+      cote_coupon_4:
+        description: "6. Cote totale du coupon 4 (defaut = 5-10) — ignorée si le nombre de coupons est inférieur à 4"
+        type: choice
+        options:
+          - "defaut"
+          - "5-10"
+          - "10-18"
+          - "12-18"
+          - "18-25"
+          - "20-35"
+          - "35-60"
+          - "50-100"
+        default: "defaut"
+      cote_coupon_5:
+        description: "6. Cote totale du coupon 5 (defaut = 12-18) — ignorée si le nombre de coupons est inférieur à 5"
         type: choice
         options:
           - "defaut"
@@ -132,14 +184,13 @@ on:
           - "5"
         default: "defaut"
       modele:
-        description: "10. Modèle qui pilote le run (duel = DeepSeek puis GPT-6.1 Sol, mêmes réglages, jamais envoyé)"
+        description: "10. Modèle qui pilote le run (DeepSeek par défaut)"
         type: choice
         options:
           - "deepseek"
           - "gpt-6.1-sol"
           - "gemini-4-argon"
           - "claude-sonnet-5.5"
-          - "duel"
         default: "deepseek"
       ignorer_diversite:
         description: "11. Run ponctuel : désactive la diversité de catégorie entre coupons"
@@ -191,7 +242,11 @@ jobs:
           DATE_DEBUT: ${{ inputs.date_debut }}
           DATE_FIN: ${{ inputs.date_fin }}
           NB_COUPONS: ${{ inputs.nb_coupons }}
-          COTE_TOTALE: ${{ inputs.cote_totale }}
+          COTE_COUPON_1: ${{ inputs.cote_coupon_1 }}
+          COTE_COUPON_2: ${{ inputs.cote_coupon_2 }}
+          COTE_COUPON_3: ${{ inputs.cote_coupon_3 }}
+          COTE_COUPON_4: ${{ inputs.cote_coupon_4 }}
+          COTE_COUPON_5: ${{ inputs.cote_coupon_5 }}
           NB_JAMBES_MIN: ${{ inputs.nb_jambes_min }}
           NB_JAMBES_MAX: ${{ inputs.nb_jambes_max }}
           COTE_MIN_JAMBE: ${{ inputs.cote_min_jambe }}
