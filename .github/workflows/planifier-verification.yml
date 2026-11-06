@@ -1,0 +1,61 @@
+# Planifie la vérification des résultats (agent IA : vagues de matchs, heures exactes, rapport final) pour des
+# coupons DÉJÀ envoyés — par ex. quand ils sont partis via "Envoyer sur Telegram", qui ne planifie pas.
+# Annonce le plan sur Telegram et ACTIVE le workflow « Vérification des résultats » (désactivé entre deux séries de coupons).
+name: Planifier la vérification
+
+on:
+  workflow_dispatch:
+    inputs:
+      coupons:
+        description: "Numéros de coupons déjà envoyés (ex. 353,354,355)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: write  # activer le workflow de vérification
+
+jobs:
+  planifier:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONUNBUFFERED: "1"  # journaux affichés en direct (sinon visibles seulement à la fin)
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      ODDSPAPI_KEY: ${{ secrets.ODDSPAPI_KEY }}
+      API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+      API_FOOTBALL_QUOTA_PAR_MINUTE: ${{ secrets.API_FOOTBALL_QUOTA_PAR_MINUTE }}
+      STATS_DETAILLEES_ACTIVE: ${{ secrets.STATS_DETAILLEES_ACTIVE }}
+      SAISON_MAX_PLAN_GRATUIT: ${{ secrets.SAISON_MAX_PLAN_GRATUIT }}
+      TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      # Agent IA de planification des vérifications (plan_verification) — repli sur un plan déterministe sans clé
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+      DEEPSEEK_MODELES: ${{ vars.DEEPSEEK_MODELES }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      OPENROUTER_MODELES: ${{ vars.OPENROUTER_MODELES }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      GROQ_MODELES: ${{ vars.GROQ_MODELES }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_MODELES: ${{ vars.GEMINI_MODELES }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            bet_agent/requirements.txt
+
+      - run: pip install -r backend/requirements.txt -r bet_agent/requirements.txt
+
+      - name: Planifier la vérification
+        working-directory: backend
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          COUPONS: ${{ inputs.coupons }}
+        run: python -m app.taches planifier-verification --coupons "$COUPONS" --telegram
