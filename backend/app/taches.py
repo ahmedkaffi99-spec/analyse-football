@@ -19,7 +19,7 @@ from datetime import datetime, time, timedelta, timezone
 from sqlalchemy import select
 
 from app.database import SessionLocal, init_db
-from app.models import Coupon, Match, Run
+from app.models import Coupon, CouponOmbre, Match, Run
 from app.services import pipeline
 from app.services.bilan import envoyer_bilans
 from app.services.runs import cloturer_runs_interrompus, executer_run
@@ -244,6 +244,40 @@ def tache_envoyer(args):
         print(f"{'✅' if run.envoye_telegram else '❌'} Run {run.id} : {len(textes)} coupon(s) "
               f"{'envoyé(s)' if run.envoye_telegram else 'non envoyé(s) — voir erreur Telegram ci-dessus'}")
         return 0 if run.envoye_telegram else 1
+
+
+def tache_envoyer_ombre(args):
+    """Envoie sur Telegram les coupons d'UN modèle comparé en ombre (ex. GPT-6.1 Sol du run 269), sur demande explicite.
+    Chaque message porte le nom du modèle. Jamais deux fois sans --forcer (statut « envoye »)."""
+    from sqlalchemy.orm import selectinload
+
+    with SessionLocal() as db:
+        coupons = list(db.scalars(select(CouponOmbre).options(selectinload(CouponOmbre.jambes))
+                                  .where(CouponOmbre.run_id == args.run_id, CouponOmbre.modele == args.modele,
+                                         CouponOmbre.profil != "_resume").order_by(CouponOmbre.profil)))
+        if not coupons:
+            print(f"❌ Aucun coupon du modèle {args.modele} pour le run {args.run_id}.")
+            return 1
+        if all(c.statut == "envoye" for c in coupons) and not args.forcer:
+            print("ℹ️ Déjà envoyés sur Telegram — rien à faire (--forcer pour renvoyer).")
+            return 0
+        noms = {c.profil: c.nom for c in db.scalars(select(Coupon).where(Coupon.run_id == args.run_id))}
+        _, ae, _ = pipeline.modules()
+        from formatage_tickets import rediger_ticket_court
+        etiquette = args.etiquette or args.modele.split("/")[-1]
+        textes = []
+        for c in coupons:
+            sels = [{"match": j.libelle_match, "pick": {"categorie": j.categorie, "marche": j.marche, "selection": j.selection,
+                                                          "handicap": j.handicap, "cote": j.cote}} for j in c.jambes]
+            nom = noms.get(c.profil) or c.profil
+            textes.append(f"*{nom} — cote {c.cote_totale}* ({len(sels)} jambes) · 🤖 {etiquette}\n\n{rediger_ticket_court(sels)}")
+        ok = bool(ae.agent5_envoyer_coupons(textes))
+        if ok:
+            for c in coupons:
+                c.statut = "envoye"
+            db.commit()
+        print(f"{'✅' if ok else '❌'} {len(textes)} coupon(s) {etiquette} {'envoyé(s)' if ok else 'non envoyé(s)'}")
+        return 0 if ok else 1
 
 
 def tache_backfill(args):
@@ -574,6 +608,11 @@ def main(argv=None):
     p_envoi = sous.add_parser("envoyer", help="envoie sur Telegram les coupons déjà calculés d'un run")
     p_envoi.add_argument("--run-id", type=int, help="numéro du run (défaut : dernier run terminé)")
     p_envoi.add_argument("--forcer", action="store_true", help="renvoie même si déjà envoyé")
+    p_eo = sous.add_parser("envoyer-ombre", help="envoie sur Telegram les coupons d'un modèle comparé en ombre")
+    p_eo.add_argument("--run-id", type=int, required=True)
+    p_eo.add_argument("--modele", required=True, help="ex. openai/gpt-6.1-sol")
+    p_eo.add_argument("--etiquette", default="", help="nom affiché dans le message (défaut : fin de l'identifiant)")
+    p_eo.add_argument("--forcer", action="store_true")
     p_envoi.add_argument("--coupons", default="", help="numéros de coupons à envoyer, séparés par des virgules (défaut : tous ceux du run)")
     p_ombre = sous.add_parser("rapport-ombre", help="rapport du suivi en ombre (paris écartés, comparaison de modèles)")
     p_ombre.add_argument("--jours", type=int, default=30)
@@ -609,7 +648,7 @@ def main(argv=None):
     with SessionLocal() as db:
         cloturer_runs_interrompus(db)
     taches = {"run": tache_run, "verifier": tache_verifier, "planifier-verification": tache_planifier, "live": tache_live, "envoyer": tache_envoyer,
-              "tester-api": tache_tester_api, "backfill": tache_backfill, "apprendre": tache_apprendre, "rapport-ombre": tache_rapport_ombre}
+              "tester-api": tache_tester_api, "backfill": tache_backfill, "apprendre": tache_apprendre, "rapport-ombre": tache_rapport_ombre, "envoyer-ombre": tache_envoyer_ombre}
     return taches[args.tache](args)
 
 
