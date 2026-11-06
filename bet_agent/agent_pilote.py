@@ -328,6 +328,13 @@ def _fournisseurs_secours():
         return [m.strip() for m in (os.getenv(nom_env) or defaut).split(",") if m.strip()]
 
     courses = []
+    # Pilote imposé (PILOTE_MODELE, 06/11/2026) : MÊME boucle, MÊMES outils (recherche web, lecture de pages, catalogue, règles de
+    # Python) mais un autre modèle OpenRouter aux commandes ; aucun repli vers un autre modèle, pour une comparaison loyale.
+    if (os.getenv("PILOTE_MODELE") or "").strip():
+        if os.getenv("OPENROUTER_API_KEY"):   # indépendant de UTILISER_OPENROUTER : ce réglage est explicite
+            courses.append(("OpenRouter", "https://openrouter.ai/api/v1/chat/completions", os.getenv("OPENROUTER_API_KEY"),
+                            os.getenv("PILOTE_MODELE").strip(), {"reasoning": {"effort": "medium"}}))
+        return courses
     # En tête : DeepSeek via OpenRouter (demande du 22/10/2026 : « utilise celle d'OpenRouter, modèle DeepSeek »),
     # le même fournisseur/modèle que les agents de famille (OPENROUTER_MODELE_PAYANT).
     if _cle_openrouter():
@@ -355,6 +362,8 @@ def _fournisseurs_secours():
 def _secours_d_emblee():
     """True si le run démarre directement sur la liste de secours (OpenRouter/DeepSeek en tête) au lieu de
     tenter d'abord l'API officielle DeepSeek."""
+    if (os.getenv("PILOTE_MODELE") or "").strip():
+        return bool(os.getenv("OPENROUTER_API_KEY"))
     return FOURNISSEUR_PRINCIPAL == "openrouter" and bool(_cle_openrouter())
 
 
@@ -539,7 +548,8 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
 
     cle = os.getenv("DEEPSEEK_API_KEY")
     _secours.update(actif=_secours_d_emblee(), choix=None)   # nouvel essai du fournisseur principal à chaque run
-    if not cle and not secours_disponible():
+    compositeur = (os.getenv("COMPOSITEUR_MODELE") or "").strip()
+    if not cle and not secours_disponible() and not compositeur:
         print("❌ DEEPSEEK_API_KEY manquante et aucun fournisseur de secours — agent pilote indisponible.")
         return {"termine": False, "arret": "clé DEEPSEEK_API_KEY manquante", "envoye": False,
                 "donnees": None, "resultats_profils": [], "textes": None, "raison_abandon": None}
@@ -763,12 +773,51 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
         "abandonner": abandonner_outil,
     }
 
+    def composer_avec_un_seul_modele(modele):
+        """Mode « modèle seul » (COMPOSITEUR_MODELE, 06/11/2026) : ni boucle ni pilote DeepSeek pour les coupons. Collecte,
+        calculs et vetos Python restent identiques ; ce modèle compose les profils sur le même catalogue (mêmes règles de
+        Python), et envoyer_telegram suit le flux normal. Aucun repli sur DeepSeek : un échec abandonne le run."""
+        import ombre
+        collecter_donnees_outil()
+        for i in range(len(etat["profils"])):   # adaptations de plancher de cote/jambes par profil, comme dans la boucle
+            etat["profil_index"] = i
+            retour = voir_catalogue_outil()
+            if isinstance(retour, dict) and retour.get("erreur") and not etat["catalogue"]:
+                etat["termine"], etat["raison_abandon"] = True, retour["erreur"]
+                return {"termine": True, "arret": "catalogue vide", "tokens": 0}
+        etat["profil_index"] = 0
+        resultats = ombre.composer_ombre(etat["pool"], etat["profils"], etat["catalogue"], etat["catalogue_texte"], [modele],
+                                         duree_max_s=float(os.getenv("COMPOSITEUR_DUREE_MAX_S") or 420))
+        r = resultats[0]
+        etat["composition"] = {k: r.get(k) for k in ("modele", "erreur", "tokens_entree", "tokens_sortie", "cout_usd", "appels", "secondes")}
+        print(f"   🤖 Composition par {modele} : {len(r['coupons'])} coupon(s), coût {r.get('cout_usd')} $, erreur {r.get('erreur')}")
+        par_cle = {c["profil"]: c for c in r["coupons"] if c.get("selections")}
+        for profil in etat["profils"]:
+            c = par_cle.get(profil["cle"])
+            sel = c["selections"] if c else []
+            if sel:
+                cote_totale, _ = ae.calculer_stats_combine(sel)
+                etat["textes"].append(f"*{profil['nom']} — cote {cote_totale}* ({len(sel)} jambes)\n\n{ae.rediger_ticket_court(sel)}")
+            else:
+                etat["textes"].append(f"*{profil['nom']}*\n\n_Aucun pari jugé défendable pour ce profil._")
+            etat["resultats_profils"].append({"profil": profil, "selections": sel})
+        etat["profil_index"] = len(etat["profils"])
+        if not any(x["selections"] for x in etat["resultats_profils"]):
+            etat["termine"], etat["raison_abandon"] = True, f"{modele} : aucun coupon valide ({r.get('erreur')})"
+            return {"termine": True, "arret": "aucun coupon valide", "tokens": r.get("tokens_entree") or 0}
+        envoyer_telegram_outil()
+        return {"termine": True, "arret": f"composition par {modele}",
+                "tokens": (r.get("tokens_entree") or 0) + (r.get("tokens_sortie") or 0)}
+
     mission_defaut = f"Compose les {len(profils)} coupons combinés du jour."
     if contexte_supplementaire:
         mission_defaut = f"{contexte_supplementaire}\n\n{mission_defaut}"
-    resultat = piloter(cle, outils, lambda: etat["termine"], mission or mission_defaut,
-                       prompt_systeme=construire_prompt_systeme(profils),
-                       outils_schemas=construire_outils_schemas(profils))
+    if compositeur:
+        resultat = composer_avec_un_seul_modele(compositeur)
+    else:
+        resultat = piloter(cle, outils, lambda: etat["termine"], mission or mission_defaut,
+                           prompt_systeme=construire_prompt_systeme(profils),
+                           outils_schemas=construire_outils_schemas(profils))
     resultat["envoye"] = etat["envoye"]
     resultat["raison_abandon"] = etat["raison_abandon"]
     # Champs consommés par backend/app/services/runs.py (fusion du 30/09/2026, demande explicite
@@ -783,6 +832,10 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
     resultat["ombre"] = {"ecartes": etat.get("ecartes_details") or [], "pool": etat.get("pool"),
                          "catalogue": etat.get("catalogue"), "catalogue_texte": etat.get("catalogue_texte"),
                          "profils": profils}
+    if (os.getenv("PILOTE_MODELE") or "").strip() and isinstance(resultat.get("journal"), dict):
+        resultat["journal"]["modele_pilote"] = os.getenv("PILOTE_MODELE").strip()
+    if etat.get("composition") and isinstance(resultat.get("journal"), dict):
+        resultat["journal"]["composition"] = etat["composition"]
     return resultat
 
 
