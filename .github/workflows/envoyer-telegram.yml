@@ -13,6 +13,10 @@ on:
         description: "Envoyer plutôt les coupons de ce modèle comparé en ombre (ex. openai/gpt-6.1-sol), du run_id indiqué"
         required: false
         default: ""
+      coupons:
+        description: "Numéros de coupons à envoyer, séparés par des virgules (vide = tous ceux du run)"
+        required: false
+        default: ""
       forcer:
         description: "Renvoyer même si déjà envoyé"
         type: boolean
@@ -34,6 +38,7 @@ jobs:
       RUN_ID: ${{ inputs.run_id }}
       FORCER: ${{ inputs.forcer }}
       MODELE_OMBRE: ${{ inputs.modele_ombre }}
+      COUPONS: ${{ inputs.coupons }}
     steps:
       - uses: actions/checkout@v4
 
@@ -61,6 +66,10 @@ jobs:
               *[!0-9]*) echo "::error::run_id doit être un nombre"; exit 1 ;;
             esac
             ARGS="$ARGS --run-id $RUN_ID"
+          fi
+          if [ -n "$COUPONS" ] && [ -z "$MODELE_OMBRE" ]; then
+            case "$COUPONS" in *[!0-9,]*) echo "::error::coupons doit être une liste de nombres"; exit 1 ;; esac
+            ARGS="$ARGS --coupons $COUPONS"
           fi
           if [ "$FORCER" = "true" ]; then ARGS="$ARGS --forcer"; fi
           python -m app.taches $ARGS

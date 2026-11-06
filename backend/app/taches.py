@@ -233,7 +233,8 @@ def tache_envoyer(args):
         if run.envoye_telegram and not args.forcer:
             print(f"ℹ️ Run {run.id} déjà envoyé sur Telegram — rien à faire (--forcer pour renvoyer).")
             return 0
-        textes = [c.texte for c in run.coupons if c.texte]
+        retenus = {int(x) for x in str(getattr(args, "coupons", "") or "").replace(" ", "").split(",") if x}
+        textes = [c.texte for c in run.coupons if c.texte and (not retenus or c.id in retenus)]
         if not textes:
             print(f"❌ Run {run.id} ({run.statut}) : aucun coupon rédigé à envoyer.")
             return 1
@@ -612,6 +613,7 @@ def main(argv=None):
     p_eo.add_argument("--modele", required=True, help="ex. openai/gpt-6.1-sol")
     p_eo.add_argument("--etiquette", default="", help="nom affiché dans le message (défaut : fin de l'identifiant)")
     p_eo.add_argument("--forcer", action="store_true")
+    p_envoi.add_argument("--coupons", default="", help="numéros de coupons à envoyer, séparés par des virgules (défaut : tous ceux du run)")
     p_ombre = sous.add_parser("rapport-ombre", help="rapport du suivi en ombre (paris écartés, comparaison de modèles)")
     p_ombre.add_argument("--jours", type=int, default=30)
     p_appr = sous.add_parser("apprendre", help="étudie les erreurs des jours jugés et alimente la mémoire de l'agent")
