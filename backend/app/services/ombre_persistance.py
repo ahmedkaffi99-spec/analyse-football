@@ -105,7 +105,15 @@ def rapport(db, jours=30):
     coupons = list(db.scalars(select(CouponOmbre).where(CouponOmbre.jour >= depuis)))
     lignes.append("\n--- 1) Paris ÉCARTÉS par les agents de familles (réussite réelle) contre paris GARDÉS dans les coupons réels ---")
     for modele in ("ecartes_veto", "ecartes_ia"):
-        t = _taux([j for c in coupons if c.modele == modele for j in c.jambes])
+        vus, uniques = set(), []   # plusieurs runs le même jour (essais) : un pari écarté ne compte qu'une fois par jour
+        for c in coupons:
+            if c.modele == modele:
+                for j in c.jambes:
+                    cle = (c.jour, j.libelle_match, j.marche, j.selection)
+                    if cle not in vus:
+                        vus.add(cle)
+                        uniques.append(j)
+        t = _taux(uniques)
         lignes.append(f"{modele:14s} : " + (f"{t['gagnees']}/{t['n']} gagnées = {t['reussite_pct']} % (annoncé {t['annoncee_pct']} %, "
                                             f"rendement {t['roi_pct']} %/jambe)" if t else "aucun pari jugé pour l'instant"))
     from app.models import Coupon
