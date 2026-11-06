@@ -30,11 +30,12 @@ def _bande(texte):
     return float(a), float(b)
 
 
-def profils(nb_coupons=None, cote_totale=None, nb_min=None, nb_max=None, un_pari_par_match=True):
-    """Liste de profils. Sans choix particulier : les 3 bandes smart. Avec une bande de cote totale choisie, tous les coupons la
-    prennent ; sinon les bandes smart sont reprises dans l'ordre (5-10, 12-18, 20-35, puis on recommence)."""
+def profils(nb_coupons=None, cotes=None, nb_min=None, nb_max=None, un_pari_par_match=True):
+    """Liste de profils. `cotes` : une bande (« 12-18 ») ou None par coupon ; sans choix, bande smart du rang du coupon (5-10, 12-18,
+    20-35, puis on recommence). Les choix au-delà du nombre de coupons sont ignorés."""
     n = nb_coupons or 3
-    bandes = [_bande(cote_totale)] * n if cote_totale else [BANDES_DEFAUT[i % 3] for i in range(n)]
+    cotes = list(cotes or [])
+    bandes = [_bande(cotes[i]) if i < len(cotes) and cotes[i] else BANDES_DEFAUT[i % 3] for i in range(n)]
     maximum = nb_max or 12
     minimum = min(nb_min or 1, maximum)
     sortie = []
@@ -53,16 +54,13 @@ def construire(env):
     evenement = env.get("EVENEMENT", "")
     moteur = _choix(env.get("MOTEUR"), "") or "agent"
     modele = _choix(env.get("MODELE"), "") or "deepseek"
-    if modele not in MODELES and modele != "duel":
+    if modele not in MODELES:
         raise ValueError(f"modèle inconnu : {modele}")
     telegram = (env.get("TELEGRAM_IN") or "").strip().lower() == "true"
     ombre = (env.get("OMBRE_IN") or "").strip()
     vote = "aucun"
     if moteur != "agent":            # les autres moteurs ne connaissent ni pilote IA, ni profils personnalisés
         matrice = [{"etiquette": moteur, "pilote": ""}]
-    elif modele == "duel":           # DeepSeek puis GPT, mêmes réglages, jamais envoyé (comparaison loyale)
-        matrice = [{"etiquette": "DeepSeek", "pilote": ""}, {"etiquette": "GPT-6.1 Sol", "pilote": MODELES["gpt-6.1-sol"]}]
-        telegram, ombre = False, "aucun"
     else:
         matrice = [{"etiquette": modele, "pilote": MODELES[modele]}]
         if modele == "deepseek":     # vote final : seul le pilote DeepSeek est comparé aux autres modèles
@@ -81,7 +79,7 @@ def construire(env):
     sortie["depuis_run"] = (env.get("DEPUIS_RUN") or "").strip()
     sortie["ignorer_diversite"] = "true" if (env.get("IGNORER_DIVERSITE") or "").strip().lower() == "true" else ""
     if moteur == "agent":
-        liste = profils(_nombre(env.get("NB_COUPONS")), _choix(env.get("COTE_TOTALE")) or None,
+        liste = profils(_nombre(env.get("NB_COUPONS")), [_choix(env.get(f"COTE_COUPON_{i}")) or None for i in range(1, 6)],
                         _nombre(env.get("NB_JAMBES_MIN")), _nombre(env.get("NB_JAMBES_MAX")),
                         un_pari_par_match=_choix(env.get("UN_PARI_PAR_MATCH"), "actif") != "desactive")
         sortie["profils"] = json.dumps(liste, ensure_ascii=False, separators=(",", ":"))
