@@ -29,13 +29,25 @@ def _tranche(valeur, tranches):
     return None
 
 
+def _cle_jambe(j):
+    return (j.libelle_match, j.marche, j.selection, j.handicap)
+
+
 def jambes_jugees(db, depuis=None, jour=None):
-    requete = select(Jambe).join(Coupon, Jambe.coupon_id == Coupon.id).where(Jambe.resultat.in_(("gagne", "perdu")))
+    """Jambes jugées, DÉDOUBLONNÉES : une même jambe (match, marché, sélection) présente dans plusieurs coupons du même jour
+    ne compte qu'une fois — sinon une seule défaite pèse autant que le nombre de coupons qui la contiennent (06/11/2026)."""
+    requete = select(Jambe, Coupon.jour).join(Coupon, Jambe.coupon_id == Coupon.id).where(Jambe.resultat.in_(("gagne", "perdu")))
     if jour is not None:
         requete = requete.where(Coupon.jour == jour)
     if depuis is not None:
         requete = requete.where(Coupon.jour >= depuis)
-    return list(db.scalars(requete))
+    vues, uniques = set(), []
+    for j, jour_coupon in db.execute(requete):
+        cle = (jour_coupon,) + _cle_jambe(j)
+        if cle not in vues:
+            vues.add(cle)
+            uniques.append(j)
+    return uniques
 
 
 def statistiques(jambes):
@@ -67,70 +79,108 @@ def statistiques(jambes):
 
 
 def faits_du_jour(db, jour):
-    """Coupons du jour entièrement jugés, avec leurs jambes ; [] s'il en reste d'en attente."""
+    """Coupons du jour entièrement jugés, avec leurs jambes ; [] s'il en reste d'en attente.
+    `jambes_uniques` : chaque jambe une seule fois, avec le nombre de coupons qui la contenaient ;
+    `matchs_pieges` : matchs où au moins 2 jambes DIFFÉRENTES ont perdu (un seul scénario inattendu)."""
     coupons = [c for c in db.scalars(select(Coupon).where(Coupon.jour == jour)) if c.jambes]
     if not coupons or any(j.resultat == "en_attente" for c in coupons for j in c.jambes):
         return []
-    faits = []
+    faits, uniques = [], {}
     for c in coupons:
-        jambes = [{"match": j.libelle_match, "marche": j.marche, "selection": j.selection, "cote": j.cote,
-                   "proba_pct": j.proba_modele_pct, "edge_pct": j.edge_pct, "resultat": j.resultat,
-                   "categorie": j.categorie} for j in c.jambes]
+        jambes = []
+        for j in c.jambes:
+            x = {"match": j.libelle_match, "marche": j.marche, "selection": j.selection, "cote": j.cote,
+                 "proba_pct": j.proba_modele_pct, "edge_pct": j.edge_pct, "resultat": j.resultat, "categorie": j.categorie}
+            jambes.append(x)
+            u = uniques.setdefault(_cle_jambe(j), {**x, "nb_coupons": 0})
+            u["nb_coupons"] += 1
         perdues = [x for x in jambes if x["resultat"] == "perdu"]
         faits.append({"coupon": c.nom, "statut": c.statut, "cote_totale": c.cote_totale, "nb_jambes": len(jambes),
                       "jambes_perdues": len(perdues), "jambes": jambes,
                       "perdu_par_une_jambe": c.statut == "perdu" and len(perdues) == 1})
-    return faits
+    pieges = defaultdict(list)
+    for u in uniques.values():
+        if u["resultat"] == "perdu":
+            pieges[u["match"]].append(f"{u['marche']} {u['selection']}")
+    return {"coupons": faits, "jambes_uniques": list(uniques.values()),
+            "matchs_pieges": {m: v for m, v in pieges.items() if len(v) >= 2}}
 
 
 def lecons_deterministes(faits, stats):
+    coupons = faits["coupons"]
     lecons = []
-    perdus = [f for f in faits if f["statut"] == "perdu"]
-    gagnes = [f for f in faits if f["statut"] == "gagne"]
-    lecons.append(f"Bilan du jour : {len(gagnes)} coupon(s) gagné(s), {len(perdus)} perdu(s) sur {len(faits)}.")
+    perdus = [f for f in coupons if f["statut"] == "perdu"]
+    gagnes = [f for f in coupons if f["statut"] == "gagne"]
+    lecons.append(f"Bilan du jour : {len(gagnes)} coupon(s) gagné(s), {len(perdus)} perdu(s) sur {len(coupons)}.")
     une = [f for f in perdus if f["perdu_par_une_jambe"]]
+    vus = set()   # jambes déjà citées : jamais répétées dans une autre leçon
     if une:
-        tueuses = "; ".join(f"{x['match']} — {x['marche']} {x['selection']} @{x['cote']} (annoncé {x['proba_pct']} %)"
-                            for f in une for x in f["jambes"] if x["resultat"] == "perdu")
-        lecons.append(f"{len(une)} coupon(s) perdu(s) par UNE seule jambe : {tueuses}. Une jambe de plus dans un coupon est une chance de plus de perdre.")
-    for f in faits:
-        for x in f["jambes"]:
-            if x["resultat"] == "perdu" and (x["proba_pct"] or 0) >= 75:
-                lecons.append(f"Jambe annoncée à {x['proba_pct']} % PERDUE : {x['match']} — {x['marche']} {x['selection']} : "
-                              "une probabilité élevée ne protège pas ; vérifier si le contexte du match contredisait le modèle.")
+        tueuses = []
+        for f in une:
+            for x in f["jambes"]:
+                cle = (x["match"], x["marche"], x["selection"])
+                if x["resultat"] == "perdu" and cle not in vus:
+                    vus.add(cle)
+                    tueuses.append(f"{x['match']} — {x['marche']} {x['selection']} @{x['cote']} (annoncé {x['proba_pct']} %)")
+        lecons.append(f"{len(une)} coupon(s) perdu(s) par UNE seule jambe ({len(tueuses)} jambe(s) différente(s)) : "
+                      + "; ".join(tueuses[:5]) + ". Une jambe de plus dans un coupon est une chance de plus de perdre.")
+    for match, jambes in faits["matchs_pieges"].items():
+        lecons.append(f"Match piège : {match} — {len(jambes)} jambes DIFFÉRENTES perdues ({'; '.join(jambes[:3])}) : plusieurs "
+                      "paris sur un même match partagent le même scénario ; un résultat inattendu les fait tomber ensemble.")
+    fortes = sorted((u for u in faits["jambes_uniques"] if u["resultat"] == "perdu" and (u["proba_pct"] or 0) >= 75),
+                    key=lambda u: -(u["proba_pct"] or 0))[:4]
+    for u in fortes:
+        if (u["match"], u["marche"], u["selection"]) in vus:
+            continue
+        lecons.append(f"Jambe annoncée à {u['proba_pct']} % perdue : {u['match']} — {u['marche']} {u['selection']} "
+                      f"(dans {u['nb_coupons']} coupon(s)).")
     for tranche, v in stats["par_proba"].items():
         if v["n"] >= MIN_ECHANTILLON and v["annoncee_pct"] - v["reussite_pct"] >= 12:
             lecons.append(f"Jambes annoncées {tranche} (moyenne {v['annoncee_pct']} %) : réussite réelle {v['reussite_pct']} % "
-                          f"({v['gagnees']}/{v['n']}) — le modèle est trop optimiste sur cette tranche.")
+                          f"(n={v['n']}) — le modèle est trop optimiste sur cette tranche.")
     return lecons
 
 
 def _etude_par_ia(faits, stats, precedentes, appel_llm):
-    donnees = json.dumps({"coupons": faits, "statistiques_du_jour": stats}, ensure_ascii=False, separators=(",", ":"))[:20000]
-    memo = "\n".join(f"- {m}" for m in precedentes[:4]) or "(aucune)"
+    donnees = json.dumps({"coupons": [{k: v for k, v in f.items() if k != "jambes"} for f in faits["coupons"]],
+                          "jambes_uniques": faits["jambes_uniques"], "matchs_pieges": faits["matchs_pieges"],
+                          "statistiques_du_jour": stats}, ensure_ascii=False, separators=(",", ":"))[:20000]
+    memo = "\n".join(f"- {m[:500]}" for m in precedentes[:4]) or "(aucune)"
     prompt = (
         "Tu es l'analyste qui étudie les ERREURS d'un système de coupons combinés de football pour qu'il s'améliore. "
-        "Voici les FAITS vérifiés d'un jour (coupons, jambes gagnées/perdues, probabilités annoncées) :\n" + donnees +
-        "\n\nÉtudes précédentes (ne pas répéter ce qui y figure déjà) :\n" + memo +
+        "Voici les FAITS vérifiés d'un jour (chaque jambe est comptée UNE seule fois, nb_coupons = nombre de coupons qui la "
+        "contenaient) :\n" + donnees + "\n\nÉtudes précédentes (ne pas répéter ce qui y figure déjà) :\n" + memo +
         "\n\nRédige en français, 1200 caractères maximum, sans markdown : 1) ce qui a fait perdre ou gagner chaque coupon "
-        "(jambe tueuse, marché, contexte), 2) trois RÈGLES CONCRÈTES et vérifiables pour les prochains coupons, fondées "
-        "UNIQUEMENT sur ces chiffres (aucune règle tirée d'un échantillon de moins de 3 jambes ; ne dis jamais qu'un marché est "
-        "« mauvais » sur 1 ou 2 cas), 3) une question à vérifier la prochaine fois. N'invente aucune information.")
+        "(jambe tueuse, match piège, marché), 2) au plus TROIS règles concrètes pour les prochains coupons. RÈGLES DE "
+        "RIGUEUR : chaque règle doit citer entre parenthèses l'effectif sur lequel elle repose, sous la forme (n=NOMBRE) "
+        "avec NOMBRE >= 3 jambes ou matchs comparables pris dans les faits ci-dessus ; n'écris AUCUNE règle sur un marché, "
+        "une équipe ou un « biais du modèle » à partir de 1 ou 2 cas — dans ce cas écris seulement « à surveiller » ; un "
+        "edge élevé sur une jambe perdue n'est pas la preuve d'un biais ; 3) une question à vérifier la prochaine fois. "
+        "N'invente aucune information.")
     try:
         texte = (appel_llm(prompt, 1000) or "").strip()
-        return texte if len(texte) > 120 else None
     except Exception as e:
         print(f"ℹ️ Étude IA indisponible ({str(e)[:100]}) — leçons déterministes.")
         return None
+    if len(texte) <= 120:
+        return None
+    if "n=" not in texte.replace(" ", ""):   # aucune règle chiffrée : texte écarté plutôt que mémorisé
+        print("ℹ️ Étude IA sans effectif chiffré (n=…) — écartée, leçons déterministes conservées.")
+        return None
+    return texte
 
 
-def etudier_jour(db, jour, avec_ia=True):
-    """Étudie un jour de coupons et enregistre l'étude. Idempotent : une étude par jour. Renvoie le texte ou None."""
-    if db.scalar(select(MemoireAgent.id).where(MemoireAgent.jour == jour, MemoireAgent.type == "etude")) is not None:
+def etudier_jour(db, jour, avec_ia=True, refaire=False):
+    """Étudie un jour de coupons et enregistre l'étude. Idempotent : une étude par jour (refaire=True : recalcule et remplace
+    l'étude de ce jour — la mémoire est une table dérivée, jamais une donnée d'origine). Renvoie le texte ou None."""
+    existante = db.scalars(select(MemoireAgent).where(MemoireAgent.jour == jour, MemoireAgent.type == "etude")).all()
+    if existante and not refaire:
         return None
     faits = faits_du_jour(db, jour)
     if not faits:
         return None
+    for m in existante:
+        db.delete(m)
     stats = statistiques(jambes_jugees(db, jour=jour))
     deterministes = lecons_deterministes(faits, stats)
     texte = None
@@ -144,14 +194,14 @@ def etudier_jour(db, jour, avec_ia=True):
     return contenu
 
 
-def etudier_recents(db, jours=7, avec_ia=True):
+def etudier_recents(db, jours=7, avec_ia=True, refaire=False):
     """Étudie tous les jours récents entièrement jugés et pas encore étudiés."""
     faits = []
     aujourd_hui = datetime.now(timezone.utc).date()
     for decalage in range(jours, -1, -1):
         jour = aujourd_hui - timedelta(days=decalage)
         try:
-            texte = etudier_jour(db, jour, avec_ia=avec_ia)
+            texte = etudier_jour(db, jour, avec_ia=avec_ia, refaire=refaire)
         except Exception as e:
             print(f"⚠️ Étude du {jour} impossible : {str(e)[:120]}")
             continue

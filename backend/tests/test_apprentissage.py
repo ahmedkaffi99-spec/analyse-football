@@ -25,7 +25,7 @@ def test_etude_du_jour_enregistree_une_seule_fois():
     with SessionLocal() as db:
         _jour_avec_resultats(db, jour, ["gagne", "gagne", "perdu"])
         texte = apprentissage.etudier_jour(db, jour, avec_ia=False)
-        assert texte and "UNE seule jambe" in texte and "78.0 % PERDUE" in texte
+        assert texte and "UNE seule jambe" in texte and "annoncé 78.0 %" in texte
         assert db.query(MemoireAgent).count() == 1
         assert apprentissage.etudier_jour(db, jour, avec_ia=False) is None   # idempotent
         assert db.query(MemoireAgent).count() == 1
@@ -54,3 +54,54 @@ def test_statistiques_tranches():
         _jour_avec_resultats(db, date.today(), ["gagne", "perdu"])
         stats = apprentissage.statistiques(apprentissage.jambes_jugees(db))
         assert stats["par_proba"]["70-80 %"] == {"n": 2, "gagnees": 1, "reussite_pct": 50.0, "annoncee_pct": 78.0}
+
+
+def test_jambe_presente_dans_deux_coupons_comptee_une_fois():
+    """Une même jambe dans 2 coupons du jour = 1 jambe jugée, et une seule mention dans l'étude."""
+    jour = date.today() - timedelta(days=1)
+    with SessionLocal() as db:
+        for nom in ("🟢 A", "🟠 B"):
+            run = Run(source="api", statut="termine")
+            db.add(run)
+            db.flush()
+            c = Coupon(run_id=run.id, jour=jour, profil="coupon1", nom=nom, cote_totale=5.0, statut="perdu")
+            db.add(c)
+            db.flush()
+            db.add(Jambe(coupon_id=c.id, libelle_match="X vs Y", categorie="Total", marche="Over Under Full Time (2.5)",
+                         selection="Over", cote=1.4, proba_modele_pct=78.0, resultat="perdu"))
+        db.commit()
+        assert len(apprentissage.jambes_jugees(db, jour=jour)) == 1
+        texte = apprentissage.etudier_jour(db, jour, avec_ia=False)
+        assert texte.count("X vs Y") == 1 and "2 coupon(s) perdu(s) par UNE seule jambe (1 jambe(s) différente(s))" in texte
+
+
+def test_match_piege_deux_jambes_differentes_perdues():
+    jour = date.today() - timedelta(days=1)
+    with SessionLocal() as db:
+        run = Run(source="api", statut="termine")
+        db.add(run)
+        db.flush()
+        c = Coupon(run_id=run.id, jour=jour, profil="coupon1", nom="🟢 A", cote_totale=5.0, statut="perdu")
+        db.add(c)
+        db.flush()
+        for sel in ("Over", "Under"):
+            db.add(Jambe(coupon_id=c.id, libelle_match="X vs Y", categorie="Total", marche="Total", selection=sel,
+                         cote=1.4, proba_modele_pct=72.0, resultat="perdu"))
+        db.commit()
+        assert "Match piège : X vs Y" in apprentissage.etudier_jour(db, jour, avec_ia=False)
+
+
+def test_etude_ia_sans_effectif_ecartee_et_refaire_remplace():
+    jour = date.today() - timedelta(days=1)
+    with SessionLocal() as db:
+        _jour_avec_resultats(db, jour, ["gagne", "perdu"])
+        faits = apprentissage.faits_du_jour(db, jour)
+        stats = apprentissage.statistiques(apprentissage.jambes_jugees(db, jour=jour))
+        sans_n = lambda prompt, max_tokens: "Le marché des totaux est mauvais, évite-le. " * 10          # aucune règle chiffrée
+        avec_n = lambda prompt, max_tokens: "Règle : limiter les jambes à 5 maximum (n=6 coupons). " * 5
+        assert apprentissage._etude_par_ia(faits, stats, [], sans_n) is None
+        assert "n=6" in apprentissage._etude_par_ia(faits, stats, [], avec_n)
+        apprentissage.etudier_jour(db, jour, avec_ia=False)
+        assert apprentissage.etudier_jour(db, jour, avec_ia=False) is None
+        assert apprentissage.etudier_jour(db, jour, avec_ia=False, refaire=True)
+        assert db.query(MemoireAgent).count() == 1
