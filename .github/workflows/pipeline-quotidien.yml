@@ -63,6 +63,10 @@ on:
         description: "Âge MAXIMUM accepté des cotes API-Football pour CE run, en secondes (vide = 21600, soit 6 h) — à relever (ex: 43200) pour un run de nuit, quand les cotes ne sont plus rafraîchies : les marchés plus vieux que ce seuil sont écartés"
         type: string
         default: ""
+      seuil_proba_min:
+        description: "Probabilité MINIMALE par jambe pour CE run, en % (vide = 30)"
+        type: string
+        default: ""
       cote_min_jambe:
         description: "Cote MINIMALE par jambe pour CE run (vide = 1.2) — par ex. 1.2"
         type: string
@@ -151,14 +155,18 @@ jobs:
       DATE_CIBLE_DEBUT: ${{ inputs.date_debut }}
       DATE_CIBLE_FIN: ${{ inputs.date_fin }}
       MATCHS_MANUELS: ${{ inputs.matchs_manuels }}
-      PROFILS_JSON: ${{ inputs.profils_json }}
+      # SMART COUPON (demande du 06/11/2026) : l'IA choisit librement ; seules contraintes = les 3 bandes de cote totale
+      # (5-10, 12-18, 20-35). Un run manuel peut toujours imposer ses propres profils via l'entrée profils_json.
+      PROFILS_JSON: >-
+        ${{ inputs.profils_json || '[{"cle":"coupon1","nom":"🟢 SMART COUPON — cote 5 à 10","cote_min":5,"cote_max":10,"cote_totale_min":5,"cote_totale_max":10,"nb_jambes_min":1,"nb_jambes":12,"proba_min_pct":30,"proba_max_pct":100,"jambes_max_par_match":1,"match_repete_autorise":true,"max_coupons_par_match":3,"un_seul_pari_par_event":true,"consigne":"Smart coupon : tu choisis LIBREMENT les paris et le nombre de jambes les plus probables et les mieux valorisés ; seule contrainte : la cote totale doit être dans la bande de ce profil (une seule sélection par match dans un coupon)."},{"cle":"coupon2","nom":"🟠 SMART COUPON — cote 12 à 18","cote_min":12,"cote_max":18,"cote_totale_min":12,"cote_totale_max":18,"nb_jambes_min":1,"nb_jambes":12,"proba_min_pct":30,"proba_max_pct":100,"jambes_max_par_match":1,"match_repete_autorise":true,"max_coupons_par_match":3,"un_seul_pari_par_event":true,"consigne":"Smart coupon : tu choisis LIBREMENT les paris et le nombre de jambes les plus probables et les mieux valorisés ; seule contrainte : la cote totale doit être dans la bande de ce profil (une seule sélection par match dans un coupon)."},{"cle":"coupon3","nom":"🔴 SMART COUPON — cote 20 à 35","cote_min":20,"cote_max":35,"cote_totale_min":20,"cote_totale_max":35,"nb_jambes_min":1,"nb_jambes":12,"proba_min_pct":30,"proba_max_pct":100,"jambes_max_par_match":1,"match_repete_autorise":true,"max_coupons_par_match":3,"un_seul_pari_par_event":true,"consigne":"Smart coupon : tu choisis LIBREMENT les paris et le nombre de jambes les plus probables et les mieux valorisés ; seule contrainte : la cote totale doit être dans la bande de ce profil (une seule sélection par match dans un coupon)."}]' }}
       IGNORER_DIVERSITE_CROISEE: ${{ inputs.ignorer_diversite_croisee }}
       NB_JAMBES: ${{ inputs.nb_jambes }}
       NB_JAMBES_MIN: ${{ inputs.nb_jambes_min }}
       NB_MATCHS_POOL: ${{ inputs.nb_matchs_pool }}
       TTL_COTES_API_FOOTBALL_SECONDES: ${{ inputs.ttl_cotes_secondes }}
-      COTE_MIN_JAMBE: ${{ inputs.cote_min_jambe }}
-      COTE_MAX_JAMBE: ${{ inputs.cote_max_jambe }}
+      COTE_MIN_JAMBE: ${{ inputs.cote_min_jambe || '1.01' }}   # smart coupon : pas de plancher de cote par jambe
+      COTE_MAX_JAMBE: ${{ inputs.cote_max_jambe || '0' }}      # 0 = pas de plafond de cote par jambe
+      SEUIL_PROBA_MIN: ${{ inputs.seuil_proba_min || '30' }}   # probabilité minimale par jambe abaissée de 70 à 30 %
       # Comparaison parallèle bet_agent/moteur + capture hist_cotes + moteur central (shadow) :
       # jamais utilisées pour la sélection ni Telegram (voir runs.py) — vars du dépôt, vides par
       # défaut tant que l'utilisateur ne les active pas explicitement (Settings > Variables).
