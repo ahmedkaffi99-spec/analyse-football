@@ -78,6 +78,10 @@ on:
         description: "Cote MAXIMALE par jambe pour CE run (vide = 1.8, 0 = sans plafond) — par ex. 2"
         type: string
         default: ""
+      modeles_ombre:
+        description: "Comparaison de modèles en ombre pour CE run : identifiants OpenRouter séparés par des virgules (vide = liste par défaut ; « aucun » = désactivée) — ex. un seul modèle par run pour lancer plusieurs runs en parallèle"
+        type: string
+        default: ""
       ignorer_diversite_croisee:
         description: "Run PONCTUEL : désactive la diversité de catégorie entre profils (traite chaque profil comme le premier) — l'anti-doublon exact reste actif dans tous les cas"
         type: boolean
@@ -112,7 +116,8 @@ on:
         default: ""
 
 concurrency:
-  group: pipeline-quotidien
+  # Un groupe par liste de modèles en ombre : des runs d'essai « un modèle par run » peuvent tourner en parallèle ; les runs normaux gardent un seul groupe
+  group: pipeline-quotidien-${{ inputs.modeles_ombre || 'defaut' }}
   cancel-in-progress: false
 
 permissions:
@@ -150,7 +155,7 @@ jobs:
       # ACTIVÉE le 06/11/2026 (demande de l'utilisateur, identifiants et prix vérifiés sur OpenRouter) : le modèle actuel + Claude Sonnet 5.5
       # (2 $/10 $) + GPT-6.1 Sol (2 $/10 $) + Gemini 4 Argon (2 $/10 $ en promotion, 4 $/20 $ ensuite). Surcharge possible par la variable de
       # dépôt MODELES_OMBRE (vide = cette liste) ; pour désactiver, mettre la variable à "aucun". Plafond de dépense : 0,60 $ par modèle et par run.
-      MODELES_OMBRE: ${{ vars.MODELES_OMBRE || 'base,anthropic/claude-sonnet-5.5,openai/gpt-6.1-sol,google/gemini-4-argon' }}
+      MODELES_OMBRE: ${{ inputs.modeles_ombre || vars.MODELES_OMBRE || 'base,anthropic/claude-sonnet-5.5,openai/gpt-6.1-sol,google/gemini-4-argon' }}
       OMBRE_BUDGET_USD: ${{ vars.OMBRE_BUDGET_USD || '0.6' }}
       OPENROUTER_MODELES: ${{ vars.OPENROUTER_MODELES }}
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
