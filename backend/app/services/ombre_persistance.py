@@ -70,9 +70,12 @@ def executer_ombre(db, run, jour, ombre, index):
         _, _, _ = pipeline.modules()
         import ombre as ombre_ia
         modeles = ombre_ia.modeles_ombre()
-        if modeles and ombre.get("catalogue"):
-            print(f"🕶️ Comparaison en ombre : {', '.join(modeles)}")
-            resultats = ombre_ia.composer_ombre(ombre["pool"], ombre["profils"], ombre["catalogue"], ombre["catalogue_texte"], modeles)
+        resultats = list(ombre.get("resultats_vote") or [])   # déjà composés pour le vote final : jamais payés deux fois
+        restants = [m for m in modeles if m not in {r["modele"] for r in resultats}]
+        if restants and ombre.get("catalogue"):
+            print(f"🕶️ Comparaison en ombre : {', '.join(restants)}")
+            resultats += ombre_ia.composer_ombre(ombre["pool"], ombre["profils"], ombre["catalogue"], ombre["catalogue_texte"], restants)
+        if resultats:
             enregistrer_comparaison(db, run, jour, resultats, index)
             db.commit()
             for r in resultats:

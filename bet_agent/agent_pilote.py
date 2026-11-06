@@ -731,11 +731,40 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
                 "appelle envoyer_telegram.")
         return {"valide": True, "calculs": calculs, "info": info}
 
+    def _voter_entre_modeles():
+        """Vote final (MODELES_VOTE) : jamais bloquant, le coupon du pilote reste en cas d'échec."""
+        try:
+            import ombre
+            import vote
+            modeles = vote.modeles_vote()
+            if not modeles or not etat.get("catalogue") or not any(r["selections"] for r in etat["resultats_profils"]):
+                return
+            print(f"   🗳️ Vote final : {', '.join(modeles)} composent aussi les {len(etat['profils'])} coupons...")
+            resultats = ombre.composer_ombre(etat.get("pool"), etat["profils"], etat["catalogue"], etat.get("catalogue_texte"), modeles,
+                                             duree_max_s=float(os.getenv("VOTE_DUREE_MAX_S") or 300))
+            etat["vote_resultats"] = resultats
+            nouveaux, journal = vote.choisir(etat["profils"], etat["resultats_profils"], resultats)
+            etat["vote_journal"] = journal
+            for ligne in journal:
+                print(f"   🗳️ {ligne}")
+            etat["resultats_profils"] = nouveaux
+            etat["textes"] = []
+            for r in nouveaux:
+                profil, sel = r["profil"], r["selections"]
+                if sel:
+                    cote_totale, _ = ae.calculer_stats_combine(sel)
+                    etat["textes"].append(f"*{profil['nom']} — cote {cote_totale}* ({len(sel)} jambes)\n\n{ae.rediger_ticket_court(sel)}")
+                else:
+                    etat["textes"].append(f"*{profil['nom']}*\n\n_Aucun pari jugé défendable pour ce profil._")
+        except Exception as e:
+            print(f"   ℹ️ Vote final indisponible, coupons du pilote conservés : {str(e)[:160]}")
+
     def envoyer_telegram_outil():
         if etat["profil_index"] < len(etat["profils"]):
             return {"erreur": f"{len(etat['profils']) - etat['profil_index']} profil(s) sans coupon — "
                               "compose-les (proposer_coupon) avant d'envoyer"}
         etat["termine"] = True
+        _voter_entre_modeles()
         if not telegram:
             return {"envoye": False, "enregistre": True, "note": "envoi désactivé pour ce run (essai)"}
         if not any(r["selections"] for r in etat["resultats_profils"]) \
@@ -782,7 +811,9 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
     # Matière de la comparaison « en ombre » (paris écartés + catalogue revu), consommée par backend/app/services/runs.py
     resultat["ombre"] = {"ecartes": etat.get("ecartes_details") or [], "pool": etat.get("pool"),
                          "catalogue": etat.get("catalogue"), "catalogue_texte": etat.get("catalogue_texte"),
-                         "profils": profils}
+                         "profils": profils, "resultats_vote": etat.get("vote_resultats") or []}
+    if etat.get("vote_journal") and isinstance(resultat.get("journal"), dict):
+        resultat["journal"]["vote"] = etat["vote_journal"]
     return resultat
 
 
