@@ -94,6 +94,8 @@ FAMILLES = (
 FAMILLE_DERIVES = ("derives", "Marchés dérivés (score exact, mi-temps, marge de victoire...)",
                    "Aucune mesure réelle suffisante en production : paris longs, très variables.")
 
+CONSO_DERNIERE = {}   # dernière revue : {famille: [tokens entrée, tokens sortie]} estimés
+
 _PAR_CATEGORIE = {cat: f for f in FAMILLES for cat in f[2]}
 
 
@@ -171,10 +173,13 @@ def revoir_catalogue(catalogue, appel=None):
         print("   ⏱️ [Agents familles] budget IA épuisé — vetos Python seulement.")
         return ecartes, avis
 
+    conso = {}   # fid -> [tokens estimés en entrée, tokens estimés en sortie] (caractères / 4 : ordre de grandeur, pas une facture)
+
     def revue(tache):
         fid, nom, faits, restants = tache
-        texte = appel(_prompt_famille(fid, nom, faits, [_ligne(i, catalogue[i]) for i in restants]),
-                      max_tokens=3000, json_attendu=True)
+        prompt = _prompt_famille(fid, nom, faits, [_ligne(i, catalogue[i]) for i in restants])
+        texte = appel(prompt, max_tokens=3000, json_attendu=True)
+        conso[fid] = [len(prompt) // 4, len(texte if isinstance(texte, str) else json.dumps(texte or {})) // 4]
         reponse = json.loads(texte) if isinstance(texte, str) else texte
         return reponse if isinstance(reponse, dict) else {}
 
@@ -182,6 +187,12 @@ def revoir_catalogue(catalogue, appel=None):
         print(f"   🧑‍⚖️ [Agents familles] {len(taches)} agent(s) spécialiste(s) lancé(s) en parallèle...")
     with ThreadPoolExecutor(max_workers=max(1, len(taches)), thread_name_prefix="agent-famille") as pool:
         futurs = [(t, pool.submit(revue, t)) for t in taches]
+    CONSO_DERNIERE.clear()
+    CONSO_DERNIERE.update(conso)
+    if conso:
+        print("   📊 [Agents familles] consommation estimée (tokens entrée/sortie) : "
+              + " · ".join(f"{fid} {e}/{o}" for fid, (e, o) in conso.items())
+              + f" — total {sum(e for e, _ in conso.values())}/{sum(o for _, o in conso.values())}")
     for (fid, nom, faits, restants), futur in futurs:
         try:
             reponse = futur.result()

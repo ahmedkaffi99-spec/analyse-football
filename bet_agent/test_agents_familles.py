@@ -490,3 +490,11 @@ def test_plafond_edge_defaut_3_pct(monkeypatch):
     assert raison is None or "edge suspect" not in raison
     raison = af.veto_python({"edge_pct": -4.0, "categorie": "Total"})
     assert raison is None or "edge suspect" not in raison
+
+
+def test_consommation_estimee_par_famille():
+    cat = {"P1": {"match": "A vs B", "pick": {"categorie": "Total", "marche": "Total", "selection": "Over", "cote": 1.8, "proba_modele_pct": 60, "edge_pct": 1.0}}}
+    af.revoir_catalogue(cat, appel=lambda prompt, **k: '{"ecartes": [], "avis": []}')
+    assert "buts_total" in af.CONSO_DERNIERE
+    entree, sortie = af.CONSO_DERNIERE["buts_total"]
+    assert entree > 100 and sortie >= 1
