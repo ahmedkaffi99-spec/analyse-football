@@ -82,6 +82,10 @@ on:
         description: "Comparaison de modèles en ombre pour CE run : identifiants OpenRouter séparés par des virgules (vide = liste par défaut ; « aucun » = désactivée) — ex. un seul modèle par run pour lancer plusieurs runs en parallèle"
         type: string
         default: ""
+      pilote_modele:
+        description: "Modèle OpenRouter qui PILOTE le run avec la même boucle et les mêmes outils que DeepSeek (recherche web, pages, catalogue), sans repli — ex. openai/gpt-6.1-sol. Vide = DeepSeek"
+        required: false
+        default: ""
       compositeur_modele:
         description: "Modèle OpenRouter qui compose SEUL les coupons de CE run, à la place du pilote DeepSeek (ex. openai/gpt-6.1-sol) — vide = pilote DeepSeek habituel"
         required: false
@@ -148,6 +152,7 @@ jobs:
       # Les cotes restent celles de 1xBet SEUL (demande du 04/11). Valeurs possibles : 3 (prudent), 20 (libre, comportement du 03/11).
       EDGE_MAX_AGENT_PCT: "6"
       COMPOSITEUR_MODELE: ${{ inputs.compositeur_modele }}
+      PILOTE_MODELE: ${{ inputs.pilote_modele }}
       API_FOOTBALL_QUOTA_PAR_MINUTE: ${{ secrets.API_FOOTBALL_QUOTA_PAR_MINUTE }}
       STATS_DETAILLEES_ACTIVE: ${{ secrets.STATS_DETAILLEES_ACTIVE }}
       SAISON_MAX_PLAN_GRATUIT: ${{ secrets.SAISON_MAX_PLAN_GRATUIT }}

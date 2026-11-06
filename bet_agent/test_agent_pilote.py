@@ -830,3 +830,14 @@ class TestJournalAgent(unittest.TestCase):
         self.assertEqual(j["strategies"], {"c1": "prudent"})
         self.assertEqual(j["raisons"]["c1"][0]["pari"], "Total → Over")
         self.assertEqual(len(j["raisons"]["c1"][0]["raison"]), 200)
+
+
+def test_pilote_modele_impose_ne_laisse_que_ce_modele(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "cle-or")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "cle-ds")
+    monkeypatch.setenv("PILOTE_MODELE", "openai/gpt-6.1-sol")
+    courses = pilote._fournisseurs_secours()
+    assert [c[3] for c in courses] == ["openai/gpt-6.1-sol"]   # ni DeepSeek ni repli gratuit
+    assert pilote._secours_d_emblee() is True
+    monkeypatch.delenv("PILOTE_MODELE")
+    assert len(pilote._fournisseurs_secours()) > 1

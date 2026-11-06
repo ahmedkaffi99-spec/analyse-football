@@ -328,6 +328,13 @@ def _fournisseurs_secours():
         return [m.strip() for m in (os.getenv(nom_env) or defaut).split(",") if m.strip()]
 
     courses = []
+    # Pilote imposé (PILOTE_MODELE, 06/11/2026) : MÊME boucle, MÊMES outils (recherche web, lecture de pages, catalogue, règles de
+    # Python) mais un autre modèle OpenRouter aux commandes ; aucun repli vers un autre modèle, pour une comparaison loyale.
+    if (os.getenv("PILOTE_MODELE") or "").strip():
+        if os.getenv("OPENROUTER_API_KEY"):   # indépendant de UTILISER_OPENROUTER : ce réglage est explicite
+            courses.append(("OpenRouter", "https://openrouter.ai/api/v1/chat/completions", os.getenv("OPENROUTER_API_KEY"),
+                            os.getenv("PILOTE_MODELE").strip(), {"reasoning": {"effort": "medium"}}))
+        return courses
     # En tête : DeepSeek via OpenRouter (demande du 22/10/2026 : « utilise celle d'OpenRouter, modèle DeepSeek »),
     # le même fournisseur/modèle que les agents de famille (OPENROUTER_MODELE_PAYANT).
     if _cle_openrouter():
@@ -355,6 +362,8 @@ def _fournisseurs_secours():
 def _secours_d_emblee():
     """True si le run démarre directement sur la liste de secours (OpenRouter/DeepSeek en tête) au lieu de
     tenter d'abord l'API officielle DeepSeek."""
+    if (os.getenv("PILOTE_MODELE") or "").strip():
+        return bool(os.getenv("OPENROUTER_API_KEY"))
     return FOURNISSEUR_PRINCIPAL == "openrouter" and bool(_cle_openrouter())
 
 
@@ -823,6 +832,8 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
     resultat["ombre"] = {"ecartes": etat.get("ecartes_details") or [], "pool": etat.get("pool"),
                          "catalogue": etat.get("catalogue"), "catalogue_texte": etat.get("catalogue_texte"),
                          "profils": profils}
+    if (os.getenv("PILOTE_MODELE") or "").strip() and isinstance(resultat.get("journal"), dict):
+        resultat["journal"]["modele_pilote"] = os.getenv("PILOTE_MODELE").strip()
     if etat.get("composition") and isinstance(resultat.get("journal"), dict):
         resultat["journal"]["composition"] = etat["composition"]
     return resultat
