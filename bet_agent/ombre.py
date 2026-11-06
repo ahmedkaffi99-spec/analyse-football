@@ -20,7 +20,7 @@ URL_OPENROUTER = "https://openrouter.ai/api/v1/chat/completions"
 
 
 def modeles_ombre():
-    return [m.strip() for m in (os.getenv("MODELES_OMBRE") or "").split(",") if m.strip()]
+    return [m.strip() for m in (os.getenv("MODELES_OMBRE") or "").split(",") if m.strip() and m.strip().lower() != "aucun"]
 
 
 def details_ecartes(catalogue, ecartes, avis):

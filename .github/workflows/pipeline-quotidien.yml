@@ -147,8 +147,11 @@ jobs:
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
       # Comparaison de modèles IA « en ombre » (06/11/2026) : identifiants OpenRouter séparés par des virgules (variable de dépôt
       # MODELES_OMBRE, vide = désactivée, aucune dépense). « base » = modèle actuel. Plafond par run : OMBRE_BUDGET_USD (défaut 1.5).
-      MODELES_OMBRE: ${{ vars.MODELES_OMBRE }}
-      OMBRE_BUDGET_USD: ${{ vars.OMBRE_BUDGET_USD }}
+      # ACTIVÉE le 06/11/2026 (demande de l'utilisateur, identifiants et prix vérifiés sur OpenRouter) : le modèle actuel + Claude Sonnet 5.5
+      # (2 $/10 $) + GPT-6.1 Sol (2 $/10 $) + Gemini 4 Argon (2 $/10 $ en promotion, 4 $/20 $ ensuite). Surcharge possible par la variable de
+      # dépôt MODELES_OMBRE (vide = cette liste) ; pour désactiver, mettre la variable à "aucun". Plafond de dépense : 0,60 $ par modèle et par run.
+      MODELES_OMBRE: ${{ vars.MODELES_OMBRE || 'base,anthropic/claude-sonnet-5.5,openai/gpt-6.1-sol,google/gemini-4-argon' }}
+      OMBRE_BUDGET_USD: ${{ vars.OMBRE_BUDGET_USD || '0.6' }}
       OPENROUTER_MODELES: ${{ vars.OPENROUTER_MODELES }}
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       GROQ_MODELES: ${{ vars.GROQ_MODELES }}
