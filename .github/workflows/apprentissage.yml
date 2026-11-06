@@ -67,3 +67,7 @@ jobs:
           else
             python -m app.taches apprendre --jours "${JOURS:-14}"
           fi
+
+      - name: Rapport du suivi en ombre
+        working-directory: backend
+        run: python -m app.taches rapport-ombre --jours 30

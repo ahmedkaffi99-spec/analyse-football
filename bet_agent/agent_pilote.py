@@ -582,7 +582,13 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
             # donc ABSENTS du moteur agent. Même revue (veto Python + avis IA par famille) avant
             # que l'IA pilote ne voie le catalogue ; toute défaillance laisse le catalogue intact.
             if etat["catalogue"] and agents_familles.actif():
+                catalogue_avant_revue = dict(etat["catalogue"])
                 ecartes, avis = agents_familles.revoir_catalogue(etat["catalogue"], ae.appel_llm)
+                try:  # suivi des paris écartés (06/11/2026) : jugés ensuite avec les résultats réels
+                    import ombre
+                    etat["ecartes_details"] = ombre.details_ecartes(catalogue_avant_revue, ecartes, avis)
+                except Exception as e:
+                    print(f"   ℹ️ Suivi des paris écartés indisponible : {str(e)[:100]}")
                 if ecartes or avis:
                     etat["catalogue"], etat["catalogue_texte"] = st.construire_catalogue(
                         etat["pool"], seuil_proba=st.seuil_catalogue(etat["profils"]), ecartes=ecartes, avis=avis)
@@ -773,6 +779,10 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
     resultat["resultats_profils"] = etat["resultats_profils"]
     resultat["textes"] = etat["textes"] if etat["textes"] else None
     resultat["journal"] = construire_journal(etat)
+    # Matière de la comparaison « en ombre » (paris écartés + catalogue revu), consommée par backend/app/services/runs.py
+    resultat["ombre"] = {"ecartes": etat.get("ecartes_details") or [], "pool": etat.get("pool"),
+                         "catalogue": etat.get("catalogue"), "catalogue_texte": etat.get("catalogue_texte"),
+                         "profils": profils}
     return resultat
 
 

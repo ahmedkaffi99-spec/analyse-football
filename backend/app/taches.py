@@ -89,6 +89,13 @@ def tache_verifier(args):
     with SessionLocal() as db:
         compte = verifier_coupons_en_attente(db)
         print(f"🔎 Jambes jugées : {dict(compte) or 'aucune (rien en attente ou matchs pas terminés)'}")
+        try:  # jambes « en ombre » (paris écartés, modèles comparés) : jugées avec les mêmes résultats ; jamais bloquant
+            from app.services import ombre_persistance
+            compte_ombre = ombre_persistance.juger_ombre(db)
+            if compte_ombre:
+                print(f"🕶️ Jambes en ombre jugées : {dict(compte_ombre)}")
+        except Exception as e:
+            print(f"ℹ️ Jugement des jambes en ombre impossible : {str(e)[:120]}")
         if args.telegram:
             _, ae, _ = pipeline.modules()
             # Heure limite du plan dépassée : rapport final envoyé même si un match manque (partiel).
@@ -109,6 +116,14 @@ def tache_verifier(args):
             if getattr(args, "si_du", False) and not plan_verification.plans_ouverts(db):
                 # Rapport final envoyé pour tous les coupons planifiés : plus aucun passage jusqu'au prochain run.
                 github_actions.activer_workflow(actif=False)
+    return 0
+
+
+def tache_rapport_ombre(args):
+    """Rapport du suivi en ombre : paris écartés contre gardés, comparaison de modèles (réussite, bande, tokens, coût)."""
+    from app.services import ombre_persistance
+    with SessionLocal() as db:
+        print(ombre_persistance.rapport(db, jours=args.jours))
     return 0
 
 
@@ -558,6 +573,8 @@ def main(argv=None):
     p_envoi = sous.add_parser("envoyer", help="envoie sur Telegram les coupons déjà calculés d'un run")
     p_envoi.add_argument("--run-id", type=int, help="numéro du run (défaut : dernier run terminé)")
     p_envoi.add_argument("--forcer", action="store_true", help="renvoie même si déjà envoyé")
+    p_ombre = sous.add_parser("rapport-ombre", help="rapport du suivi en ombre (paris écartés, comparaison de modèles)")
+    p_ombre.add_argument("--jours", type=int, default=30)
     p_appr = sous.add_parser("apprendre", help="étudie les erreurs des jours jugés et alimente la mémoire de l'agent")
     p_appr.add_argument("--jour", help="AAAA-MM-JJ : étudie ce jour seulement")
     p_appr.add_argument("--jours", type=int, default=14, help="sinon : étudie les N derniers jours jugés (défaut 14)")
@@ -590,7 +607,7 @@ def main(argv=None):
     with SessionLocal() as db:
         cloturer_runs_interrompus(db)
     taches = {"run": tache_run, "verifier": tache_verifier, "planifier-verification": tache_planifier, "live": tache_live, "envoyer": tache_envoyer,
-              "tester-api": tache_tester_api, "backfill": tache_backfill, "apprendre": tache_apprendre}
+              "tester-api": tache_tester_api, "backfill": tache_backfill, "apprendre": tache_apprendre, "rapport-ombre": tache_rapport_ombre}
     return taches[args.tache](args)
 
 

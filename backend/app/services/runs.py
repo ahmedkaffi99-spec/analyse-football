@@ -147,6 +147,17 @@ def executer_run(run_id, envoyer_telegram=False, rediger=True, depuis_run=None, 
                     if len(texte_journal) > 30000:  # jamais un JSON tronqué : on retire les raisons détaillées
                         texte_journal = json.dumps(dict(journal, raisons={}), ensure_ascii=False, separators=(",", ":"))
                     run.detail = "JOURNAL_AGENT " + texte_journal
+                # Suivi « en ombre » (06/11/2026) : paris écartés par les agents de familles + comparaison de modèles IA (désactivée
+                # sans MODELES_OMBRE). Coupons réels figés AVANT, et jamais bloquant : toute erreur est ignorée.
+                try:
+                    db.commit()
+                    from app.services.ombre_persistance import executer_ombre
+                    jour_ombre = next((c.jour for c in run.coupons), None)
+                    if jour_ombre is not None and resultat_agent.get("ombre"):
+                        executer_ombre(db, run, jour_ombre, resultat_agent["ombre"], index)
+                except Exception as e:
+                    db.rollback()
+                    print(f"ℹ️ Suivi en ombre indisponible : {str(e)[:120]}")
             else:
                 run.statut = "abandonne"
                 run.detail = (resultat_agent.get("raison_abandon") or resultat_agent.get("arret")

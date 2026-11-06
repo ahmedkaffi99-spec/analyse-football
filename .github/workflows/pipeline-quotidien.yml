@@ -145,6 +145,10 @@ jobs:
       DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
       DEEPSEEK_MODELES: ${{ vars.DEEPSEEK_MODELES }}
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      # Comparaison de modèles IA « en ombre » (06/11/2026) : identifiants OpenRouter séparés par des virgules (variable de dépôt
+      # MODELES_OMBRE, vide = désactivée, aucune dépense). « base » = modèle actuel. Plafond par run : OMBRE_BUDGET_USD (défaut 1.5).
+      MODELES_OMBRE: ${{ vars.MODELES_OMBRE }}
+      OMBRE_BUDGET_USD: ${{ vars.OMBRE_BUDGET_USD }}
       OPENROUTER_MODELES: ${{ vars.OPENROUTER_MODELES }}
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       GROQ_MODELES: ${{ vars.GROQ_MODELES }}

@@ -740,15 +740,20 @@ def valider(proposition, catalogue, profils, signatures_existantes=(), selection
     return acceptes, problemes, calculs
 
 
-def composer_coupons(pool, profils, appel=None, nb_tours=NB_TOURS_MAX):
+def composer_coupons(pool, profils, appel=None, nb_tours=NB_TOURS_MAX, catalogue_pret=None):
     """Boucle IA ⇄ Python. Renvoie {"coupons": {cle: {...}}, "analyse_matchs": [...]} avec les
-    profils validés (les autres absents → repli automatique), ou None si l'IA n'a rien produit."""
+    profils validés (les autres absents → repli automatique), ou None si l'IA n'a rien produit.
+    catalogue_pret = (catalogue, texte) : catalogue DÉJÀ revu par les agents de familles (comparaison de modèles « en ombre »,
+    06/11/2026) — pas de nouvelle revue, tous les modèles comparés voient exactement les mêmes paris."""
     appel = appel or ae.appel_llm
     seuil = seuil_catalogue(profils)
-    catalogue, catalogue_texte = construire_catalogue(pool, seuil_proba=seuil)
+    if catalogue_pret:
+        catalogue, catalogue_texte = catalogue_pret
+    else:
+        catalogue, catalogue_texte = construire_catalogue(pool, seuil_proba=seuil)
     if not catalogue:
         return None
-    if agents_familles.actif():
+    if not catalogue_pret and agents_familles.actif():
         ecartes, avis = agents_familles.revoir_catalogue(catalogue, appel)
         if ecartes or avis:
             catalogue, catalogue_texte = construire_catalogue(pool, seuil_proba=seuil, ecartes=ecartes, avis=avis)
