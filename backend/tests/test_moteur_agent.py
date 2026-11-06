@@ -135,15 +135,15 @@ def test_moteur_agent_cle_deepseek_manquante_abandonne_sans_donnees(monkeypatch)
         assert run.nb_matchs == 0  # aucune collecte enregistrée
 
 
-def test_moteur_agent_refuse_depuis_run(monkeypatch):
+def test_moteur_agent_depuis_run_inconnu_clot_le_run_en_erreur_explicite(monkeypatch):
     _faux_agent_pilote(monkeypatch, {"donnees": None, "resultats_profils": []})
 
-    assert taches.main(["run", "--moteur", "agent", "--depuis-run", "1"]) == 1
+    assert taches.main(["run", "--moteur", "agent", "--depuis-run", "999"]) == 1
 
     with SessionLocal() as db:
         run = db.query(Run).one()
         assert run.statut == "erreur"
-        assert "depuis-run" in run.detail
+        assert "999" in run.detail and "introuvable" in run.detail
 
 
 def test_moteur_agent_est_le_defaut_avec_profil_12_a_15_jambes(monkeypatch):
@@ -235,3 +235,23 @@ def test_moteur_agent_enregistre_le_journal_des_recherches_dans_run_detail(monke
         relu = json.loads(run.detail[len("JOURNAL_AGENT "):])
         assert relu["recherches"][0]["requete"] == "Chelsea composition"
         assert relu["strategies"][profil["cle"]] == "prudent"
+
+
+def test_moteur_agent_accepte_depuis_run(monkeypatch):
+    """--depuis-run n'est plus refusé avec le moteur agent : la collecte du run source est transmise à l'agent."""
+    from app.services import runs
+    recu = {}
+    monkeypatch.setattr(runs, "charger_collecte_du_jour", lambda db, run_id: {"nb_matchs_avec_marches": 3, "marqueur": run_id})
+
+    class FauxAgent:
+        @staticmethod
+        def executer(**kw):
+            recu.update(kw)
+            return {"donnees": None, "resultats_profils": [], "envoye": False, "raison_abandon": "essai"}
+    monkeypatch.setattr(runs.pipeline, "charger_agent_pilote", lambda: FauxAgent)
+    from app.database import SessionLocal
+    from app.models import Run
+    with SessionLocal() as db:
+        run = Run(source="test", statut="en_cours"); db.add(run); db.commit(); rid = run.id
+    runs.executer_run(rid, envoyer_telegram=False, depuis_run=271, moteur="agent")
+    assert recu["donnees_reprises"]["marqueur"] == 271

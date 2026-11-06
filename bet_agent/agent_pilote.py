@@ -518,7 +518,7 @@ def piloter(cle, outils, est_termine, mission, prompt_systeme=None, outils_schem
 
 
 def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croisee=False,
-            contexte_supplementaire=None):
+            contexte_supplementaire=None, donnees_reprises=None):
     """Branche le moteur agentique ci-dessus (piloter) sur la collecte/analyse réelles :
     jusqu'ici (29/09/2026) ce fichier ne définissait que le moteur (prompt, schémas d'outils,
     boucle) sans jamais être appelé par aucun workflow — demande explicite de l'utilisateur
@@ -564,6 +564,9 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
         "profils": profils, "profil_index": 0, "textes": [], "resultats_profils": [],
         "nb_recherches": 0, "nb_lectures": 0, "journal_recherches": [], "journal_pages": [], "strategies": {}, "termine": False, "envoye": False, "raison_abandon": None,
     }
+
+    if donnees_reprises is not None:   # collecte d'un run précédent du jour (--depuis-run) : l'outil collecter_donnees ne rappelle aucune API
+        etat["donnees"] = donnees_reprises
 
     def collecter_donnees_outil():
         if etat["donnees"] is not None:
