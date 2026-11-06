@@ -94,11 +94,19 @@ FAMILLES = (
 FAMILLE_DERIVES = ("derives", "Marchés dérivés (score exact, mi-temps, marge de victoire...)",
                    "Aucune mesure réelle suffisante en production : paris longs, très variables.")
 
+CONSO_DERNIERE = {}   # dernière revue : {famille: [tokens entrée, tokens sortie]} estimés
+
 _PAR_CATEGORIE = {cat: f for f in FAMILLES for cat in f[2]}
 
 
 def actif():
     return (os.getenv("AGENTS_FAMILLES_ACTIFS") or "1").strip().lower() not in ("0", "false", "non", "no")
+
+
+def ia_active():
+    """Un appel IA par famille (AGENTS_FAMILLES_IA=1). Par défaut NON (06/11/2026, « smart » simplifié) : les vetos
+    Python des familles restent toujours appliqués ; l'IA ne s'ajoutait qu'à ~5 % des écarts (9 sur 166 le 06/11)."""
+    return (os.getenv("AGENTS_FAMILLES_IA") or "0").strip().lower() in ("1", "true", "oui", "yes")
 
 
 def famille_de(categorie):
@@ -167,14 +175,20 @@ def revoir_catalogue(catalogue, appel=None):
         nom, faits = (next((f[1], f[3]) for f in FAMILLES if f[0] == fid) if fid != "derives"
                       else (FAMILLE_DERIVES[1], FAMILLE_DERIVES[2]))
         taches.append((fid, nom, faits, restants))
+    if taches and not ia_active():
+        print("   🧑‍⚖️ [Agents familles] IA désactivée (mode smart simplifié) — vetos Python seulement.")
+        return ecartes, avis
     if taches and ae.budget_ia_epuise():
         print("   ⏱️ [Agents familles] budget IA épuisé — vetos Python seulement.")
         return ecartes, avis
 
+    conso = {}   # fid -> [tokens estimés en entrée, tokens estimés en sortie] (caractères / 4 : ordre de grandeur, pas une facture)
+
     def revue(tache):
         fid, nom, faits, restants = tache
-        texte = appel(_prompt_famille(fid, nom, faits, [_ligne(i, catalogue[i]) for i in restants]),
-                      max_tokens=3000, json_attendu=True)
+        prompt = _prompt_famille(fid, nom, faits, [_ligne(i, catalogue[i]) for i in restants])
+        texte = appel(prompt, max_tokens=3000, json_attendu=True)
+        conso[fid] = [len(prompt) // 4, len(texte if isinstance(texte, str) else json.dumps(texte or {})) // 4]
         reponse = json.loads(texte) if isinstance(texte, str) else texte
         return reponse if isinstance(reponse, dict) else {}
 
@@ -182,6 +196,12 @@ def revoir_catalogue(catalogue, appel=None):
         print(f"   🧑‍⚖️ [Agents familles] {len(taches)} agent(s) spécialiste(s) lancé(s) en parallèle...")
     with ThreadPoolExecutor(max_workers=max(1, len(taches)), thread_name_prefix="agent-famille") as pool:
         futurs = [(t, pool.submit(revue, t)) for t in taches]
+    CONSO_DERNIERE.clear()
+    CONSO_DERNIERE.update(conso)
+    if conso:
+        print("   📊 [Agents familles] consommation estimée (tokens entrée/sortie) : "
+              + " · ".join(f"{fid} {e}/{o}" for fid, (e, o) in conso.items())
+              + f" — total {sum(e for e, _ in conso.values())}/{sum(o for _, o in conso.values())}")
     for (fid, nom, faits, restants), futur in futurs:
         try:
             reponse = futur.result()

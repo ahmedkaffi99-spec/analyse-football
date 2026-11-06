@@ -101,6 +101,7 @@ def _resume_coupon(cle, profil, selections):
 def _composer_un_modele(modele, pool, profils, catalogue, catalogue_texte, cle, appel_base, budget_usd, nb_tours, echeance, sortie):
     t0 = time.time()
     mesure = None
+    rejets = []   # rejets de Python (règles non respectées), du dernier tour au premier
     try:
         if modele == "base":
             appel = appel_base or ae.appel_llm
@@ -111,7 +112,7 @@ def _composer_un_modele(modele, pool, profils, catalogue, catalogue_texte, cle, 
             appel = mesure = AppelOpenRouter(modele, cle, budget_usd, echeance=echeance)
         try:
             resultat = st.composer_coupons(pool, profils, appel=appel, nb_tours=nb_tours, catalogue_pret=(catalogue, catalogue_texte),
-                                           controle_budget=False)
+                                           controle_budget=False, diagnostic=rejets)
             erreur = None
         except Exception as e:
             resultat, erreur = None, f"{type(e).__name__}: {str(e)[:200]}"
@@ -124,7 +125,9 @@ def _composer_un_modele(modele, pool, profils, catalogue, catalogue_texte, cle, 
             if mesure is not None and mesure.erreurs:
                 erreur = "appel(s) en échec : " + mesure.erreurs[-1]
             elif mesure is not None and mesure.appels:
-                erreur = f"aucun coupon valide après {mesure.appels} appel(s) (règles de Python non respectées)"
+                erreur = f"aucun coupon valide après {mesure.appels} appel(s) ; rejets de Python : " + " | ".join(r[:140] for r in rejets[-3:])
+            elif mesure is None:   # modèle actuel : appels non mesurés
+                erreur = "aucun coupon valide (modèle actuel, appels non mesurés)" + ("; rejets : " + " | ".join(r[:140] for r in rejets[-3:]) if rejets else "")
             else:
                 erreur = "aucun appel effectué"
         sortie[modele] = {"modele": modele, "erreur": erreur, "coupons": coupons, "secondes": round(time.time() - t0),
