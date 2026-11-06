@@ -8,6 +8,7 @@ from sqlalchemy import select
 from app.models import Coupon
 
 ICONES = {"gagne": "✅", "perdu": "❌", "push": "➖ remboursé", "non_verifiable": "❓ non vérifiable",
+          "demi_gagne": "🟢½ demi-gain", "demi_perdu": "🔴½ demi-perte",
           "en_attente": "⏳", "annule": "🚫 match annulé/reporté (remboursé)",
           "perime": "⌛ périmé (résultat jamais confirmé)"}
 VERDICTS = {"gagne": "✅ GAGNÉ", "perdu": "❌ PERDU", "incertain": "❓ INCERTAIN (au moins une jambe non vérifiable)"}
@@ -31,6 +32,8 @@ def construire_message(coupons, partiel=False):
         detail = f"✅ {compte['gagne']} · ❌ {compte['perdu']}"
         if compte["push"]:
             detail += f" · ➖ {compte['push']} remboursé(s)"
+        if compte["demi_gagne"] or compte["demi_perdu"]:
+            detail += f" · ½ {compte['demi_gagne']} demi-gain · {compte['demi_perdu']} demi-perte"
         if compte["non_verifiable"]:
             detail += f" · ❓ {compte['non_verifiable']} non vérifiable(s)"
         if compte["annule"]:

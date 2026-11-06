@@ -92,19 +92,22 @@ class TestAmbiguiteEtLignesDeQuart(unittest.TestCase):
         with mock.patch.object(cd, "_appel_statistiques_fixture", return_value=blocs):
             self.assertIsNone(vr.recuperer_statistiques_finales_api_football(123, "Atletico"))
 
-    def test_total_ligne_de_quart_net_ou_non_verifiable(self):
+    def test_total_ligne_de_quart_net_ou_demi(self):
         # Over 2.25 : moitiés sur 2.0 et 2.5. 3 buts -> les deux gagnent ; 1 but -> les deux perdent.
         self.assertEqual(vr.juger_total(2.25, "Over", 3), "gagne")
         self.assertEqual(vr.juger_total(2.25, "Over", 1), "perdu")
         self.assertEqual(vr.juger_total(2.25, "Under", 3), "perdu")
-        # 2 buts : moitié rendue (push) + moitié perdue -> demi-perte, non représentable.
-        self.assertIsNone(vr.juger_total(2.25, "Over", 2))
-        self.assertIsNone(vr.juger_total(2.75, "Under", 3))
+        # 2 buts : moitié rendue (push) + moitié perdue -> demi-perte.
+        self.assertEqual(vr.juger_total(2.25, "Over", 2), "demi_perdu")
+        self.assertEqual(vr.juger_total(2.75, "Under", 3), "demi_perdu")
+        # Moitié rendue + moitié gagnée -> demi-gain.
+        self.assertEqual(vr.juger_total(2.25, "Under", 2), "demi_gagne")
+        self.assertEqual(vr.juger_total(2.75, "Over", 3), "demi_gagne")
 
     def test_handicap_ligne_de_quart(self):
         self.assertEqual(vr.juger_handicap(-0.75, "home", 2, 0), "gagne")
         self.assertEqual(vr.juger_handicap(-0.75, "home", 0, 0), "perdu")
-        self.assertIsNone(vr.juger_handicap(-0.75, "home", 1, 0))
+        self.assertEqual(vr.juger_handicap(-0.75, "home", 1, 0), "demi_gagne")   # -0.5 gagné, -1.0 remboursé
 
     def test_lignes_entieres_et_demies_inchangees(self):
         self.assertEqual(vr.juger_total(2.5, "Over", 3), "gagne")
@@ -349,3 +352,11 @@ class TestDatesHorsFenetre(unittest.TestCase):
         maintenant = datetime(2026, 11, 3, 13, 0, tzinfo=timezone.utc)
         dates = vr.dates_hors_fenetre([None], maintenant, jours_coupons=["2026-10-30"])
         self.assertEqual(dates, ["2026-10-30", "2026-10-31", "2026-11-01"])
+
+
+class TestAliasCategories(unittest.TestCase):
+    def test_noms_bruts_de_marche_sont_jugés_comme_leur_categorie(self):
+        self.assertEqual(vr.grader_pick({"categorie": "Résultat 1X2", "selection": "1", "handicap": None}, 2, 1), "gagne")
+        self.assertEqual(vr.grader_pick({"categorie": "Double Chance Full Time", "selection": "2X", "handicap": None}, 2, 1), "perdu")
+        self.assertEqual(vr.grader_pick({"categorie": "Over Under Full Time", "selection": "Over", "handicap": 2.5}, 2, 1), "gagne")
+        self.assertEqual(vr.grader_pick({"categorie": "Over Under Team 2", "selection": "Under", "handicap": 1.5}, 2, 1), "gagne")

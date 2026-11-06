@@ -189,7 +189,7 @@ def tache_planifier(args):
     return 0
 
 
-VERDICT_EMOJI = {"gagne": "✅", "perdu": "❌", "push": "➖", "non_verifiable": "❔"}
+VERDICT_EMOJI = {"gagne": "✅", "perdu": "❌", "push": "➖", "demi_gagne": "🟢½", "demi_perdu": "🔴½", "non_verifiable": "❔"}
 
 
 def _formater_rapport_live(etats):
