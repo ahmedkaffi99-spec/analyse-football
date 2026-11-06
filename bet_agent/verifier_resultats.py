@@ -214,18 +214,41 @@ def recuperer_fixtures_api_football_du_jour(dates_supplementaires=()):
     return fixtures
 
 
-def trouver_fixture_api_football(home_nom, away_nom, fixtures_af, cd):
+def _date_fixture(fx):
+    brut = ((fx.get("fixture") or {}).get("date") or "").replace("Z", "+00:00")
+    try:
+        d = datetime.fromisoformat(brut)
+    except ValueError:
+        return None
+    return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+
+
+def trouver_fixture_api_football(home_nom, away_nom, fixtures_af, cd, coup_envoi=None):
     """Fuzzy-match par nom d'équipe (cd.score_paire_equipes, même seuil que la collecte) —
-    le fixture API-Football le plus proche, ou None si aucun n'est fiable."""
-    meilleur, meilleur_score = None, 0
+    le fixture API-Football le plus proche, ou None si aucun n'est fiable.
+    coup_envoi (06/11/2026) : quand les MÊMES équipes jouent deux fois le même jour (match de jeunes à 13 h et match senior à 20 h,
+    deux fixtures aux noms identiques), le fixture dont l'heure est la plus proche du coup d'envoi attendu l'emporte ; les heures
+    d'OddsPapi n'étant pas toujours fiables, elle ne sert qu'à départager des noms à égalité (2 points près), jamais à écarter."""
+    candidats = []
     for fx in fixtures_af:
         equipes = fx.get("teams") or {}
         score = cd.score_paire_equipes(home_nom, away_nom,
                                         (equipes.get("home") or {}).get("name"),
                                         (equipes.get("away") or {}).get("name"))
-        if score > meilleur_score:
-            meilleur, meilleur_score = fx, score
-    return meilleur if meilleur and meilleur_score >= cd.SEUIL_MATCH_ACCEPTABLE else None
+        if score > 0:
+            candidats.append((score, fx))
+    if not candidats:
+        return None
+    meilleur_score = max(s for s, _ in candidats)
+    if meilleur_score < cd.SEUIL_MATCH_ACCEPTABLE:
+        return None
+    egaux = [fx for s, fx in candidats if s >= meilleur_score - 2]
+    if coup_envoi is not None and len(egaux) > 1:
+        cible = coup_envoi if coup_envoi.tzinfo else coup_envoi.replace(tzinfo=timezone.utc)
+        datees = [(abs((_date_fixture(fx) - cible).total_seconds()), i, fx) for i, fx in enumerate(egaux) if _date_fixture(fx)]
+        if datees:
+            return min(datees, key=lambda t: (t[0], t[1]))[2]
+    return egaux[0] if egaux else None
 
 
 def score_reglementaire_api_football(fixture):
@@ -248,7 +271,7 @@ def score_reglementaire_api_football(fixture):
     return buts["home"], buts["away"]
 
 
-def trouver_score_api_football(home_nom, away_nom, fixtures_af, cd):
+def trouver_score_api_football(home_nom, away_nom, fixtures_af, cd, coup_envoi=None):
     """Renvoie (etat, score) :
     - ("termine", (but_dom, but_ext)) : score du temps réglementaire, prêt à juger (FT, ou
       AET/PEN ramené aux 90 minutes via score_reglementaire_api_football).
@@ -259,7 +282,7 @@ def trouver_score_api_football(home_nom, away_nom, fixtures_af, cd):
       état après un délai).
     - ("pas_termine", None) : tout le reste (introuvable, pas commencé, en cours normalement,
       ou score réglementaire pas encore publié pour un FT/AET/PEN tout juste constaté)."""
-    meilleur = trouver_fixture_api_football(home_nom, away_nom, fixtures_af, cd)
+    meilleur = trouver_fixture_api_football(home_nom, away_nom, fixtures_af, cd, coup_envoi)
     if not meilleur:
         return "pas_termine", None
     statut = ((meilleur.get("fixture") or {}).get("status") or {}).get("short")

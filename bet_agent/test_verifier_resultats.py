@@ -360,3 +360,32 @@ class TestAliasCategories(unittest.TestCase):
         self.assertEqual(vr.grader_pick({"categorie": "Double Chance Full Time", "selection": "2X", "handicap": None}, 2, 1), "perdu")
         self.assertEqual(vr.grader_pick({"categorie": "Over Under Full Time", "selection": "Over", "handicap": 2.5}, 2, 1), "gagne")
         self.assertEqual(vr.grader_pick({"categorie": "Over Under Team 2", "selection": "Under", "handicap": 1.5}, 2, 1), "gagne")
+
+
+class TestMemesEquipesDeuxFoisLeMemeJour(unittest.TestCase):
+    """4 nov 2026 : Lens-Como et Leipzig-Man City jouaient deux fois (jeunes à 13 h/14 h, seniors à 20 h) : un rapprochement par
+    les seuls noms pouvait prendre le mauvais fixture (mauvais score, mauvaises statistiques)."""
+
+    @staticmethod
+    def _fx(identifiant, heure, domicile="Lens", exterieur="Como", buts=(2, 1)):
+        return {"fixture": {"id": identifiant, "date": f"2026-11-04T{heure}:00+00:00", "status": {"short": "FT"}},
+                "teams": {"home": {"name": domicile}, "away": {"name": exterieur}}, "goals": {"home": buts[0], "away": buts[1]},
+                "score": {"fulltime": {"home": buts[0], "away": buts[1]}}}
+
+    def test_le_fixture_le_plus_proche_du_coup_d_envoi_est_choisi(self):
+        jeunes, seniors = self._fx(1637374, "13:00", buts=(0, 3)), self._fx(1635681, "20:00", buts=(2, 1))
+        fixtures = [seniors, jeunes]
+        tot = datetime(2026, 11, 4, 13, 0, tzinfo=timezone.utc)
+        tard = datetime(2026, 11, 4, 20, 0, tzinfo=timezone.utc)
+        self.assertEqual(vr.trouver_fixture_api_football("Lens", "Como", fixtures, cd, tot)["fixture"]["id"], 1637374)
+        self.assertEqual(vr.trouver_fixture_api_football("Lens", "Como", fixtures, cd, tard)["fixture"]["id"], 1635681)
+        self.assertEqual(vr.trouver_score_api_football("Lens", "Como", fixtures, cd, tot), ("termine", (0, 3)))
+
+    def test_sans_heure_comportement_inchange_et_une_heure_fausse_n_ecarte_pas_un_fixture_unique(self):
+        un_seul = [self._fx(1635681, "20:00")]
+        loin = datetime(2026, 11, 4, 6, 0, tzinfo=timezone.utc)   # heure OddsPapi fausse
+        self.assertEqual(vr.trouver_fixture_api_football("Lens", "Como", un_seul, cd, loin)["fixture"]["id"], 1635681)
+        self.assertEqual(vr.trouver_fixture_api_football("Lens", "Como", un_seul, cd)["fixture"]["id"], 1635681)
+
+    def test_aucun_fixture_fiable_renvoie_none(self):
+        self.assertIsNone(vr.trouver_fixture_api_football("Lens", "Como", [self._fx(1, "20:00", "Roma", "Milan")], cd))
