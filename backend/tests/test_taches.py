@@ -123,3 +123,24 @@ def test_garde_ticket_du_jour_couvert_par_coupons_envoyes_la_veille():
         db.add(Match(run_id=run.id, domicile="A", exterieur="B", coup_envoi=maintenant + timedelta(days=3)))
         db.commit()
         assert ticket_deja_produit_aujourdhui(db) is False
+
+
+def test_envoyer_ne_garde_que_les_coupons_demandes(monkeypatch):
+    from types import SimpleNamespace
+    from datetime import date
+    from app import taches
+    from app.database import SessionLocal
+    from app.models import Coupon, Run
+    envoyes = []
+    monkeypatch.setattr(taches.pipeline, "modules", lambda: (None, SimpleNamespace(agent5_envoyer_coupons=lambda t: envoyes.append(t) or True), None))
+    with SessionLocal() as db:
+        run = Run(source="test", statut="termine", nb_matchs=0, nb_matchs_avec_marches=0, nb_marches=0, envoye_telegram=False)
+        db.add(run); db.flush()
+        ids = []
+        for i, nom in enumerate(("un", "deux", "trois")):
+            c = Coupon(run_id=run.id, jour=date(2026, 11, 6), profil=f"coupon{i + 1}", nom=nom, texte=f"texte {nom}", statut="en_attente")
+            db.add(c); db.flush(); ids.append(c.id)
+        db.commit(); rid = run.id
+    args = SimpleNamespace(run_id=rid, forcer=False, coupons=f"{ids[0]},{ids[2]}")
+    assert taches.tache_envoyer(args) == 0
+    assert envoyes == [["texte un", "texte trois"]]
