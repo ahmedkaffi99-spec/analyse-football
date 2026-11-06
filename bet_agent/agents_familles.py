@@ -103,6 +103,12 @@ def actif():
     return (os.getenv("AGENTS_FAMILLES_ACTIFS") or "1").strip().lower() not in ("0", "false", "non", "no")
 
 
+def ia_active():
+    """Un appel IA par famille (AGENTS_FAMILLES_IA=1). Par défaut NON (06/11/2026, « smart » simplifié) : les vetos
+    Python des familles restent toujours appliqués ; l'IA ne s'ajoutait qu'à ~5 % des écarts (9 sur 166 le 06/11)."""
+    return (os.getenv("AGENTS_FAMILLES_IA") or "0").strip().lower() in ("1", "true", "oui", "yes")
+
+
 def famille_de(categorie):
     """(id, nom, faits) de la famille d'une catégorie ; "derives" pour toute catégorie inconnue."""
     f = _PAR_CATEGORIE.get(categorie)
@@ -169,6 +175,9 @@ def revoir_catalogue(catalogue, appel=None):
         nom, faits = (next((f[1], f[3]) for f in FAMILLES if f[0] == fid) if fid != "derives"
                       else (FAMILLE_DERIVES[1], FAMILLE_DERIVES[2]))
         taches.append((fid, nom, faits, restants))
+    if taches and not ia_active():
+        print("   🧑‍⚖️ [Agents familles] IA désactivée (mode smart simplifié) — vetos Python seulement.")
+        return ecartes, avis
     if taches and ae.budget_ia_epuise():
         print("   ⏱️ [Agents familles] budget IA épuisé — vetos Python seulement.")
         return ecartes, avis

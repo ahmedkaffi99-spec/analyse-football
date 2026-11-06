@@ -13,6 +13,7 @@ def _edge_plafond_historique(monkeypatch):
     représentatifs ; le plafond par défaut de 3 % est testé dans test_plafond_edge_defaut_3_pct."""
     import agents_familles
     monkeypatch.setattr(agents_familles, "EDGE_MAX_AGENT", 20.0)
+    monkeypatch.setenv("AGENTS_FAMILLES_IA", "1")   # ces scénarios testent l'IA ; le défaut (sans IA) est testé plus bas
 
 
 
@@ -498,3 +499,13 @@ def test_consommation_estimee_par_famille():
     assert "buts_total" in af.CONSO_DERNIERE
     entree, sortie = af.CONSO_DERNIERE["buts_total"]
     assert entree > 100 and sortie >= 1
+
+
+def test_par_defaut_aucun_appel_ia_mais_vetos_python_gardes(monkeypatch):
+    monkeypatch.delenv("AGENTS_FAMILLES_IA", raising=False)
+    cat = {"P1": _cand("A vs B", "Total", "Over", 1.8, 60, 1.0), "P2": _cand("C vs D", "Total", "Over", 1.8, 60, 25.0)}
+
+    def interdit(*a, **k):
+        raise AssertionError("aucun appel IA attendu")
+    ecartes, avis = af.revoir_catalogue(cat, appel=interdit)
+    assert ecartes == {"P2"} and "edge suspect" in avis["P2"]
