@@ -123,3 +123,25 @@ def test_garde_ticket_du_jour_couvert_par_coupons_envoyes_la_veille():
         db.add(Match(run_id=run.id, domicile="A", exterieur="B", coup_envoi=maintenant + timedelta(days=3)))
         db.commit()
         assert ticket_deja_produit_aujourdhui(db) is False
+
+
+def test_envoyer_ombre_envoie_les_coupons_du_modele_une_seule_fois(monkeypatch):
+    from types import SimpleNamespace
+    from app import taches
+    from app.database import SessionLocal
+    from app.models import CouponOmbre, JambeOmbre, Run
+    from datetime import date
+    envoyes = []
+    ae = SimpleNamespace(agent5_envoyer_coupons=lambda t: envoyes.append(t) or True)
+    monkeypatch.setattr(taches.pipeline, "modules", lambda: (None, ae, None))
+    with SessionLocal() as db:
+        run = Run(source="test", statut="termine", nb_matchs=0, nb_matchs_avec_marches=0, nb_marches=0, envoye_telegram=False)
+        db.add(run); db.flush()
+        c = CouponOmbre(run_id=run.id, jour=date(2026, 11, 7), modele="openai/gpt-6.1-sol", profil="coupon1", cote_totale=5.12, dans_la_bande=True)
+        c.jambes.append(JambeOmbre(libelle_match="A vs B", categorie="Total", marche="Over Under Full Time (2.5)", handicap=2.5,
+                                   selection="Under", cote=1.8, resultat="en_attente"))
+        db.add(c); db.commit(); rid = run.id
+    args = SimpleNamespace(run_id=rid, modele="openai/gpt-6.1-sol", etiquette="GPT-6.1 Sol", forcer=False)
+    assert taches.tache_envoyer_ombre(args) == 0 and len(envoyes) == 1
+    assert "GPT-6.1 Sol" in envoyes[0][0] and "cote 5.12" in envoyes[0][0]
+    assert taches.tache_envoyer_ombre(args) == 0 and len(envoyes) == 1   # pas de second envoi
