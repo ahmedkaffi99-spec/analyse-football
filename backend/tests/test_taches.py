@@ -99,3 +99,27 @@ def test_envoyer_les_coupons_d_un_run_deja_calcule(monkeypatch):
 
 def test_envoyer_sans_run_termine():
     assert taches.main(["envoyer"]) == 1
+
+
+def test_garde_ticket_du_jour_couvert_par_coupons_envoyes_la_veille():
+    """Coupons préparés et envoyés la veille pour les matchs d'aujourd'hui : pas de second envoi ; sans eux, le passage a lieu."""
+    from datetime import datetime, timedelta, timezone
+    from app.database import SessionLocal
+    from app.models import Match, Run
+    from app.taches import ticket_deja_produit_aujourdhui
+
+    maintenant = datetime.now(timezone.utc)
+    hier = maintenant - timedelta(days=1)
+    with SessionLocal() as db:
+        assert ticket_deja_produit_aujourdhui(db) is False
+        run = Run(source="api", statut="termine", envoye_telegram=True, lance_le=hier)
+        db.add(run)
+        db.flush()
+        db.add(Match(run_id=run.id, domicile="A", exterieur="B", coup_envoi=maintenant))
+        db.commit()
+        assert ticket_deja_produit_aujourdhui(db) is True
+    with SessionLocal() as db:
+        db.query(Match).delete()
+        db.add(Match(run_id=run.id, domicile="A", exterieur="B", coup_envoi=maintenant + timedelta(days=3)))
+        db.commit()
+        assert ticket_deja_produit_aujourdhui(db) is False

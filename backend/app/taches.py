@@ -14,12 +14,12 @@ import argparse
 import json
 import os
 import sys
-from datetime import datetime, time, timezone
+from datetime import datetime, time, timedelta, timezone
 
 from sqlalchemy import select
 
 from app.database import SessionLocal, init_db
-from app.models import Coupon, Run
+from app.models import Coupon, Match, Run
 from app.services import pipeline
 from app.services.bilan import envoyer_bilans
 from app.services.runs import cloturer_runs_interrompus, executer_run
@@ -31,10 +31,21 @@ def ticket_deja_produit_aujourdhui(db):
     """Les passages planifiés (plusieurs, GitHub pouvant en sauter) ne lancent le pipeline que
     si aucun coupon n'est encore parti sur Telegram aujourd'hui et qu'aucun run n'est en cours.
     Un run manuel sans envoi Telegram ne bloque pas le passage du jour."""
-    debut_du_jour = datetime.combine(datetime.now(timezone.utc).date(), time.min, tzinfo=timezone.utc)
-    return db.scalar(select(Run).where(
-        Run.source == "api", Run.lance_le >= debut_du_jour,
-        (Run.statut == "en_cours") | ((Run.statut == "termine") & Run.envoye_telegram.is_(True)))) is not None
+    aujourd_hui = datetime.now(timezone.utc).date()
+    debut_du_jour = datetime.combine(aujourd_hui, time.min, tzinfo=timezone.utc)
+    if db.scalar(select(Run).where(
+            Run.source == "api", Run.lance_le >= debut_du_jour,
+            (Run.statut == "en_cours") | ((Run.statut == "termine") & Run.envoye_telegram.is_(True)))) is not None:
+        return True
+    # Coupons préparés ET envoyés la veille pour les matchs d'AUJOURD'HUI (ex. utilisateur en voyage) : le jour est couvert,
+    # pas de second envoi. Seuls comptent les runs terminés et envoyés dont des matchs ont leur coup d'envoi aujourd'hui.
+    debut_veille = datetime.combine(aujourd_hui, time.min, tzinfo=timezone.utc) - timedelta(days=2)
+    fin_du_jour = debut_du_jour + timedelta(days=1)
+    return db.scalar(
+        select(Run.id).join(Match, Match.run_id == Run.id).where(
+            Run.source == "api", Run.statut == "termine", Run.envoye_telegram.is_(True),
+            Run.lance_le >= debut_veille, Run.lance_le < debut_du_jour,
+            Match.coup_envoi >= debut_du_jour, Match.coup_envoi < fin_du_jour).limit(1)) is not None
 
 
 def tache_run(args):

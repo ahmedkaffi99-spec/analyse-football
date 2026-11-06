@@ -12,7 +12,10 @@ on:
     # décalée (:07, pas :00) : GitHub saute souvent les crons placés pile sur l'heure. Chaque
     # passage ne fait rien si les coupons du jour sont déjà partis ou si un run est en cours
     # (--si-aucun-ticket-aujourdhui) — un seul envoi par jour, les passages suivants sont des no-op.
-    - cron: "7 6-13 * * *"  # 6h07-13h07 UTC = 7h07-15h07 Paris (été), 6h07-14h07 (hiver)
+    # Fiabilité renforcée (06/11/2026, « aucun jour manqué, sans dépendre d'une session ouverte ») : GitHub saute souvent
+    # des crons, un passage toutes les 20 minutes de 6h à 14h UTC multiplie les chances ; chaque passage est un no-op dès
+    # que les coupons du jour sont partis (garde --si-aucun-ticket-aujourdhui, y compris coupons envoyés la veille).
+    - cron: "7,27,47 6-13 * * *"  # 6h07-13h47 UTC (9h07-16h47 à Djibouti)
   workflow_dispatch:
     inputs:
       telegram:
