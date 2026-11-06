@@ -7,17 +7,21 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import and_, or_, select
 
-from app.models import Coupon, Jambe
+from app.models import Coupon, Jambe, Match
 from app.services import pipeline, stats_fd
 
-VERDICT_VERS_RESULTAT = {"gagne": "gagne", "perdu": "perdu", "push": "push", None: "non_verifiable"}
+VERDICT_VERS_RESULTAT = {"gagne": "gagne", "perdu": "perdu", "push": "push", "demi_gagne": "demi_gagne",
+                         "demi_perdu": "demi_perdu", None: "non_verifiable"}
+DELAI_REJUGEMENT_JOURS = 10   # une jambe non vérifiable est rejugée pendant ce délai (API-Football peut avoir le score/les stats plus tard)
 
 
-def statut_coupon(resultats):
+def statut_coupon(resultats, cotes=None):
     """Un combiné est perdu dès qu'une jambe est perdue ; gagné seulement si toutes les jambes
     sont gagnées, remboursées (push) ou annulées (annule) ; incertain si une jambe n'a pas pu
     être vérifiée OU est périmée (délai de péremption dépassé sans verdict, voir
-    verifier_resultats.jambe_perimee) — jamais compté comme gagné/perdu par défaut."""
+    verifier_resultats.jambe_perimee) — jamais compté comme gagné/perdu par défaut.
+    Demi-gain / demi-perte (lignes en quart, 06/11/2026) : le retour du combiné est le produit des facteurs (cote ; 1 si remboursé ;
+    (1+cote)/2 si demi-gain ; 0,5 si demi-perte) ; gagné s'il dépasse la mise (1), sinon perdu. Sans les cotes : incertain."""
     if not resultats:
         return "vide"
     if "perdu" in resultats:
@@ -26,6 +30,13 @@ def statut_coupon(resultats):
         return "en_attente"
     if "non_verifiable" in resultats or "perime" in resultats:
         return "incertain"
+    if "demi_gagne" in resultats or "demi_perdu" in resultats:
+        if not cotes or len(cotes) != len(resultats):
+            return "incertain"
+        retour = 1.0
+        for r, cote in zip(resultats, cotes):
+            retour *= {"gagne": cote, "demi_gagne": (1 + cote) / 2, "demi_perdu": 0.5}.get(r, 1.0)
+        return "gagne" if retour > 1.0 else "perdu"
     return "gagne"
 
 
@@ -41,9 +52,9 @@ def verifier_jambes(db, jambes):
         # Jambe de statistique classée non_verifiable par manque de statistique : rejugée tant que le
         # délai DELAI_STATS_JOURS n'est pas écoulé (les statistiques arrivent parfois après le match).
         # (sans exiger de fixture API-Football : le repli Football-Data peut apporter la statistique plus tard)
-        return (j.resultat == "non_verifiable" and j.categorie in vr.STAT_API_FOOTBALL_PAR_CATEGORIE
-                and j.match is not None
-                and not vr.jambe_perimee(j.match.coup_envoi, maintenant, delai_jours=vr.DELAI_STATS_JOURS))
+        return (j.resultat == "non_verifiable" and j.match is not None and j.match.coup_envoi is not None
+                and not vr.jambe_perimee(j.match.coup_envoi, maintenant,
+                                         delai_jours=max(vr.DELAI_STATS_JOURS, DELAI_REJUGEMENT_JOURS)))
 
     a_juger = [j for j in jambes if _a_rejuger(j)]
     compte = Counter()
@@ -75,7 +86,8 @@ def verifier_jambes(db, jambes):
         domicile = jambe.domicile or jambe.libelle_match.split(" vs ")[0]
         exterieur = jambe.libelle_match.split(" vs ")[-1]
         but_dom = but_ext = None
-        if vr.trouver_fixture_api_football(domicile, exterieur, fixtures_af, cd):
+        fixture_trouvee = vr.trouver_fixture_api_football(domicile, exterieur, fixtures_af, cd)
+        if fixture_trouvee:
             etat, score = vr.trouver_score_api_football(domicile, exterieur, fixtures_af, cd)
             if etat == "annule":
                 # Match reporté/annulé/abandonné (PST/CANC/ABD) : jamais un score deviné,
@@ -115,6 +127,12 @@ def verifier_jambes(db, jambes):
             # cherchées séparément via API-Football (03/10/2026, 55% des jambes étaient
             # "non_verifiable" pour cette seule raison avant ce correctif).
             fixture_af = jambe.match.fixture_id_api_football if jambe.match else None
+            if not fixture_af and fixture_trouvee and jambe.match is not None:
+                # Match sans identifiant API-Football (coupon fait quand seul OddsPapi était actif) : retrouvé par noms d'équipes et date
+                # (06/11/2026) — sinon corners et cartons restaient « non vérifiables » alors que le score était connu.
+                fixture_af = (fixture_trouvee.get("fixture") or {}).get("id")
+                if fixture_af:
+                    jambe.match.fixture_id_api_football = fixture_af
             stats = vr.recuperer_statistiques_finales_api_football(fixture_af, domicile) if fixture_af else None
             verdict = None
             if stats is not None:
@@ -149,7 +167,7 @@ def verifier_jambes(db, jambes):
             jambe.match.score_domicile, jambe.match.score_exterieur = but_dom, but_ext
 
     for coupon in {j.coupon for j in a_juger}:
-        coupon.statut = statut_coupon([j.resultat for j in coupon.jambes])
+        coupon.statut = statut_coupon([j.resultat for j in coupon.jambes], [j.cote for j in coupon.jambes])
     db.commit()
     return compte
 
@@ -157,9 +175,10 @@ def verifier_jambes(db, jambes):
 def verifier_coupons_en_attente(db, run_id=None):
     cd, _, vr = pipeline.modules()
     # + jambes de statistique classées non_verifiable par manque de statistique (rejugées, voir _a_rejuger).
-    requete = select(Jambe).join(Coupon).where(or_(
+    limite = datetime.now(timezone.utc) - timedelta(days=min(max(vr.DELAI_STATS_JOURS, DELAI_REJUGEMENT_JOURS), 3650))
+    requete = select(Jambe).join(Coupon).outerjoin(Match, Match.id == Jambe.match_id).where(or_(
         Jambe.resultat == "en_attente",
-        and_(Jambe.resultat == "non_verifiable", Jambe.categorie.in_(list(vr.STAT_API_FOOTBALL_PAR_CATEGORIE)))))
+        and_(Jambe.resultat == "non_verifiable", Match.coup_envoi >= limite)))
     if run_id is not None:
         requete = requete.where(Coupon.run_id == run_id)
     return verifier_jambes(db, list(db.scalars(requete)))

@@ -355,13 +355,18 @@ def _est_ligne_quart(ligne):
 
 
 def _juger_ligne_quart(juger, ligne):
-    """Ligne de quart (.25/.75) = deux demi-mises sur les lignes adjacentes (ligne ± 0.25), comme
-    le modèle (proba_over, proba_handicap_couvert). Verdict net seulement si les deux moitiés
-    concordent (toutes deux gagnées ou toutes deux perdues) ; sinon demi-gain/demi-perte, que le
-    schéma gagne/perdu/push ne représente pas -> None (non vérifiable), jamais un faux verdict."""
+    """Ligne de quart (.25/.75) = deux demi-mises sur les lignes adjacentes (ligne ± 0.25), comme le modèle (proba_over,
+    proba_handicap_couvert). Verdict net si les deux moitiés concordent (gagnées ou perdues). Moitié gagnée + moitié remboursée =
+    « demi_gagne » (gain de (1+cote)/2) ; moitié perdue + moitié remboursée = « demi_perdu » (la moitié de la mise est perdue) ;
+    toute autre combinaison -> None (non vérifiable), jamais un faux verdict."""
     bas, haut = juger(ligne - 0.25), juger(ligne + 0.25)
     if bas == haut and bas in ("gagne", "perdu"):
         return bas
+    moities = {bas, haut}
+    if moities == {"gagne", "push"}:
+        return "demi_gagne"
+    if moities == {"perdu", "push"}:
+        return "demi_perdu"
     return None
 
 
@@ -473,8 +478,15 @@ def juger_win_to_nil(categorie, selection, home_g, away_g):
     return "gagne" if wtn == oui else "perdu"
 
 
+ALIAS_CATEGORIES = {"Over Under Full Time": "Total", "Over Under Team 1": "Total Équipe 1", "Over Under Team 2": "Total Équipe 2",
+                    "Double Chance Full Time": "Double Chance", "Résultat 1X2": "Full Time Result",
+                    "Both Teams To Score": "BTTS", "Asian Handicap": "Handicap", "European Handicap": "Handicap Européen",
+                    "Team 1 Win To Nil": "Win To Nil Équipe 1", "Team 2 Win To Nil": "Win To Nil Équipe 2",
+                    "Team 1 Clean Sheet": "Clean Sheet Équipe 1", "Team 2 Clean Sheet": "Clean Sheet Équipe 2"}
+
+
 def grader_pick(pick, home_g, away_g):
-    categorie = pick["categorie"]
+    categorie = ALIAS_CATEGORIES.get(pick["categorie"], pick["categorie"])
     selection = pick["selection"]
     handicap = pick.get("handicap")
 

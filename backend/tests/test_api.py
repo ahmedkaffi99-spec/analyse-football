@@ -392,3 +392,15 @@ def test_verification_stats_repli_football_data_sans_api_football(client, monkey
     resultat = client.post("/api/coupons/verification").json()
     assert resultat["gagne"] == 1                                                          # 7 + 4 = 11 corners > 9.5
     assert client.get("/api/coupons").json()[0]["jambes"][0]["resultat"] == "gagne"
+
+
+def test_statut_coupon_avec_demi_gain_et_demi_perte():
+    # demi-gain : (1+1.8)/2 = 1.4 ; 1.5 x 1.4 = 2.1 > 1 -> gagné
+    assert statut_coupon(["gagne", "demi_gagne"], [1.5, 1.8]) == "gagne"
+    # demi-perte : 1.2 x 0.5 = 0.6 < 1 -> perdu ; 3.0 x 0.5 = 1.5 > 1 -> gagné
+    assert statut_coupon(["gagne", "demi_perdu"], [1.2, 1.9]) == "perdu"
+    assert statut_coupon(["gagne", "demi_perdu"], [3.0, 1.9]) == "gagne"
+    # sans les cotes, jamais deviné
+    assert statut_coupon(["gagne", "demi_perdu"]) == "incertain"
+    # une jambe perdue l'emporte toujours
+    assert statut_coupon(["perdu", "demi_gagne"], [1.5, 1.8]) == "perdu"
