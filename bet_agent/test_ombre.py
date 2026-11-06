@@ -65,7 +65,7 @@ def test_composer_ombre_parallele_borne_dans_le_temps(monkeypatch):
     import time
     import agent_strategie
 
-    def faux_composer(pool, profils, appel=None, nb_tours=2, catalogue_pret=None):
+    def faux_composer(pool, profils, appel=None, nb_tours=2, catalogue_pret=None, controle_budget=True):
         if appel == "lent":
             time.sleep(5)
         return {"coupons": {}, "analyse_matchs": []}
@@ -102,3 +102,30 @@ def test_appel_openrouter_echeance_depassee():
     appel = ombre.AppelOpenRouter("m/x", "cle", 1.0, poster=lambda *a, **k: None, echeance=0)
     with pytest.raises(TimeoutError):
         appel("p")
+
+
+def test_composer_ombre_ignore_le_budget_de_production_et_explique_l_absence_de_coupon(monkeypatch):
+    """Le 06/11 : budget IA de production épuisé => aucun appel, aucun message. Désormais le budget de production est ignoré
+    et un modèle sans coupon reçoit une explication."""
+    import agent_strategie
+    vus = {}
+
+    def faux_composer(pool, profils, appel=None, nb_tours=2, catalogue_pret=None, controle_budget=True):
+        vus["controle_budget"] = controle_budget
+        try:
+            appel("p", 100)
+        except Exception:
+            pass
+        return None
+    monkeypatch.setattr(agent_strategie, "composer_coupons", faux_composer)
+    monkeypatch.setattr(ombre.st, "composer_coupons", faux_composer)
+
+    def poster(url, **kw):
+        raise ConnectionError("réseau coupé")
+    monkeypatch.setattr(ombre, "AppelOpenRouter", lambda m, c, b, echeance=None: _CLASSE_ORIGINALE(m, c, b, poster=poster, echeance=echeance))
+    sortie = ombre.composer_ombre({}, [], {"P1": _cand("A vs B", "Total", "Over")}, "txt", modeles=["m/x"], cle="k")
+    assert vus["controle_budget"] is False
+    assert "appel(s) en échec : ConnectionError" in sortie[0]["erreur"]
+
+
+_CLASSE_ORIGINALE = ombre.AppelOpenRouter

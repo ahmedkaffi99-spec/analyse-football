@@ -740,9 +740,11 @@ def valider(proposition, catalogue, profils, signatures_existantes=(), selection
     return acceptes, problemes, calculs
 
 
-def composer_coupons(pool, profils, appel=None, nb_tours=NB_TOURS_MAX, catalogue_pret=None):
+def composer_coupons(pool, profils, appel=None, nb_tours=NB_TOURS_MAX, catalogue_pret=None, controle_budget=True):
     """Boucle IA ⇄ Python. Renvoie {"coupons": {cle: {...}}, "analyse_matchs": [...]} avec les
     profils validés (les autres absents → repli automatique), ou None si l'IA n'a rien produit.
+    controle_budget=False : ne tient pas compte du budget IA de la PRODUCTION (la comparaison en ombre a son propre plafond en dollars ;
+    le 06/11/2026 le budget de production, épuisé en fin de run, empêchait tout appel aux modèles comparés).
     catalogue_pret = (catalogue, texte) : catalogue DÉJÀ revu par les agents de familles (comparaison de modèles « en ombre »,
     06/11/2026) — pas de nouvelle revue, tous les modèles comparés voient exactement les mêmes paris."""
     appel = appel or ae.appel_llm
@@ -763,7 +765,7 @@ def composer_coupons(pool, profils, appel=None, nb_tours=NB_TOURS_MAX, catalogue
     prompt, acceptes, analyse = prompt_base, {}, []
 
     for tour in range(1, nb_tours + 1):
-        if ae.budget_ia_epuise():
+        if controle_budget and ae.budget_ia_epuise():
             print("   ⏱️ Budget IA épuisé — le stratège s'arrête, composition automatique pour le reste.")
             break
         print(f"   🧭 [Stratège IA] tour {tour}/{nb_tours} : analyse, stratégie et choix des paris...")
