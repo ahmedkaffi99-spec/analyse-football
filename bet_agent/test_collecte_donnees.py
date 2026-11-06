@@ -284,6 +284,24 @@ def _fixture_af(home, away, league_id, statut="NS", depart="2099-01-01T15:00:00+
             "fixture": {"id": f"{home}-{away}", "date": depart, "status": {"short": statut}}}
 
 
+class TestPlanB10Championnats:
+    """Plan B (06/11/2026) : sans match dans les compétitions habituelles, élargir aux 10 meilleurs championnats."""
+
+    def test_plan_b_actif_quand_aucun_match(self, monkeypatch):
+        monkeypatch.setattr(cd, "PLAN_B_10_CHAMPIONNATS", True)
+        fixtures = [_fixture_af("Ajax", "PSV", 88), _fixture_af("Benfica", "Porto", 94)]
+        assert cd.selectionner_matchs_du_jour_api_football(fixtures) == [("Ajax", "PSV"), ("Benfica", "Porto")]
+
+    def test_plan_b_inactif_si_des_matchs_habituels(self, monkeypatch):
+        monkeypatch.setattr(cd, "PLAN_B_10_CHAMPIONNATS", True)
+        fixtures = [_fixture_af("Arsenal", "Chelsea", 39), _fixture_af("Ajax", "PSV", 88)]
+        assert cd.selectionner_matchs_du_jour_api_football(fixtures) == [("Arsenal", "Chelsea")]
+
+    def test_plan_b_desactivable(self, monkeypatch):
+        monkeypatch.setattr(cd, "PLAN_B_10_CHAMPIONNATS", False)
+        assert cd.selectionner_matchs_du_jour_api_football([_fixture_af("Ajax", "PSV", 88)]) == []
+
+
 class TestSelectionMatchsDuJourApiFootball:
     """Tests dédiés du 13/10/2026 (demande explicite : "n'utilise pas oddspapi et utilise
     tout api football") : selectionner_matchs_du_jour_api_football ne doit JAMAIS dépendre
@@ -323,6 +341,7 @@ class TestSelectionMatchsDuJourApiFootball:
         assert cd.selectionner_matchs_du_jour_api_football(fixtures) == []
 
     def test_delai_avant_coup_envoi_respecte(self, monkeypatch):
+        monkeypatch.setattr(cd, "PLAN_B_10_CHAMPIONNATS", False)
         appels = []
         monkeypatch.setattr(cd, "assez_tot_avant_coup_envoi",
                             lambda depart, *a, **k: appels.append(depart) or False)

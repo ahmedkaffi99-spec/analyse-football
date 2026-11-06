@@ -1380,7 +1380,27 @@ LIGUES_FILTRE_API_FOOTBALL = {
 MATCHS_UNIQUEMENT_DU_JOUR = (os.getenv("MATCHS_UNIQUEMENT_DU_JOUR") or "1").strip().lower() not in ("0", "false", "non", "no")
 
 
+# PLAN B (demande de l'utilisateur, 06/11/2026) : quand AUCUN match n'est trouvé dans LIGUES_FILTRE_API_FOOTBALL
+# (5 championnats + C1/C3 + coupes nationales), on élargit aux 10 meilleurs championnats européens : les 5
+# ci-dessus + Eredivisie (88), Liga Portugal (94), Pro League belge (144), Süper Lig (203), Premiership écossaise (179).
+# Désactivable : PLAN_B_10_CHAMPIONNATS=0.
+LIGUES_PLAN_B_API_FOOTBALL = {88, 94, 144, 203, 179}
+PLAN_B_10_CHAMPIONNATS = (os.getenv("PLAN_B_10_CHAMPIONNATS") or "1").strip().lower() not in ("0", "false", "non", "no")
+
+
 def selectionner_matchs_du_jour_api_football(fixtures_api_football, aujourd_hui=None):
+    """Sélection API-Football avec plan B : si aucun match dans les compétitions habituelles, élargit
+    aux 10 meilleurs championnats européens (LIGUES_PLAN_B_API_FOOTBALL)."""
+    matchs = _selectionner_api_football(fixtures_api_football, aujourd_hui, LIGUES_FILTRE_API_FOOTBALL)
+    if not matchs and PLAN_B_10_CHAMPIONNATS:
+        print("   ↪️ Plan B : aucun match dans les compétitions habituelles — élargissement aux 10 meilleurs "
+              "championnats européens (+ Eredivisie, Liga Portugal, Pro League, Süper Lig, Premiership).")
+        matchs = _selectionner_api_football(fixtures_api_football, aujourd_hui,
+                                            LIGUES_FILTRE_API_FOOTBALL | LIGUES_PLAN_B_API_FOOTBALL)
+    return matchs
+
+
+def _selectionner_api_football(fixtures_api_football, aujourd_hui, ligues):
     """Équivalent de selectionner_matchs_du_jour, mais 100% API-Football (jamais OddsPapi) —
     actif uniquement quand FOURNISSEUR_COTES=api_football (voir collecter_donnees). Filtre sur
     LIGUES_FILTRE_API_FOOTBALL (5 championnats domestiques + Ligue des Champions/Europa
@@ -1396,7 +1416,7 @@ def selectionner_matchs_du_jour_api_football(fixtures_api_football, aujourd_hui=
         if statut != "NS":
             continue
         league_id = (fx.get("league") or {}).get("id")
-        if league_id not in LIGUES_FILTRE_API_FOOTBALL:
+        if league_id not in ligues:
             continue
         depart = (fx.get("fixture") or {}).get("date")
         if not assez_tot_avant_coup_envoi(depart):
