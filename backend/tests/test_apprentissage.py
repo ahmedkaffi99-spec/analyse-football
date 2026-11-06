@@ -25,7 +25,7 @@ def test_etude_du_jour_enregistree_une_seule_fois():
     with SessionLocal() as db:
         _jour_avec_resultats(db, jour, ["gagne", "gagne", "perdu"])
         texte = apprentissage.etudier_jour(db, jour, avec_ia=False)
-        assert texte and "UNE seule jambe" in texte and "annoncée à 78.0 % perdue" in texte
+        assert texte and "UNE seule jambe" in texte and "annoncé 78.0 %" in texte
         assert db.query(MemoireAgent).count() == 1
         assert apprentissage.etudier_jour(db, jour, avec_ia=False) is None   # idempotent
         assert db.query(MemoireAgent).count() == 1
@@ -72,7 +72,7 @@ def test_jambe_presente_dans_deux_coupons_comptee_une_fois():
         db.commit()
         assert len(apprentissage.jambes_jugees(db, jour=jour)) == 1
         texte = apprentissage.etudier_jour(db, jour, avec_ia=False)
-        assert texte.count("X vs Y") == 1 and "dans 2 coupon(s)" in texte
+        assert texte.count("X vs Y") == 1 and "2 coupon(s) perdu(s) par UNE seule jambe (1 jambe(s) différente(s))" in texte
 
 
 def test_match_piege_deux_jambes_differentes_perdues():
