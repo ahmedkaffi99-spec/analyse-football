@@ -73,6 +73,7 @@ jobs:
       date: ${{ steps.p.outputs.date }}
       ttl: ${{ steps.p.outputs.ttl }}
       ombre: ${{ steps.p.outputs.ombre }}
+      vote: ${{ steps.p.outputs.vote }}
     steps:
       - id: p
         env:
@@ -80,14 +81,16 @@ jobs:
           JOUR: ${{ inputs.jour }}
           TELEGRAM_IN: ${{ inputs.telegram }}
           OMBRE_IN: ${{ inputs.modeles_ombre }}
+          VOTE_VAR: ${{ vars.MODELES_VOTE }}
           EVENEMENT: ${{ github.event_name }}
         run: |
           MODE="${MODE:-standard}"
           TELEGRAM="$TELEGRAM_IN"
           OMBRE="$OMBRE_IN"
           GPT="openai/gpt-6.1-sol"
+          VOTE="aucun"   # le vote final n'a lieu qu'en mode standard (DeepSeek pilote, GPT et Gemini comparés)
           case "$MODE" in
-            standard)   MATRICE='[{"etiquette":"DeepSeek","pilote":"","compositeur":""}]' ;;
+            standard)   MATRICE='[{"etiquette":"DeepSeek","pilote":"","compositeur":""}]'; VOTE="${VOTE_VAR:-openai/gpt-6.1-sol,google/gemini-4-argon}" ;;
             gpt)        MATRICE="[{\"etiquette\":\"GPT-6.1 Sol\",\"pilote\":\"$GPT\",\"compositeur\":\"\"}]"; OMBRE="${OMBRE:-aucun}" ;;
             duel)       MATRICE="[{\"etiquette\":\"DeepSeek\",\"pilote\":\"\",\"compositeur\":\"\"},{\"etiquette\":\"GPT-6.1 Sol\",\"pilote\":\"$GPT\",\"compositeur\":\"\"}]"; TELEGRAM=false; OMBRE="aucun" ;;
             gpt-rapide) MATRICE="[{\"etiquette\":\"GPT-6.1 Sol rapide\",\"pilote\":\"\",\"compositeur\":\"$GPT\"}]"; OMBRE="${OMBRE:-aucun}" ;;
@@ -105,6 +108,7 @@ jobs:
           echo "date=$DATE" >> "$GITHUB_OUTPUT"
           echo "ttl=$TTL" >> "$GITHUB_OUTPUT"
           echo "ombre=$OMBRE" >> "$GITHUB_OUTPUT"
+          echo "vote=$VOTE" >> "$GITHUB_OUTPUT"
           echo "Mode $MODE · jour ${DATE:-par défaut} · Telegram ${TELEGRAM:-non} · ombre ${OMBRE:-défaut}"
 
   run:
@@ -144,6 +148,8 @@ jobs:
       # Comparaison en ombre (jamais envoyée) : GPT-6.1 Sol par défaut (~0,15 à 0,30 $ par run). Surcharge : variable de dépôt MODELES_OMBRE ou
       # entrée modeles_ombre ; « aucun » = désactivée. Plafond de dépense : OMBRE_BUDGET_USD (0,60 $ par modèle et par run).
       MODELES_OMBRE: ${{ needs.preparer.outputs.ombre || vars.MODELES_OMBRE || 'openai/gpt-6.1-sol' }}
+      # Vote final (mode standard seulement) : ces modèles composent aussi les 3 coupons, Python garde le meilleur par bande. « aucun » = coupé.
+      MODELES_VOTE: ${{ needs.preparer.outputs.vote }}
       OMBRE_BUDGET_USD: ${{ vars.OMBRE_BUDGET_USD || '0.6' }}
       OPENROUTER_MODELES: ${{ vars.OPENROUTER_MODELES }}
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
