@@ -144,3 +144,16 @@ class PlanVerification(Base):
     cree_le: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=maintenant)
     plan: Mapped[dict] = mapped_column(JSON)
     rapport_final_envoye: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class MemoireAgent(Base):
+    """Mémoire d'apprentissage de l'agent (06/11/2026) : étude des erreurs et des réussites d'un jour de coupons,
+    écrite après la vérification des résultats, relue par l'agent à chaque run. Une étude par jour (jour, type)."""
+    __tablename__ = "memoire_agent"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    cree_le: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=maintenant)
+    jour: Mapped[date] = mapped_column(Date, index=True)
+    type: Mapped[str] = mapped_column(String(30), default="etude", index=True)
+    contenu: Mapped[str] = mapped_column(Text)
+    stats: Mapped[dict | None] = mapped_column(JSON)

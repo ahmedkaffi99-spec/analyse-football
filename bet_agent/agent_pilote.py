@@ -125,6 +125,13 @@ gagnent) en tombant dans la bande. Moins de jambes = moins de marge de bookmaker
 haute, préfère quelques jambes à cote plus élevée (1.8, 2, 3 ou plus) plutôt que de nombreuses jambes à 1.2. \
 Le seuil de probabilité du catalogue peut être bas (30 %) : choisis TOI-MÊME les jambes les plus solides, fonde-toi sur \
 la probabilité Python, l'edge et le contexte, et ne sors jamais de la bande. Une seule sélection par match dans un coupon.
+- MÉMOIRE D'APPRENTISSAGE (demande explicite du 06/11/2026 : « une mémoire pour étudier les erreurs d'hier, devenir pro \
+de cette tâche et améliorer avec le temps ta capacité de raisonnement ») : si ta mission commence par une section \
+MÉMOIRE D'APPRENTISSAGE, ce sont les études de TES erreurs et réussites passées, vérifiées sur les résultats réels, avec \
+la fiabilité réelle de tes probabilités par tranche. Lis-les AVANT de choisir : ne répète pas une erreur déjà étudiée, tiens \
+compte des tranches où le modèle est trop optimiste, et préfère les jambes dont la fiabilité réelle est solide. Une leçon \
+tirée de moins de 3 cas n'est qu'une piste, jamais une interdiction. Si ton analyse d'un match précis contredit une \
+leçon, tu peux t'en écarter en le justifiant en une phrase dans la raison du pari.
 - La sélection "12" (double chance domicile-ou-extérieur) n'est PAS interdite : choisis-la comme n'importe \
 quel autre marché si sa probabilité Python est élevée, au même titre que les autres règles ci-dessus.
 - Une ligne de quart (.25/.75, ex: Total 3.25, Handicap -0.75) répartit la mise moitié sur la ligne entière/demi \

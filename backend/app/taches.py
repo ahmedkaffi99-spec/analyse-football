@@ -96,12 +96,33 @@ def tache_verifier(args):
             runs_forces = {pv.run_id for pv in echus}
             envoyes = envoyer_bilans(db, ae.notifier_telegram, forcer_runs=runs_forces)
             print(f"📤 Bilan(s) Telegram envoyé(s) : {envoyes}")
+            try:  # étude des erreurs des jours jugés -> mémoire de l'agent ; jamais bloquant
+                from app.services import apprentissage
+                etudies = apprentissage.etudier_recents(db)
+                if etudies:
+                    print(f"🧠 Mémoire : études enregistrées pour {[j.isoformat() for j in etudies]}")
+            except Exception as e:
+                print(f"ℹ️ Étude des erreurs impossible : {str(e)[:120]}")
             for pv in plan_verification_a_cloturer(db):
                 pv.rapport_final_envoye = True
             db.commit()
             if getattr(args, "si_du", False) and not plan_verification.plans_ouverts(db):
                 # Rapport final envoyé pour tous les coupons planifiés : plus aucun passage jusqu'au prochain run.
                 github_actions.activer_workflow(actif=False)
+    return 0
+
+
+def tache_apprendre(args):
+    """Étudie les jours déjà jugés (erreurs, jambes tueuses, fiabilité des probabilités) et alimente la mémoire de l'agent."""
+    from app.services import apprentissage
+    with SessionLocal() as db:
+        if args.jour:
+            texte = apprentissage.etudier_jour(db, datetime.fromisoformat(args.jour).date(), avec_ia=not args.sans_ia)
+            print(texte or f"ℹ️ Rien à étudier pour {args.jour} (déjà étudié, ou coupons pas tous jugés).")
+        else:
+            jours = apprentissage.etudier_recents(db, jours=args.jours, avec_ia=not args.sans_ia)
+            print(f"🧠 Études enregistrées : {[j.isoformat() for j in jours] or 'aucune'}")
+        print("\n--- Mémoire transmise à l'agent ---\n" + (apprentissage.memoire_pour_prompt(db) or "(vide)"))
     return 0
 
 
@@ -537,6 +558,10 @@ def main(argv=None):
     p_envoi = sous.add_parser("envoyer", help="envoie sur Telegram les coupons déjà calculés d'un run")
     p_envoi.add_argument("--run-id", type=int, help="numéro du run (défaut : dernier run terminé)")
     p_envoi.add_argument("--forcer", action="store_true", help="renvoie même si déjà envoyé")
+    p_appr = sous.add_parser("apprendre", help="étudie les erreurs des jours jugés et alimente la mémoire de l'agent")
+    p_appr.add_argument("--jour", help="AAAA-MM-JJ : étudie ce jour seulement")
+    p_appr.add_argument("--jours", type=int, default=14, help="sinon : étudie les N derniers jours jugés (défaut 14)")
+    p_appr.add_argument("--sans-ia", action="store_true", help="leçons déterministes uniquement")
     sous.add_parser("tester-api", help="vérifie l'Edge Function api en ligne (jeton du Vault)")
     sous.add_parser("modeles-gratuits", help="liste les modèles gratuits d'OpenRouter (identifiants exacts)")
     sous.add_parser("tester-ia", help="teste les clés Groq, Gemini et OpenRouter avec une vraie réponse")
@@ -564,7 +589,7 @@ def main(argv=None):
     with SessionLocal() as db:
         cloturer_runs_interrompus(db)
     taches = {"run": tache_run, "verifier": tache_verifier, "planifier-verification": tache_planifier, "live": tache_live, "envoyer": tache_envoyer,
-              "tester-api": tache_tester_api, "backfill": tache_backfill}
+              "tester-api": tache_tester_api, "backfill": tache_backfill, "apprendre": tache_apprendre}
     return taches[args.tache](args)
 
 
