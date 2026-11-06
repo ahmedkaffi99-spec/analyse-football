@@ -840,4 +840,4 @@ def test_pilote_modele_impose_ne_laisse_que_ce_modele(monkeypatch):
     assert [c[3] for c in courses] == ["openai/gpt-6.1-sol"]   # ni DeepSeek ni repli gratuit
     assert pilote._secours_d_emblee() is True
     monkeypatch.delenv("PILOTE_MODELE")
-    assert len(pilote._fournisseurs_secours()) > 1
+    assert [c[0] for c in pilote._fournisseurs_secours()] == ["DeepSeek"]   # comportement habituel inchangé
