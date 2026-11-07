@@ -55,6 +55,19 @@ SEUIL_PROBA_CATALOGUE = ae.PROBA_MIN_FORTE
 # Garde technique (06/11/2026, seuil de probabilité retiré) : au plus N paris par match, les plus probables d'abord, pour que le catalogue
 # reste lisible par l'IA (sans seuil, il contiendrait aussi toutes les lignes exotiques). 0 ou vide = illimité.
 CATALOGUE_MAX_PAR_MATCH = int(os.getenv("CATALOGUE_MAX_PAR_MATCH") or 60) or 10**6
+# Garde-fou contre les cotes individuelles quasi nulles (ex. 1.02). Aucune cote totale cible ni plafond.
+try:
+    COTE_MIN_JAMBE_AGENT = max(1.0, float(os.getenv("COTE_MIN_JAMBE_AGENT") or "1.20"))
+except ValueError:
+    COTE_MIN_JAMBE_AGENT = 1.20
+
+
+def cote_jambe_admissible(cote):
+    try:
+        valeur = float(cote)
+        return valeur == valeur and valeur >= COTE_MIN_JAMBE_AGENT
+    except (TypeError, ValueError):
+        return False
 
 
 # Catégories jamais montrées à l'IA (bilan du 24/10/2026 sur 100 jambes distinctes : tirs 1 gagnée sur 3, corners 13 sur 20
@@ -97,7 +110,9 @@ def construire_catalogue(pool, seuil_proba=SEUIL_PROBA_CATALOGUE, ecartes=frozen
     for match, candidats in pool.items():
         retenus = sorted(
             (c for c in candidats if c["pick"].get("proba_modele_pct") is not None
-             and c["pick"]["proba_modele_pct"] >= seuil_proba and c["pick"].get("categorie") not in exclues),
+             and c["pick"]["proba_modele_pct"] >= seuil_proba
+             and cote_jambe_admissible(c["pick"].get("cote"))
+             and c["pick"].get("categorie") not in exclues),
             key=lambda c: c["pick"]["proba_modele_pct"], reverse=True)[:CATALOGUE_MAX_PAR_MATCH]
         if not retenus:
             continue
@@ -456,6 +471,10 @@ def valider(proposition, catalogue, profils, signatures_existantes=(), selection
             ids_vus.add(cid)
             selection = dict(catalogue[cid], pick=dict(catalogue[cid]["pick"]),
                              raison_ia=str(jambe.get("raison") or "").strip())
+            if not cote_jambe_admissible(selection["pick"].get("cote")):
+                erreurs.append(f"{cid} : cote individuelle {selection['pick'].get('cote')} sous le plancher technique "
+                               f"{COTE_MIN_JAMBE_AGENT:.2f} — ce pari ne peut pas entrer dans un coupon")
+                continue
             if selection["match"] in matchs_deja_utilises:
                 erreurs.append(f"{cid} : {selection['match']} déjà utilisé dans un autre profil ce run "
                                "(même avec un marché ou une sélection différents) — choisis un autre match "

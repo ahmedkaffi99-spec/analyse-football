@@ -745,6 +745,26 @@ class TestSecoursGratuit(unittest.TestCase):
         premier = pilote._fournisseurs_secours()[0]
         self.assertEqual((premier[0], premier[3]), ("OpenRouter", "deepseek/deepseek-v4.1-flash"))
 
+    def test_modele_impose_402_bascule_vers_un_autre_fournisseur(self):
+        ok = {"choices": [{"message": {"role": "assistant", "content": "ok"}}], "usage": {"total_tokens": 5}}
+        appels = []
+
+        def poster(url, **kw):
+            appels.append((url, kw["json"]["model"]))
+            if "openrouter" in url and kw["json"]["model"] == "openai/gpt-6.1-sol":
+                return self._reponse(402, {"error": {"message": "insufficient credits with in-flight requests"}})
+            return self._reponse(200, ok)
+
+        with mock.patch.dict(os.environ, {"PILOTE_MODELE": "openai/gpt-6.1-sol"}):
+            courses = pilote._fournisseurs_secours()
+            self.assertEqual(courses[0][3], "openai/gpt-6.1-sol")
+            self.assertGreater(len(courses), 1)
+            data, _ = pilote._appel_secours([{"role": "user", "content": "test"}], 65536, poster=poster)
+        self.assertEqual(data, ok)
+        self.assertEqual(appels[0][1], "openai/gpt-6.1-sol")
+        self.assertIn("groq", appels[1][0])
+        self.assertEqual(appels[1][1], "openai/gpt-oss-120b")
+
     def test_sans_cle_deepseek_direct_sur_le_secours(self):
         ok = {"choices": [{"message": {"role": "assistant", "content": "ok"}}]}
         data, _ = pilote._appel_api(None, [{"role": "user", "content": "x"}], 4096,

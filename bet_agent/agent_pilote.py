@@ -93,6 +93,7 @@ davantage de risque pour viser un gain potentiel plus élevé : jambes moins pro
 ambitieuses. Les trois coupons doivent réellement différer par leur niveau de risque. Si voir_catalogue indique une bande ou un \
 plancher de cote (profil personnalisé seulement), respecte-le : Python le vérifie.
 - BASE TA DÉCISION SUR LA PROBABILITÉ ET L'EDGE DU CATALOGUE (calculés par Python), jamais sur une estimation que tu inventes. \
+Python exclut les cotes individuelles inférieures à 1.20 (garde-fou technique, réglable par COTE_MIN_JAMBE_AGENT) ; ne tente jamais de contourner ce filtre. \
 N'ajoute jamais une jambe seulement pour faire monter ou descendre la cote totale. Une jambe est FRAGILE si elle cumule un de ces \
 signaux : ligne de quart (.25/.75), probabilité basse parmi le catalogue, données faibles sur ce match. Un coupon perd dès qu'UNE \
 jambe perd : PRUDENT n'en contient aucune, ÉQUILIBRÉ au plus une, RISQUE peut en accepter davantage à condition de justifier chacune.
@@ -209,7 +210,8 @@ class CleRefusee(Exception):
 # HTTP 402 « Insufficient Balance » et le run entier s'arrêtait). Même protocole OpenAI (chat/completions avec
 # outils) : Groq, puis Gemini, puis OpenRouter (modèles gratuits). Essayés dans cet ordre dès que DeepSeek
 # échoue (solde, clé refusée, panne) ; le premier couple fournisseur/modèle qui répond est gardé pour la suite du run.
-MAX_TOKENS_SECOURS = int(os.getenv("AGENT_SECOURS_MAX_TOKENS") or "32768")
+# Réserve moins de crédits par requête OpenRouter ; ajustable par variable d'environnement.
+MAX_TOKENS_SECOURS = int(os.getenv("AGENT_SECOURS_MAX_TOKENS") or "8192")
 MODELE_OPENROUTER_DEEPSEEK = os.getenv("OPENROUTER_MODELE_PAYANT") or "deepseek/deepseek-v4.1-flash"
 # AGENT_FOURNISSEUR_PRINCIPAL : "deepseek" (défaut depuis le 25/10/2026 : API officielle, puis Groq/Gemini en repli) ou
 # "openrouter" (DeepSeek via OpenRouter d'abord — exige UTILISER_OPENROUTER=1).
@@ -300,12 +302,25 @@ def _fournisseurs_secours():
         return [m.strip() for m in (os.getenv(nom_env) or defaut).split(",") if m.strip()]
 
     courses = []
-    # Pilote imposé (PILOTE_MODELE, 06/11/2026) : MÊME boucle, MÊMES outils (recherche web, lecture de pages, catalogue, règles de
-    # Python) mais un autre modèle OpenRouter aux commandes ; aucun repli vers un autre modèle, pour une comparaison loyale.
-    if (os.getenv("PILOTE_MODELE") or "").strip():
-        if os.getenv("OPENROUTER_API_KEY"):   # indépendant de UTILISER_OPENROUTER : ce réglage est explicite
-            courses.append(("OpenRouter", "https://openrouter.ai/api/v1/chat/completions", os.getenv("OPENROUTER_API_KEY"),
-                            os.getenv("PILOTE_MODELE").strip(), {"reasoning": {"effort": "medium"}, "usage": {"include": True}}))
+    # Modèle demandé explicitement : essayé en premier, mais un HTTP 402 ne doit pas bloquer le run.
+    # Les fournisseurs gratuits restent disponibles comme secours ; le journal conserve le modèle réellement utilisé.
+    if (os.getenv("PILOTE_MODELE") or "").strip() and os.getenv("OPENROUTER_API_KEY"):
+        courses.append(("OpenRouter", "https://openrouter.ai/api/v1/chat/completions", os.getenv("OPENROUTER_API_KEY"),
+                        os.getenv("PILOTE_MODELE").strip(), {"reasoning": {"effort": "medium"}, "usage": {"include": True}}))
+        # Si GPT Sol manque de crédits, essayer Groq/Gemini puis les modèles OpenRouter gratuits.
+        if os.getenv("GROQ_API_KEY"):
+            for m in _liste("GROQ_MODELES", "openai/gpt-oss-120b"):
+                courses.append(("Groq", "https://api.groq.com/openai/v1/chat/completions", os.getenv("GROQ_API_KEY"), m,
+                                {"reasoning_effort": "medium"} if m.startswith("openai/gpt-oss") else {}))
+        if os.getenv("GEMINI_API_KEY"):
+            for m in _liste("GEMINI_MODELES", "gemini-3.8-flash"):
+                courses.append(("Gemini", "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+                                os.getenv("GEMINI_API_KEY"), m, {}))
+        for m in _liste("OPENROUTER_MODELES", "nvidia/nemotron-3-super-120b-a12b:free,google/gemma-4-31b-it:free,"
+                                              "openrouter/free"):
+            if not any(c[1] == "https://openrouter.ai/api/v1/chat/completions" and c[3] == m for c in courses):
+                courses.append(("OpenRouter", "https://openrouter.ai/api/v1/chat/completions",
+                                os.getenv("OPENROUTER_API_KEY"), m, {}))
         return courses
     # En tête : DeepSeek via OpenRouter (demande du 22/10/2026 : « utilise celle d'OpenRouter, modèle DeepSeek »),
     # le même fournisseur/modèle que les agents de famille (OPENROUTER_MODELE_PAYANT).

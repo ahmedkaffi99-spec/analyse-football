@@ -47,10 +47,28 @@ def test_regles_de_coherence_conservees_dans_les_profils():
 # ---------- validations Python ----------
 def test_cote_totale_tres_basse_ou_tres_haute_acceptee_sans_bande():
     profil = profils_smart.profils()[2]
-    basse, _, _ = st.valider(_prop("coupon3", ["P1", "P2"]), _cat([1.05, 1.05]), [profil])
-    assert "coupon3" in basse                                                  # 1,10 : l'ancien plancher de 5 ne s'applique plus
+    basse, _, _ = st.valider(_prop("coupon3", ["P1", "P2"]), _cat([1.20, 1.20]), [profil])
+    assert "coupon3" in basse                                                  # 1,44 : aucun plancher de cote TOTALE
     haute, _, _ = st.valider(_prop("coupon3", ["P1", "P2", "P3"]), _cat([20.0, 20.0, 20.0]), [profil])
     assert "coupon3" in haute                                                  # 8 000 : aucun plafond
+
+
+def test_cotes_individuelles_trop_basses_refusees_meme_si_ia_les_choisit():
+    profil = profils_smart.profils()[0]
+    acceptes, problemes, _ = st.valider(_prop("coupon1", ["P1", "P2"]), _cat([1.02, 1.50]), [profil])
+    assert "coupon1" not in acceptes
+    assert any("plancher technique 1.20" in p for p in problemes)
+
+
+def test_catalogue_exclut_les_cotes_individuelles_inferieures_a_1_20():
+    pool = {
+        "M1 - X1": [_sel("M1 - X1", 1.02, proba=99.0),
+                    _sel("M1 - X1", 1.35, marche="Total", selection="Under", proba=78.0)]
+    }
+    catalogue, texte = st.construire_catalogue(pool)
+    assert len(catalogue) == 1
+    assert next(iter(catalogue.values()))["pick"]["cote"] == 1.35
+    assert "@ 1.02" not in texte
 
 
 def test_les_validations_de_securite_restent_actives():
