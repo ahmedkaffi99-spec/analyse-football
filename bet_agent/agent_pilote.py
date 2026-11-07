@@ -13,7 +13,8 @@ import requests
 URL_DEEPSEEK = "https://api.deepseek.com/chat/completions"
 MODELE = (os.getenv("DEEPSEEK_MODELES") or "deepseek-flash").split(",")[0].strip() or "deepseek-flash"
 MAX_ETAPES = int(os.getenv("AGENT_MAX_ETAPES") or "40")
-DUREE_MAX_S = float(os.getenv("AGENT_DUREE_MAX_MIN") or "75") * 60
+# Phase 4 (07/11/2026) : 45 min par défaut (était 75 > timeout-minutes 60 du job : le job était tué avant l'arrêt propre, coûts perdus).
+DUREE_MAX_S = float(os.getenv("AGENT_DUREE_MAX_MIN") or "45") * 60
 DELAI_REQUETE = float(os.getenv("AGENT_DELAI_REQUETE") or "900")
 MAX_TOKENS = int(os.getenv("AGENT_MAX_TOKENS") or "65536")
 EFFORT = os.getenv("AGENT_EFFORT") or "high"
@@ -35,35 +36,29 @@ def construire_prompt_systeme(profils):
     elif any(p.get("un_seul_pari_par_event") for p in profils):
         regle_matchs = ("chacun choisissant ses jambes parmi les matchs du catalogue (par match : UN pari par EVENT 1xBet au "
                         "plus — le jeu principal (Total, Handicap, BTTS, Double Chance, buts par équipe) compte pour un event, "
-                        "corners, cartons, fautes, tirs et hors-jeux chacun pour un autre ; un même match peut figurer dans "
-                        "plusieurs coupons, jamais le même pari exact)")
+                        "corners, cartons, fautes, tirs et hors-jeux chacun pour un autre ; "
+                        + ("un match ne figure que dans UN seul coupon du run — Python refuse un match déjà pris, sauf assouplissement indiqué "
+                           "par voir_catalogue faute de matchs ; jamais le même pari exact)"
+                           if all(not p.get("match_repete_autorise") for p in profils) else
+                           "un même match peut figurer dans plusieurs coupons, jamais le même pari exact)"))
     else:
         regle_matchs = "chacun de matchs DIFFÉRENTS (un seul pari par match)"
     return f"""Tu es l'agent pilote d'un pipeline de coupons de paris football (1xBet). Tu conduis le run \
 du début à la fin, en autonomie, avec tes outils. Réponds et écris en français.
 
-MISSION : produire {n} coupons combinés du jour, un par PROFIL de risque ({noms} — nombre de jambes \
-cible différent pour chacun, voir voir_catalogue pour les bornes exactes), {regle_matchs}, choisis dans le \
-MÊME catalogue de paris réels. LA COTE TOTALE N'EST PAS UNE CONTRAINTE \
-DE FOURCHETTE — seul le NOMBRE DE JAMBES différencie les profils ; la cote totale qui en résulte (produit des \
-cotes choisies) est acceptée telle quelle, jamais à forcer vers une fourchette précise. SEULE EXCEPTION : la \
-cote totale doit toujours rester AU-DESSUS D'UN PLANCHER (Python refuse en dessous) QUI VARIE SELON LE \
-PROFIL en cours (indiqué par voir_catalogue → cote_totale_min, jamais le même pour les {n} profils — demande \
-explicite du 02/10/2026 pour éviter que les coupons sûrs se ressemblent tous) — si tes favoris à cote basse ne \
-suffisent pas à l'atteindre avec le nombre de jambes minimum, ajoute une jambe de plus (même en dehors du \
-minimum) ou accepte une cote individuelle un peu plus haute (toujours dans le catalogue) plutôt que de \
-soumettre un coupon sous ce plancher. Tu composes les {n} coupons L'UN \
-APRÈS L'AUTRE (jamais en parallèle). Tu peux réutiliser un MATCH déjà pris dans un profil précédent, mais \
-jamais le MÊME pari exact (même marché, même sélection) — Python le refuse. Tu es LIBRE du choix des marchés \
-(buts, corners, cartons, tirs, fautes, hors-jeux, handicaps, BTTS...) : prends les meilleures opportunités \
-statistiques, sans obligation de varier les catégories. Tu peux t'abstenir sur UN profil si rien n'est défendable, \
+MISSION : produire {n} coupons combinés du jour, un par PROFIL de risque ({noms}), {regle_matchs}, choisis dans le \
+MÊME catalogue de paris réels. TU CHOISIS LIBREMENT les paris, les marchés, les sélections et les combinaisons : AUCUNE cote \
+totale cible et AUCUNE cote individuelle obligatoire ne t'est imposée (voir les règles ci-dessous pour le niveau de risque de \
+chaque profil). Tu composes les {n} coupons L'UN APRÈS L'AUTRE (jamais en parallèle). Tu es LIBRE du choix des marchés \
+(buts, corners, cartons, tirs, fautes, hors-jeux, handicaps, BTTS...) : prends les meilleures opportunités statistiques pour le \
+niveau de risque du profil, sans obligation de varier les catégories. Tu peux t'abstenir sur UN profil si rien n'est défendable, \
 sans que ça t'empêche de composer les autres.
 
 LE CATALOGUE EST DÉJÀ FILTRÉ ET TRIÉ PAR PYTHON (demande explicite du 01/10/2026 : "réduire les tâches de \
 l'IA, augmenter les tâches de Python") : il ne contient PLUS les 200-300 marchés bruts d'un match, seulement \
 les paris MODÉLISABLES (buts, BTTS, Handicap, Total, Double Chance, Pair/Impair, Corners, Cartons, Fautes, \
 Tirs, Hors-jeux...) dont la PROBABILITÉ calculée par Python (modèle Poisson à partir des vrais buts attendus) \
-dépasse le seuil affiché par Python (60 % par défaut, 30 % en mode smart coupon), du plus probable au moins probable. Un match qui n'apparaît PAS dans le catalogue, \
+dépasse le seuil éventuellement affiché par Python (aucun seuil n'est imposé par défaut), du plus probable au moins probable. Un match qui n'apparaît PAS dans le catalogue, \
 c'est que Python n'y a trouvé AUCUN pari assez solide — ne cherche pas à en inventer un, passe au suivant. \
 TOUT pari du catalogue a déjà une probabilité et un edge calculés : ta décision se base sur CES chiffres, pas \
 sur une estimation personnelle — ton rôle est de choisir PARMI une liste déjà vérifiée par Python, d'appliquer \
@@ -74,15 +69,14 @@ CALCULÉ UNE SEULE FOIS et partagé par les {n} profils.
 MÉTHODE DE TRAVAIL : traite les matchs UN PAR UN, jamais en mélangeant plusieurs à la fois. Pour chaque \
 match : lis tout son contexte (buts attendus, historique, blessures, prédictions), compare TOUS ses marchés \
 disponibles entre eux, retiens le(s) pari(s) les plus défendables pour CE match, puis seulement ensuite \
-passe au match suivant. Une fois tous les matchs analysés, compose le coupon du profil en cours (nombre de \
-bande de cote), PUIS passe au profil suivant en réutilisant la même analyse.
+passe au match suivant. Une fois tous les matchs analysés, compose le coupon du profil en cours, PUIS passe au profil suivant en réutilisant la même analyse.
 
 ORDRE CONSEILLÉ (tu peux l'adapter, revenir en arrière ou chercher plus d'information) :
 1. collecter_donnees (une seule fois)  2. voir_catalogue (indique le profil EN COURS parmi les {n} — le \
 catalogue lui-même ne change pas)  3. RECOMMANDÉ : 2 à 4 rechercher_web (puis lire_page sur un lien au besoin) sur les matchs les plus importants de ton \
 catalogue, pour vérifier une blessure, une rotation, une composition probable, un enjeu — 5 recherches et 3 pages au \
-maximum par run ; un pari que l'actualité contredit se remplace  4. proposer_coupon pour le profil en cours (Python vérifie — identifiants valides, un pari par match, \
-bande de cote — rédige automatiquement le coupon une fois validé, et te dit s'il reste des \
+maximum par run ; un pari que l'actualité contredit se remplace  4. proposer_coupon pour le profil en cours (Python vérifie — identifiants valides, au moins 2 jambes, un pari par match, \
+match non repris d'un autre coupon — rédige automatiquement le coupon une fois validé, et te dit s'il reste des \
 profils)  5. répète 2-4 pour chaque profil restant  6. envoyer_telegram une fois les {n} profils traités \
 ({n} messages séparés, un par profil) — ou abandonner si RIEN n'est défendable pour AUCUN des {n} profils.
 
@@ -92,38 +86,20 @@ RÈGLES ABSOLUES :
 Python du catalogue quand elle existe (ta propre analyse vient en complément, jamais à la place).
 - Qualité avant quantité : écarte les matchs aux données faibles ou risqués (absences clés, rotation, enjeu \
 faible).
-- PRIORITÉ ABSOLUE À LA PROBABILITÉ PYTHON DU CATALOGUE, JAMAIS À UNE COTE À ATTEINDRE : la cote totale n'est \
-PAS une cible précise à viser — n'ajoute JAMAIS un pari seulement pour faire monter ou descendre la cote totale \
-vers une fourchette. Pour un marché modélisé, ta décision se base sur la probabilité CALCULÉE PAR PYTHON \
-(catalogue), pas sur une estimation que tu inventes toi-même. SEULE VÉRIFICATION PYTHON SUR LA COTE : un \
-BANDE DE COTE TOTALE du profil (cote_totale_min et cote_totale_max dans voir_catalogue) — hors de la bande, Python refuse (plancher ET plafond). Le \
-nombre de jambes, lui, doit rester dans la fourchette du profil en cours (voir voir_catalogue), mais même ça : \
-si tu ne trouves pas assez de paris VRAIMENT défendables pour atteindre le minimum de jambes d'un profil, \
-abstiens-toi sur ce profil plutôt que de forcer des paris moyens.
-- N'EMPILE PAS PLUSIEURS JAMBES FRAGILES DANS LE MÊME COUPON : même si Python a déjà filtré le catalogue \
-(toutes les probabilités montrées dépassent 60%), une jambe reste fragile si au moins un de ces signaux est \
-présent — ligne de quart (.25/.75), probabilité proche du seuil (60-65%) plutôt que nettement au-dessus, ou \
-données faibles sur ce match précis (peu de stats, forme incertaine, enjeu flou). Un coupon combiné perd dès \
-qu'UNE SEULE jambe perd : limite-toi à AU PLUS une jambe fragile par coupon, le reste doit être des paris où \
-la probabilité Python est nettement au-dessus du seuil.
-- POUR REMPLIR LE NOMBRE DE JAMBES D'UN PROFIL, PRÉFÈRE LES PARIS À PROBABILITÉ PYTHON ÉLEVÉE (typiquement une \
-cote individuelle basse, environ 1.1-1.5) PLUTÔT QUE DES PARIS À PROBABILITÉ PYTHON FAIBLE (cote unitaire > 2) \
-: la probabilité de gagner TOUTES les jambes d'un combiné est bien meilleure en empilant des favoris nets \
-(probabilité Python élevée) qu'en misant sur des paris incertains — quelle que soit la cote individuelle ou \
-totale qui en résulte, cote basse ou haute, peu importe, SEULE compte la probabilité Python de chaque jambe. \
-EXCEPTION EXPLICITE : si voir_catalogue indique "prefere_cote_elevee": true pour le profil en cours (demande \
-explicite du 02/10/2026 : "cote élevée = gain élevé"), fais l'INVERSE pour CE profil seulement — choisis, \
-PARMI les paris déjà filtrés par Python (donc toujours >= 60% de probabilité, jamais en dessous), ceux à la \
-cote individuelle la PLUS ÉLEVÉE disponible plutôt que les plus sûrs : ce profil vise délibérément un gain \
-potentiel plus élevé en acceptant plus de risque, en plus du nombre de jambes déjà plus grand.
-- SMART COUPON (demande explicite du 06/11/2026 : « je veux seulement des smart coupons, l'IA choisit librement ») : \
-la SEULE contrainte imposée est la bande de cote totale de chaque profil. Tu es LIBRE du nombre de jambes et de la \
-cote de chaque jambe. Objectif : la combinaison qui a le plus de chances de passer INTÉGRALEMENT (toutes les jambes \
-gagnent) en tombant dans la bande. CHERCHE L'ÉQUILIBRE entre le nombre de jambes et la hauteur des cotes : ni une longue liste \
-de jambes à 1.2 (chaque jambe ajoute de la marge de bookmaker et une chance de tout perdre), ni quelques paris très hauts et \
-improbables ; vise un nombre de jambes raisonnable avec des cotes moyennes (1.4 à 2) choisies parmi les plus solides. \
-Aucune probabilité minimale n'est imposée : choisis TOI-MÊME les jambes les plus solides, fonde-toi sur \
-la probabilité Python, l'edge et le contexte, et ne sors jamais de la bande. Une seule sélection par match dans un coupon.
+- TROIS PROFILS DE RISQUE (demande du 07/11/2026) : le niveau du profil en cours est donné par voir_catalogue (niveau_risque et \
+consigne). PRUDENT = sécurité : les probabilités les plus élevées du catalogue et le contexte le plus solide, même pour un gain faible. \
+ÉQUILIBRÉ = bon compromis entre probabilité et rendement : jambes solides et quelques jambes mieux valorisées (edge positif). RISQUE = \
+davantage de risque pour viser un gain potentiel plus élevé : jambes moins probables mais bien valorisées, combinaisons plus \
+ambitieuses. Les trois coupons doivent réellement différer par leur niveau de risque. Si voir_catalogue indique une bande ou un \
+plancher de cote (profil personnalisé seulement), respecte-le : Python le vérifie.
+- BASE TA DÉCISION SUR LA PROBABILITÉ ET L'EDGE DU CATALOGUE (calculés par Python), jamais sur une estimation que tu inventes. \
+N'ajoute jamais une jambe seulement pour faire monter ou descendre la cote totale. Une jambe est FRAGILE si elle cumule un de ces \
+signaux : ligne de quart (.25/.75), probabilité basse parmi le catalogue, données faibles sur ce match. Un coupon perd dès qu'UNE \
+jambe perd : PRUDENT n'en contient aucune, ÉQUILIBRÉ au plus une, RISQUE peut en accepter davantage à condition de justifier chacune.
+- PYTHON VÉRIFIE (et refuse sinon) : identifiants du catalogue, au moins 2 jambes (aucun maximum), un seul pari par match et par \
+event dans un coupon, un match ne figure que dans UN seul coupon du run (sauf assouplissement signalé par voir_catalogue quand le \
+catalogue manque de matchs), jamais le même pari exact ni deux coupons identiques. Si tu ne trouves pas assez de paris vraiment \
+défendables pour un profil, abstiens-toi sur CE profil plutôt que de forcer des paris moyens.
 - MÉMOIRE D'APPRENTISSAGE (demande explicite du 06/11/2026 : « une mémoire pour étudier les erreurs d'hier, devenir pro \
 de cette tâche et améliorer avec le temps ta capacité de raisonnement ») : si ta mission commence par une section \
 MÉMOIRE D'APPRENTISSAGE, ce sont les études de TES erreurs et réussites passées, vérifiées sur les résultats réels, avec \
@@ -165,11 +141,9 @@ def construire_outils_schemas(profils):
         {"type": "function", "function": {
             "name": "voir_catalogue",
             "description": f"Renvoie le profil EN COURS (parmi les {n} — {noms}, indique sa position "
-                           f"\"2/{n}\" par ex.) avec ses contraintes de cote ET son champ \"prefere_cote_elevee\" "
-                           "(false pour la plupart des profils — priorité à la probabilité ; true pour un profil "
-                           "risqué intentionnel — priorité aux cotes individuelles les plus hautes PARMI les paris "
-                           "déjà filtrés, voir les RÈGLES ABSOLUES), le CATALOGUE déjà FILTRÉ ET TRIÉ par "
-                           "Python (seuls les paris modélisables avec probabilité calculée >= 60%, du plus probable "
+                           f"\"2/{n}\" par ex.) avec son niveau de risque (\"niveau_risque\" et \"consigne\" : prudent, "
+                           "équilibré ou risque — aucune cote cible imposée), ses bornes de jambes, le CATALOGUE déjà FILTRÉ ET TRIÉ par "
+                           "Python (seuls les paris modélisables avec probabilité calculée, du plus probable "
                            "au moins probable ; identifiants P1, P2..., marché, sélection, cote, probabilité, edge "
                            "— un match absent du catalogue veut dire que Python n'y a rien trouvé d'assez solide), "
                            "ET le CONTEXTE par match (buts attendus, confrontations directes, blessures, "
@@ -191,9 +165,8 @@ def construire_outils_schemas(profils):
         {"type": "function", "function": {
             "name": "proposer_coupon",
             "description": "Soumet le coupon du PROFIL EN COURS à Python, qui vérifie (identifiants, un pari par match, "
-                           "nombre de paris dans la fourchette du profil, cote totale >= cote_totale_min du profil — "
-                           "ce plancher varie selon le profil, voir voir_catalogue ; aucune fourchette précise de cote "
-                           "vérifiée au-delà) et te renvoie ses calculs (dont la cote totale "
+                           "au moins 2 paris, un match déjà pris par un autre coupon refusé — "
+                           "aucune cote cible vérifiée, sauf bande explicite d'un profil personnalisé) et te renvoie ses calculs (dont la cote totale "
                            "résultante). Si valide, le coupon "
                            "est automatiquement rédigé et enregistré, et tu passes au profil suivant (voir_catalogue te le "
                            "confirmera). Renvoie valide=true ou la liste des problèmes à corriger. jambes vide = abstention "
@@ -460,19 +433,49 @@ def _appel_deepseek(cle, messages, max_tokens, outils_schemas=None, poster=reque
 
 
 def _cout_appel(usage):
-    """Coût en $ d'un appel du pilote : valeur renvoyée par le fournisseur (OpenRouter, usage.cost) ; sinon estimation si les prix par
-    million de tokens sont configurés (DEEPSEEK_PRIX_ENTREE_USD_M / DEEPSEEK_PRIX_SORTIE_USD_M) ; sinon 0 (tokens seulement)."""
-    if usage.get("cost") is not None:
-        return float(usage.get("cost") or 0.0)
+    """Coût en $ d'un appel du pilote : valeur renvoyée par le fournisseur (OpenRouter, usage.cost) ; sinon estimation à partir des prix
+    configurés (DEEPSEEK_PRIX_ENTREE_USD_M / DEEPSEEK_PRIX_SORTIE_USD_M) ; sinon estimation PRUDENTE (budget_ia.cout_appel). Un coût inconnu n'est
+    JAMAIS compté comme gratuit (Phase 4, 07/11/2026) ; `_cout_appel_estime` dit si le dernier coût est une estimation."""
     try:
         prix_in, prix_out = float(os.getenv("DEEPSEEK_PRIX_ENTREE_USD_M") or 0), float(os.getenv("DEEPSEEK_PRIX_SORTIE_USD_M") or 0)
     except ValueError:
-        return 0.0
-    return (int(usage.get("prompt_tokens") or 0) * prix_in + int(usage.get("completion_tokens") or 0) * prix_out) / 1_000_000
+        prix_in = prix_out = 0.0
+    import budget_ia
+    cout, estime = budget_ia.cout_appel(usage, usage.get("cost"), prix_in or None, prix_out or None)
+    _usage_pilote["appels_cout_estime"] = _usage_pilote.get("appels_cout_estime", 0) + (1 if estime else 0)
+    return cout
 
 
 # Consommation du pilote pour CE run (Phase 3) : remise à zéro au début de executer().
-_usage_pilote = {"appels": 0, "tokens_entree": 0, "tokens_sortie": 0, "cout_usd": 0.0}
+_usage_pilote = {"appels": 0, "tokens_entree": 0, "tokens_sortie": 0, "cout_usd": 0.0, "appels_cout_estime": 0}
+# Budget IA restant du run (None = pas de plafond) : vérifié AVANT chaque appel du pilote (Phase 4). Posé par executer().
+_budget_pilote = {"restant_usd": None, "etat": {}}
+
+
+def _enregistrer_couts_vote(resultats):
+    ia = budget_ia_module()
+    chemin = ia.fichier_couts()
+    if chemin:
+        ancien = ia.lire_couts(chemin) or {}
+        ia.ecrire_couts(dict(ancien, vote=[{k: r.get(k) for k in ("modele", "tokens_entree", "tokens_sortie", "cout_usd", "appels", "erreur")}
+                                           for r in resultats]), chemin)
+
+
+def budget_ia_module():
+    import budget_ia
+    return budget_ia
+
+
+def enregistrer_couts_en_cours():
+    """Écrit les coûts du pilote (et du vote déjà fait) dans COUTS_FICHIER après CHAQUE appel : si le job est tué (délai, annulation),
+    l'étape de finalisation du workflow relit ce fichier et inscrit la dépense dans le run (jamais perdue)."""
+    ia = budget_ia_module()
+    chemin = ia.fichier_couts()
+    if not chemin:
+        return
+    ancien = ia.lire_couts(chemin) or {}
+    ia.ecrire_couts(dict(ancien, pilote=dict(_usage_pilote, cout_usd=round(_usage_pilote["cout_usd"], 4)),
+                         restant_usd=_budget_pilote["restant_usd"]), chemin)
 
 
 def piloter(cle, outils, est_termine, mission, prompt_systeme=None, outils_schemas=None,
@@ -489,6 +492,9 @@ def piloter(cle, outils, est_termine, mission, prompt_systeme=None, outils_schem
     for etape in range(1, MAX_ETAPES + 1):
         if horloge() - debut > DUREE_MAX_S:
             return {"termine": est_termine(), "etapes": etape - 1, "arret": "durée maximale atteinte", "tokens": tokens}
+        if budget_ia_module().budget_atteint(_usage_pilote["cout_usd"], _budget_pilote["restant_usd"]):
+            print(f"   💰 Budget IA atteint ({_usage_pilote['cout_usd']:.4f} $ dépensés par le pilote) : aucun nouvel appel.")
+            return {"termine": est_termine(), "etapes": etape - 1, "arret": "budget IA atteint", "tokens": tokens}
         print(f"   🤖 [Agent {'secours' if _secours['actif'] else 'DeepSeek'}] étape {etape}/{MAX_ETAPES}...")
         data, max_tokens = _appel_api(cle, messages, max_tokens, outils_schemas, poster, pause)
         usage = data.get("usage") or {}
@@ -497,6 +503,7 @@ def piloter(cle, outils, est_termine, mission, prompt_systeme=None, outils_schem
         _usage_pilote["tokens_entree"] += int(usage.get("prompt_tokens") or 0)
         _usage_pilote["tokens_sortie"] += int(usage.get("completion_tokens") or 0)
         _usage_pilote["cout_usd"] += _cout_appel(usage)
+        enregistrer_couts_en_cours()
         msg = data["choices"][0]["message"]
         assistant = {"role": "assistant", "content": msg.get("content") or ""}
         if msg.get("reasoning_content") is not None:
@@ -569,7 +576,8 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
     import agent_strategie as st
     import agents_familles
     import budget_ia
-    _usage_pilote.update(appels=0, tokens_entree=0, tokens_sortie=0, cout_usd=0.0)
+    _usage_pilote.update(appels=0, tokens_entree=0, tokens_sortie=0, cout_usd=0.0, appels_cout_estime=0)
+    _budget_pilote.update(restant_usd=budget_restant_usd, etat={})
 
     cle = os.getenv("DEEPSEEK_API_KEY")
     _secours.update(actif=_secours_d_emblee(), choix=None)   # nouvel essai du fournisseur principal à chaque run
@@ -642,6 +650,12 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
         # prend alors tous les matchs du jour, sans descendre sous NB_JAMBES_PLANCHER_ABSOLU (6,
         # demande « plus de 5 jambes »). Sous ce plancher, l'agent s'abstient comme avant.
         nb_matchs_catalogue = len({c["match"] for c in etat["catalogue"].values()})
+        ajuste = st.ajuster_repetition(profil, nb_matchs_catalogue, len(etat["profils"]))
+        if ajuste is not profil:   # Phase 4 : pas assez de matchs pour des coupons sans match commun
+            profil = ajuste
+            etat["profils"][etat["profil_index"]] = profil
+            print(f"   ℹ️ {nb_matchs_catalogue} match(s) pour {len(etat['profils'])} coupon(s) : un match peut figurer dans plusieurs coupons "
+                  "(jamais le même pari exact).")
         plancher_absolu = int(os.getenv("NB_JAMBES_PLANCHER_ABSOLU") or 4)   # 28/10/2026 : 6 -> 4 (jours à peu de matchs)
         if profil.get("nb_jambes_min", 1) > nb_matchs_catalogue >= plancher_absolu:
             profil = dict(profil, nb_jambes_min=nb_matchs_catalogue,
@@ -649,30 +663,28 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
             etat["profils"][etat["profil_index"]] = profil
             print(f"   ℹ️ Seulement {nb_matchs_catalogue} match(s) éligible(s) aujourd'hui : minimum de jambes "
                   f"ramené à {nb_matchs_catalogue} (un pari par match).")
-        # Plancher de cote adaptatif (28/10/2026) : avec peu de matchs et des jambes à 70-78 %, la cote totale ne peut pas
-        # atteindre le plancher du profil (5 matchs : au mieux 4,65 pour un plancher de 5). Il est ramené à ce qu'atteignent
-        # des jambes d'environ 1,3 ; au-dessus de 7 matchs rien ne change.
+        # Plancher de cote adaptatif (28/10/2026) : ne concerne QUE les profils personnalisés qui fixent un plancher de cote totale ; les trois profils de
+        # risque par défaut n'en ont pas (aucune cote totale cible, 07/11/2026).
         nb_legs_possibles = min(profil["nb_jambes"], nb_matchs_catalogue)
-        if nb_matchs_catalogue < 8 and nb_matchs_catalogue >= plancher_absolu:
+        if profil.get("cote_totale_min") and nb_matchs_catalogue < 8 and nb_matchs_catalogue >= plancher_absolu:
             plancher_adapte = round(1.3 ** nb_legs_possibles, 2)
-            if profil.get("cote_totale_min", st.COTE_TOTALE_MIN) > plancher_adapte:
+            if profil["cote_totale_min"] > plancher_adapte:
                 profil = dict(profil, cote_totale_min=plancher_adapte)
                 etat["profils"][etat["profil_index"]] = profil
                 print(f"   ℹ️ {nb_matchs_catalogue} match(s) : plancher de cote totale ramené à {plancher_adapte} "
                       "(jambes de l'ordre de 1,3).")
         return {
             "profil_en_cours": f"{etat['profil_index'] + 1}/{len(etat['profils'])}",
-            # cote_min/cote_max NON transmis : la cote totale n'est plus une contrainte de
-            # FOURCHETTE depuis le 01/10/2026 (demande explicite) — seul le nombre de jambes
-            # différencie les profils. cote_totale_min (plancher, vérifié par Python) reste
-            # transmis — DIVERSIFIÉ PAR PROFIL depuis le 02/10/2026 (demande explicite après
-            # avoir constaté que les 4 coupons sûrs du run #84 tombaient tous entre 5.0 et 5.25
-            # au même plancher unique de 5).
+            # Aucune cote cible transmise (07/11/2026) : le niveau de risque et sa consigne orientent le choix ; un plancher ou une bande de cote
+            # n'apparaît que pour un profil personnalisé qui en fixe un explicitement.
             "profil": {"nom": profil["nom"], "nb_jambes_min": profil.get("nb_jambes_min", 1),
                        "nb_jambes_max": profil["nb_jambes"],
-                       "cote_totale_min": profil.get("cote_totale_min", st.COTE_TOTALE_MIN),
-                       "prefere_cote_elevee": profil.get("prefere_cote_elevee", False),
+                       **({"prefere_cote_elevee": True} if profil.get("prefere_cote_elevee") else {}),   # profil personnalisé seulement
+                       **({"niveau_risque": profil["niveau_risque"]} if profil.get("niveau_risque") else {}),
+                       **({"consigne": profil["consigne"]} if profil.get("consigne") else {}),
+                       **({"cote_totale_min": profil["cote_totale_min"]} if profil.get("cote_totale_min") else {}),
                        **({"cote_totale_max": profil["cote_totale_max"]} if profil.get("cote_totale_max") else {}),
+                       **({"match_repete_autorise": True} if profil.get("match_repete_autorise") else {"match_deja_pris_interdit": True}),
                        **({"proba_min_pct_par_jambe": profil["proba_min_pct"]} if profil.get("proba_min_pct") else {}),
                        **({"matchs_restants_a_couvrir": sorted(
                            {c["match"] for c in etat["catalogue"].values()
@@ -774,7 +786,8 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
                 return
             # Budget journalier (Phase 3) : répartition entre les modèles, ou refus explicite (jamais silencieux).
             plafond_modele = float(os.getenv("OMBRE_BUDGET_USD") or 1.5)
-            budgets, ignores = budget_ia.repartir(budget_restant_usd, modeles, plafond_modele)
+            restant_vote = None if budget_restant_usd is None else max(0.0, budget_restant_usd - _usage_pilote["cout_usd"])   # Phase 4 : le pilote a déjà dépensé
+            budgets, ignores = budget_ia.repartir(restant_vote, modeles, plafond_modele)
             etat["vote_ignores"] = ignores
             for m, raison in ignores:
                 print(f"   💰 Vote : {m} non lancé — {raison}.")
@@ -787,6 +800,7 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
                                              duree_max_s=float(os.getenv("VOTE_DUREE_MAX_S") or 300),
                                              budgets_par_modele=budgets if budget_restant_usd is not None else None)
             etat["vote_resultats"] = resultats
+            _enregistrer_couts_vote(resultats)
             for r in resultats:
                 print(f"   💰 {r.get('modele')} : {r.get('tokens_entree')} → {r.get('tokens_sortie')} tokens, "
                       f"{r.get('cout_usd')} $, {len(r.get('coupons') or [])} coupon(s), erreur {r.get('erreur')}")
@@ -854,7 +868,8 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
         Python), et envoyer_telegram suit le flux normal. Aucun repli sur DeepSeek : un échec abandonne le run."""
         import ombre
         plafond_modele = float(os.getenv("OMBRE_BUDGET_USD") or 1.5)
-        budgets, ignores = budget_ia.repartir(budget_restant_usd, [modele], plafond_modele)
+        restant_vote = None if budget_restant_usd is None else max(0.0, budget_restant_usd - _usage_pilote["cout_usd"])
+        budgets, ignores = budget_ia.repartir(restant_vote, [modele], plafond_modele)
         etat["vote_ignores"] = ignores
         if ignores:   # budget épuisé ou insuffisant : aucun appel payant, abandon explicite (pas de repli : voir docstring)
             raison = f"{modele} : non lancé — {ignores[0][1]}"
@@ -945,8 +960,14 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
         resultat["journal"]["envoi_partiel"] = etat["envoi_partiel"]
     if etat.get("vote_journal") and isinstance(resultat.get("journal"), dict):
         resultat["journal"]["vote"] = etat["vote_journal"]
-    if (os.getenv("PILOTE_MODELE") or "").strip() and isinstance(resultat.get("journal"), dict):
-        resultat["journal"]["modele_pilote"] = os.getenv("PILOTE_MODELE").strip()
+    if isinstance(resultat.get("journal"), dict):
+        # Phase 4 : le modèle pilote est TOUJOURS enregistré (avant : seulement quand PILOTE_MODELE était posé, donc jamais pour DeepSeek) ainsi que
+        # la route réellement utilisée (API DeepSeek, ou OpenRouter/secours) pour que la comparaison entre modèles reste attribuable.
+        pilote_impose = (os.getenv("PILOTE_MODELE") or "").strip()
+        choix = _secours.get("choix")
+        route = (f"{choix[0]}/{choix[3]}" if _secours.get("actif") and choix else ("DeepSeek/" + MODELE))
+        resultat["journal"]["modele_pilote"] = pilote_impose or (f"deepseek ({MODELE})")
+        resultat["journal"]["route_pilote"] = route
     if etat.get("composition") and isinstance(resultat.get("journal"), dict):
         resultat["journal"]["composition"] = etat["composition"]
     return resultat

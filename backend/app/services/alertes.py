@@ -42,11 +42,11 @@ def decider(statut, cron, maintenant, deja_alerte, envoi_partiel=None):
     """-> (faut-il alerter, cause)."""
     if envoi_partiel:
         return True, "partiel"
-    if statut not in ("abandonne", "erreur") or deja_alerte:
+    if statut not in ("abandonne", "erreur", "interrompu") or deja_alerte:
         return False, None
     if not cron:
         return True, statut
-    if statut == "erreur":
+    if statut in ("erreur", "interrompu"):
         return True, statut
     return est_dernier_passage(maintenant), statut
 
@@ -80,6 +80,12 @@ def message(cause, run):
                 f"sont bien partis et ne seront pas renvoyés. Détail : {_nettoyer(_detail_sans_couts(run))}")
     if cause == "erreur":
         return f"❌ Pipeline du jour : run {run.id} en erreur, aucun coupon envoyé. Détail : {_nettoyer(_detail_sans_couts(run))}"
+    if cause == "interrompu":
+        return (f"❌ Pipeline du jour : run {run.id} interrompu (délai ou annulation du job), aucun coupon envoyé. "
+                f"Détail : {_nettoyer(_detail_sans_couts(run))}")
+    if cause == "relances":
+        return ("⚠️ Pipeline du jour : aucun coupon envoyé et les relances payantes sont suspendues (plusieurs échecs avec dépense aujourd'hui). "
+                "Aucune nouvelle dépense automatique ; vérifiez GitHub Actions et relancez à la main si besoin.")
     if cause == "bloque":
         return ("⚠️ Pipeline du jour : aucun coupon envoyé à la fin de la fenêtre (un run est resté bloqué ou en cours). "
                 "Vérifiez GitHub Actions.")
@@ -117,13 +123,13 @@ def envoyer_alerte_si_besoin(db, run_id, notifier, cron, maintenant=None):
         return None
 
 
-def envoyer_alerte_passage_saute(db, notifier, maintenant=None):
+def envoyer_alerte_passage_saute(db, notifier, maintenant=None, cause="bloque"):
     """Cron sauté par la garde au dernier passage alors qu'aucun coupon n'est parti aujourd'hui (run « en cours » bloqué)."""
     maintenant = maintenant or datetime.now(timezone.utc)
     try:
         if not est_dernier_passage(maintenant) or alerte_deja_envoyee(db, maintenant) or not aucun_envoi_aujourdhui(db, maintenant):
             return None
-        ok = bool(notifier(message("bloque", None)))
+        ok = bool(notifier(message(cause, None)))
         if ok:
             _poser_temoin()
             derniere = db.scalar(select(Run).where(Run.source == "api", Run.lance_le >= datetime.combine(
@@ -131,7 +137,7 @@ def envoyer_alerte_passage_saute(db, notifier, maintenant=None):
             if derniere is not None:
                 derniere.detail = f"{derniere.detail or ''} {MARQUEUR}".strip()
                 db.commit()
-        return "bloque" if ok else None
+        return cause if ok else None
     except Exception as e:
         print(f"⚠️ Alerte Telegram impossible : {str(e)[:150]}")
         return None

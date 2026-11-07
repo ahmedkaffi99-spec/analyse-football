@@ -57,7 +57,7 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 # principal l'est aussi à ces chats (liste séparée par des virgules, modifiable sans code). Jamais ajoutés quand le chat
 # principal a été remplacé (envoi vers un autre bot/chat, ex. TELEGRAM_TOKEN_FRERE), pour ne rien envoyer avec le mauvais bot.
 TELEGRAM_CHAT_IDS_SUPPLEMENTAIRES = [c.strip() for c in
-                                     (os.getenv("TELEGRAM_CHAT_IDS_SUPPLEMENTAIRES") or "1446772592").split(",")
+                                     (os.getenv("TELEGRAM_CHAT_IDS_SUPPLEMENTAIRES") or "").split(",")   # Phase 4 (07/11/2026) : AUCUNE valeur par défaut codée en dur (variable explicite du dépôt)
                                      if c.strip()]
 _TELEGRAM_CHAT_ID_INITIAL = TELEGRAM_CHAT_ID
 
@@ -166,7 +166,7 @@ NB_MATCHS_SEUIL_PLAFOND_COUPONS = 8   # sous ce nombre de matchs, le plafond ren
 
 def profils_agent_quotidien():
     """Profils du moteur « agent » quand AUCUN profil n'est fourni (profil de secours). Phase 2 (06/11/2026) : ce sont EXACTEMENT les profils
-    du formulaire « Run workflow » (bet_agent/profils_smart.py, source unique) — bandes 5-10 / 12-18 / 20-35, aucune contrainte par jambe.
+    du formulaire « Run workflow » (bet_agent/profils_smart.py, source unique) — trois profils de risque (prudent, équilibré, risque), aucune cote imposée.
     Avant, ce secours gardait les règles retirées le même jour (probabilité min/max par jambe, couverture obligatoire de tous les matchs,
     plafond de coupons par match, bandes 10-18 / 18-35). NB_JAMBES / NB_JAMBES_MIN (variables explicites, absentes du workflow actuel),
     si fournies, bornent encore les coupons."""

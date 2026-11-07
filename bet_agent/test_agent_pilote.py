@@ -191,7 +191,8 @@ class TestExecuterAgentPilote(unittest.TestCase):
         texte_catalogue = next(c for c in contenus_outils if "catalogue" in c)
         self.assertIn('"prefere_cote_elevee": true', texte_catalogue)
 
-    def test_voir_catalogue_prefere_cote_elevee_false_par_defaut(self):
+    def test_voir_catalogue_n_impose_aucune_cote_par_defaut(self):
+        # 07/11/2026 : plus de plancher de cote totale par défaut ni de champ prefere_cote_elevee ; la règle « match non repris » est annoncée.
         reponses = [
             _msg_outil("collecter_donnees", {}),
             _msg_outil("voir_catalogue", {}),
@@ -206,7 +207,10 @@ class TestExecuterAgentPilote(unittest.TestCase):
         dernier_appel_messages = appel.call_args_list[-1].args[1]
         contenus_outils = [m["content"] for m in dernier_appel_messages if m.get("role") == "tool"]
         texte_catalogue = next(c for c in contenus_outils if "catalogue" in c)
-        self.assertIn('"prefere_cote_elevee": false', texte_catalogue)
+        self.assertNotIn("prefere_cote_elevee", texte_catalogue)
+        self.assertNotIn("cote_totale_min", texte_catalogue)
+        self.assertNotIn("cote_totale_max", texte_catalogue)
+        self.assertIn('"match_deja_pris_interdit": true', texte_catalogue)
 
 
 PROFIL_1 = {"cle": "sur", "nom": "🛡️ SÛR", "cote_min": 0.0, "cote_max": 1000.0, "nb_jambes_min": 1, "nb_jambes": 2}
@@ -518,14 +522,14 @@ class TestContexteSupplementaireEtRegleDeProbabiliteReelle(unittest.TestCase):
         # Depuis le 01/10/2026 ("il faut que Python calcule tout, ne donne pas à l'IA à
         # calculer") : la base de décision est la probabilité CALCULÉE PAR PYTHON, pas une
         # estimation de l'IA.
-        self.assertIn("PROBABILITÉ PYTHON DU CATALOGUE", prompt)
-        self.assertIn("N'EMPILE PAS PLUSIEURS JAMBES FRAGILES", prompt)
+        self.assertIn("PROBABILITÉ ET L'EDGE DU CATALOGUE", prompt)
+        self.assertIn("FRAGILE", prompt)
         self.assertIn("BILAN RÉEL DES COUPONS PRÉCÉDENTS", prompt)
-        # Demande explicite du 01/10/2026 : "au lieu de 4 jambes avec cote +1.5, mieux 9 jambes
-        # avec cote -1.5" (clarifié : la cote unitaire décimale, pas la ligne de handicap) —
-        # préférer empiler des favoris à cote basse plutôt que peu de jambes à cote élevée.
-        self.assertIn("PROBABILITÉ PYTHON ÉLEVÉE", prompt)
-        self.assertIn("1.1-1.5", prompt)
+        # 07/11/2026 : trois profils de risque, aucune cote cible ; le texte ne doit plus parler de bande, de plancher ni de seuil de 60 %.
+        self.assertIn("TROIS PROFILS DE RISQUE", prompt)
+        self.assertIn("AUCUNE cote", prompt)
+        for ancien in ("BANDE DE COTE TOTALE du profil", "prefere_cote_elevee", "60 % par défaut", "1.1-1.5"):
+            self.assertNotIn(ancien, prompt)
 
     def test_contexte_supplementaire_prepende_a_la_mission_par_defaut(self):
         with mock.patch.object(cd, "collecter_donnees", return_value=None), \
@@ -642,15 +646,15 @@ class TestMinimumDeJambesAdaptatifEtAbstentionSansTelegram(unittest.TestCase):
         self.assertEqual(len(resultat["resultats_profils"][0]["selections"]), 8)  # 8 matchs -> 8 jambes
         envoi.assert_called_once()
 
-    def test_le_nombre_de_jambes_n_est_plus_impose(self):
+    def test_le_nombre_minimal_de_jambes_est_impose(self):
         profil = {"cle": "jour", "nom": "J", "cote_min": 0.0, "cote_max": 1000.0, "nb_jambes_min": 12, "nb_jambes": 15}
         jambes = [{"id": f"P{i}", "raison": "r"} for i in range(1, 4)]
         reponses = [_msg_outil("collecter_donnees", {}), _msg_outil("voir_catalogue", {}),
                     _msg_outil("proposer_coupon", {"strategie": "s", "jambes": jambes}),
                     _msg_outil("abandonner", {"raison": "trop peu de matchs"})]
         resultat, envoi = self._executer(self._pool(3), reponses, profil)
-        # 06/11/2026 : le nombre de jambes n'est plus vérifié (le profil demande 12 à 15, le coupon de 3 jambes est accepté)
-        self.assertEqual(len(resultat["resultats_profils"][0]["selections"]), 3)
+        # Phase 4 (07/11/2026) : le minimum du profil (12) est vérifié par Python : le coupon de 3 jambes est REFUSÉ (aucun coupon retenu)
+        self.assertEqual(resultat["resultats_profils"], [])
 
     def test_abstention_n_envoie_aucun_message_telegram(self):
         profil = {"cle": "jour", "nom": "J", "cote_min": 0.0, "cote_max": 1000.0, "nb_jambes_min": 2, "nb_jambes": 5}

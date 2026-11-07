@@ -16,7 +16,7 @@ def maintenant():
 
 
 # Valeurs possibles des colonnes "statut" / "resultat" (chaînes simples, lisibles en SQL)
-STATUTS_RUN = ("en_cours", "termine", "abandonne", "erreur")
+STATUTS_RUN = ("en_cours", "termine", "abandonne", "erreur", "interrompu")
 STATUTS_COUPON = ("en_attente", "gagne", "perdu", "incertain", "vide")
 RESULTATS_JAMBE = ("en_attente", "gagne", "perdu", "push", "demi_gagne", "demi_perdu", "non_verifiable")
 

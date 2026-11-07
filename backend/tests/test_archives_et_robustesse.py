@@ -56,7 +56,7 @@ def test_runs_interrompus_clotures():
         db.commit()
         assert cloturer_runs_interrompus(db, maintenant) == 1
         statuts = [r.statut for r in db.query(Run).order_by(Run.id)]
-    assert statuts == ["erreur", "en_cours"]
+    assert statuts == ["interrompu", "en_cours"]   # Phase 4 : un run tué est « interrompu », distinct d'une erreur
 
 
 def test_run_bloque_ne_bloque_plus_le_suivant(monkeypatch):
@@ -69,7 +69,7 @@ def test_run_bloque_ne_bloque_plus_le_suivant(monkeypatch):
     _faux_pipeline(monkeypatch, collecte_exemple(), profils_exemple())
     assert taches.main(["run", "--si-aucun-ticket-aujourdhui", "--moteur", "deterministe"]) == 0
     with SessionLocal() as db:
-        assert [r.statut for r in db.query(Run).order_by(Run.id)] == ["erreur", "termine"]
+        assert [r.statut for r in db.query(Run).order_by(Run.id)] == ["interrompu", "termine"]   # Phase 4 : run tué = « interrompu »
 
 
 def test_tester_api_signale_une_route_en_panne(monkeypatch):

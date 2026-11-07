@@ -77,3 +77,82 @@ def bilan_couts(usage_pilote, resultats_vote, gagnants, restant, ignores, repli=
     if alertes:
         bilan["alerte"] = " | ".join(alertes)
     return bilan
+
+
+# ---------------------------------------------------------------------------------------------------------------------------------
+# Phase 4 (07/11/2026, corrections contrôlées) : un coût INCONNU n'est jamais gratuit, et les coûts sont écrits au fil de l'eau.
+# ---------------------------------------------------------------------------------------------------------------------------------
+import json
+import tempfile
+
+PRIX_DEFAUT_ENTREE_USD_M = 3.0     # $ par million de tokens d'entrée, estimation PRUDENTE quand le fournisseur ne renvoie aucun coût
+PRIX_DEFAUT_SORTIE_USD_M = 15.0    # $ par million de tokens de sortie (idem)
+
+
+def _prix(nom, defaut):
+    try:
+        return max(0.0, float(os.getenv(nom) or defaut))
+    except ValueError:
+        return defaut
+
+
+def cout_appel(usage, cout_fournisseur=None, prix_entree=None, prix_sortie=None):
+    """-> (cout_usd, estime). Coût renvoyé par le fournisseur s'il existe ; sinon estimation à partir des tokens avec des prix
+    PRUDENTS (PRIX_DEFAUT_*_USD_M, remplaçables) ; sans aucun token connu non plus, coût minimal forfaitaire de 0,01 $ : jamais 0 en silence.
+    `prix_entree`/`prix_sortie` : prix configurés du modèle (ex. DeepSeek), prioritaires sur les prix par défaut."""
+    usage = usage or {}
+    if cout_fournisseur is not None:
+        try:
+            c = float(cout_fournisseur)
+            if c == c and c >= 0:
+                return c, False
+        except (TypeError, ValueError):
+            pass
+    tin, tout = int(usage.get("prompt_tokens") or 0), int(usage.get("completion_tokens") or 0)
+    if not tin and not tout:
+        return 0.01, True
+    pin = prix_entree if prix_entree else _prix("PRIX_DEFAUT_ENTREE_USD_M", PRIX_DEFAUT_ENTREE_USD_M)
+    pout = prix_sortie if prix_sortie else _prix("PRIX_DEFAUT_SORTIE_USD_M", PRIX_DEFAUT_SORTIE_USD_M)
+    return (tin * pin + tout * pout) / 1_000_000, True
+
+
+def budget_atteint(depense, restant):
+    """True quand il ne faut plus lancer d'appel payant : `restant` None = pas de plafond ; sinon dépense >= restant (restant <= 0 : toujours)."""
+    return restant is not None and (restant <= 0 or depense >= restant)
+
+
+def fichier_couts():
+    """Chemin du fichier de coûts du run en cours (COUTS_FICHIER) ; None = désactivé."""
+    chemin = (os.getenv("COUTS_FICHIER") or "").strip()
+    return chemin or None
+
+
+def ecrire_couts(donnees, chemin=None):
+    """Écrit (remplace, de façon atomique) l'état des coûts du run : lisible même si le processus est tué juste après.
+    Ne lève jamais : un échec d'écriture ne doit pas arrêter un run (il est signalé sur la sortie standard)."""
+    chemin = chemin or fichier_couts()
+    if not chemin:
+        return False
+    try:
+        dossier = os.path.dirname(os.path.abspath(chemin))
+        os.makedirs(dossier, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=dossier, prefix=".couts_")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(donnees, f, ensure_ascii=False)
+        os.replace(tmp, chemin)
+        return True
+    except Exception as e:
+        print(f"⚠️ Coûts non écrits dans {chemin} : {str(e)[:120]}")
+        return False
+
+
+def lire_couts(chemin=None):
+    """Dernier état de coûts écrit, ou None (fichier absent ou illisible)."""
+    chemin = chemin or fichier_couts()
+    if not chemin or not os.path.exists(chemin):
+        return None
+    try:
+        with open(chemin, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None

@@ -4,9 +4,8 @@ coupon(s) → rédaction IA → Telegram), mais déterministe (pas de LLM pilote
 
 import json
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
-from sqlalchemy import select
 
 from app import config
 from app.config import DOSSIER_DONNEES
@@ -30,6 +29,17 @@ def charger_collecte_du_jour(db, run_source_id, telecharger=telecharger_collecte
         raise ValueError(f"Run {run_source_id} du {source.lance_le.date()} : cotes périmées, reprise refusée")
     print(f"♻️ Reprise de la collecte du run {run_source_id} (aucun appel aux API sportives)")
     return telecharger(db, source)
+
+
+def _couts_du_fichier():
+    """Texte « | COUTS_AGENT {...} » des coûts écrits par l'agent pour ce job, ou vide. Ne lève jamais."""
+    try:
+        from app.services.budget import couts_depuis_fichier
+        pipeline.modules()
+        import budget_ia
+        return texte_couts_pour_detail(couts_depuis_fichier(budget_ia.lire_couts()))
+    except Exception:
+        return ""
 
 
 def executer_run(run_id, envoyer_telegram=False, rediger=True, depuis_run=None, moteur="central",
@@ -88,8 +98,8 @@ def executer_run(run_id, envoyer_telegram=False, rediger=True, depuis_run=None, 
                 bilan = "\n\n".join(x for x in (bilan, memoire) if x) or None
             except Exception as e:  # la mémoire ne doit jamais empêcher un run
                 print(f"ℹ️ Mémoire d'apprentissage indisponible : {str(e)[:120]}")
-            # Sans profils personnalisés : profils quotidiens de l'agent (3 coupons de 5-10 jambes par défaut,
-            # 20/10/2026) — jamais ae.PROFILS_COUPON (2-5 jambes), réservé au mode manuel.
+            # Sans profils personnalisés : profils quotidiens de l'agent (trois profils de risque : prudent,
+            # équilibré, risque, sans cote imposée, 07/11/2026) — jamais ae.PROFILS_COUPON (2-5 jambes), réservé au mode manuel.
             if profils_personnalises is None:
                 profils_personnalises = ae.profils_agent_quotidien()
             options_reprise = {"donnees_reprises": donnees_reprises} if donnees_reprises is not None else {}
@@ -280,9 +290,13 @@ def executer_run(run_id, envoyer_telegram=False, rediger=True, depuis_run=None, 
     except Exception as e:
         db.rollback()
         run = db.get(Run, run_id)
-        run.statut, run.detail = "erreur", pipeline.masquer_secrets(f"{type(e).__name__}: {e}")[:2000]
+        # Phase 4 : le run reste en « erreur » (l'erreur n'est jamais masquée) ET la dépense déjà faite est conservée : les coûts écrits au fil de
+        # l'eau par l'agent (COUTS_FICHIER) sont ajoutés au détail, sinon le plafond journalier ignorerait un run planté après avoir payé.
+        texte_erreur = pipeline.masquer_secrets(f"{type(e).__name__}: {e}")
+        run.statut = "erreur"
         if run.envoye_telegram:   # coupons DÉJÀ partis : on le dit dans le détail (alerte, audit) ; le run reste compté comme envoyé
-            run.detail = ("[APRES_ENVOI] " + run.detail)[:2000]
+            texte_erreur = "[APRES_ENVOI] " + texte_erreur
+        run.detail = texte_erreur[:1500] + _couts_du_fichier()
     finally:
         run.termine_le = datetime.now(timezone.utc)
         db.commit()

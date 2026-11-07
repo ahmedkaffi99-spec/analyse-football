@@ -57,7 +57,7 @@ def test_run_bloque_depuis_longtemps_est_cloture_par_la_garde():
         _run(db, "en_cours", quand=datetime.now(timezone.utc) - timedelta(hours=5))
         lancer, _ = garde.decision_passage(db, datetime.now(timezone.utc))
         assert lancer is True                                    # sinon le jour resterait bloqué sans que le job `run` ne s'exécute
-        assert db.query(Run).one().statut == "erreur"
+        assert db.query(Run).one().statut == "interrompu"   # Phase 4 : run tué = « interrompu »
 
 
 def test_main_ecrit_la_sortie_du_workflow_et_laisse_passer_en_cas_de_doute(tmp_path, monkeypatch):

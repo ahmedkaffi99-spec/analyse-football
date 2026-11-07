@@ -147,7 +147,7 @@ def test_moteur_agent_depuis_run_inconnu_clot_le_run_en_erreur_explicite(monkeyp
         assert "999" in run.detail and "introuvable" in run.detail
 
 
-def test_moteur_agent_est_le_defaut_avec_profil_12_a_15_jambes(monkeypatch):
+def test_moteur_agent_est_le_defaut_avec_trois_profils_de_risque(monkeypatch):
     # 20/10/2026, demande explicite : "l'IA choisit les paris" + "coupon de 12 à 15 jambes" —
     # sans --moteur ni --profils-json, le pipeline lance l'agent avec le profil quotidien.
     monkeypatch.delenv("NB_JAMBES", raising=False)
@@ -166,7 +166,8 @@ def test_moteur_agent_est_le_defaut_avec_profil_12_a_15_jambes(monkeypatch):
     # Phase 2 (06/11/2026) : le profil de secours EST le profil du formulaire (source unique, plus de règles retirées qui reviennent)
     assert profils == preparer_formulaire.profils()
     assert [p["cle"] for p in profils] == ["coupon1", "coupon2", "coupon3"]
-    assert [(p["cote_totale_min"], p["cote_totale_max"]) for p in profils] == [(5, 10), (12, 18), (20, 35)]
+    assert [p["niveau_risque"] for p in profils] == ["prudent", "equilibre", "risque"]   # 07/11/2026 : trois profils de risque, aucune bande de cote
+    assert not any("cote_totale_min" in p or "cote_totale_max" in p for p in profils)
     assert all(p["jambes_max_par_match"] == 1 and p["un_seul_pari_par_event"] for p in profils)
     regles_retirees = {"proba_min_pct", "proba_max_pct", "couvrir_tous_les_matchs", "dernier_profil", "max_coupons_par_match",
                        "diversifier_entre_coupons", "tous_les_matchs_obligatoires", "familles_obligatoires"}

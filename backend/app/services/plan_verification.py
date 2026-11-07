@@ -6,7 +6,6 @@ Les vagues et les bornes sont calculées en Python (déterministe) ; l'IA affine
 de chaque vague et rédige l'analyse. Sa réponse est VALIDÉE : hors bornes ou illisible, on garde le plan déterministe."""
 
 import json
-from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select

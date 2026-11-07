@@ -73,7 +73,7 @@ def _lancer(monkeypatch, restant, composer, modeles="gpt,gemini"):
                 _msg_outil("proposer_coupon", {"strategie": "s", "jambes": [{"id": "P1", "raison": "r"}]}),
                 _msg_outil("envoyer_telegram", {})]
     for r in reponses:   # le pilote consomme aussi des tokens : ils doivent être comptés
-        r["usage"] = {"prompt_tokens": 1000, "completion_tokens": 200, "total_tokens": 1200}
+        r["usage"] = {"prompt_tokens": 1000, "completion_tokens": 200, "total_tokens": 1200, "cost": 0.0}   # coût 0 RENVOYÉ par le fournisseur (un coût absent n'est plus gratuit : Phase 4)
     with mock.patch.object(cd, "collecter_donnees", return_value=None), \
             mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(DONNEES_FACTICES))), \
             mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=POOL_SIX_MATCHS), \
@@ -126,12 +126,12 @@ def test_cout_du_pilote_mesure_ou_estime(monkeypatch):
     monkeypatch.delenv("DEEPSEEK_PRIX_ENTREE_USD_M", raising=False)
     monkeypatch.delenv("DEEPSEEK_PRIX_SORTIE_USD_M", raising=False)
     assert pilote._cout_appel({"cost": 0.0123, "prompt_tokens": 5}) == 0.0123                 # coût renvoyé par le fournisseur
-    assert pilote._cout_appel({"prompt_tokens": 1000, "completion_tokens": 500}) == 0.0       # ni coût ni prix : tokens seulement
+    assert pilote._cout_appel({"prompt_tokens": 1000, "completion_tokens": 500}) == pytest.approx(0.0105)   # Phase 4 : ni coût ni prix = estimation PRUDENTE (3 et 15 $/M), jamais 0
     monkeypatch.setenv("DEEPSEEK_PRIX_ENTREE_USD_M", "0.5")
     monkeypatch.setenv("DEEPSEEK_PRIX_SORTIE_USD_M", "2")
     assert pilote._cout_appel({"prompt_tokens": 1_000_000, "completion_tokens": 500_000}) == pytest.approx(1.5)
     monkeypatch.setenv("DEEPSEEK_PRIX_ENTREE_USD_M", "abc")
-    assert pilote._cout_appel({"prompt_tokens": 10}) == 0.0                                    # prix illisible : jamais d'exception
+    assert pilote._cout_appel({"prompt_tokens": 10}) == pytest.approx(3e-05)                   # prix illisible : jamais d'exception, estimation prudente (pas 0)
 
 
 def test_le_pilote_openrouter_demande_le_cout_reel(monkeypatch):
