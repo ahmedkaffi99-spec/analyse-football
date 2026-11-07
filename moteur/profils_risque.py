@@ -108,6 +108,28 @@ def cote_totale(jambes):
     return math.prod(j["cote"] for j in jambes) if jambes else 0.0
 
 
+COTE_JAMBE_BASSE = 1.2     # cote moyenne par jambe considérée « basse » (constante propre à l'équilibre, indépendante du plancher configurable)
+COTE_JAMBE_HAUTE = 2.5     # cote moyenne par jambe considérée « haute » pour l'équilibre taille / cote (heuristique, pas une cible)
+
+
+def desequilibre(jambes, profil=None):
+    """Écart (0 = équilibré, 1 = déséquilibre maximal) entre le NOMBRE de jambes et la COTE MOYENNE par jambe (moyenne géométrique), chacun placé dans sa fourchette.
+    Demande du 07/11/2026 : ne pas viser seulement des cotes individuelles hautes OU seulement beaucoup de jambes, mais équilibrer les deux. Un coupon de 12 jambes à
+    1.20 (beaucoup de jambes, cotes basses) ou de 5 jambes à 3.0 (peu de jambes, cotes hautes) est déséquilibré ; 8 jambes autour de 1.6 est équilibré. Heuristique."""
+    if not jambes:
+        return 1.0
+    profil = profil or {}
+    if not profil.get("nb_jambes"):
+        return 0.0          # sans fourchette de jambes (profil libre), pas de notion d'équilibre à mesurer
+    bas = profil.get("nb_jambes_min") or NB_JAMBES_MIN
+    haut = profil.get("nb_jambes") or max(bas + 1, len(jambes))
+    haut = min(haut, 12)
+    pos_nb = 0.5 if haut <= bas else min(1.0, max(0.0, (len(jambes) - bas) / (haut - bas)))
+    moyenne = cote_totale(jambes) ** (1.0 / len(jambes))
+    pos_cote = min(1.0, max(0.0, (moyenne - COTE_JAMBE_BASSE) / (COTE_JAMBE_HAUTE - COTE_JAMBE_BASSE)))
+    return abs(pos_nb - pos_cote)
+
+
 def utilite_jambe(niveau, j):
     """Utilité d'UNE jambe selon le profil. prudent : probabilité ; équilibré : valeur espérée p×cote ; risque : ln(cote × √p) (gain visé, probabilité atténuée)."""
     p, cote = j["p"], j["cote"]

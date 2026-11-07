@@ -33,16 +33,17 @@ def jambes_du_pool(pool):
 
 
 def _dans_la_bande(legs, profil):
-    """Jambes (dans l'ordre d'utilité) ramenées au plus petit nombre qui atteint la cote minimale du profil ; inchangées si le profil n'a pas de bande.
-    Si la bande n'est pas atteignable, renvoie les jambes telles quelles (regles_coupon refusera et le profil s'abstiendra)."""
-    bas = profil.get("cote_totale_min")
+    """Jambes (dans l'ordre d'utilité) ramenées à la taille qui respecte la bande de cote du profil ET équilibre le mieux nombre de jambes et cote moyenne par jambe
+    (pr.desequilibre) ; inchangées si le profil n'a pas de bande. Si aucune taille n'entre dans la bande, renvoie les jambes telles quelles (regles_coupon refusera et le
+    profil s'abstiendra)."""
+    bas, haut = profil.get("cote_totale_min"), profil.get("cote_totale_max")
     if not bas:
         return legs
     minimum = profil.get("nb_jambes_min") or pr.NB_JAMBES_MIN
-    for k in range(minimum, len(legs) + 1):
-        if pr.cote_totale(legs[:k]) >= bas:
-            return legs[:k]
-    return legs
+    valides = [k for k in range(minimum, len(legs) + 1) if bas <= pr.cote_totale(legs[:k]) <= (haut or float("inf"))]
+    if not valides:
+        return legs
+    return legs[:min(valides, key=lambda k: (pr.desequilibre(legs[:k], profil), k))]
 
 
 def composer(pool, profils, taille_reference=None):

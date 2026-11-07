@@ -82,8 +82,24 @@ def test_moteur_central_respecte_nombre_de_jambes_et_bandes():
     cands = [CandidatCentral(match=f"M{i}", marche=cat, selection=sel, cote=cote, moteur_responsable="x", proba_pct=p, categorie=cat, competition=f"L{i % 4}")
              for i in range(19) for cat, sel, cote, p in (("Total", "Over", 1.55, 66), ("Double Chance", "1X", 1.35, 75), ("BTTS", "Yes", 2.0, 52), ("Corners", "Under", 1.7, 60))]
     sortie = selectionner_profils(cands, profils_smart.profils())
-    assert all(r["jambes"] for r in sortie)
+    assert all(r["jambes"] for r in sortie), [r["raison"] for r in sortie]
     for r in sortie:
         assert 5 <= len(r["jambes"]) <= 12
         assert r["profil"]["cote_totale_min"] <= r["cote_totale"] <= r["profil"]["cote_totale_max"]
     assert len({c.match for r in sortie for c in r["jambes"]}) == sum(len(r["jambes"]) for r in sortie)    # un match dans un seul coupon
+
+
+def test_desequilibre_penalise_beaucoup_de_jambes_basses_et_peu_de_jambes_hautes():
+    profil = profils_smart.profils()[1]
+    def jambes(n, cote):
+        return [_j(i, cote) for i in range(n)]
+    assert pr.desequilibre(jambes(12, 1.2), profil) > pr.desequilibre(jambes(8, 1.6), profil)
+    assert pr.desequilibre(jambes(5, 2.5), profil) > pr.desequilibre(jambes(8, 1.6), profil)
+    assert pr.desequilibre(jambes(8, 1.6), profil) < 0.25
+
+
+def test_moteur_deterministe_prefere_la_taille_equilibree_dans_la_bande():
+    legs = [_j(i, 1.3) for i in range(12)]
+    profil = profils_smart.profils()[0]                      # bande 5-10 : tailles 7 (6.27) à 8 (8.16) et 9 (10.6 hors bande)
+    choisi = md._dans_la_bande(legs, profil)
+    assert 7 <= len(choisi) <= 8 and 5 <= pr.cote_totale(choisi) <= 10

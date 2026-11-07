@@ -243,7 +243,7 @@ def construire_prompt(pool, profils, catalogue_texte):
         "contradictoires, jamais de doublon — combine des matchs DIFFÉRENTS plutôt que d'empiler les paris sur "
         "un même match.\n"
         f"3. AUCUNE cote totale cible ni cote individuelle cible ; le seul garde-fou est le plancher technique de {COTE_MIN_JAMBE_AGENT:.2f} par jambe (sauf configuration explicite via COTE_MIN_JAMBE_AGENT). "
-        "Python). Tu es libre du nombre de jambes (deux au minimum) et de la cote totale ; adapte la combinaison au NIVEAU DE RISQUE du profil : prudent = "
+        "Python). Tu es libre du nombre de jambes et de la cote totale DANS la fourchette et la bande de chaque profil ; ÉQUILIBRE le nombre de jambes et le niveau de cote : ne cherche pas seulement des cotes individuelles hautes, ni seulement un grand nombre de jambes à cote basse (12 jambes à 1.20), ni peu de jambes à cote très haute — vise un compromis (par exemple plus de jambes ET des cotes moyennes à élevées) ; adapte la combinaison au NIVEAU DE RISQUE du profil : prudent = "
         "probabilité maximale, équilibré = compromis probabilité / rendement, risque = gain potentiel plus élevé avec davantage de risque. Python calcule "
         "la cote totale, la probabilité jointe et la valeur espérée (probabilité × cote − 1) et te les renvoie. RÉMUNÉRATION : décide en comptant sur la probabilité ET "
         f"le profit ; Python refuse un coupon dont la cote totale est sous {COTE_TOTALE_MIN_COUPON:g} (un coupon à 1.04 gagne presque toujours mais ne rapporte "
@@ -573,7 +573,8 @@ def valider(proposition, catalogue, profils, signatures_existantes=(), selection
         plancher = profil.get("cote_totale_min")
         cote = ae._produit_cotes(selections) if selections else 0
         proba_jointe, valeur_esperee = rentabilite(selections)
-        calculs.append(f"{cle} : {len(selections)} paris, cote totale {cote:.2f}"
+        moyenne = f", cote moyenne par jambe {cote ** (1 / len(selections)):.2f}" if selections and cote > 0 else ""
+        calculs.append(f"{cle} : {len(selections)} paris, cote totale {cote:.2f}{moyenne}"
                        + ("" if proba_jointe is None else f", probabilité jointe {proba_jointe:.1%}, valeur espérée {valeur_esperee:+.0%} par unité misée"))
         if selections and plancher and cote < plancher:
             erreurs.append(f"cote totale {cote:.2f} trop basse (minimum {plancher:g} pour ce profil) — "

@@ -13,6 +13,7 @@ import math
 from moteur import profils_risque as pr
 
 TAILLE_POOL = 16
+POIDS_EQUILIBRE = 1.0     # poids du malus de déséquilibre taille / cote dans l'objectif (heuristique, à valider par backtest)
 BRIER_NEUTRE = 0.25      # Brier d'une prévision constante à 0,5 : au-delà, l'historique du marché n'apporte pas d'information
 
 
@@ -54,7 +55,8 @@ def _ecart_bande(combo, profil):
 
 
 def _objectif(niveau, combo, profil):
-    return pr.utilite_coupon(niveau, combo) - 10.0 * _ecart_bande(combo, profil)
+    # Équilibre nombre de jambes / cote moyenne par jambe (demande du 07/11/2026) : léger malus pour un coupon qui n'est haut que d'un côté.
+    return pr.utilite_coupon(niveau, combo) - 10.0 * _ecart_bande(combo, profil) - POIDS_EQUILIBRE * pr.desequilibre(combo, profil)
 
 
 def _sans_doublon(combo):
@@ -72,33 +74,36 @@ def meilleure_combinaison(jambes, niveau, taille_pool=TAILLE_POOL, profil=None):
     bas = profil.get("nb_jambes_min") or pr.NB_JAMBES_MIN
     haut = profil.get("nb_jambes") or pr.TAILLE_MAX[niveau]
     meilleure, meilleur_score = None, float("-inf")
+    par_cote = sorted(candidats, key=lambda j: j["cote"], reverse=True)
     for taille in range(bas, min(haut, len({j["match"] for j in candidats})) + 1):
-        combo = []
-        for j in candidats:
-            if len(combo) == taille:
-                break
-            if j["match"] not in {x["match"] for x in combo} and pr.diversite_ok(combo + [j]):
-                combo.append(j)
-        if len(combo) < taille:
-            continue
-        score = _objectif(niveau, combo, profil)
-        ameliore = True
-        while ameliore:
-            ameliore = False
-            for i in range(len(combo)):
-                for j in candidats:
-                    if j in combo:
-                        continue
-                    essai = combo[:i] + [j] + combo[i + 1:]
-                    if not _sans_doublon(essai) or not pr.diversite_ok(essai):
-                        continue
-                    s2 = _objectif(niveau, essai, profil)
-                    if s2 > score + 1e-12:
-                        combo, score, ameliore = essai, s2, True
-        if pr.regles_coupon(combo, niveau, profil):
-            continue
-        if score > meilleur_score:
-            meilleure, meilleur_score = list(combo), score
+        # Deux points de départ (jambes les plus utiles, puis les mieux cotées) : la recherche locale ne reste pas bloquée hors de la bande de cote.
+        for ordre in (candidats, par_cote):
+            combo = []
+            for j in ordre:
+                if len(combo) == taille:
+                    break
+                if j["match"] not in {x["match"] for x in combo} and pr.diversite_ok(combo + [j]):
+                    combo.append(j)
+            if len(combo) < taille:
+                continue
+            score = _objectif(niveau, combo, profil)
+            ameliore = True
+            while ameliore:
+                ameliore = False
+                for i in range(len(combo)):
+                    for j in candidats:
+                        if j in combo:
+                            continue
+                        essai = combo[:i] + [j] + combo[i + 1:]
+                        if not _sans_doublon(essai) or not pr.diversite_ok(essai):
+                            continue
+                        s2 = _objectif(niveau, essai, profil)
+                        if s2 > score + 1e-12:
+                            combo, score, ameliore = essai, s2, True
+            if pr.regles_coupon(combo, niveau, profil):
+                continue
+            if score > meilleur_score:
+                meilleure, meilleur_score = list(combo), score
     return meilleure
 
 
