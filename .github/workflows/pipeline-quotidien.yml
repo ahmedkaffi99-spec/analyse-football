@@ -67,8 +67,10 @@ on:
         default: "actif"
 
 concurrency:
-  # Un seul groupe : les runs en parallèle provoquent des interblocages de la base (DeadlockDetected) et saturent API-Football
+  # Exécution strictement séquentielle : éviter les deadlocks Supabase et la saturation API-Football.
+  # queue: max conserve jusqu'à 100 lancements manuels en attente au lieu d'annuler le précédent.
   group: pipeline-quotidien
+  queue: max
   cancel-in-progress: false
 
 permissions:

@@ -92,6 +92,9 @@ def test_workflow_saute_le_job_run_seulement_pour_un_passage_planifie_inutile():
     yaml = pytest.importorskip("yaml")
     flux = yaml.safe_load((RACINE / ".github" / "workflows" / "pipeline-quotidien.yml").read_text(encoding="utf-8"))
     jobs = flux["jobs"]
+    assert flux[ "concurrency" ]["group"] == "pipeline-quotidien"
+    assert flux[ "concurrency" ]["queue"] == "max"
+    assert flux[ "concurrency" ]["cancel-in-progress"] is False
     assert jobs["run"]["if"] == "${{ needs.preparer.outputs.passer != 'false' }}"
     assert jobs["preparer"]["outputs"]["passer"] == "${{ steps.g.outputs.passer }}"
     garde_etape = next(e for e in jobs["preparer"]["steps"] if e.get("id") == "g")

@@ -54,9 +54,14 @@ def tache_run(args):
         db.add(run)
         db.commit()
         run_id = run.id
-        concurrent = autre_run_en_cours(db, run_id)
+        # Sur GitHub Actions, le groupe de concurrence du workflow sérialise déjà tous les runs
+        # (queue: max). Ne pas laisser une ancienne ligne DB « en_cours » bloquer les lancements
+        # manuels suivants : le garde-fou DB reste actif hors GitHub (Termux/API).
+        if os.getenv("GITHUB_RUN_ID"):
+            concurrent = None
+        else:
+            concurrent = autre_run_en_cours(db, run_id)
         if concurrent is not None:
-            # Exécution simultanée (Phase 4) : un run plus ancien est encore en cours ; celui-ci s'abstient sans rien dépenser.
             run.statut, run.detail = "abandonne", f"Exécution simultanée : le run {concurrent} est déjà en cours — aucune dépense."
             run.termine_le = datetime.now(timezone.utc)
             db.commit()

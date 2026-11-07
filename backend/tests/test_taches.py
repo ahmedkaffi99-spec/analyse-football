@@ -144,3 +144,33 @@ def test_aucun_bilan_pour_un_run_non_envoye_sur_telegram(monkeypatch):
         db.commit()
     assert taches.main(["verifier", "--telegram"]) == 0
     assert len(messages) == 1 and "RÉSULTATS DU JOUR" in messages[0]
+
+
+
+def test_runs_manuels_github_repetables_malgre_ancienne_ligne_en_cours(monkeypatch):
+    """GitHub sérialise les workflows : une ancienne ligne DB ne doit pas bloquer les nouveaux runs manuels."""
+    monkeypatch.setenv("GITHUB_RUN_ID", "987654321")
+    monkeypatch.setattr(
+        taches, "autre_run_en_cours",
+        lambda *args: (_ for _ in ()).throw(AssertionError("Le verrou DB ne doit pas être consulté dans GitHub Actions")),
+    )
+    _faux_pipeline(monkeypatch, collecte_exemple(), profils_exemple())
+
+    assert taches.main(["run", "--moteur", "deterministe"]) == 0
+    assert taches.main(["run", "--moteur", "deterministe"]) == 0
+
+    with SessionLocal() as db:
+        runs = db.query(Run).order_by(Run.id).all()
+        assert len(runs) == 2
+        assert all(run.statut == "termine" for run in runs)
+
+
+def test_verrou_db_reste_actif_hors_github(monkeypatch):
+    """Termux/API gardent la protection contre deux processus réellement concurrents."""
+    monkeypatch.delenv("GITHUB_RUN_ID", raising=False)
+    monkeypatch.setattr(taches, "autre_run_en_cours", lambda *args: 272)
+    assert taches.main(["run", "--moteur", "deterministe"]) == 0
+    with SessionLocal() as db:
+        run = db.query(Run).one()
+        assert run.statut == "abandonne"
+        assert "272" in run.detail
