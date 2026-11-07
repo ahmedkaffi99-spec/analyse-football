@@ -166,8 +166,8 @@ def test_moteur_agent_est_le_defaut_avec_trois_profils_de_risque(monkeypatch):
     # Phase 2 (06/11/2026) : le profil de secours EST le profil du formulaire (source unique, plus de règles retirées qui reviennent)
     assert profils == preparer_formulaire.profils()
     assert [p["cle"] for p in profils] == ["coupon1", "coupon2", "coupon3"]
-    assert [p["niveau_risque"] for p in profils] == ["prudent", "equilibre", "risque"]   # 07/11/2026 : trois profils de risque, aucune bande de cote
-    assert not any("cote_totale_min" in p or "cote_totale_max" in p for p in profils)
+    assert [p["niveau_risque"] for p in profils] == ["prudent", "equilibre", "risque"]   # 07/11/2026 : trois profils de risque ; bandes de cote totale espacées, minimum 5
+    assert [(p["cote_totale_min"], p["cote_totale_max"]) for p in profils] == [(5.0, 10.0), (12.0, 20.0), (25.0, 50.0)]
     assert all(p["jambes_max_par_match"] == 1 and p["un_seul_pari_par_event"] for p in profils)
     regles_retirees = {"proba_min_pct", "proba_max_pct", "couvrir_tous_les_matchs", "dernier_profil", "max_coupons_par_match",
                        "diversifier_entre_coupons", "tous_les_matchs_obligatoires", "familles_obligatoires"}

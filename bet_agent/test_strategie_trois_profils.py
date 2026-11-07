@@ -24,7 +24,7 @@ def _prop(cle, ids):
 
 # ---------- profils ----------
 def test_trois_profils_dans_l_ordre_prudent_equilibre_risque():
-    p = profils_smart.profils()
+    p = profils_smart.profils(contraintes=False)
     assert [x["niveau_risque"] for x in p] == ["prudent", "equilibre", "risque"]
     assert [x["cle"] for x in p] == ["coupon1", "coupon2", "coupon3"]          # clés historiques conservées (colonne coupons.profil)
     assert [x["nom"].split(" ", 1)[1] for x in p] == ["PRUDENT", "ÉQUILIBRÉ", "RISQUE"]
@@ -33,12 +33,12 @@ def test_trois_profils_dans_l_ordre_prudent_equilibre_risque():
 
 def test_aucune_cote_imposee_dans_les_profils():
     interdits = {"cote_min", "cote_max", "cote_totale_min", "cote_totale_max", "prefere_cote_elevee", "proba_min_pct", "proba_max_pct"}
-    for profil in profils_smart.profils():
+    for profil in profils_smart.profils(contraintes=False):
         assert not interdits & set(profil)
 
 
 def test_regles_de_coherence_conservees_dans_les_profils():
-    for profil in profils_smart.profils():
+    for profil in profils_smart.profils(contraintes=False):
         assert profil["nb_jambes_min"] == 2 and profil["jambes_max_par_match"] == 1
         assert profil["un_seul_pari_par_event"] is True and profil["match_repete_autorise"] is False
     assert all(x["jambes_max_par_match"] == 3 for x in profils_smart.profils(un_pari_par_match=False))
@@ -46,7 +46,7 @@ def test_regles_de_coherence_conservees_dans_les_profils():
 
 # ---------- validations Python ----------
 def test_cote_totale_tres_basse_ou_tres_haute_acceptee_sans_bande():
-    profil = profils_smart.profils()[2]
+    profil = profils_smart.profils(contraintes=False)[2]
     basse, _, _ = st.valider(_prop("coupon3", ["P1", "P2"]), _cat([1.20, 1.20]), [profil])
     assert "coupon3" in basse                                                  # 1,44 : aucun plancher de cote TOTALE
     haute, _, _ = st.valider(_prop("coupon3", ["P1", "P2", "P3"]), _cat([20.0, 20.0, 20.0]), [profil])
@@ -54,7 +54,7 @@ def test_cote_totale_tres_basse_ou_tres_haute_acceptee_sans_bande():
 
 
 def test_cotes_individuelles_trop_basses_refusees_meme_si_ia_les_choisit():
-    profil = profils_smart.profils()[0]
+    profil = profils_smart.profils(contraintes=False)[0]
     acceptes, problemes, _ = st.valider(_prop("coupon1", ["P1", "P2"]), _cat([1.02, 1.50]), [profil])
     assert "coupon1" not in acceptes
     assert any("plancher technique 1.20" in p for p in problemes)
@@ -72,7 +72,7 @@ def test_catalogue_exclut_les_cotes_individuelles_inferieures_a_1_20():
 
 
 def test_les_validations_de_securite_restent_actives():
-    profil = profils_smart.profils()[0]
+    profil = profils_smart.profils(contraintes=False)[0]
     cat = _cat([1.5, 1.5, 1.5])
     _, p, _ = st.valider(_prop("coupon1", ["P1", "P99"]), cat, [profil])
     assert any("identifiant inconnu" in x for x in p)                          # un pari hors catalogue est refusé
@@ -89,7 +89,7 @@ def test_les_validations_de_securite_restent_actives():
 
 
 def test_deux_coupons_identiques_refuses():
-    profils = profils_smart.profils()[:2]
+    profils = profils_smart.profils(contraintes=False)[:2]
     cat = _cat([1.5, 1.5, 1.5, 1.5])
     deja = [st.signature([dict(cat["P1"]), dict(cat["P2"])])]
     _, p, _ = st.valider(_prop("coupon2", ["P1", "P2"]), cat, [profils[1]], signatures_existantes=deja)
@@ -146,16 +146,16 @@ def test_profil_sans_niveau_garde_le_choix_par_probabilite():
 
 
 def test_coupon_de_comparaison_valide_sans_bande():
-    r = ombre._resume_coupon("coupon1", profils_smart.profils()[0], [_sel("A - B", 2.0), _sel("C - D", 3.0)])
+    r = ombre._resume_coupon("coupon1", profils_smart.profils(contraintes=False)[0], [_sel("A - B", 2.0), _sel("C - D", 3.0)])
     assert r["dans_la_bande"] is True and r["cote_totale"] == 6.0               # aucune borne : valide dès qu'il y a une cote
-    assert ombre._resume_coupon("coupon1", profils_smart.profils()[0], [])["dans_la_bande"] is False
+    assert ombre._resume_coupon("coupon1", profils_smart.profils(contraintes=False)[0], [])["dans_la_bande"] is False
     borne = {"cle": "p", "cote_totale_min": 5.0, "cote_totale_max": 10.0}
     assert ombre._resume_coupon("p", borne, [_sel("A - B", 2.0)])["dans_la_bande"] is False       # une bande explicite reste vérifiée
 
 
 # ---------- consignes données à l'IA ----------
 def test_prompt_pilote_decrit_les_trois_profils_sans_cote_imposee():
-    prompt = pilote.construire_prompt_systeme(profils_smart.profils())
+    prompt = pilote.construire_prompt_systeme(profils_smart.profils(contraintes=False))
     assert "PRUDENT" in prompt and "ÉQUILIBRÉ" in prompt and "RISQUE" in prompt
     assert "TROIS PROFILS DE RISQUE" in prompt and "AUCUNE cote" in prompt
     assert "un match ne figure que dans UN seul coupon" in prompt
@@ -166,7 +166,7 @@ def test_prompt_pilote_decrit_les_trois_profils_sans_cote_imposee():
 
 def test_prompt_des_modeles_du_vote_decrit_les_trois_profils():
     cat = {"P1": _sel("A - B", 1.5)}
-    texte = st.construire_prompt({"A - B": [_sel("A - B", 1.5)]}, profils_smart.profils(), "\n- P1 : ...")
+    texte = st.construire_prompt({"A - B": [_sel("A - B", 1.5)]}, profils_smart.profils(contraintes=False), "\n- P1 : ...")
     assert "Profil PRUDENT" in texte and "Profil ÉQUILIBRÉ" in texte and "Profil RISQUE" in texte
     assert "AUCUNE cote totale cible" in texte
     assert "sans match commun" in texte and "UN seul coupon" in texte
@@ -182,6 +182,6 @@ def test_prompt_conserve_la_bande_d_un_profil_personnalise():
 
 
 def test_voir_catalogue_n_annonce_aucune_cote_pour_les_profils_de_risque():
-    assert "prefere_cote_elevee" not in pilote.construire_prompt_systeme(profils_smart.profils())
-    schemas = str(pilote.construire_outils_schemas(profils_smart.profils()))
+    assert "prefere_cote_elevee" not in pilote.construire_prompt_systeme(profils_smart.profils(contraintes=False))
+    schemas = str(pilote.construire_outils_schemas(profils_smart.profils(contraintes=False)))
     assert "prefere_cote_elevee" not in schemas and "60%" not in schemas and "cote_totale_min" not in schemas

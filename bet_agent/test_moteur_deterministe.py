@@ -5,7 +5,7 @@ import moteur_deterministe as md
 import profils_smart
 from moteur import profils_risque as pr
 
-PROFILS = profils_smart.profils()
+PROFILS = profils_smart.profils(contraintes=False)
 
 
 def c(match, cat="Total", sel="Over", cote=1.8, p=60.0, comp="L1"):

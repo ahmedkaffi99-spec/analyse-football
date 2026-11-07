@@ -1,6 +1,6 @@
 """Moteur CENTRAL — trois profils de risque (prudent, équilibré, risque), sans cote cible (07/11/2026).
 
-Différence de méthode avec le moteur déterministe : recherche EXHAUSTIVE des combinaisons (2 à TAILLE_MAX jambes) parmi les meilleures jambes du profil, optimisant
+Différence de méthode avec le moteur déterministe : recherche des combinaisons (taille et bande de cote du profil) par construction gloutonne puis échanges de jambes, optimisant
 l'utilité du COUPON ENTIER (probabilité jointe avec correction de corrélation × cote totale, pondérées selon le profil) au lieu d'un choix jambe par jambe.
 Probabilité utilisée : la probabilité CALIBRÉE si elle existe, sinon la brute, atténuée vers 0,5 quand l'historique réel du marché est mal calibré
 (Brier mesuré > 0,25) — un marché dont le Brier historique est mauvais ne donne pas une confiance entière. Atténuation plafonnée à 20 % ; heuristique à valider par
@@ -8,7 +8,7 @@ backtest (moteur/evaluation.py), jamais présentée comme prouvée.
 
 Mêmes règles de cohérence que les autres moteurs (moteur/profils_risque.py) : un pari par match, deux jambes minimum, diversité famille/sens, un match dans un seul
 coupon, aucun coupon identique. Une probabilité ou une cote absente écarte le candidat (jamais inventée)."""
-import itertools
+import math
 
 from moteur import profils_risque as pr
 
@@ -40,19 +40,65 @@ def vers_jambes(pool):
     return jambes
 
 
-def meilleure_combinaison(jambes, niveau, taille_pool=TAILLE_POOL):
-    """Combinaison d'utilité maximale (recherche exhaustive sur les `taille_pool` meilleures jambes du profil). None si aucune combinaison cohérente."""
-    candidats = sorted(jambes, key=lambda j: pr.utilite_jambe(niveau, j), reverse=True)[:taille_pool]
+def _ecart_bande(combo, profil):
+    """Distance logarithmique de la cote totale à la bande du profil (0 si dans la bande ou sans bande)."""
+    cote = pr.cote_totale(combo)
+    bas, haut = profil.get("cote_totale_min"), profil.get("cote_totale_max")
+    if cote <= 0:
+        return float("inf")
+    if bas and cote < bas:
+        return math.log(bas / cote)
+    if haut and cote > haut:
+        return math.log(cote / haut)
+    return 0.0
+
+
+def _objectif(niveau, combo, profil):
+    return pr.utilite_coupon(niveau, combo) - 10.0 * _ecart_bande(combo, profil)
+
+
+def _sans_doublon(combo):
+    return len({j["match"] for j in combo}) == len(combo)
+
+
+def meilleure_combinaison(jambes, niveau, taille_pool=TAILLE_POOL, profil=None):
+    """Combinaison d'utilité maximale respectant `regles_coupon` (nombre de jambes et bande de cote du profil compris), ou None si aucune n'est trouvée.
+
+    Pour chaque taille autorisée : construction gloutonne (jambe la plus utile compatible avec un pari par match et la diversité famille/sens) puis amélioration
+    par échanges (remplacer une jambe par une autre tant que l'objectif progresse). Une recherche exhaustive devient impossible à 5-12 jambes sur un catalogue
+    de plusieurs dizaines de marchés ; ce parcours reste déterministe mais n'est PAS garanti optimal. `taille_pool` borne le nombre de jambes examinées."""
+    profil = profil or {}
+    candidats = sorted(jambes, key=lambda j: pr.utilite_jambe(niveau, j), reverse=True)[:max(taille_pool, 8) * 6]
+    bas = profil.get("nb_jambes_min") or pr.NB_JAMBES_MIN
+    haut = profil.get("nb_jambes") or pr.TAILLE_MAX[niveau]
     meilleure, meilleur_score = None, float("-inf")
-    for taille in range(pr.NB_JAMBES_MIN, min(pr.TAILLE_MAX[niveau], len(candidats)) + 1):
-        for combo in itertools.combinations(candidats, taille):
-            if len({j["match"] for j in combo}) != taille:
-                continue
-            if pr.regles_coupon(list(combo), niveau):
-                continue
-            score = pr.utilite_coupon(niveau, combo)
-            if score > meilleur_score:
-                meilleure, meilleur_score = list(combo), score
+    for taille in range(bas, min(haut, len({j["match"] for j in candidats})) + 1):
+        combo = []
+        for j in candidats:
+            if len(combo) == taille:
+                break
+            if j["match"] not in {x["match"] for x in combo} and pr.diversite_ok(combo + [j]):
+                combo.append(j)
+        if len(combo) < taille:
+            continue
+        score = _objectif(niveau, combo, profil)
+        ameliore = True
+        while ameliore:
+            ameliore = False
+            for i in range(len(combo)):
+                for j in candidats:
+                    if j in combo:
+                        continue
+                    essai = combo[:i] + [j] + combo[i + 1:]
+                    if not _sans_doublon(essai) or not pr.diversite_ok(essai):
+                        continue
+                    s2 = _objectif(niveau, essai, profil)
+                    if s2 > score + 1e-12:
+                        combo, score, ameliore = essai, s2, True
+        if pr.regles_coupon(combo, niveau, profil):
+            continue
+        if score > meilleur_score:
+            meilleure, meilleur_score = list(combo), score
     return meilleure
 
 
@@ -64,7 +110,8 @@ def selectionner_profils(pool, profils, taille_pool=TAILLE_POOL):
     for profil in profils:
         niveau = profil.get("niveau_risque") or "prudent"
         libres = [j for j in jambes if j["match"] not in utilises]
-        combo = meilleure_combinaison(libres, niveau, taille_pool) if len(libres) >= pr.NB_JAMBES_MIN else None
+        combo = (meilleure_combinaison(libres, niveau, taille_pool, profil)
+                 if len({j["match"] for j in libres}) >= (profil.get("nb_jambes_min") or pr.NB_JAMBES_MIN) else None)
         if combo is None:
             sortie.append({"profil": profil, "jambes": [], "cote_totale": None, "proba_jointe": None,
                            "raison": f"moteur central : aucune combinaison cohérente pour le profil {niveau} ({len(libres)} jambe(s) libre(s))"})

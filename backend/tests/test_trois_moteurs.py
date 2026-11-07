@@ -76,7 +76,7 @@ def test_moteur_deterministe_via_generer_coupons_donne_trois_profils():
     import analyser_et_envoyer as ae
     pool = pool_commun()
     with mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=pool):
-        resultats = ae.generer_coupons({"matchs": []}, profils=profils_smart.profils())
+        resultats = ae.generer_coupons({"matchs": []}, profils=profils_smart.profils(contraintes=False))
     _verifier_resultats(resultats, pool)
     assert all(r["selections"] for r in resultats)                                      # 12 matchs : les trois profils sont composés
 
@@ -92,8 +92,8 @@ def test_moteur_deterministe_sans_profils_garde_le_comportement_historique():
 def test_deterministe_est_reproductible():
     import moteur_deterministe as md
     pool = pool_commun()
-    a = md.composer(pool, profils_smart.profils())
-    b = md.composer(json.loads(json.dumps(pool)), profils_smart.profils())
+    a = md.composer(pool, profils_smart.profils(contraintes=False))
+    b = md.composer(json.loads(json.dumps(pool)), profils_smart.profils(contraintes=False))
     cle = lambda res: [[(s["match"], s["pick"]["categorie"], s["pick"]["selection"]) for s in r["selections"]] for r in res]
     assert cle(a) == cle(b)                                                             # aucun hasard : mêmes entrées, mêmes coupons
 
@@ -107,7 +107,7 @@ def test_moteur_central_via_executer_run_enregistre_trois_coupons():
         cd, ae = _faux_modules(pool)
         with mock.patch.object(pipeline, "modules", return_value=(cd, ae, None)), mock.patch.object(pipeline, "reinitialiser_caches"), \
                 mock.patch("app.services.capture_historique.capturer_predictions", return_value=0):
-            executer_run(run_id, envoyer_telegram=False, moteur="central", profils_personnalises=profils_smart.profils())
+            executer_run(run_id, envoyer_telegram=False, moteur="central", profils_personnalises=profils_smart.profils(contraintes=False))
         ae.generer_coupons.assert_not_called()                                          # aucun autre moteur n'a tourné
     with SessionLocal() as db:
         assert db.get(Run, run_id).statut == "termine"
@@ -139,7 +139,7 @@ def test_moteur_central_sans_aucun_coupon_leve_au_lieu_de_replier():
         cd, ae = _faux_modules(pool)
         with mock.patch.object(pipeline, "modules", return_value=(cd, ae, None)), mock.patch.object(pipeline, "reinitialiser_caches"), \
                 mock.patch("app.services.capture_historique.capturer_predictions", return_value=0):
-            executer_run(run_id, envoyer_telegram=False, moteur="central", profils_personnalises=profils_smart.profils())
+            executer_run(run_id, envoyer_telegram=False, moteur="central", profils_personnalises=profils_smart.profils(contraintes=False))
         ae.generer_coupons.assert_not_called()                                          # jamais de repli vers un autre moteur
     with SessionLocal() as db:
         run = db.get(Run, run_id)
@@ -160,7 +160,7 @@ def test_les_sorties_des_trois_moteurs_passent_la_validation_python_de_l_agent()
     pool = pool_commun()
     catalogue, _ = st.construire_catalogue(pool, seuil_proba=0)   # seuil 0 = configuration du workflow (SEUIL_PROBA_MIN=0)
     ids = _vers_ids(catalogue)
-    profils = profils_smart.profils()
+    profils = profils_smart.profils(contraintes=False)
     central_pool = [CandidatCentral(match=m, marche=c["pick"]["categorie"], selection=c["pick"]["selection"], cote=c["pick"]["cote"], moteur_responsable="bet_agent",
                                     proba_pct=c["pick"]["proba_modele_pct"], categorie=c["pick"]["categorie"], competition=c["competition"]) for m, cs in pool.items() for c in cs]
     sorties = {"deterministe": [(r["profil"], r["selections"]) for r in md.composer(pool, profils)],
@@ -182,7 +182,7 @@ def test_les_trois_moteurs_produisent_des_coupons_differencies_selon_le_risque()
     from moteur_central.profils import selectionner_profils
     from moteur_central.score_central import CandidatCentral
     pool = pool_commun()
-    profils = profils_smart.profils()
+    profils = profils_smart.profils(contraintes=False)
     central_pool = [CandidatCentral(match=m, marche=c["pick"]["categorie"], selection=c["pick"]["selection"], cote=c["pick"]["cote"], moteur_responsable="bet_agent",
                                     proba_pct=c["pick"]["proba_modele_pct"], categorie=c["pick"]["categorie"], competition=c["competition"]) for m, cs in pool.items() for c in cs]
     det = md.composer(pool, profils)

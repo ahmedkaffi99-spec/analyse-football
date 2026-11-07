@@ -6,14 +6,17 @@ from app import preparer_formulaire as pf
 def test_defauts_donnent_trois_profils_de_risque_sans_cote_imposee():
     s = pf.construire({"EVENEMENT": "workflow_dispatch"})
     liste = json.loads(s["profils"])
-    # 07/11/2026 : trois profils (prudent, équilibré, risque), l'IA choisit librement : AUCUNE bande, plancher ni plafond de cote
+    # 07/11/2026 : trois profils (prudent, équilibré, risque), l'IA choisit librement les paris ; demande ultérieure : 5 à 12 jambes, cote totale minimale 5 et
+    # trois bandes de cote totale ESPACÉES (aucun chevauchement) ; aucune cote imposée par jambe
     assert [p["niveau_risque"] for p in liste] == ["prudent", "equilibre", "risque"]
     assert [p["cle"] for p in liste] == ["coupon1", "coupon2", "coupon3"]
-    assert all(not any(k in p for k in ("cote_totale_min", "cote_totale_max", "cote_min", "cote_max", "proba_min_pct", "proba_max_pct",
-                                         "max_coupons_par_match", "prefere_cote_elevee")) for p in liste)
+    assert all(not any(k in p for k in ("cote_min", "cote_max", "proba_min_pct", "proba_max_pct", "max_coupons_par_match", "prefere_cote_elevee")) for p in liste)
+    bandes = [(p["cote_totale_min"], p["cote_totale_max"]) for p in liste]
+    assert bandes == [(5.0, 10.0), (12.0, 20.0), (25.0, 50.0)] and min(b[0] for b in bandes) >= 5
+    assert all(bandes[i][1] < bandes[i + 1][0] for i in range(2))                      # intervalles espacés : aucun chevauchement
     assert all(p["consigne"] for p in liste) and len({p["consigne"] for p in liste}) == 3
-    # règles de cohérence conservées : 2 jambes minimum (Python), un match dans un seul coupon, un pari par match
-    assert all(p["nb_jambes_min"] == 2 and p["nb_jambes"] == 99 and p["jambes_max_par_match"] == 1 and p["match_repete_autorise"] is False for p in liste)
+    # règles de cohérence conservées : 5 à 12 jambes (Python), un match dans un seul coupon, un pari par match
+    assert all(p["nb_jambes_min"] == 5 and p["nb_jambes"] == 12 and p["jambes_max_par_match"] == 1 and p["match_repete_autorise"] is False for p in liste)
     assert s["moteur"] == "agent" and s["cote_min_jambe"] == "0" and s["cote_max_jambe"] == "0" and s["ignorer_diversite"] == "true"
     assert json.loads(s["matrice"]) == [{"etiquette": "deepseek", "pilote": ""}]
     assert s["vote"] == pf.VOTE_DEFAUT and s["ttl"] == "43200" and s["telegram"] == ""
@@ -34,9 +37,9 @@ def test_choix_du_formulaire_sont_appliques():
 
 
 def test_anciens_champs_de_cote_et_de_nombre_de_coupons_sont_ignores():
-    """Un ancien appel qui fournirait NB_COUPONS ou COTE_COUPON_n ne peut plus imposer de bande ni changer le nombre de coupons."""
+    """Un ancien appel qui fournirait NB_COUPONS ou COTE_COUPON_n ne peut plus changer la bande ni le nombre de coupons."""
     liste = json.loads(pf.construire({"EVENEMENT": "workflow_dispatch", "NB_COUPONS": "5", "COTE_COUPON_1": "50-100"})["profils"])
-    assert len(liste) == 3 and all("cote_totale_min" not in p for p in liste)
+    assert len(liste) == 3 and [p["cote_totale_max"] for p in liste] == [10.0, 20.0, 50.0]
 
 
 def test_modeles_et_vote():

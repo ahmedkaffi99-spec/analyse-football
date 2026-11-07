@@ -32,6 +32,19 @@ def jambes_du_pool(pool):
     return jambes
 
 
+def _dans_la_bande(legs, profil):
+    """Jambes (dans l'ordre d'utilité) ramenées au plus petit nombre qui atteint la cote minimale du profil ; inchangées si le profil n'a pas de bande.
+    Si la bande n'est pas atteignable, renvoie les jambes telles quelles (regles_coupon refusera et le profil s'abstiendra)."""
+    bas = profil.get("cote_totale_min")
+    if not bas:
+        return legs
+    minimum = profil.get("nb_jambes_min") or pr.NB_JAMBES_MIN
+    for k in range(minimum, len(legs) + 1):
+        if pr.cote_totale(legs[:k]) >= bas:
+            return legs[:k]
+    return legs
+
+
 def composer(pool, profils, taille_reference=None):
     """-> liste [{"profil": profil, "selections": [candidats du pool], "abstention": raison|None}] dans l'ordre de `profils` (même forme que les autres moteurs)."""
     taille_reference = taille_reference or pr.TAILLE_REFERENCE
@@ -39,7 +52,9 @@ def composer(pool, profils, taille_reference=None):
     niveaux = [p.get("niveau_risque") or "prudent" for p in profils]
     choisies = {i: [] for i in range(len(profils))}
     utilises = set()
-    cibles = [taille_reference.get(n, 3) for n in niveaux]
+    # Un profil qui fixe son nombre maximal de jambes (5 à 12, bande de cote) en prend jusqu'à ce maximum ; la taille est ensuite ramenée dans la bande de cote.
+    cibles = [p.get("nb_jambes") if p.get("nb_jambes") and p.get("nb_jambes") < 99 and p.get("cote_totale_min") else taille_reference.get(n, 3)
+              for p, n in zip(profils, niveaux)]
     # Tours de répartition : chaque profil prend à son tour sa meilleure jambe libre (un match = un seul coupon).
     progres = True
     while progres:
@@ -61,15 +76,16 @@ def composer(pool, profils, taille_reference=None):
                     break
     resultats = []
     for i, profil in enumerate(profils):
-        legs = choisies[i]
-        problemes = pr.regles_coupon(legs, niveaux[i]) if legs else ["aucune jambe disponible"]
+        legs = _dans_la_bande(choisies[i], profil)
+        problemes = pr.regles_coupon(legs, niveaux[i], profil) if legs else ["aucune jambe disponible"]
         if problemes:
             resultats.append({"profil": profil, "selections": [], "abstention": "moteur déterministe : " + " ; ".join(problemes)})
         else:
             resultats.append({"profil": profil, "selections": [j["_c"] for j in legs],
                               "strategie": f"déterministe {niveaux[i]} : {len(legs)} jambes, probabilité jointe {pr.proba_jointe(legs):.3f}, cote {pr.cote_totale(legs):.2f}"})
     # Dernier filet commun : cohérence ENTRE coupons (un match dans un seul coupon, coupons distincts).
-    erreurs = pr.regles_entre_coupons([[j for j in choisies[i]] for i, r in enumerate(resultats) if r["selections"]])
+    retenues = {i: [j for j in choisies[i] if r["selections"] and j["_c"] in r["selections"]] for i, r in enumerate(resultats)}
+    erreurs = pr.regles_entre_coupons([retenues[i] for i, r in enumerate(resultats) if r["selections"]])
     if erreurs:
         raise ValueError("moteur déterministe : incohérence entre coupons — " + " ; ".join(erreurs))
     return resultats

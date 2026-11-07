@@ -6,8 +6,27 @@ selon un niveau de risque (PRUDENT, ÉQUILIBRÉ, RISQUE). AUCUNE cote totale cib
 validations de Python (identifiants et cotes du catalogue, un pari par match et par event dans un coupon, pas de pari identique ni de match commun
 entre coupons, deux jambes minimum, aucun coupon en double)."""
 
+import os
+
 COULEURS = ["🟢", "🟠", "🔴"]
-NB_JAMBES_MIN_COUPON = 2
+# Demande du 07/11/2026 : chaque coupon compte de 5 à 12 jambes (un seul pari par match), la cote totale minimale est 5 et les trois coupons occupent
+# des intervalles de cote totale ESPACÉS (aucun chevauchement). Bandes par défaut : PRUDENT 5-10, ÉQUILIBRÉ 12-20, RISQUE 25-50 ; modifiables par les
+# variables BANDE_COTE_PRUDENT / BANDE_COTE_EQUILIBRE / BANDE_COTE_RISQUE (« min-max »). Ce sont des contraintes vérifiées par Python, pas une promesse de gain.
+NB_JAMBES_MIN_COUPON = 5
+NB_JAMBES_MAX_COUPON = 12
+BANDES_DEFAUT = {"prudent": (5.0, 10.0), "equilibre": (12.0, 20.0), "risque": (25.0, 50.0)}
+
+
+def bande_cote(niveau):
+    """(min, max) de cote totale du niveau ; la variable d'environnement valide « min-max » (min >= 5 > 0, min < max) remplace le défaut, sinon le défaut est gardé."""
+    brut = (os.getenv("BANDE_COTE_" + niveau.upper()) or "").strip().replace(",", ".")
+    try:
+        bas, haut = (float(x) for x in brut.split("-"))
+        if 0 < bas < haut:
+            return bas, haut
+    except ValueError:
+        pass
+    return BANDES_DEFAUT[niveau]
 
 # (clé stable de l'historique, niveau, libellé, consigne donnée à l'IA). Les clés « couponN » sont conservées : elles sont enregistrées en base.
 NIVEAUX = (
@@ -25,14 +44,16 @@ NIVEAUX = (
 )
 
 
-def profils(un_pari_par_match=True):
-    """Les TROIS profils de risque. Aucune bande de cote, aucun plancher ni plafond de cote par jambe ou total."""
+def profils(un_pari_par_match=True, contraintes=True):
+    """Les TROIS profils de risque : 5 à 12 jambes, cote totale dans une bande propre à chaque profil (bandes espacées, minimum 5). Aucune cote imposée par jambe."""
     sortie = []
+    # contraintes=False : profils « libres » (2 jambes minimum, aucune bande de cote), réservés aux tests des règles de cohérence indépendantes de la bande.
     for i, (cle, niveau, libelle, consigne) in enumerate(NIVEAUX):
         sortie.append({
             "cle": cle, "nom": f"{COULEURS[i]} {libelle}", "niveau_risque": niveau, "consigne": consigne,
-            # Deux jambes minimum (un « combiné » d'une seule jambe n'en est pas un ; vérifié par Python dans valider) ; pas de maximum.
-            "nb_jambes_min": NB_JAMBES_MIN_COUPON, "nb_jambes": 99,
+            # 5 à 12 jambes (vérifié par Python dans valider) et bande de cote totale espacée des autres profils.
+            "nb_jambes_min": NB_JAMBES_MIN_COUPON if contraintes else 2, "nb_jambes": NB_JAMBES_MAX_COUPON if contraintes else 99,
+            **({"cote_totale_min": bande_cote(niveau)[0], "cote_totale_max": bande_cote(niveau)[1]} if contraintes else {}),
             "jambes_max_par_match": 1 if un_pari_par_match else 3,
             # Un même match ne figure que dans UN coupon du run tant que le catalogue a assez de matchs ; sinon agent_strategie.ajuster_repetition
             # l'autorise (le pari exact reste interdit dans deux coupons).

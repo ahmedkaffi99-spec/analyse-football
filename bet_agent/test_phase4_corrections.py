@@ -218,31 +218,31 @@ def _prop(cle, ids):
 
 
 def test_profils_smart_exigent_deux_jambes_et_pas_de_match_commun():
-    for p in profils_smart.profils():
+    for p in profils_smart.profils(contraintes=False):
         assert p["nb_jambes_min"] == 2 and p["match_repete_autorise"] is False
 
 
 def test_un_coupon_d_une_seule_jambe_est_refuse():
-    profil = profils_smart.profils()[0]
+    profil = profils_smart.profils(contraintes=False)[0]
     acceptes, problemes, _ = st.valider(_prop("coupon1", ["P1"]), _catalogue(), [profil])
     assert not acceptes and any("minimum 2" in p for p in problemes)
 
 
 def test_deux_jambes_de_matchs_differents_sont_acceptees():
-    profil = dict(profils_smart.profils()[0], cote_totale_min=1.0, cote_totale_max=100.0)
+    profil = dict(profils_smart.profils(contraintes=False)[0], cote_totale_min=1.0, cote_totale_max=100.0)
     acceptes, problemes, _ = st.valider(_prop("coupon1", ["P1", "P2"]), _catalogue(), [profil])
     assert "coupon1" in acceptes, problemes
 
 
 def test_un_match_deja_pris_par_un_autre_coupon_est_refuse():
-    profil = dict(profils_smart.profils()[0], cote_totale_min=1.0, cote_totale_max=100.0)
+    profil = dict(profils_smart.profils(contraintes=False)[0], cote_totale_min=1.0, cote_totale_max=100.0)
     deja = [{"match": "M1 - X1", "pick": {"marche": "1X2", "selection": "1", "handicap": None, "categorie": "resultat", "cote": 2.0}}]
     acceptes, problemes, _ = st.valider(_prop("coupon1", ["P7", "P2"]), _catalogue(), [profil], selections_precedentes=deja)
     assert not acceptes and any("déjà utilisé dans un autre profil" in p for p in problemes)
 
 
 def test_le_meme_pari_exact_reste_interdit_meme_quand_la_repetition_est_autorisee():
-    profil = dict(profils_smart.profils()[0], cote_totale_min=1.0, cote_totale_max=100.0, match_repete_autorise=True)
+    profil = dict(profils_smart.profils(contraintes=False)[0], cote_totale_min=1.0, cote_totale_max=100.0, match_repete_autorise=True)
     cat = _catalogue()
     deja = [dict(cat["P1"])]
     acceptes, problemes, _ = st.valider(_prop("coupon1", ["P1", "P2"]), cat, [profil], selections_precedentes=deja)
@@ -250,7 +250,7 @@ def test_le_meme_pari_exact_reste_interdit_meme_quand_la_repetition_est_autorise
 
 
 def test_ajuster_repetition_selon_le_nombre_de_matchs():
-    profil = profils_smart.profils()[0]
+    profil = profils_smart.profils(contraintes=False)[0]
     assert st.ajuster_repetition(profil, 6, 3) is profil                         # 3 coupons x 2 jambes = 6 matchs : assez
     ajuste = st.ajuster_repetition(profil, 5, 3)
     assert ajuste["match_repete_autorise"] is True and ajuste["repetition_ajustee"] is True   # 5 < 6 : répétition permise
@@ -260,7 +260,7 @@ def test_ajuster_repetition_selon_le_nombre_de_matchs():
 
 
 def test_aucune_cote_marche_ni_probabilite_inventee_par_l_ia():
-    profil = dict(profils_smart.profils()[0], cote_totale_min=1.0, cote_totale_max=100.0)
+    profil = dict(profils_smart.profils(contraintes=False)[0], cote_totale_min=1.0, cote_totale_max=100.0)
     cat = _catalogue()
     acceptes, problemes, _ = st.valider(_prop("coupon1", ["P1", "P99"]), cat, [profil])
     assert not acceptes and any("identifiant inconnu" in p for p in problemes)       # un identifiant hors catalogue est refusé
@@ -271,7 +271,7 @@ def test_aucune_cote_marche_ni_probabilite_inventee_par_l_ia():
 
 
 def test_le_vote_respecte_un_match_dans_un_seul_coupon():
-    profils = [dict(profils_smart.profils()[0], cle="c1"), dict(profils_smart.profils()[0], cle="c2")]
+    profils = [dict(profils_smart.profils(contraintes=False)[0], cle="c1"), dict(profils_smart.profils(contraintes=False)[0], cle="c2")]
 
     def sel(match, proba, marche="1X2"):
         return {"match": match, "pick": {"marche": marche, "selection": "1", "handicap": None, "proba_modele_pct": proba}}

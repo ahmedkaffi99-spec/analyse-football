@@ -6,7 +6,7 @@ import agent_pilote as pilote
 import agent_strategie as st
 import profils_smart
 
-PROFIL = dict(profils_smart.profils()[0])
+PROFIL = dict(profils_smart.profils(contraintes=False)[0])
 
 
 def sel(match, cote, proba=95.0, cat="Total", selection="Over"):
@@ -92,7 +92,7 @@ def test_lecture_robuste_de_la_variable(monkeypatch):
 
 
 def test_les_consignes_de_l_ia_parlent_de_probabilite_et_de_remuneration():
-    prompt = pilote.construire_prompt_systeme(profils_smart.profils())
+    prompt = pilote.construire_prompt_systeme(profils_smart.profils(contraintes=False))
     assert "COMPTE SUR LA PROBABILITÉ ET SUR LA RÉMUNÉRATION" in prompt and "1.04" in prompt and "valeur espérée" in prompt
-    texte = st.construire_prompt({"A - B": [sel("A - B", 1.5)]}, profils_smart.profils(), "\n- P1 : ...")
+    texte = st.construire_prompt({"A - B": [sel("A - B", 1.5)]}, profils_smart.profils(contraintes=False), "\n- P1 : ...")
     assert "RÉMUNÉRATION" in texte and "1.6" in texte and "1.04" in texte and "valeur espérée" in texte

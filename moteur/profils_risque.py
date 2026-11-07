@@ -129,11 +129,16 @@ def utilite_coupon(niveau, jambes):
     return poids[0] * math.log(p) + poids[1] * math.log(c)
 
 
-def regles_coupon(jambes, niveau=None):
+def regles_coupon(jambes, niveau=None, profil=None):
     """Règles de cohérence COMMUNES aux trois moteurs. Renvoie la liste des problèmes (vide = coupon cohérent)."""
     problemes = []
-    if len(jambes) < NB_JAMBES_MIN:
-        problemes.append(f"{len(jambes)} jambe(s) : minimum {NB_JAMBES_MIN}")
+    profil = profil or {}
+    minimum = profil.get("nb_jambes_min") or NB_JAMBES_MIN
+    maximum = profil.get("nb_jambes")
+    if len(jambes) < minimum:
+        problemes.append(f"{len(jambes)} jambe(s) : minimum {minimum}")
+    if maximum and len(jambes) > maximum:
+        problemes.append(f"{len(jambes)} jambe(s) : maximum {maximum}")
     matchs = [j.get("match") for j in jambes]
     if len(matchs) != len(set(matchs)):
         problemes.append("plusieurs paris sur le même match")
@@ -143,8 +148,13 @@ def regles_coupon(jambes, niveau=None):
             problemes.append(f"{j.get('match')} : {raison}")
     if not diversite_ok(jambes):
         problemes.append("trop de jambes de la même famille et du même sens")
-    if jambes and COTE_TOTALE_MIN_COUPON and cote_totale(jambes) < COTE_TOTALE_MIN_COUPON:
+    bas, haut = profil.get("cote_totale_min"), profil.get("cote_totale_max")
+    if jambes and bas and cote_totale(jambes) < bas:
+        problemes.append(f"cote totale {cote_totale(jambes):.2f} sous le minimum {bas:g} du profil")
+    elif jambes and not bas and COTE_TOTALE_MIN_COUPON and cote_totale(jambes) < COTE_TOTALE_MIN_COUPON:
         problemes.append(f"cote totale {cote_totale(jambes):.2f} sous le plancher de rémunération {COTE_TOTALE_MIN_COUPON:g}")
+    if jambes and haut and cote_totale(jambes) > haut:
+        problemes.append(f"cote totale {cote_totale(jambes):.2f} au-dessus du maximum {haut:g} du profil")
     if niveau and jambes and proba_jointe(jambes) < PROBA_JOINTE_MIN.get(niveau, 0.0):
         problemes.append(f"probabilité jointe {proba_jointe(jambes):.3f} sous le plancher de sécurité du profil {niveau}")
     return problemes
