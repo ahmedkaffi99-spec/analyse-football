@@ -154,7 +154,7 @@ def _texte_cote_profil(p):
     if p.get("cote_totale_min"):
         return f" Plancher de cote totale (profil personnalisé) : >= {p['cote_totale_min']:g} (vérifié par Python)."
     niveau = p.get("consigne") or ""
-    return (" AUCUNE cote totale cible ni cote individuelle obligatoire : tu choisis LIBREMENT les marchés, les sélections et les combinaisons "
+    return (f" AUCUNE cote totale cible ni cote individuelle cible ; seul le plancher technique de {COTE_MIN_JAMBE_AGENT:.2f} par jambe s'applique : tu choisis LIBREMENT les marchés, les sélections et les combinaisons "
             "du catalogue selon ce niveau de risque. " + niveau).rstrip()
 
 
@@ -221,8 +221,8 @@ def construire_prompt(pool, profils, catalogue_texte):
         "pari(s) d'un même match (la limite exacte de chaque profil est donnée ci-dessus), jamais deux paris "
         "contradictoires, jamais de doublon — combine des matchs DIFFÉRENTS plutôt que d'empiler les paris sur "
         "un même match.\n"
-        "3. AUCUNE cote totale cible ni cote individuelle obligatoire (sauf bande explicite d'un profil personnalisé, indiquée ci-dessus et vérifiée "
-        "par Python). Tu es libre du nombre de jambes (deux au minimum) et des cotes ; adapte la combinaison au NIVEAU DE RISQUE du profil : prudent = "
+        f"3. AUCUNE cote totale cible ni cote individuelle cible ; le seul garde-fou est le plancher technique de {COTE_MIN_JAMBE_AGENT:.2f} par jambe (sauf configuration explicite via COTE_MIN_JAMBE_AGENT). "
+        "Python). Tu es libre du nombre de jambes (deux au minimum) et de la cote totale ; adapte la combinaison au NIVEAU DE RISQUE du profil : prudent = "
         "probabilité maximale, équilibré = compromis probabilité / rendement, risque = gain potentiel plus élevé avec davantage de risque. Python calcule "
         "la cote totale et te la renvoie.\n"
         "4. Qualité avant quantité : écarte les matchs aux données faibles ou dont la presse signale un risque "
