@@ -97,6 +97,10 @@ Python exclut les cotes individuelles inférieures à 1.20 (garde-fou technique,
 N'ajoute jamais une jambe seulement pour faire monter ou descendre la cote totale. Une jambe est FRAGILE si elle cumule un de ces \
 signaux : ligne de quart (.25/.75), probabilité basse parmi le catalogue, données faibles sur ce match. Un coupon perd dès qu'UNE \
 jambe perd : PRUDENT n'en contient aucune, ÉQUILIBRÉ au plus une, RISQUE peut en accepter davantage à condition de justifier chacune.
+- COMPTE SUR LA PROBABILITÉ ET SUR LA RÉMUNÉRATION : un bon coupon n'est ni celui qui gagne presque toujours en ne rapportant presque rien (un coupon à \
+cote totale 1.04 ne vaut rien), ni une loterie. Python te renvoie, pour chaque proposition, la cote totale, la probabilité jointe et la valeur espérée \
+(probabilité × cote − 1) : utilise-les. Python refuse un coupon dont la cote totale est sous le plancher de rémunération (1.60 par défaut) ; au-dessus, tu \
+choisis librement selon le niveau de risque du profil.
 - PYTHON VÉRIFIE (et refuse sinon) : identifiants du catalogue, au moins 2 jambes (aucun maximum), un seul pari par match et par \
 event dans un coupon, un match ne figure que dans UN seul coupon du run (sauf assouplissement signalé par voir_catalogue quand le \
 catalogue manque de matchs), jamais le même pari exact ni deux coupons identiques. Si tu ne trouves pas assez de paris vraiment \
@@ -368,15 +372,35 @@ def _messages_pour_secours(messages):
     return propres
 
 
+def _aplatir_outils(messages):
+    """Historique SANS appels d'outils structurés : les appels (assistant) et leurs résultats (outil) deviennent du texte. Nécessaire quand on bascule en cours de run vers
+    Gemini : son API exige un `thought_signature` sur chaque appel de fonction de l'historique, absent des appels faits par un autre modèle (HTTP 400 du 07/11/2026,
+    run 282 : le run DeepSeek a échoué à la bascule). Le sens de la conversation est conservé."""
+    plats = []
+    for m in messages:
+        m = dict(m)
+        if m.get("role") == "assistant" and m.get("tool_calls"):
+            appels = "; ".join(f"[appel d'outil {a.get('function', {}).get('name')}({(a.get('function', {}).get('arguments') or '')[:300]})]" for a in m.pop("tool_calls"))
+            m["content"] = ((m.get("content") or "") + "\n" + appels).strip()
+        elif m.get("role") == "tool":
+            m = {"role": "user", "content": f"[résultat de l'outil] {m.get('content') or ''}"}
+        plats.append(m)
+    return plats
+
+
 def _appel_secours(messages, max_tokens, outils_schemas=None, poster=requests.post, pause=time.sleep):
     courses = _fournisseurs_secours()
     if _secours["choix"] in courses:   # le dernier couple qui a répondu passe en premier
         courses.remove(_secours["choix"])
         courses.insert(0, _secours["choix"])
     derniere = "aucun fournisseur de secours configuré (GROQ_API_KEY, GEMINI_API_KEY ou OPENROUTER_API_KEY)"
+    essais = []   # chaque échec est conservé : le message final ne doit pas ne montrer que le dernier (la cause réelle était perdue)
     for course in courses:
         nom, url, cle, modele, extras = course
-        charge = {"model": modele, "messages": _messages_pour_secours(messages),
+        propres = _messages_pour_secours(messages)
+        if "generativelanguage" in url:   # Gemini : voir _aplatir_outils
+            propres = _aplatir_outils(propres)
+        charge = {"model": modele, "messages": propres,
                   "tools": outils_schemas or OUTILS_SCHEMAS, "tool_choice": "auto",
                   "max_tokens": min(max_tokens, MAX_TOKENS_SECOURS), **extras}
         try:
@@ -384,6 +408,7 @@ def _appel_secours(messages, max_tokens, outils_schemas=None, poster=requests.po
                        json=charge, timeout=DELAI_REQUETE)
         except (requests.Timeout, requests.ConnectionError) as e:
             derniere = f"{nom}/{modele} : {type(e).__name__}"
+            essais.append(derniere)
             continue
         if r.status_code == 200:
             try:
@@ -397,8 +422,11 @@ def _appel_secours(messages, max_tokens, outils_schemas=None, poster=requests.po
             derniere = f"{nom}/{modele} : réponse vide ou illisible"
             continue
         derniere = f"{nom}/{modele} : HTTP {r.status_code} {r.text[:120] if r.content else ''}"
+        essais.append(derniere[:160])
         print(f"      ⚠️ Secours {derniere} — fournisseur suivant")
-    raise RuntimeError(f"Aucun fournisseur de secours n'a répondu ({derniere})")
+    cause = _secours.get("cause_principale")
+    raise RuntimeError(f"Aucun fournisseur de secours n'a répondu ({derniere})"
+                       + (f" | cause initiale : {cause}" if cause else "") + (f" | essais : {' ; '.join(essais)}" if len(essais) > 1 else ""))
 
 
 def _appel_api(cle, messages, max_tokens, outils_schemas=None, poster=requests.post, pause=time.sleep):
@@ -411,6 +439,7 @@ def _appel_api(cle, messages, max_tokens, outils_schemas=None, poster=requests.p
             if not secours_disponible():
                 raise
             print(f"      🛟 DeepSeek indisponible ({str(e)[:120]}) — bascule sur les fournisseurs gratuits")
+            _secours["cause_principale"] = f"{type(e).__name__}: {str(e)[:220]}"
             _secours["actif"] = True
     return _appel_secours(messages, max_tokens, outils_schemas, poster, pause)
 
@@ -599,7 +628,7 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
     _budget_pilote.update(restant_usd=budget_restant_usd, etat={})
 
     cle = os.getenv("DEEPSEEK_API_KEY")
-    _secours.update(actif=_secours_d_emblee(), choix=None)   # nouvel essai du fournisseur principal à chaque run
+    _secours.update(actif=_secours_d_emblee(), choix=None, cause_principale=None)   # nouvel essai du fournisseur principal à chaque run
     compositeur = (os.getenv("COMPOSITEUR_MODELE") or "").strip()
     if not cle and not secours_disponible() and not compositeur:
         print("❌ DEEPSEEK_API_KEY manquante et aucun fournisseur de secours — agent pilote indisponible.")

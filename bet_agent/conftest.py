@@ -19,6 +19,14 @@ def fourchette_de_cote_par_jambe_neutralisee(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def plancher_de_remuneration_neutralise(monkeypatch):
+    """Les tests existants du stratège utilisent des cotes totales arbitraires (1.3 à 9) : le plancher de rémunération de production
+    (agent_strategie.COTE_TOTALE_MIN_COUPON, 1.60 par défaut) y est neutralisé, et testé explicitement dans test_remuneration_minimale.py."""
+    import agent_strategie as st
+    monkeypatch.setattr(st, "COTE_TOTALE_MIN_COUPON", 0.0)
+
+
+@pytest.fixture(autouse=True)
 def selection_meme_jour_neutralisee(monkeypatch):
     """Les tests existants de sélection utilisent des dates fictives (2099) : le filtre « matchs du
     jour seulement » (cd.MATCHS_UNIQUEMENT_DU_JOUR) y est désactivé, et testé explicitement dans

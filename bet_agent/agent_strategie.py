@@ -62,6 +62,27 @@ except ValueError:
     COTE_MIN_JAMBE_AGENT = 1.20
 
 
+# RÉMUNÉRATION MINIMALE d'un coupon (07/11/2026) : un coupon à 1.04 gagne presque toujours mais ne rapporte presque rien (gain de 4 % de la mise, moins que la marge du
+# bookmaker). Plancher de sécurité sur la cote TOTALE, pas une cible : au-dessus, l'IA choisit librement selon la probabilité ET la rémunération. Remplaçable par
+# COTE_TOTALE_MIN_COUPON (0 = désactivé).
+try:
+    COTE_TOTALE_MIN_COUPON = max(0.0, float(os.getenv("COTE_TOTALE_MIN_COUPON") or "1.60"))
+except ValueError:
+    COTE_TOTALE_MIN_COUPON = 1.60
+
+
+def rentabilite(selections):
+    """(probabilité jointe, valeur espérée) d'un coupon à partir des probabilités ET des cotes du catalogue (jambes indépendantes : matchs différents).
+    Valeur espérée = probabilité jointe × cote totale − 1 (par unité misée). (None, None) si une probabilité manque : rien n'est inventé."""
+    probas = [s["pick"].get("proba_modele_pct") for s in selections]
+    if not selections or any(p is None for p in probas):
+        return None, None
+    p = 1.0
+    for x in probas:
+        p *= x / 100.0
+    return p, p * ae._produit_cotes(selections) - 1.0
+
+
 def cote_jambe_admissible(cote):
     try:
         valeur = float(cote)
@@ -224,7 +245,9 @@ def construire_prompt(pool, profils, catalogue_texte):
         f"3. AUCUNE cote totale cible ni cote individuelle cible ; le seul garde-fou est le plancher technique de {COTE_MIN_JAMBE_AGENT:.2f} par jambe (sauf configuration explicite via COTE_MIN_JAMBE_AGENT). "
         "Python). Tu es libre du nombre de jambes (deux au minimum) et de la cote totale ; adapte la combinaison au NIVEAU DE RISQUE du profil : prudent = "
         "probabilité maximale, équilibré = compromis probabilité / rendement, risque = gain potentiel plus élevé avec davantage de risque. Python calcule "
-        "la cote totale et te la renvoie.\n"
+        "la cote totale, la probabilité jointe et la valeur espérée (probabilité × cote − 1) et te les renvoie. RÉMUNÉRATION : décide en comptant sur la probabilité ET "
+        f"le profit ; Python refuse un coupon dont la cote totale est sous {COTE_TOTALE_MIN_COUPON:g} (un coupon à 1.04 gagne presque toujours mais ne rapporte "
+        "presque rien).\n"
         "4. Qualité avant quantité : écarte les matchs aux données faibles ou dont la presse signale un risque "
         "(absences clés, rotation, enjeu faible). Le CATALOGUE est déjà FILTRÉ ET TRIÉ par Python : il ne "
         "contient plus les 200-300 marchés bruts d'un match, seulement les paris dont la PROBABILITÉ calculée "
@@ -549,10 +572,16 @@ def valider(proposition, catalogue, profils, signatures_existantes=(), selection
         # explicitement ; les trois profils de risque par défaut n'en ont pas.
         plancher = profil.get("cote_totale_min")
         cote = ae._produit_cotes(selections) if selections else 0
-        calculs.append(f"{cle} : {len(selections)} paris, cote totale {cote:.2f}")
+        proba_jointe, valeur_esperee = rentabilite(selections)
+        calculs.append(f"{cle} : {len(selections)} paris, cote totale {cote:.2f}"
+                       + ("" if proba_jointe is None else f", probabilité jointe {proba_jointe:.1%}, valeur espérée {valeur_esperee:+.0%} par unité misée"))
         if selections and plancher and cote < plancher:
             erreurs.append(f"cote totale {cote:.2f} trop basse (minimum {plancher:g} pour ce profil) — "
                            "ajoute un pari ou remplace par des cotes plus hautes")
+        if selections and not plancher and COTE_TOTALE_MIN_COUPON and cote < COTE_TOTALE_MIN_COUPON:
+            erreurs.append(f"cote totale {cote:.2f} sous le plancher de rémunération {COTE_TOTALE_MIN_COUPON:g} : un tel coupon rapporte presque rien "
+                           f"(gain de {max(cote - 1, 0):.0%} de la mise, moins que la marge du bookmaker) — décide en comptant sur la probabilité ET la "
+                           "rémunération : remplace une jambe par un pari mieux payé du catalogue (cote et edge plus intéressants) ou ajoute une jambe solide")
         plafond = profil.get("cote_totale_max")
         if selections and plafond and cote > plafond:
             erreurs.append(f"cote totale {cote:.2f} trop haute (maximum {plafond:g} pour ce profil) — "

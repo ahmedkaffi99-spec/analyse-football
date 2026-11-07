@@ -157,6 +157,8 @@ jobs:
       # au fil de l'eau dans COUTS_FICHIER (relus par l'étape « Finaliser le run » même si le job est tué) ; au plus N runs payants ratés par jour pour
       # les passages planifiés ; second chat Telegram UNIQUEMENT via la variable du dépôt TELEGRAM_CHAT_IDS_SUPPLEMENTAIRES (plus de valeur par défaut codée).
       AGENT_DUREE_MAX_MIN: "45"
+      # Plancher de rémunération d'un coupon (cote TOTALE minimale, 1.60 par défaut ; 0 = désactivé) : refuse un coupon à 1.04 qui gagne presque toujours mais ne rapporte rien.
+      COTE_TOTALE_MIN_COUPON: ${{ vars.COTE_TOTALE_MIN_COUPON }}
       COUTS_FICHIER: ${{ github.workspace }}/backend/data/couts_run.json
       MAX_ECHECS_PAYANTS_PAR_JOUR: ${{ vars.MAX_ECHECS_PAYANTS_PAR_JOUR || '2' }}
       TELEGRAM_CHAT_IDS_SUPPLEMENTAIRES: ${{ vars.TELEGRAM_CHAT_IDS_SUPPLEMENTAIRES }}
