@@ -33,6 +33,21 @@ def test_appel_openrouter_cumule_tokens_et_cout_puis_plafond():
         appel("p")
 
 
+def test_appel_openrouter_sans_plafond_financier_continue_apres_depassement(monkeypatch):
+    appels = []
+
+    def poster(url, **kw):
+        appels.append(True)
+        return _Reponse({"choices": [{"message": {"content": "{}"}}],
+                         "usage": {"prompt_tokens": 1000, "completion_tokens": 200, "cost": 0.75}})
+
+    monkeypatch.setenv("OMBRE_BUDGET_USD", "aucun")
+    appel = ombre.AppelOpenRouter("m/x", "cle", budget_usd=None, poster=poster)
+    assert appel("p") == "{}"
+    assert appel("p") == "{}"
+    assert len(appels) == 2 and appel.cout_usd == pytest.approx(1.5)
+
+
 def test_composer_ombre_sans_cle_ou_modele_inconnu_ne_plante_pas():
     sortie = ombre.composer_ombre({}, [], {"P1": _cand("A vs B", "Total", "Over")}, "txt", modeles=["m/x"], cle="")
     assert sortie[0]["erreur"] == "OPENROUTER_API_KEY absente" and sortie[0]["coupons"] == []

@@ -800,7 +800,7 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
             if not modeles or not etat.get("catalogue") or not any(r["selections"] for r in etat["resultats_profils"]):
                 return
             # Budget journalier (Phase 3) : répartition entre les modèles, ou refus explicite (jamais silencieux).
-            plafond_modele = float(os.getenv("OMBRE_BUDGET_USD") or 1.5)
+            plafond_modele = budget_ia.lire_budget(os.getenv("OMBRE_BUDGET_USD"))
             restant_vote = None if budget_restant_usd is None else max(0.0, budget_restant_usd - _usage_pilote["cout_usd"])   # Phase 4 : le pilote a déjà dépensé
             budgets, ignores = budget_ia.repartir(restant_vote, modeles, plafond_modele)
             etat["vote_ignores"] = ignores
@@ -882,7 +882,7 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
         calculs et vetos Python restent identiques ; ce modèle compose les profils sur le même catalogue (mêmes règles de
         Python), et envoyer_telegram suit le flux normal. Aucun repli sur DeepSeek : un échec abandonne le run."""
         import ombre
-        plafond_modele = float(os.getenv("OMBRE_BUDGET_USD") or 1.5)
+        plafond_modele = budget_ia.lire_budget(os.getenv("OMBRE_BUDGET_USD"))
         restant_vote = None if budget_restant_usd is None else max(0.0, budget_restant_usd - _usage_pilote["cout_usd"])
         budgets, ignores = budget_ia.repartir(restant_vote, [modele], plafond_modele)
         etat["vote_ignores"] = ignores

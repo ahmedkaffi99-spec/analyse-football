@@ -54,7 +54,7 @@ class AppelOpenRouter:
             raise
 
     def _appeler(self, prompt, max_tokens):
-        if self.cout_usd >= self.budget_usd:
+        if self.budget_usd is not None and self.cout_usd >= self.budget_usd:
             raise BudgetEpuise(f"plafond de {self.budget_usd:g} $ atteint pour {self.modele}")
         r = self._poster(prompt, max_tokens, True)
         if getattr(r, "status_code", 200) == 400:   # paramètre de raisonnement refusé par ce fournisseur : on réessaie sans
@@ -127,7 +127,8 @@ def composer_ombre(pool, profils, catalogue, catalogue_texte, modeles=None, cle=
     sans bloquer le pipeline (fils daemon). Renvoie une liste de résultats par modèle, dans l'ordre demandé."""
     modeles = list(modeles or [])
     cle = cle or os.getenv("OPENROUTER_API_KEY")
-    budget_usd = budget_usd if budget_usd is not None else float(os.getenv("OMBRE_BUDGET_USD") or 1.5)
+    # Variable absente, vide ou « aucun » = aucune limite financière ; le coût reste mesuré.
+    budget_usd = budget_usd if budget_usd is not None else budget_ia.lire_budget(os.getenv("OMBRE_BUDGET_USD"))
     nb_tours = nb_tours or int(os.getenv("OMBRE_NB_TOURS") or 2)
     duree_max_s = duree_max_s if duree_max_s is not None else float(os.getenv("OMBRE_DUREE_MAX_S") or 360)
     echeance = time.time() + duree_max_s
