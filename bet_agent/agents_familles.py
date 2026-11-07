@@ -19,8 +19,6 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 
 import analyser_et_envoyer as ae
-import desequilibre
-import consensus_bookmakers
 
 # Plafond d'edge : 20 % -> 3 % le 04/11/2026 (bilan du 03/11, 182 jambes jugées depuis le 22/10, dédoublonnées, runs envoyés).
 # Par tranche d'edge : < 0 -> 77-80 % de réussite (ROI +4 à +7 % par jambe) ; 0 à 3 % -> 68 % (-2,6 %) ; 3 à 6 % -> 55 %

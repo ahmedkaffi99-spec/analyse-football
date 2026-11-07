@@ -12,6 +12,7 @@ import time
 import requests
 
 import agent_strategie as st
+import budget_ia
 import analyser_et_envoyer as ae
 
 URL_OPENROUTER = "https://openrouter.ai/api/v1/chat/completions"
@@ -29,7 +30,7 @@ class AppelOpenRouter:
     def __init__(self, modele, cle, budget_usd, poster=requests.post, echeance=None, delai_appel=150):
         self.modele, self.cle, self.budget_usd, self.poster = modele, cle, budget_usd, poster
         self.echeance, self.delai_appel = echeance, delai_appel
-        self.tokens_entree = self.tokens_sortie = self.appels = 0
+        self.tokens_entree = self.tokens_sortie = self.appels = self.appels_cout_estime = 0
         self.cout_usd = 0.0
         self.erreurs = []   # composer_coupons avale les exceptions : on garde la dernière cause pour le rapport
 
@@ -64,7 +65,9 @@ class AppelOpenRouter:
         self.appels += 1
         self.tokens_entree += int(usage.get("prompt_tokens") or 0)
         self.tokens_sortie += int(usage.get("completion_tokens") or 0)
-        self.cout_usd += float(usage.get("cost") or 0.0)
+        cout, estime = budget_ia.cout_appel(usage, usage.get("cost"))   # Phase 4 : un coût inconnu n'est jamais gratuit
+        self.cout_usd += cout
+        self.appels_cout_estime += 1 if estime else 0
         return ((data.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
 
 

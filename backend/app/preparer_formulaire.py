@@ -1,13 +1,13 @@
-"""Prépare le run du « Pipeline quotidien » à partir du formulaire « Run workflow » (06/11/2026). Pur Python (aucune dépendance) : lu par
-le job `preparer` du workflow, qui écrit les sorties dans $GITHUB_OUTPUT. Chaque liste déroulante vaut « defaut » quand on n'y touche pas :
-le run garde alors exactement le comportement smart habituel (3 coupons, bandes 5-10 / 12-18 / 20-35, aucun plancher ni plafond par jambe)."""
+"""Prépare le run du « Pipeline quotidien » à partir du formulaire « Run workflow » (06/11/2026 ; refonte du 07/11/2026). Pur Python (aucune dépendance) :
+lu par le job `preparer` du workflow, qui écrit les sorties dans $GITHUB_OUTPUT. Le moteur agent produit TROIS coupons (prudent, équilibré, risque) ;
+aucune cote totale cible ni cote par jambe n'est imposée : le formulaire n'a donc plus de nombre de coupons ni de bande de cote."""
 import json
 import os
 import sys
 
 # Les profils smart vivent à UN seul endroit (bet_agent/profils_smart.py, pur Python), partagé avec le profil de secours du moteur.
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "bet_agent"))
-from profils_smart import BANDES_DEFAUT, COULEURS, CONSIGNE, lire_bande as _bande, profils  # noqa: E402,F401
+from profils_smart import COULEURS, NIVEAUX, profils  # noqa: E402,F401
 
 MODELES = {"deepseek": "", "gpt-6.1-sol": "openai/gpt-6.1-sol", "gemini-4-argon": "google/gemini-4-argon",
            "claude-sonnet-5.5": "anthropic/claude-sonnet-5.5"}
@@ -17,11 +17,6 @@ VOTE_DEFAUT = "openai/gpt-6.1-sol,google/gemini-4-argon"
 def _choix(valeur, defaut="defaut"):
     v = (valeur or "").strip()
     return "" if v in ("", defaut) else v
-
-
-def _nombre(valeur):
-    v = _choix(valeur)
-    return int(v) if v.isdigit() else None
 
 
 def construire(env):
@@ -49,8 +44,7 @@ def construire(env):
     sortie["depuis_run"] = (env.get("DEPUIS_RUN") or "").strip()
     sortie["ignorer_diversite"] = "true"   # diversité de catégorie entre coupons retirée le 06/11/2026 (l'anti-doublon exact reste actif)
     if moteur == "agent":
-        liste = profils(_nombre(env.get("NB_COUPONS")), [_choix(env.get(f"COTE_COUPON_{i}")) or None for i in range(1, 6)],
-                        un_pari_par_match=_choix(env.get("UN_PARI_PAR_MATCH"), "actif") != "desactive")
+        liste = profils(un_pari_par_match=_choix(env.get("UN_PARI_PAR_MATCH"), "actif") != "desactive")
         sortie["profils"] = json.dumps(liste, ensure_ascii=False, separators=(",", ":"))
     else:
         sortie["profils"] = ""

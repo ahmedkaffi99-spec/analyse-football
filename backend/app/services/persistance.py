@@ -3,6 +3,8 @@ données d'équipe) et le(s) coupon(s) (format de generer_coupons ou de ticket_d
 
 from datetime import date, datetime, timezone
 
+from sqlalchemy import func, select
+
 from app.models import Coupon, Cote, Jambe, Match, Run
 
 
@@ -74,18 +76,33 @@ def enregistrer_collecte(db, run, donnees):
     return index
 
 
+def jour_du_coupon(selections, index_matchs, aujourd_hui=None):
+    """Jour RÉEL du coupon = le plus tôt des coups d'envoi de ses matchs (UTC), et non la date du run : un run lancé tard ou pour demain ne doit
+    pas dater ses coupons d'aujourd'hui. Repli sur la date du jour seulement si aucun coup d'envoi n'est connu (jamais inventé autrement)."""
+    dates = []
+    for s in selections or []:
+        match = (index_matchs or {}).get(s.get("fixture_id_oddspapi")) or (index_matchs or {}).get(s.get("match"))
+        coup_envoi = getattr(match, "coup_envoi", None)
+        if coup_envoi is not None:
+            dates.append((coup_envoi if coup_envoi.tzinfo else coup_envoi.replace(tzinfo=timezone.utc)).astimezone(timezone.utc).date())
+    return min(dates) if dates else (aujourd_hui or date.today())
+
+
 def enregistrer_coupons(db, run, resultats_profils, index_matchs=None, textes=None, jour=None):
     """resultats_profils : liste de {"profil": {cle, nom, cote_min, cote_max}, "selections": [...]},
     le format renvoyé par analyser_et_envoyer.generer_coupons. textes[i] = ticket rédigé
     pour le profil i (même ordre, comme agent4_rediger_coupons)."""
     index_matchs = index_matchs or {}
-    jour = jour or date.today()
+    # Idempotence (Phase 4) : un run qui a déjà ses coupons n'en reçoit jamais une seconde série (reprise, double appel).
+    if getattr(run, "id", None) is not None and db.scalar(select(func.count(Coupon.id)).where(Coupon.run_id == run.id)):
+        print(f"ℹ️ Run {run.id} : coupons déjà enregistrés — aucun doublon créé.")
+        return []
     coupons = []
     for i, item in enumerate(resultats_profils):
         profil, selections = item["profil"], item["selections"]
         cote_totale, proba = stats_combine(selections) if selections else (None, None)
         coupon = Coupon(
-            run=run, jour=jour, profil=profil["cle"], nom=profil["nom"],
+            run=run, jour=jour or jour_du_coupon(selections, index_matchs), profil=profil["cle"], nom=profil["nom"],
             cote_min=profil.get("cote_min"), cote_max=profil.get("cote_max"),
             cote_totale=cote_totale, proba_combinee_pct=proba,
             texte=textes[i] if textes and i < len(textes) else None,

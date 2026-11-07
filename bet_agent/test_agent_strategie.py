@@ -604,16 +604,24 @@ class TestCoteTotaleMinimale(unittest.TestCase):
     purement indicatifs par ailleurs, voir TestDiversiteEtDoublonsEntreProfils). Pas de
     plafond haut en contrepartie."""
 
-    def test_cote_sous_le_plancher_rejetee(self):
+    def test_aucun_plancher_de_cote_totale_par_defaut(self):
+        # 07/11/2026 : l'ancien plancher absolu de 5 est retiré (aucune cote totale cible) ; un profil SANS plancher accepte une cote totale basse.
         pool = {"A vs B": [_sel("A vs B", "Total", "Over", 1.5)]}
         catalogue, _ = st.construire_catalogue(pool)
         profil = {"cle": "p1", "nom": "x", "cote_min": 0.0, "cote_max": 1000.0, "nb_jambes": 1, "nb_jambes_min": 1}
-        with mock.patch.object(st, "COTE_TOTALE_MIN", 5.0):
-            proposition = {"coupons": [{"profil": "p1", "strategie": "s", "jambes": [{"id": "P1"}]}]}
-            acceptes, problemes, calculs = st.valider(proposition, catalogue, [profil])
+        proposition = {"coupons": [{"profil": "p1", "strategie": "s", "jambes": [{"id": "P1"}]}]}
+        acceptes, problemes, calculs = st.valider(proposition, catalogue, [profil])
+        self.assertIn("p1", acceptes, problemes)
+        self.assertTrue(any("cote totale 1.50" in c for c in calculs), calculs)
+
+    def test_cote_sous_le_plancher_explicite_d_un_profil_personnalise_rejetee(self):
+        pool = {"A vs B": [_sel("A vs B", "Total", "Over", 1.5)]}
+        catalogue, _ = st.construire_catalogue(pool)
+        profil = {"cle": "p1", "nom": "x", "nb_jambes": 1, "nb_jambes_min": 1, "cote_totale_min": 5.0}
+        proposition = {"coupons": [{"profil": "p1", "strategie": "s", "jambes": [{"id": "P1"}]}]}
+        acceptes, problemes, _ = st.valider(proposition, catalogue, [profil])
         self.assertNotIn("p1", acceptes)
         self.assertTrue(any("trop basse (minimum 5" in p for p in problemes), problemes)
-        self.assertTrue(any("cote totale 1.50" in c for c in calculs), calculs)
 
     def test_plancher_diversifie_par_profil_via_cote_totale_min(self):
         # Demande explicite du 02/10/2026 : le plancher PAR DÉFAUT (st.COTE_TOTALE_MIN) peut
@@ -693,12 +701,18 @@ class TestMarchesLibresPourLIA(unittest.TestCase):
         self.assertIn("c1", acceptes, problemes)
         self.assertEqual(len(acceptes["c1"]["selections"]), 5)
 
-    def test_le_nombre_de_jambes_n_est_plus_borne(self):
+    def test_le_nombre_minimal_de_jambes_est_verifie_par_python(self):
+        # Phase 4 (07/11/2026, demande explicite « définir un nombre minimal de jambes cohérent ») : remplace le test du 06/11 qui constatait
+        # l'absence de contrôle. Le minimum du profil (nb_jambes_min) est maintenant vérifié ; le MAXIMUM reste non borné.
         cat = self._catalogue()
         profil = {"cle": "c1", "nom": "C", "nb_jambes_min": 4, "nb_jambes": 4, "cote_totale_min": 1.0, "cote_totale_max": 100.0,
                   "jambes_max_par_match": 1}
-        prop = {"coupons": [{"profil": "c1", "strategie": "x", "jambes": [{"id": "P1", "raison": "ok"}]}]}
-        acceptes, problemes, _ = st.valider(prop, cat, [profil])
+        une = {"coupons": [{"profil": "c1", "strategie": "x", "jambes": [{"id": "P1", "raison": "ok"}]}]}
+        acceptes, problemes, _ = st.valider(une, cat, [profil])
+        self.assertNotIn("c1", acceptes)
+        self.assertTrue(any("minimum 4" in p for p in problemes), problemes)
+        quatre = {"coupons": [{"profil": "c1", "strategie": "x", "jambes": [{"id": f"P{i}", "raison": "ok"} for i in range(1, 5)]}]}
+        acceptes, problemes, _ = st.valider(quatre, cat, [profil])
         self.assertIn("c1", acceptes, problemes)
 
     def test_la_bande_de_cote_et_les_identifiants_restent_verifies(self):

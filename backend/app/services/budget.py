@@ -46,6 +46,20 @@ def texte_couts_pour_detail(couts):
     return " | " + MARQUEUR_COUTS + json.dumps(couts, ensure_ascii=False, separators=(",", ":"))
 
 
+def couts_depuis_fichier(donnees):
+    """Bilan de coûts minimal à partir de l'état écrit au fil de l'eau par l'agent (COUTS_FICHIER) : {pilote, vote, total_usd}. None si rien.
+    Sert quand le run plante ou est tué avant d'avoir construit son journal : la dépense n'est jamais perdue (Phase 4)."""
+    if not donnees or not (donnees.get("pilote") or donnees.get("vote")):
+        return None
+    pilote = donnees.get("pilote") or {}
+    vote = donnees.get("vote") or []
+    total = round(float(pilote.get("cout_usd") or 0.0) + sum(float(v.get("cout_usd") or 0.0) for v in vote), 4)
+    bilan = {"pilote": pilote, "vote": vote, "total_usd": total, "source": "fichier_couts"}
+    if pilote.get("appels_cout_estime"):
+        bilan["alerte"] = f"{pilote['appels_cout_estime']} appel(s) du pilote au coût estimé (non renvoyé par le fournisseur)"
+    return bilan
+
+
 def _debut_du_jour(jour):
     return datetime.combine(jour, time.min, tzinfo=timezone.utc)
 

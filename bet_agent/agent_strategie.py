@@ -27,7 +27,6 @@ explicite : « réduire les tâches de l'IA, augmenter celles de Python ») :
 
 import json
 import os
-import math
 import re
 
 import agents_familles
@@ -42,9 +41,8 @@ NB_TOURS_MAX = 3
 # ae.MAX_JAMBES_PAR_MATCH.
 NB_JAMBES_MIN_DEFAUT = 2
 
-# Plancher ABSOLU de cote totale (demande explicite du 01/10/2026 : "interdit les cote total
-# moins de 5") — s'applique à TOUS les profils, quel que soit nb_jambes/cote_min/cote_max du
-# profil ; aucun plafond haut en contrepartie (voir le commentaire plus bas dans valider()).
+# OBSOLÈTE depuis le 07/11/2026 : l'ancien plancher absolu de cote totale (5,0) n'est plus appliqué (aucune cote totale cible). Constante conservée
+# uniquement pour d'anciens appelants ; valider() ne s'en sert plus.
 COTE_TOTALE_MIN = 5.0
 
 # Seuil de probabilité Python en-dessous duquel un pari n'est même plus MONTRÉ à l'IA (demande
@@ -132,6 +130,19 @@ def _contexte(pool):
     return ae._construire_contexte_prompt(premiers)
 
 
+def _texte_cote_profil(p):
+    """Consigne de cote d'un profil. Profils de risque par défaut : AUCUNE cote imposée, l'IA choisit selon le niveau de risque. Profil personnalisé
+    (profils_json) avec bande ou plancher explicite : l'ancienne consigne est conservée, et Python la vérifie."""
+    if p.get("cote_totale_max"):
+        return (f" BANDE DE COTE TOTALE (profil personnalisé) : {p.get('cote_totale_min') or 0:g} à {p['cote_totale_max']:g} "
+                "(Python vérifie le plancher ET le plafond) ; ne sors jamais de la bande.")
+    if p.get("cote_totale_min"):
+        return f" Plancher de cote totale (profil personnalisé) : >= {p['cote_totale_min']:g} (vérifié par Python)."
+    niveau = p.get("consigne") or ""
+    return (" AUCUNE cote totale cible ni cote individuelle obligatoire : tu choisis LIBREMENT les marchés, les sélections et les combinaisons "
+            "du catalogue selon ce niveau de risque. " + niveau).rstrip()
+
+
 def construire_prompt(pool, profils, catalogue_texte):
     n = len(profils)
     un_seul = n == 1
@@ -139,17 +150,7 @@ def construire_prompt(pool, profils, catalogue_texte):
         f"- {p['cle']} = {p['nom']} : entre {p.get('nb_jambes_min', NB_JAMBES_MIN_DEFAUT)} et {p['nb_jambes']} "
         "paris — choisis TOI-MÊME, dans cette fourchette, les paris les plus défendables selon la qualité des "
         "données du jour (pas d'obligation d'atteindre le maximum). "
-        + ((f"SMART COUPON — BANDE DE COTE TOTALE : {p.get('cote_totale_min', COTE_TOTALE_MIN):g} à "
-            f"{p['cote_totale_max']:g} (Python vérifie le plancher ET le plafond). Tu es LIBRE du nombre de jambes et de "
-            "la cote de chaque jambe : choisis la combinaison qui a le plus de chances de passer INTÉGRALEMENT tout en "
-            "tombant dans la bande. CHERCHE L'ÉQUILIBRE entre nombre de jambes et hauteur des cotes : ni une longue liste de "
-            "jambes à 1.2 (marge de bookmaker cumulée, une seule perte annule tout), ni quelques paris très hauts et "
-            "improbables ; vise un nombre de jambes raisonnable avec des cotes moyennes (1.4 à 2) parmi les plus solides. Ne sors jamais de la bande.")
-           if p.get("cote_totale_max") else
-           ("La cote totale qui en résulte n'est PAS une contrainte précise à viser, SEUL un plancher est vérifié par "
-            f"Python pour CE profil : cote totale >= {p.get('cote_totale_min', COTE_TOTALE_MIN):g} (ce plancher varie "
-            "selon le profil — ne force jamais un pari seulement pour faire monter ou descendre la cote au-delà de ce "
-            "qu'il faut pour l'atteindre)."))
+        + _texte_cote_profil(p)
         + (" TOUS LES MATCHS DU CATALOGUE doivent figurer dans CE coupon (vérifié par Python), avec "
            + ("EXACTEMENT UN pari par match (1xBet refuse deux paris du même match)"
               if p.get("jambes_max_par_match", ae.MAX_JAMBES_PAR_MATCH) == 1
@@ -176,16 +177,22 @@ def construire_prompt(pool, profils, catalogue_texte):
            "PLUS ÉLEVÉE disponible plutôt que les plus sûrs — contrairement aux autres profils, qui visent la "
            "probabilité maximale." if p.get("prefere_cote_elevee") else "")
         # Run PONCTUEL (profils_json) : consigne libre de l'utilisateur, ajoutée telle quelle au prompt de CE profil
-        + (f" CONSIGNE SPÉCIALE POUR CE PROFIL : {str(p['consigne']).strip()}" if p.get("consigne") else "")
+        + (f" CONSIGNE SPÉCIALE POUR CE PROFIL : {str(p['consigne']).strip()}"
+           if p.get("consigne") and (p.get("cote_totale_max") or p.get("cote_totale_min")) else "")
         for p in profils)
     exemple_coupons = ", ".join(
         '{"profil": "%s", "strategie": "1-2 phrases", "jambes": [{"id": "P3", "raison": "1 phrase"}]}' % p["cle"]
         for p in profils)
     mission = (f"composer le coupon combiné 1xBet du jour à partir du CATALOGUE ci-dessous" if un_seul
                else f"composer les {n} coupons combinés 1xBet du jour à partir du CATALOGUE ci-dessous")
-    regle_distinction = "" if un_seul else (
-        f"Les {n} coupons doivent être différents : tu peux reprendre un MATCH déjà utilisé dans un autre "
-        "coupon, mais jamais le MÊME pari exact (même marché, même sélection) — Python le refuse. ")
+    if un_seul:
+        regle_distinction = ""
+    elif all(not p.get("match_repete_autorise") for p in profils):
+        regle_distinction = (f"Les {n} coupons doivent être différents ET sans match commun : un match ne figure que dans UN seul coupon "
+                             "(Python refuse un match déjà utilisé dans un autre coupon). ")
+    else:
+        regle_distinction = (f"Les {n} coupons doivent être différents : un MATCH déjà utilisé dans un autre coupon est permis (catalogue trop court), "
+                             "mais jamais le MÊME pari exact (même marché, même sélection) — Python le refuse. ")
     return (
         "System: Tu es un analyste-parieur professionnel, prudent et méthodique. Tu RAISONNES, tu "
         "PLANIFIES et tu CHOISIS. Réponds UNIQUEMENT en français, et UNIQUEMENT avec un objet JSON valide "
@@ -199,9 +206,10 @@ def construire_prompt(pool, profils, catalogue_texte):
         "pari(s) d'un même match (la limite exacte de chaque profil est donnée ci-dessus), jamais deux paris "
         "contradictoires, jamais de doublon — combine des matchs DIFFÉRENTS plutôt que d'empiler les paris sur "
         "un même match.\n"
-        "3. La cote totale (produit des cotes) doit tomber dans la bande du profil (plancher et plafond vérifiés). "
-        "Python la calcule et te la renverra : vise juste, sans calculer au centime. Tu es libre du nombre de "
-        "jambes et des cotes individuelles ; l'objectif est la combinaison la plus probable dans la bande.\n"
+        "3. AUCUNE cote totale cible ni cote individuelle obligatoire (sauf bande explicite d'un profil personnalisé, indiquée ci-dessus et vérifiée "
+        "par Python). Tu es libre du nombre de jambes (deux au minimum) et des cotes ; adapte la combinaison au NIVEAU DE RISQUE du profil : prudent = "
+        "probabilité maximale, équilibré = compromis probabilité / rendement, risque = gain potentiel plus élevé avec davantage de risque. Python calcule "
+        "la cote totale et te la renvoie.\n"
         "4. Qualité avant quantité : écarte les matchs aux données faibles ou dont la presse signale un risque "
         "(absences clés, rotation, enjeu faible). Le CATALOGUE est déjà FILTRÉ ET TRIÉ par Python : il ne "
         "contient plus les 200-300 marchés bruts d'un match, seulement les paris dont la PROBABILITÉ calculée "
@@ -368,6 +376,18 @@ def _cle_risque(selection):
     return (selection["match"], p.get("categorie"), str(p.get("selection")))
 
 
+def ajuster_repetition(profil, nb_matchs_catalogue, nb_profils):
+    """Renvoie le profil à utiliser pour la règle « un match dans un seul coupon ». Si le profil l'interdit (match_repete_autorise faux) mais que le
+    catalogue n'a pas assez de matchs pour que `nb_profils` coupons de `nb_jambes_min` jambes chacun n'en partagent aucun, la répétition est
+    autorisée pour ce run (sinon les coupons seraient impossibles). Le pari EXACT identique reste toujours interdit dans deux coupons."""
+    if profil.get("match_repete_autorise"):
+        return profil
+    besoin = max(1, nb_profils) * max(1, profil.get("nb_jambes_min", 1))
+    if nb_matchs_catalogue < besoin:
+        return dict(profil, match_repete_autorise=True, repetition_ajustee=True)
+    return profil
+
+
 def valider(proposition, catalogue, profils, signatures_existantes=(), selections_precedentes=(),
             ignorer_diversite_croisee=False):
     """Contrôle la proposition de l'IA profil par profil. Renvoie
@@ -497,21 +517,18 @@ def valider(proposition, catalogue, profils, signatures_existantes=(), selection
         # Plus de "probabilité combinée" affichée ici : Python ne calcule plus de probabilité
         # par pari (30/09/2026, cotes brutes données à l'IA) — seule la cote totale, un fait
         # brut (produit des cotes réelles), reste vérifiable par Python sans jugement de valeur.
-        # Cote totale INDICATIVE UNIQUEMENT depuis le 01/10/2026 (demande explicite : "ne
-        # oblige pas l'IA à atteindre le 50+ et 15-50, mon but c'est tout cote individuel et
-        # total qui a la chance de réussite élevée") — Python ne rejette PLUS un coupon pour
-        # viser une fourchette précise, seul le nombre de jambes (nb_jambes_min/nb_jambes)
-        # différencie encore les profils. MAIS un PLANCHER reste vérifié (demande explicite,
-        # même jour : "interdit les cote total moins de 5") — DIVERSIFIÉ PAR PROFIL depuis le
-        # 02/10/2026 (constaté sur le run #84 : les 4 coupons sûrs, tous au même plancher de 5,
-        # tombaient tous entre 5.0 et 5.25 — un plancher qui varie selon le profil, via
-        # profil["cote_totale_min"], étale les coupons sur des paliers différents ; pas de
-        # plafond haut, seulement ce plancher, qui retombe à COTE_TOTALE_MIN si le profil ne
-        # précise rien).
-        plancher = profil.get("cote_totale_min", COTE_TOTALE_MIN)
+        # Cote totale : calculée et affichée, jamais imposée par défaut (07/11/2026, trois profils de risque). L'ancien plancher absolu de 5 (01/10/2026)
+        # est retiré ; un profil personnalisé peut encore fixer cote_totale_min / cote_totale_max, vérifiés plus bas.
+        # Nombre minimal de jambes (Phase 4) : jusqu'ici annoncé à l'IA dans le prompt mais jamais vérifié par Python.
+        minimum_jambes = profil.get("nb_jambes_min", 1)
+        if selections and len(selections) < minimum_jambes:
+            erreurs.append(f"{len(selections)} jambe(s) : minimum {minimum_jambes} pour ce profil — ajoute des paris de matchs différents")
+        # Aucune cote totale cible (07/11/2026) : plancher et plafond ne sont vérifiés QUE si un profil personnalisé (profils_json) les précise
+        # explicitement ; les trois profils de risque par défaut n'en ont pas.
+        plancher = profil.get("cote_totale_min")
         cote = ae._produit_cotes(selections) if selections else 0
         calculs.append(f"{cle} : {len(selections)} paris, cote totale {cote:.2f}")
-        if selections and cote < plancher:
+        if selections and plancher and cote < plancher:
             erreurs.append(f"cote totale {cote:.2f} trop basse (minimum {plancher:g} pour ce profil) — "
                            "ajoute un pari ou remplace par des cotes plus hautes")
         plafond = profil.get("cote_totale_max")

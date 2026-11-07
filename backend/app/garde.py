@@ -15,6 +15,7 @@ from sqlalchemy import select  # noqa: E402
 
 from app import config  # noqa: E402
 from app.models import Match, Run  # noqa: E402
+from app.services.budget import couts_du_run  # noqa: E402  (pur : json + modèles, pas de dépendance IA)
 
 
 def cloturer_runs_interrompus(db, maintenant=None):
@@ -27,7 +28,7 @@ def cloturer_runs_interrompus(db, maintenant=None):
     for run in db.scalars(select(Run).where(Run.statut == "en_cours")):
         lance_le = run.lance_le if run.lance_le.tzinfo else run.lance_le.replace(tzinfo=timezone.utc)
         if lance_le < limite:
-            run.statut = "erreur"
+            run.statut = "interrompu"   # Phase 4 : distinct d'une vraie erreur (le job a été arrêté)
             run.detail = f"Interrompu : toujours en cours après {config.HEURES_MAX_RUN:g} h (job arrêté ou coupure)."
             run.termine_le = maintenant
             clotures += 1
@@ -35,6 +36,39 @@ def cloturer_runs_interrompus(db, maintenant=None):
         db.commit()
         print(f"🧹 {clotures} run(s) interrompu(s) clôturé(s) en erreur.")
     return clotures
+
+
+STATUTS_ECHEC = ("erreur", "abandonne", "interrompu")
+
+
+def echecs_payants_du_jour(db, maintenant=None):
+    """Nombre de runs planifiables du jour (UTC) ratés APRÈS une dépense mesurée (statut erreur / abandonne / interrompu avec total_usd > 0).
+    Un run sans dépense (collecte vide, budget épuisé) n'est pas compté : il peut être relancé sans rien coûter."""
+    maintenant = maintenant or datetime.now(timezone.utc)
+    debut = datetime.combine(maintenant.date(), time.min, tzinfo=timezone.utc)
+    n = 0
+    for run in db.scalars(select(Run).where(Run.source == "api", Run.lance_le >= debut, Run.statut.in_(STATUTS_ECHEC))):
+        couts = couts_du_run(run)
+        if couts and (couts.get("total_usd") or 0) > 0:
+            n += 1
+    return n
+
+
+def relances_payantes_epuisees(db, maintenant=None):
+    """True quand le quota de runs payants ratés du jour est atteint : plus aucune relance planifiée n'est autorisée."""
+    return echecs_payants_du_jour(db, maintenant) >= config.MAX_ECHECS_PAYANTS_PAR_JOUR
+
+
+def autre_run_en_cours(db, run_id, maintenant=None):
+    """Exécution simultanée : un AUTRE run « en_cours » de source api, plus ancien que celui-ci et pas encore périmé (HEURES_MAX_RUN).
+    Filet de sécurité sous le groupe de concurrence GitHub (qui n'existe pas pour un lancement hors GitHub) : le run le plus récent s'abstient."""
+    maintenant = maintenant or datetime.now(timezone.utc)
+    limite = maintenant - timedelta(hours=config.HEURES_MAX_RUN)
+    for autre in db.scalars(select(Run).where(Run.source == "api", Run.statut == "en_cours", Run.id < run_id)):
+        lance_le = autre.lance_le if autre.lance_le.tzinfo else autre.lance_le.replace(tzinfo=timezone.utc)
+        if lance_le >= limite:
+            return autre.id
+    return None
 
 
 def ticket_deja_produit_aujourdhui(db):
@@ -68,6 +102,10 @@ def decision_passage(db, maintenant=None):
     maintenant = maintenant or datetime.now(timezone.utc)
     cloturer_runs_interrompus(db, maintenant)   # sinon un run tué resterait « en cours » et bloquerait la journée
     if not ticket_deja_produit_aujourdhui(db):
+        if relances_payantes_epuisees(db, maintenant):   # Phase 4 : pas de relance payante répétitive
+            if alertes.est_dernier_passage(maintenant) and alertes.aucun_envoi_aujourdhui(db, maintenant):
+                return True, "relances payantes épuisées et aucun coupon : le job signale le problème sans rien dépenser"
+            return False, "relances payantes épuisées (échecs payants du jour) : aucune nouvelle dépense automatique"
         return True, "aucun coupon aujourd'hui : le pipeline doit tourner"
     if alertes.est_dernier_passage(maintenant) and alertes.aucun_envoi_aujourdhui(db, maintenant):
         return True, "dernier passage sans coupon envoyé (run bloqué ?) : le job doit signaler le problème"

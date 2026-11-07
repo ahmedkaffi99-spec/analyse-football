@@ -20,7 +20,7 @@ on:
     # que les coupons du jour sont partis (garde --si-aucun-ticket-aujourdhui, y compris coupons envoyés la veille).
   # PAUSE   - cron: "7,27,47 6-13 * * *"  # 6h07-13h47 UTC (9h07-16h47 à Djibouti)
   workflow_dispatch:
-    # Formulaire complet (06/11/2026) : chaque liste « defaut » garde le comportement smart habituel (3 coupons, bandes 5-10 / 12-18 / 20-35).
+    # Formulaire (07/11/2026) : trois coupons PRUDENT / ÉQUILIBRÉ / RISQUE, l'IA choisit librement ; aucune cote totale cible ni cote par jambe imposée.
     inputs:
       telegram:
         description: "1. Envoyer les coupons sur Telegram : allumé = envoi, éteint = essai (rien n'est envoyé)"
@@ -50,82 +50,6 @@ on:
         description: "5. Matchs imposés : Equipe A - Equipe B, Equipe C - Equipe D (vide = sélection automatique)"
         type: string
         default: ""
-      nb_coupons:
-        description: "6. Nombre de coupons (defaut = 3)"
-        type: choice
-        options:
-          - "defaut"
-          - "1"
-          - "2"
-          - "3"
-          - "4"
-          - "5"
-        default: "defaut"
-      cote_coupon_1:
-        description: "6. Cote totale du coupon 1 (defaut = 5-10)"
-        type: choice
-        options:
-          - "defaut"
-          - "5-10"
-          - "10-18"
-          - "12-18"
-          - "18-25"
-          - "20-35"
-          - "35-60"
-          - "50-100"
-        default: "defaut"
-      cote_coupon_2:
-        description: "6. Cote totale du coupon 2 (defaut = 12-18) — ignorée si le nombre de coupons est inférieur à 2"
-        type: choice
-        options:
-          - "defaut"
-          - "5-10"
-          - "10-18"
-          - "12-18"
-          - "18-25"
-          - "20-35"
-          - "35-60"
-          - "50-100"
-        default: "defaut"
-      cote_coupon_3:
-        description: "6. Cote totale du coupon 3 (defaut = 20-35) — ignorée si le nombre de coupons est inférieur à 3"
-        type: choice
-        options:
-          - "defaut"
-          - "5-10"
-          - "10-18"
-          - "12-18"
-          - "18-25"
-          - "20-35"
-          - "35-60"
-          - "50-100"
-        default: "defaut"
-      cote_coupon_4:
-        description: "6. Cote totale du coupon 4 (defaut = 5-10) — ignorée si le nombre de coupons est inférieur à 4"
-        type: choice
-        options:
-          - "defaut"
-          - "5-10"
-          - "10-18"
-          - "12-18"
-          - "18-25"
-          - "20-35"
-          - "35-60"
-          - "50-100"
-        default: "defaut"
-      cote_coupon_5:
-        description: "6. Cote totale du coupon 5 (defaut = 12-18) — ignorée si le nombre de coupons est inférieur à 5"
-        type: choice
-        options:
-          - "defaut"
-          - "5-10"
-          - "10-18"
-          - "12-18"
-          - "18-25"
-          - "20-35"
-          - "35-60"
-          - "50-100"
-        default: "defaut"
       modele:
         description: "10. Modèle qui pilote le run (DeepSeek par défaut)"
         type: choice
@@ -180,12 +104,6 @@ jobs:
           DEPUIS_RUN: ${{ inputs.depuis_run }}
           DATE_DEBUT: ${{ inputs.date_debut }}
           DATE_FIN: ${{ inputs.date_fin }}
-          NB_COUPONS: ${{ inputs.nb_coupons }}
-          COTE_COUPON_1: ${{ inputs.cote_coupon_1 }}
-          COTE_COUPON_2: ${{ inputs.cote_coupon_2 }}
-          COTE_COUPON_3: ${{ inputs.cote_coupon_3 }}
-          COTE_COUPON_4: ${{ inputs.cote_coupon_4 }}
-          COTE_COUPON_5: ${{ inputs.cote_coupon_5 }}
           MODELE: ${{ inputs.modele }}
           UN_PARI_PAR_MATCH: ${{ inputs.un_pari_par_match }}
           VOTE_VAR: ${{ vars.MODELES_VOTE }}
@@ -234,6 +152,13 @@ jobs:
       SANS_API_FOOTBALL: ""
       # Plafond d'edge et autres vetos automatiques retirés le 06/11/2026 (les cotes restent celles de 1xBet SEUL, demande du 04/11).
       PILOTE_MODELE: ${{ matrix.pilote }}
+      # Phase 4 (07/11/2026, corrections contrôlées) : durée de l'agent < délai du job (60 min) pour un arrêt PROPRE avec journal et coûts ; coûts écrits
+      # au fil de l'eau dans COUTS_FICHIER (relus par l'étape « Finaliser le run » même si le job est tué) ; au plus N runs payants ratés par jour pour
+      # les passages planifiés ; second chat Telegram UNIQUEMENT via la variable du dépôt TELEGRAM_CHAT_IDS_SUPPLEMENTAIRES (plus de valeur par défaut codée).
+      AGENT_DUREE_MAX_MIN: "45"
+      COUTS_FICHIER: ${{ github.workspace }}/backend/data/couts_run.json
+      MAX_ECHECS_PAYANTS_PAR_JOUR: ${{ vars.MAX_ECHECS_PAYANTS_PAR_JOUR || '2' }}
+      TELEGRAM_CHAT_IDS_SUPPLEMENTAIRES: ${{ vars.TELEGRAM_CHAT_IDS_SUPPLEMENTAIRES }}
       API_FOOTBALL_QUOTA_PAR_MINUTE: ${{ secrets.API_FOOTBALL_QUOTA_PAR_MINUTE }}
       STATS_DETAILLEES_ACTIVE: ${{ secrets.STATS_DETAILLEES_ACTIVE }}
       SAISON_MAX_PLAN_GRATUIT: ${{ secrets.SAISON_MAX_PLAN_GRATUIT }}
@@ -242,7 +167,7 @@ jobs:
       DEEPSEEK_MODELES: ${{ vars.DEEPSEEK_MODELES }}
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
       # Suivi « en ombre » retiré le 06/11/2026 (le vote final et le mode « modèle seul » restent) ; OMBRE_BUDGET_USD plafonne leur dépense.
-      # Vote final (mode standard seulement) : ces modèles composent aussi les 3 coupons, Python garde le meilleur par bande. « aucun » = coupé.
+      # Vote final (mode standard seulement) : ces modèles composent aussi les 3 coupons, Python garde, par profil de risque, le coupon qui lui correspond le mieux. « aucun » = coupé.
       MODELES_VOTE: ${{ needs.preparer.outputs.vote }}
       OMBRE_BUDGET_USD: ${{ vars.OMBRE_BUDGET_USD || '0.6' }}
       # Plafond de dépenses IA PAR JOUR (Phase 3) : variable du dépôt BUDGET_JOUR_USD (défaut 3 $) ; « aucun » = sans plafond, 0 = aucune dépense payante.
@@ -264,8 +189,7 @@ jobs:
       DATE_CIBLE_DEBUT: ${{ needs.preparer.outputs.date_debut }}
       DATE_CIBLE_FIN: ${{ needs.preparer.outputs.date_fin }}
       MATCHS_MANUELS: ${{ inputs.matchs_manuels }}
-      # SMART COUPON (demande du 06/11/2026) : l'IA choisit librement ; seules contraintes = les 3 bandes de cote totale
-      # (5-10, 12-18, 20-35). Un run manuel peut toujours imposer ses propres profils via l'entrée profils_json.
+      # TROIS PROFILS DE RISQUE (demande du 07/11/2026) : prudent, équilibré, risque ; l'IA choisit librement les paris, sans cote cible.
       PROFILS_JSON: ${{ needs.preparer.outputs.profils }}   # généré par backend/app/preparer_formulaire.py (smart par défaut)
       TTL_COTES_API_FOOTBALL_SECONDES: ${{ needs.preparer.outputs.ttl }}
       COTE_MIN_JAMBE: ${{ needs.preparer.outputs.cote_min_jambe }}
@@ -322,6 +246,13 @@ jobs:
           else
             python -m app.taches $ARGS
           fi
+
+      - name: Finaliser le run (coûts conservés)
+        # Toujours exécutée (même après un délai dépassé ou une annulation) : un run resté « en_cours » devient « interrompu » avec la dépense déjà faite.
+        # N'envoie rien, n'appelle aucune API payante, ne change jamais le résultat du job.
+        if: ${{ always() }}
+        working-directory: backend
+        run: python -m app.taches finaliser
 
       - name: Alerte Telegram si le pipeline a planté
         # Filet de sécurité : plantage avant/pendant le pipeline (dépendances, base, délai dépassé...). Pas de doublon si app.taches a déjà alerté.

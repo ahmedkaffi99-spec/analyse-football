@@ -15,15 +15,15 @@ import json
 import os
 import sys
 from pathlib import Path
-from datetime import datetime, time, timedelta, timezone
+from datetime import datetime, time, timezone
 
 from sqlalchemy import select
 
 from app.database import SessionLocal, init_db
-from app.models import Coupon, MemoireAgent, Match, Run
+from app.models import Coupon, MemoireAgent, Run
 from app.services import pipeline
 from app.services.bilan import envoyer_bilans
-from app.garde import ticket_deja_produit_aujourdhui
+from app.garde import autre_run_en_cours, relances_payantes_epuisees, ticket_deja_produit_aujourdhui
 from app.services.runs import cloturer_runs_interrompus, executer_run
 from app.services import alertes, analyse_coupons, github_actions, plan_verification
 from app.services.verification import etat_live_jambes, verification_due, verifier_coupons_en_attente
@@ -40,10 +40,29 @@ def tache_run(args):
                 except Exception as e:
                     print(f"⚠️ Alerte Telegram impossible : {str(e)[:150]}")
             return 0
+        if args.si_aucun_ticket_aujourdhui and relances_payantes_epuisees(db):
+            # Phase 4 : plusieurs échecs AVEC dépense aujourd'hui -> plus de relance payante automatique (alerte au dernier passage)
+            print("⛔ Relances payantes épuisées aujourd'hui (échecs avec dépense) — aucune nouvelle dépense automatique.")
+            if args.telegram:
+                try:
+                    _, ae, _ = pipeline.modules()
+                    alertes.envoyer_alerte_passage_saute(db, ae.notifier_telegram, cause="relances")
+                except Exception as e:
+                    print(f"⚠️ Alerte Telegram impossible : {str(e)[:150]}")
+            return 0
         run = Run(source="api", statut="en_cours")
         db.add(run)
         db.commit()
         run_id = run.id
+        concurrent = autre_run_en_cours(db, run_id)
+        if concurrent is not None:
+            # Exécution simultanée (Phase 4) : un run plus ancien est encore en cours ; celui-ci s'abstient sans rien dépenser.
+            run.statut, run.detail = "abandonne", f"Exécution simultanée : le run {concurrent} est déjà en cours — aucune dépense."
+            run.termine_le = datetime.now(timezone.utc)
+            db.commit()
+            print(f"⛔ {run.detail}")
+            return 0
+    _initialiser_fichier_couts(run_id)
 
     profils_personnalises = None
     profils_json = getattr(args, "profils_json", "") or ""
@@ -79,6 +98,45 @@ def tache_run(args):
         except Exception as e:
             print(f"⚠️ Alerte Telegram impossible : {str(e)[:150]}")
     return 1 if statut == "erreur" else 0
+
+
+def _initialiser_fichier_couts(run_id):
+    """Pose le numéro du run dans COUTS_FICHIER (si configuré) : l'agent y ajoute ses coûts après chaque appel, et `finaliser` relit le tout si le job est tué."""
+    try:
+        pipeline.modules()
+        import budget_ia
+        if budget_ia.fichier_couts():
+            budget_ia.ecrire_couts({"run_id": run_id, "pilote": {}, "vote": []})
+    except Exception as e:
+        print(f"⚠️ Fichier de coûts non initialisé : {str(e)[:120]}")
+
+
+def tache_finaliser(args):
+    """Étape du workflow exécutée TOUJOURS après le pipeline (`if: always()`) : si le job a été tué (délai, annulation) le run reste « en_cours » et
+    ses coûts sont perdus. Cette tâche le clôture en « interrompu » avec la dépense écrite au fil de l'eau (COUTS_FICHIER). Idempotente : ne touche
+    jamais un run déjà terminé, n'envoie rien, n'appelle aucune API. Code de sortie 0 dans tous les cas (elle ne doit jamais masquer le vrai résultat)."""
+    from app.services.budget import couts_depuis_fichier, texte_couts_pour_detail
+    try:
+        pipeline.modules()
+        import budget_ia
+        donnees = budget_ia.lire_couts()
+        if not donnees or not donnees.get("run_id"):
+            print("ℹ️ Finalisation : aucun fichier de coûts — rien à faire.")
+            return 0
+        with SessionLocal() as db:
+            run = db.get(Run, int(donnees["run_id"]))
+            if run is None or run.statut != "en_cours":
+                print(f"ℹ️ Finalisation : run {donnees['run_id']} déjà terminé ({getattr(run, 'statut', 'introuvable')}) — rien à faire.")
+                return 0
+            run.statut = "interrompu"
+            run.detail = ("Interrompu : le job s'est arrêté avant la fin du pipeline (délai dépassé ou annulation)."
+                          + texte_couts_pour_detail(couts_depuis_fichier(donnees)))[:4000]
+            run.termine_le = datetime.now(timezone.utc)
+            db.commit()
+            print(f"🧹 Finalisation : run {run.id} clôturé en « interrompu » (dépense conservée dans le détail).")
+    except Exception as e:   # jamais bloquant
+        print(f"⚠️ Finalisation impossible : {str(e)[:150]}")
+    return 0
 
 
 def tache_verifier(args):
@@ -562,7 +620,7 @@ def main(argv=None):
                             "(moteur deterministe uniquement)")
     p_run.add_argument("--moteur", choices=["central", "agent", "deterministe"], default="agent",
                        help="agent = OFFICIEL PAR DÉFAUT depuis le 20/10/2026 (demande explicite : "
-                            "l'IA choisit les paris, 3 coupons de 5 à 10 jambes (cote 5-10, 10-50, 50+), agents spécialistes par "
+                            "l'IA choisit librement les paris, 3 coupons (prudent, équilibré, risque, sans cote imposée), agents spécialistes par "
                             "famille de marchés — voir bet_agent/agents_familles.py) ; "
                             "central = officiel du 11/10 au 20/10/2026 (11/10/2026, moteur le plus récemment "
                             "construit — moteur_central/) : arbitrage par marché bet_agent/moteur "
@@ -607,6 +665,7 @@ def main(argv=None):
     p_appr.add_argument("--exporter", metavar="FICHIER", help="sauvegarde la mémoire dans ce fichier JSON (lecture seule)")
     p_budget = sous.add_parser("budget", help="dépenses IA mesurées (par jour, par modèle) et budget restant, lecture seule")
     p_budget.add_argument("--jours", type=int, default=7, help="nombre de jours affichés (défaut 7)")
+    sous.add_parser("finaliser", help="clôture en « interrompu » un run resté en cours après l'arrêt du job (conserve les coûts, rien n'est envoyé)")
     sous.add_parser("tester-api", help="vérifie l'Edge Function api en ligne (jeton du Vault)")
     sous.add_parser("modeles-gratuits", help="liste les modèles gratuits d'OpenRouter (identifiants exacts)")
     sous.add_parser("tester-ia", help="teste les clés Groq, Gemini et OpenRouter avec une vraie réponse")
@@ -631,10 +690,11 @@ def main(argv=None):
         if not due:
             return 0
     init_db()
-    with SessionLocal() as db:
-        cloturer_runs_interrompus(db)
+    if args.tache != "finaliser":   # la finalisation doit voir le run encore « en_cours » pour conserver ses coûts
+        with SessionLocal() as db:
+            cloturer_runs_interrompus(db)
     taches = {"run": tache_run, "verifier": tache_verifier, "planifier-verification": tache_planifier, "live": tache_live, "envoyer": tache_envoyer,
-              "tester-api": tache_tester_api, "backfill": tache_backfill, "apprendre": tache_apprendre, "budget": tache_budget}
+              "tester-api": tache_tester_api, "backfill": tache_backfill, "apprendre": tache_apprendre, "budget": tache_budget, "finaliser": tache_finaliser}
     return taches[args.tache](args)
 
 
