@@ -250,6 +250,8 @@ jobs:
         # Toujours exécutée (même après un délai dépassé ou une annulation) : un run resté « en_cours » devient « interrompu » avec la dépense déjà faite.
         # N'envoie rien, n'appelle aucune API payante, ne change jamais le résultat du job.
         if: ${{ always() }}
+        timeout-minutes: 4
+        continue-on-error: true   # un échec de finalisation (base verrouillée...) ne doit jamais masquer le résultat du pipeline
         working-directory: backend
         run: python -m app.taches finaliser
 

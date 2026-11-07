@@ -56,6 +56,8 @@ def echecs_payants_du_jour(db, maintenant=None):
 
 def relances_payantes_epuisees(db, maintenant=None):
     """True quand le quota de runs payants ratés du jour est atteint : plus aucune relance planifiée n'est autorisée."""
+    if config.MAX_ECHECS_PAYANTS_PAR_JOUR <= 0:   # 0 ou négatif = frein désactivé (avant : 0 bloquait TOUTES les relances)
+        return False
     return echecs_payants_du_jour(db, maintenant) >= config.MAX_ECHECS_PAYANTS_PAR_JOUR
 
 

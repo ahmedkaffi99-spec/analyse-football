@@ -126,12 +126,16 @@ def test_cout_du_pilote_mesure_ou_estime(monkeypatch):
     monkeypatch.delenv("DEEPSEEK_PRIX_ENTREE_USD_M", raising=False)
     monkeypatch.delenv("DEEPSEEK_PRIX_SORTIE_USD_M", raising=False)
     assert pilote._cout_appel({"cost": 0.0123, "prompt_tokens": 5}) == 0.0123                 # coût renvoyé par le fournisseur
-    assert pilote._cout_appel({"prompt_tokens": 1000, "completion_tokens": 500}) == pytest.approx(0.0105)   # Phase 4 : ni coût ni prix = estimation PRUDENTE (3 et 15 $/M), jamais 0
+    pilote._secours.update(actif=False, choix=None)
+    assert pilote._cout_appel({"prompt_tokens": 1000, "completion_tokens": 500}) == pytest.approx(0.0009)   # API DeepSeek sans coût renvoyé : estimation DeepSeek (0,30 / 1,20 $/M), jamais 0
+    pilote._secours.update(actif=True, choix=None)
+    assert pilote._cout_appel({"prompt_tokens": 1000, "completion_tokens": 500}) == pytest.approx(0.0105)   # route de secours : estimation PRUDENTE (3 / 15 $/M)
+    pilote._secours.update(actif=False, choix=None)
     monkeypatch.setenv("DEEPSEEK_PRIX_ENTREE_USD_M", "0.5")
     monkeypatch.setenv("DEEPSEEK_PRIX_SORTIE_USD_M", "2")
     assert pilote._cout_appel({"prompt_tokens": 1_000_000, "completion_tokens": 500_000}) == pytest.approx(1.5)
     monkeypatch.setenv("DEEPSEEK_PRIX_ENTREE_USD_M", "abc")
-    assert pilote._cout_appel({"prompt_tokens": 10}) == pytest.approx(3e-05)                   # prix illisible : jamais d'exception, estimation prudente (pas 0)
+    assert pilote._cout_appel({"prompt_tokens": 10}) == pytest.approx(3e-06)                   # prix illisible : jamais d'exception, estimation DeepSeek (jamais 0)
 
 
 def test_le_pilote_openrouter_demande_le_cout_reel(monkeypatch):

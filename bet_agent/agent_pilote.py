@@ -456,6 +456,10 @@ def _cout_appel(usage):
     except ValueError:
         prix_in = prix_out = 0.0
     import budget_ia
+    if not prix_in and not prix_out and not _secours.get("actif"):
+        # API DeepSeek officielle sans coût renvoyé : estimation avec des prix DeepSeek approchants (remplaçables par DEEPSEEK_PRIX_*), et non les prix prudents d'un
+        # modèle premium (3 / 15 $ par M tokens) qui gonflaient le coût d'un run d'environ ×10 (run 280 : 0,93 $ comptés pour ~0,10 $ réels).
+        prix_in, prix_out = budget_ia.PRIX_DEEPSEEK_ENTREE_USD_M, budget_ia.PRIX_DEEPSEEK_SORTIE_USD_M
     cout, estime = budget_ia.cout_appel(usage, usage.get("cost"), prix_in or None, prix_out or None)
     _usage_pilote["appels_cout_estime"] = _usage_pilote.get("appels_cout_estime", 0) + (1 if estime else 0)
     return cout

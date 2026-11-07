@@ -281,7 +281,10 @@ def incoherence_raison(raison, pick):
     texte = (raison or "").lower()
     cotes_citees = [float(c.replace(",", "."))
                     for c in re.findall(r"(?:\bà|@)\s*(\d+[.,]\d+)(?!\d|\s*%)", texte)]
-    if cotes_citees and all(abs(c - float(pick["cote"])) > 0.011 for c in cotes_citees):
+    # Tolérance (07/11/2026) : une cote ARRONDIE (« 1.2 » pour 1.24) n'est pas une erreur ; seule une cote nettement différente trahit une raison écrite pour un
+    # autre pari. Avant : tolérance de 0,011, qui faisait rejeter des coupons valables et coûtait un tour payant (run 280 : budget épuisé sur ce rejet).
+    tolerance = max(0.06, 0.05 * float(pick["cote"]))
+    if cotes_citees and all(abs(c - float(pick["cote"])) > tolerance for c in cotes_citees):
         return f"ta raison cite la cote {cotes_citees[0]} alors que ce pari est à {pick['cote']}"
     selection = str(pick.get("selection", "")).lower()
     for a, b in _CONTRAIRES:

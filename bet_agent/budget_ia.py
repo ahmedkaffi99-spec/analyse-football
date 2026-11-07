@@ -86,7 +86,9 @@ import json
 import tempfile
 
 PRIX_DEFAUT_ENTREE_USD_M = 3.0     # $ par million de tokens d'entrée, estimation PRUDENTE quand le fournisseur ne renvoie aucun coût
-PRIX_DEFAUT_SORTIE_USD_M = 15.0    # $ par million de tokens de sortie (idem)
+PRIX_DEFAUT_SORTIE_USD_M = 15.0
+PRIX_DEEPSEEK_ENTREE_USD_M = 0.30    # estimation pour l'API DeepSeek officielle quand aucun coût n'est renvoyé (remplaçable par DEEPSEEK_PRIX_ENTREE_USD_M)
+PRIX_DEEPSEEK_SORTIE_USD_M = 1.20    # $ par million de tokens de sortie (idem)
 
 
 def _prix(nom, defaut):

@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 from datetime import datetime, time, timezone
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.database import SessionLocal, init_db
 from app.models import Coupon, MemoireAgent, Run
@@ -129,6 +129,9 @@ def tache_finaliser(args):
             print("ℹ️ Finalisation : aucun fichier de coûts — rien à faire.")
             return 0
         with SessionLocal() as db:
+            if db.get_bind().dialect.name == "postgresql":   # jamais bloquée par un verrou d'une session zombie : abandon après quelques secondes
+                db.execute(text("SET LOCAL lock_timeout = '10s'"))
+                db.execute(text("SET LOCAL statement_timeout = '30s'"))
             run = db.get(Run, int(donnees["run_id"]))
             if run is None or run.statut != "en_cours":
                 print(f"ℹ️ Finalisation : run {donnees['run_id']} déjà terminé ({getattr(run, 'statut', 'introuvable')}) — rien à faire.")
@@ -694,8 +697,10 @@ def main(argv=None):
         print(f"{'⏱️ Vérification due' if due else '💤 Rien à vérifier'} — {raison}")
         if not due:
             return 0
-    init_db()
-    if args.tache != "finaliser":   # la finalisation doit voir le run encore « en_cours » pour conserver ses coûts
+    if args.tache != "finaliser":
+        # La finalisation ne touche JAMAIS au schéma : après un job annulé, une session zombie peut garder un verrou et un `ALTER TABLE` ferait attendre
+        # l'étape jusqu'au délai de la base (07/11/2026 : run 272 resté « en_cours »). Elle doit aussi voir le run encore « en_cours » pour conserver ses coûts.
+        init_db()
         with SessionLocal() as db:
             cloturer_runs_interrompus(db)
     taches = {"run": tache_run, "verifier": tache_verifier, "planifier-verification": tache_planifier, "live": tache_live, "envoyer": tache_envoyer,
