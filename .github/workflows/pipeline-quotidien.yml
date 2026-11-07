@@ -6,7 +6,10 @@
 name: Pipeline quotidien
 
 on:
-  schedule:
+  # PAUSE 07/11/2026 (demande de l'utilisateur) : déclenchement automatique SUSPENDU, configuration conservée.
+  # Pour réactiver (UNIQUEMENT après validation explicite de l'utilisateur) : remplacer « # PAUSE schedule: » par « schedule: » (2 espaces)
+  # et « # PAUSE   - cron: » par « - cron: » (4 espaces d'indentation) ; ne rien d'autre à changer.
+  # PAUSE schedule:
     # Réactivé le 26/10/2026 (demande explicite), avec le nouveau format de coupons (refonte, PR #85).
     # Un passage CHAQUE HEURE jusqu'à ce que les coupons du jour partent sur Telegram. Minute
     # décalée (:07, pas :00) : GitHub saute souvent les crons placés pile sur l'heure. Chaque
@@ -15,7 +18,7 @@ on:
     # Fiabilité renforcée (06/11/2026, « aucun jour manqué, sans dépendre d'une session ouverte ») : GitHub saute souvent
     # des crons, un passage toutes les 20 minutes de 6h à 14h UTC multiplie les chances ; chaque passage est un no-op dès
     # que les coupons du jour sont partis (garde --si-aucun-ticket-aujourdhui, y compris coupons envoyés la veille).
-    - cron: "7,27,47 6-13 * * *"  # 6h07-13h47 UTC (9h07-16h47 à Djibouti)
+  # PAUSE   - cron: "7,27,47 6-13 * * *"  # 6h07-13h47 UTC (9h07-16h47 à Djibouti)
   workflow_dispatch:
     # Formulaire complet (06/11/2026) : chaque liste « defaut » garde le comportement smart habituel (3 coupons, bandes 5-10 / 12-18 / 20-35).
     inputs:

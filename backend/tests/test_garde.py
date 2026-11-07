@@ -101,4 +101,9 @@ def test_workflow_saute_le_job_run_seulement_pour_un_passage_planifie_inutile():
     # la garde historique reste dans le job `run` : double protection contre les doubles envois
     lancer = next(e for e in jobs["run"]["steps"] if e.get("name") == "Lancer le pipeline")
     assert "--si-aucun-ticket-aujourdhui" in lancer["run"]
-    assert flux[True]["schedule"][0]["cron"] == "7,27,47 6-13 * * *"            # tentatives de collecte conservées (24 passages)
+    # tentatives de collecte conservées (24 passages) : la configuration du cron doit toujours exister dans le fichier, qu'elle soit active
+    # ou temporairement mise en pause en commentaire (pause du 07/11/2026 : « # PAUSE   - cron: »)
+    texte = (RACINE / ".github" / "workflows" / "pipeline-quotidien.yml").read_text(encoding="utf-8")
+    assert '- cron: "7,27,47 6-13 * * *"' in texte
+    if "schedule" in flux[True]:
+        assert flux[True]["schedule"][0]["cron"] == "7,27,47 6-13 * * *"
