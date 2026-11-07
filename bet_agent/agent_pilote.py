@@ -101,10 +101,11 @@ jambe perd : PRUDENT n'en contient aucune, ÉQUILIBRÉ au plus une, RISQUE peut 
 cote totale 1.04 ne vaut rien), ni une loterie. Python te renvoie, pour chaque proposition, la cote totale, la probabilité jointe et la valeur espérée \
 (probabilité × cote − 1) : utilise-les. Python refuse un coupon dont la cote totale est sous le plancher de rémunération (1.60 par défaut) ; au-dessus, tu \
 choisis librement selon le niveau de risque du profil.
-- PYTHON VÉRIFIE (et refuse sinon) : identifiants du catalogue, au moins 2 jambes (aucun maximum), un seul pari par match et par \
-event dans un coupon, un match ne figure que dans UN seul coupon du run (sauf assouplissement signalé par voir_catalogue quand le \
-catalogue manque de matchs), jamais le même pari exact ni deux coupons identiques. Si tu ne trouves pas assez de paris vraiment \
-défendables pour un profil, abstiens-toi sur CE profil plutôt que de forcer des paris moyens.
+- PYTHON VÉRIFIE (et refuse sinon) : identifiants du catalogue, le nombre de jambes et la bande de cote totale de CHAQUE profil \
+(annoncés dans la mission), un seul pari par match et par event dans un coupon, la règle de répétition des matchs entre coupons annoncée plus haut, \
+jamais le même pari exact ni deux coupons identiques. Chaque profil doit obtenir SON coupon : un match peut resservir dans un autre coupon avec un pari \
+différent, donc les matchs ne manquent pas ; ne t'abstiens sur un profil que si AUCUNE combinaison du catalogue ne respecte ses règles, jamais pour éviter de \
+réfléchir ni pour forcer des paris moyens.
 - MÉMOIRE D'APPRENTISSAGE (demande explicite du 06/11/2026 : « une mémoire pour étudier les erreurs d'hier, devenir pro \
 de cette tâche et améliorer avec le temps ta capacité de raisonnement ») : si ta mission commence par une section \
 MÉMOIRE D'APPRENTISSAGE, ce sont les études de TES erreurs et réussites passées, vérifiées sur les résultats réels, avec \

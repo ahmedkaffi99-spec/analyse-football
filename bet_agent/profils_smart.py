@@ -55,7 +55,7 @@ def profils(un_pari_par_match=True, contraintes=True):
             "nb_jambes_min": NB_JAMBES_MIN_COUPON if contraintes else 2, "nb_jambes": NB_JAMBES_MAX_COUPON if contraintes else 99,
             **({"cote_totale_min": bande_cote(niveau)[0], "cote_totale_max": bande_cote(niveau)[1]} if contraintes else {}),
             "jambes_max_par_match": 1 if un_pari_par_match else 3,
-            # Un même match ne figure que dans UN coupon du run tant que le catalogue a assez de matchs ; sinon agent_strategie.ajuster_repetition
-            # l'autorise (le pari exact reste interdit dans deux coupons).
-            "match_repete_autorise": False, "un_seul_pari_par_event": True})
+            # Demande du 07/11/2026 : un même match peut figurer dans PLUSIEURS coupons du run à condition que les paris soient DIFFÉRENTS (le pari exact reste
+            # interdit dans deux coupons) ; dans un coupon, un seul pari par match. Sans cela, 3 coupons de 5 à 12 jambes épuisent les 19 matchs et le 3e s'abstient.
+            "match_repete_autorise": bool(contraintes), "un_seul_pari_par_event": True})
     return sortie

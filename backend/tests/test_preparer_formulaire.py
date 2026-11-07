@@ -16,7 +16,7 @@ def test_defauts_donnent_trois_profils_de_risque_sans_cote_imposee():
     assert all(bandes[i][1] < bandes[i + 1][0] for i in range(2))                      # intervalles espacés : aucun chevauchement
     assert all(p["consigne"] for p in liste) and len({p["consigne"] for p in liste}) == 3
     # règles de cohérence conservées : 5 à 12 jambes (Python), un match dans un seul coupon, un pari par match
-    assert all(p["nb_jambes_min"] == 5 and p["nb_jambes"] == 12 and p["jambes_max_par_match"] == 1 and p["match_repete_autorise"] is False for p in liste)
+    assert all(p["nb_jambes_min"] == 5 and p["nb_jambes"] == 12 and p["jambes_max_par_match"] == 1 and p["match_repete_autorise"] is True for p in liste)
     assert s["moteur"] == "agent" and s["cote_min_jambe"] == "0" and s["cote_max_jambe"] == "0" and s["ignorer_diversite"] == "true"
     assert json.loads(s["matrice"]) == [{"etiquette": "deepseek", "pilote": ""}]
     assert s["vote"] == pf.VOTE_DEFAUT and s["ttl"] == "43200" and s["telegram"] == ""

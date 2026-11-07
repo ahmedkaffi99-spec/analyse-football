@@ -112,9 +112,11 @@ def selectionner_profils(pool, profils, taille_pool=TAILLE_POOL):
     Les profils sont traités dans l'ordre donné ; les matchs d'un coupon sont retirés pour les suivants (un match dans un seul coupon)."""
     jambes = vers_jambes(pool)
     utilises, sortie, coupons = set(), [], []
+    repete = any(p.get("match_repete_autorise") for p in profils)   # 07/11/2026 : un match dans plusieurs coupons, jamais avec le même pari exact
+    exacts = set()
     for profil in profils:
         niveau = profil.get("niveau_risque") or "prudent"
-        libres = [j for j in jambes if j["match"] not in utilises]
+        libres = [j for j in jambes if (pr.pari_exact(j) not in exacts if repete else j["match"] not in utilises)]
         combo = (meilleure_combinaison(libres, niveau, taille_pool, profil)
                  if len({j["match"] for j in libres}) >= (profil.get("nb_jambes_min") or pr.NB_JAMBES_MIN) else None)
         if combo is None:
@@ -122,10 +124,11 @@ def selectionner_profils(pool, profils, taille_pool=TAILLE_POOL):
                            "raison": f"moteur central : aucune combinaison cohérente pour le profil {niveau} ({len(libres)} jambe(s) libre(s))"})
             continue
         utilises.update(j["match"] for j in combo)
+        exacts.update(pr.pari_exact(j) for j in combo)
         coupons.append(combo)
         sortie.append({"profil": profil, "jambes": [j["_c"] for j in combo], "cote_totale": round(pr.cote_totale(combo), 3),
                        "proba_jointe": round(pr.proba_jointe(combo), 4), "raison": None})
-    erreurs = pr.regles_entre_coupons(coupons)
+    erreurs = pr.regles_entre_coupons(coupons, repete)
     if erreurs:
         raise ValueError("moteur central : incohérence entre coupons — " + " ; ".join(erreurs))
     return sortie

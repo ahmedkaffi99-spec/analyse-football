@@ -86,7 +86,10 @@ def test_moteur_central_respecte_nombre_de_jambes_et_bandes():
     for r in sortie:
         assert 5 <= len(r["jambes"]) <= 12
         assert r["profil"]["cote_totale_min"] <= r["cote_totale"] <= r["profil"]["cote_totale_max"]
-    assert len({c.match for r in sortie for c in r["jambes"]}) == sum(len(r["jambes"]) for r in sortie)    # un match dans un seul coupon
+    for r in sortie:
+        assert len({c.match for c in r["jambes"]}) == len(r["jambes"])                                      # un seul pari par match DANS un coupon
+    exacts = [(c.match, c.categorie, c.selection) for r in sortie for c in r["jambes"]]
+    assert len(set(exacts)) == len(exacts)                                                                  # jamais le même pari exact dans deux coupons
 
 
 def test_desequilibre_penalise_beaucoup_de_jambes_basses_et_peu_de_jambes_hautes():
@@ -103,3 +106,16 @@ def test_moteur_deterministe_prefere_la_taille_equilibree_dans_la_bande():
     profil = profils_smart.profils()[0]                      # bande 5-10 : tailles 7 (6.27) à 8 (8.16) et 9 (10.6 hors bande)
     choisi = md._dans_la_bande(legs, profil)
     assert 7 <= len(choisi) <= 8 and 5 <= pr.cote_totale(choisi) <= 10
+
+
+def test_un_match_peut_figurer_dans_plusieurs_coupons_avec_des_paris_differents():
+    """Demande du 07/11/2026 : 2 paris sur un même match sont permis s'ils sont dans des coupons différents ; chaque coupon choisit parmi tous les matchs."""
+    assert all(p["match_repete_autorise"] for p in profils_smart.profils())
+    assert pr.regles_entre_coupons([[_j(0, 1.3)], [dict(_j(0, 1.5), selection="Autre")]], True) == []
+    assert any("deux coupons" in x for x in pr.regles_entre_coupons([[_j(0, 1.3)], [_j(0, 1.3)]], True))      # même pari exact : interdit
+    assert pr.regles_entre_coupons([[_j(0, 1.3)], [dict(_j(0, 1.5), selection="Autre")]]) != []               # règle par défaut : un match, un coupon
+    res = md.composer(_pool(19), profils_smart.profils())
+    assert all(r["selections"] for r in res), [r.get("abstention") for r in res]                               # les trois profils obtiennent un coupon
+    tous = [s for r in res for s in r["selections"]]
+    exacts = [(s["match"], s["pick"]["categorie"], s["pick"]["selection"]) for s in tous]
+    assert len(set(exacts)) == len(exacts)

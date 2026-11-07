@@ -182,11 +182,21 @@ def regles_coupon(jambes, niveau=None, profil=None):
     return problemes
 
 
-def regles_entre_coupons(coupons):
-    """coupons : liste de listes de jambes d'un même run. Un match n'apparaît que dans un coupon ; deux coupons ne sont jamais identiques. Renvoie les problèmes."""
-    problemes, vus, empreintes = [], {}, set()
+def pari_exact(j):
+    return (j["match"], j.get("categorie"), j.get("selection"))
+
+
+def regles_entre_coupons(coupons, match_repete_autorise=False):
+    """coupons : liste de listes de jambes d'un même run. Par défaut un match n'apparaît que dans un coupon ; avec match_repete_autorise (demande du 07/11/2026) un match peut
+    figurer dans plusieurs coupons mais jamais avec le MÊME pari exact. Deux coupons ne sont jamais identiques. Renvoie les problèmes."""
+    problemes, vus, empreintes, exacts = [], {}, set(), {}
     for i, jambes in enumerate(coupons):
         for j in jambes:
+            if match_repete_autorise:
+                if exacts.get(pari_exact(j), i) != i:
+                    problemes.append(f"pari {pari_exact(j)} dans deux coupons")
+                exacts[pari_exact(j)] = i
+                continue
             if j["match"] in vus and vus[j["match"]] != i:
                 problemes.append(f"match {j['match']} dans deux coupons")
             vus[j["match"]] = i

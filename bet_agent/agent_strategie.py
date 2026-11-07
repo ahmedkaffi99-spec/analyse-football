@@ -227,7 +227,7 @@ def construire_prompt(pool, profils, catalogue_texte):
         regle_distinction = (f"Les {n} coupons doivent être différents ET sans match commun : un match ne figure que dans UN seul coupon "
                              "(Python refuse un match déjà utilisé dans un autre coupon). ")
     else:
-        regle_distinction = (f"Les {n} coupons doivent être différents : un MATCH déjà utilisé dans un autre coupon est permis (catalogue trop court), "
+        regle_distinction = (f"Les {n} coupons doivent être différents : un MATCH déjà utilisé dans un autre coupon est permis (chaque coupon choisit parmi tous les matchs du catalogue, avec un pari différent), "
                              "mais jamais le MÊME pari exact (même marché, même sélection) — Python le refuse. ")
     return (
         "System: Tu es un analyste-parieur professionnel, prudent et méthodique. Tu RAISONNES, tu "
@@ -256,8 +256,8 @@ def construire_prompt(pool, profils, catalogue_texte):
         "un. C'est CETTE PROBABILITÉ (affichée avec l'edge) qui est TA BASE PRINCIPALE de décision, pas une "
         "estimation personnelle. Traite les matchs UN PAR UN : analyse et compare les paris déjà retenus d'un "
         "match avant de choisir le tien, puis seulement ensuite passe au match "
-        f"suivant. {regle_distinction}Si aucun ensemble de paris n'est défendable, "
-        "abstiens-toi : \"jambes\": [] et explique pourquoi dans \"strategie\".\n"
+        f"suivant. {regle_distinction}Chaque profil doit obtenir son coupon : "
+        "ne t'abstiens (\"jambes\": [] et explique pourquoi dans \"strategie\") que si AUCUN ensemble de paris du catalogue ne respecte les règles du profil.\n"
         "5. Tu es LIBRE du choix des marchés (buts, corners, cartons, tirs, fautes, hors-jeux, handicaps, BTTS, double "
         "chance...) : choisis ceux qui offrent la meilleure opportunité statistique selon les probabilités Python, "
         "l'edge et le contexte. Aucune obligation de varier les catégories ni les directions ; ne répète un marché "

@@ -53,6 +53,8 @@ def composer(pool, profils, taille_reference=None):
     niveaux = [p.get("niveau_risque") or "prudent" for p in profils]
     choisies = {i: [] for i in range(len(profils))}
     utilises = set()
+    repete = any(p.get("match_repete_autorise") for p in profils)   # 07/11/2026 : un match dans plusieurs coupons, jamais avec le même pari exact
+    exacts = set()
     # Un profil qui fixe son nombre maximal de jambes (5 à 12, bande de cote) en prend jusqu'à ce maximum ; la taille est ensuite ramenée dans la bande de cote.
     cibles = [p.get("nb_jambes") if p.get("nb_jambes") and p.get("nb_jambes") < 99 and p.get("cote_totale_min") else taille_reference.get(n, 3)
               for p, n in zip(profils, niveaux)]
@@ -63,7 +65,11 @@ def composer(pool, profils, taille_reference=None):
         for i, niveau in enumerate(niveaux):
             if len(choisies[i]) >= cibles[i]:
                 continue
-            libres = [j for j in jambes if j["match"] not in utilises]
+            if repete:
+                propres = {x["match"] for x in choisies[i]}
+                libres = [j for j in jambes if j["match"] not in propres and pr.pari_exact(j) not in exacts]
+            else:
+                libres = [j for j in jambes if j["match"] not in utilises]
             if not libres:
                 continue
             # Toutes les jambes des matchs libres, de la plus à la moins utile : si la meilleure jambe d'un match rompt la diversité (famille et sens),
@@ -73,6 +79,7 @@ def composer(pool, profils, taille_reference=None):
                 if pr.diversite_ok(choisies[i] + [j]) or len(choisies[i]) < 2:
                     choisies[i].append(j)
                     utilises.add(j["match"])
+                    exacts.add(pr.pari_exact(j))
                     progres = True
                     break
     resultats = []
@@ -86,7 +93,7 @@ def composer(pool, profils, taille_reference=None):
                               "strategie": f"déterministe {niveaux[i]} : {len(legs)} jambes, probabilité jointe {pr.proba_jointe(legs):.3f}, cote {pr.cote_totale(legs):.2f}"})
     # Dernier filet commun : cohérence ENTRE coupons (un match dans un seul coupon, coupons distincts).
     retenues = {i: [j for j in choisies[i] if r["selections"] and j["_c"] in r["selections"]] for i, r in enumerate(resultats)}
-    erreurs = pr.regles_entre_coupons([retenues[i] for i, r in enumerate(resultats) if r["selections"]])
+    erreurs = pr.regles_entre_coupons([retenues[i] for i, r in enumerate(resultats) if r["selections"]], repete)
     if erreurs:
         raise ValueError("moteur déterministe : incohérence entre coupons — " + " ; ".join(erreurs))
     return resultats

@@ -58,7 +58,7 @@ def test_aucune_cote_imposee_une_cote_basse_ou_haute_est_acceptee():
 
 
 def test_incoherence_entre_coupons_levee(monkeypatch):
-    monkeypatch.setattr(pr, "regles_entre_coupons", lambda coupons: ["match M0 dans deux coupons"])
+    monkeypatch.setattr(pr, "regles_entre_coupons", lambda coupons, *a, **k: ["match M0 dans deux coupons"])
     with pytest.raises(ValueError, match="incohérence entre coupons"):
         md.composer(pool(), PROFILS)
 
