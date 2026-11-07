@@ -35,43 +35,30 @@ def test_le_pilote_ne_s_arrete_jamais_pour_une_raison_de_budget(monkeypatch):
     assert appel.call_count == 4 and resultat["arret"] != "budget IA atteint"           # seule la limite d'étapes arrête, jamais l'argent
 
 
-def test_deepseek_via_openrouter_est_le_premier_repli_quand_le_solde_deepseek_est_epuise(monkeypatch):
-    monkeypatch.setenv("OPENROUTER_API_KEY", "cle-or")
-    monkeypatch.delenv("UTILISER_OPENROUTER", raising=False)
+def test_aucun_repli_meme_avec_toutes_les_cles_presentes(monkeypatch):
+    for cle in ("OPENROUTER_API_KEY", "GROQ_API_KEY", "GEMINI_API_KEY", "DEEPSEEK_API_KEY"):
+        monkeypatch.setenv(cle, "x")
+    monkeypatch.setenv("UTILISER_OPENROUTER", "1")
     monkeypatch.delenv("PILOTE_MODELE", raising=False)
-    courses = pilote._fournisseurs_secours()
-    assert courses[0][0] == "OpenRouter" and courses[0][3] == pilote.MODELE_OPENROUTER_DEEPSEEK and courses[0][2] == "cle-or"
-    assert courses[0][4].get("usage") == {"include": True}                              # le coût réel est demandé
-    assert all(c[3] == pilote.MODELE_OPENROUTER_DEEPSEEK for c in courses if c[0] == "OpenRouter")   # pas de modèle gratuit sans UTILISER_OPENROUTER
+    assert pilote._fournisseurs_secours() == []                                         # DeepSeek officiel seul : aucun autre fournisseur n'est jamais essayé
 
 
-def test_sans_cle_openrouter_aucun_repli_openrouter(monkeypatch):
-    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
-    monkeypatch.delenv("PILOTE_MODELE", raising=False)
-    assert all(c[0] != "OpenRouter" for c in pilote._fournisseurs_secours())
-
-
-def test_solde_deepseek_epuise_le_run_continue_avec_le_meme_modele_via_openrouter(monkeypatch):
+def test_solde_deepseek_epuise_le_run_echoue_avec_sa_vraie_cause_sans_bascule(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "cle-or")
-    monkeypatch.delenv("UTILISER_OPENROUTER", raising=False)
     monkeypatch.delenv("PILOTE_MODELE", raising=False)
     pilote._secours.update(actif=False, choix=None, cause_principale=None)
 
     class Rep:
-        def __init__(self, code, corps):
-            self.status_code, self.corps, self.content, self.text = code, corps, b"x", str(corps)
+        status_code, content, text = 402, b"x", "Insufficient Balance"
 
         def json(self):
-            return self.corps
-    appels = []
+            return {"error": {"message": "Insufficient Balance"}}
+    urls = []
 
     def poster(url, headers=None, json=None, timeout=None):
-        appels.append((url, json["model"]))
-        if "deepseek.com" in url:
-            return Rep(402, {"error": {"message": "Insufficient Balance"}})
-        return Rep(200, {"choices": [{"message": {"role": "assistant", "content": "ok"}}], "usage": {"cost": 0.01}})
-    data, _ = pilote._appel_api("cle-ds", [{"role": "user", "content": "x"}], 1000, poster=poster, pause=lambda s: None)
-    assert data["choices"][0]["message"]["content"] == "ok"
-    assert appels[0][0].startswith("https://api.deepseek.com") and appels[-1] == ("https://openrouter.ai/api/v1/chat/completions", pilote.MODELE_OPENROUTER_DEEPSEEK)
-    assert "402" in pilote._secours["cause_principale"]                                 # la cause de la bascule est conservée
+        urls.append(url)
+        return Rep()
+    with pytest.raises(RuntimeError, match="402"):
+        pilote._appel_api("cle-ds", [{"role": "user", "content": "x"}], 1000, poster=poster, pause=lambda s: None)
+    assert urls and all(u.startswith("https://api.deepseek.com") for u in urls)         # jamais OpenRouter
     pilote._secours.update(actif=False, choix=None, cause_principale=None)

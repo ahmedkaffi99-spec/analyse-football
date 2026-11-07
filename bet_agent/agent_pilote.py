@@ -301,60 +301,26 @@ def construire_journal(etat):
 
 
 def _fournisseurs_secours():
-    """[(nom, url, cle, modele, extras)] des fournisseurs gratuits dont la clé est présente."""
-    def _liste(nom_env, defaut):
-        return [m.strip() for m in (os.getenv(nom_env) or defaut).split(",") if m.strip()]
-
-    courses = []
-    # Modèle demandé explicitement : essayé en premier, mais un HTTP 402 ne doit pas bloquer le run.
-    # Les fournisseurs gratuits restent disponibles comme secours ; le journal conserve le modèle réellement utilisé.
-    if (os.getenv("PILOTE_MODELE") or "").strip() and os.getenv("OPENROUTER_API_KEY"):
-        courses.append(("OpenRouter", "https://openrouter.ai/api/v1/chat/completions", os.getenv("OPENROUTER_API_KEY"),
-                        os.getenv("PILOTE_MODELE").strip(), {"reasoning": {"effort": "medium"}, "usage": {"include": True}}))
-        # Si GPT Sol manque de crédits, essayer Groq/Gemini puis les modèles OpenRouter gratuits.
-        if os.getenv("GROQ_API_KEY"):
-            for m in _liste("GROQ_MODELES", "openai/gpt-oss-120b"):
-                courses.append(("Groq", "https://api.groq.com/openai/v1/chat/completions", os.getenv("GROQ_API_KEY"), m,
-                                {"reasoning_effort": "medium"} if m.startswith("openai/gpt-oss") else {}))
-        if os.getenv("GEMINI_API_KEY"):
-            for m in _liste("GEMINI_MODELES", "gemini-3.8-flash"):
-                courses.append(("Gemini", "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
-                                os.getenv("GEMINI_API_KEY"), m, {}))
-        for m in _liste("OPENROUTER_MODELES", "nvidia/nemotron-3-super-120b-a12b:free,google/gemma-4-31b-it:free,"
-                                              "openrouter/free"):
-            if not any(c[1] == "https://openrouter.ai/api/v1/chat/completions" and c[3] == m for c in courses):
-                courses.append(("OpenRouter", "https://openrouter.ai/api/v1/chat/completions",
-                                os.getenv("OPENROUTER_API_KEY"), m, {}))
-        return courses
-    # En tête : DeepSeek via OpenRouter (demande du 22/10/2026 : « utilise celle d'OpenRouter, modèle DeepSeek »),
-    # le même fournisseur/modèle que les agents de famille (OPENROUTER_MODELE_PAYANT).
-    if os.getenv("OPENROUTER_API_KEY"):
-        # DeepSeek PAYANT via OpenRouter, essayé en premier dès qu'une clé OpenRouter existe, même si UTILISER_OPENROUTER est à 0 (ce réglage ne concerne que les
-        # modèles gratuits plus bas) : quand le solde de l'API DeepSeek est épuisé (HTTP 402, runs 282 et 284 du 07/11/2026), le run continue avec le MÊME modèle.
-        courses.append(("OpenRouter", "https://openrouter.ai/api/v1/chat/completions", os.getenv("OPENROUTER_API_KEY"),
-                        MODELE_OPENROUTER_DEEPSEEK, {"reasoning": {"effort": "medium"}, "usage": {"include": True}}))
-    if os.getenv("DEEPSEEK_API_KEY"):   # DeepSeek officiel : repli si OpenRouter échoue
-        courses.append(("DeepSeek", URL_DEEPSEEK, os.getenv("DEEPSEEK_API_KEY"), MODELE,
-                        {"thinking": {"type": "enabled"}}))
-    if os.getenv("GROQ_API_KEY"):
-        for m in _liste("GROQ_MODELES", "openai/gpt-oss-120b"):
-            courses.append(("Groq", "https://api.groq.com/openai/v1/chat/completions", os.getenv("GROQ_API_KEY"), m,
-                            {"reasoning_effort": "medium"} if m.startswith("openai/gpt-oss") else {}))
-    if os.getenv("GEMINI_API_KEY"):
-        for m in _liste("GEMINI_MODELES", "gemini-3.8-flash"):
-            courses.append(("Gemini", "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
-                            os.getenv("GEMINI_API_KEY"), m, {}))
-    if _cle_openrouter():
-        for m in _liste("OPENROUTER_MODELES", "nvidia/nemotron-3-super-120b-a12b:free,google/gemma-4-31b-it:free,"
-                                              "openrouter/free"):
-            courses.append(("OpenRouter", "https://openrouter.ai/api/v1/chat/completions",
-                            _cle_openrouter(), m, {}))
-    return courses
+    """[(nom, url, cle, modele, extras)] : le SEUL fournisseur imposé pour ce run, ou []. AUCUN REPLI (07/11/2026, demande du propriétaire : « aucun repli, laisse les modèles
+    travailler indépendamment ») : un modèle qui échoue fait échouer le run avec sa vraie cause, jamais une bascule vers un autre modèle ou fournisseur (Groq, Gemini,
+    modèles gratuits, DeepSeek via OpenRouter...). Les relances d'un même fournisseur (429, 5xx, délai) restent possibles. Cas couverts :
+    - pilote imposé (PILOTE_MODELE : GPT, Gemini, Claude...) : ce modèle OpenRouter, rien d'autre ;
+    - AGENT_FOURNISSEUR_PRINCIPAL=openrouter (réglage explicite) : DeepSeek via OpenRouter, rien d'autre ;
+    - sinon : [] (le pilote est l'API officielle DeepSeek, gérée dans _appel_api)."""
+    cle = os.getenv("OPENROUTER_API_KEY")
+    if (os.getenv("PILOTE_MODELE") or "").strip():
+        if cle:
+            return [("OpenRouter", "https://openrouter.ai/api/v1/chat/completions", cle, os.getenv("PILOTE_MODELE").strip(),
+                     {"reasoning": {"effort": "medium"}, "usage": {"include": True}})]
+        return []
+    if FOURNISSEUR_PRINCIPAL == "openrouter" and _cle_openrouter():
+        return [("OpenRouter", "https://openrouter.ai/api/v1/chat/completions", _cle_openrouter(), MODELE_OPENROUTER_DEEPSEEK,
+                 {"reasoning": {"effort": "medium"}, "usage": {"include": True}})]
+    return []
 
 
 def _secours_d_emblee():
-    """True si le run démarre directement sur la liste de secours (OpenRouter/DeepSeek en tête) au lieu de
-    tenter d'abord l'API officielle DeepSeek."""
+    """True si le fournisseur du run est un fournisseur OpenRouter IMPOSÉ (pilote choisi ou réglage explicite), et non l'API officielle DeepSeek."""
     if (os.getenv("PILOTE_MODELE") or "").strip():
         return bool(os.getenv("OPENROUTER_API_KEY"))
     return FOURNISSEUR_PRINCIPAL == "openrouter" and bool(_cle_openrouter())
@@ -374,76 +340,63 @@ def _messages_pour_secours(messages):
     return propres
 
 
-def _aplatir_outils(messages):
-    """Historique SANS appels d'outils structurés : les appels (assistant) et leurs résultats (outil) deviennent du texte. Nécessaire quand on bascule en cours de run vers
-    Gemini : son API exige un `thought_signature` sur chaque appel de fonction de l'historique, absent des appels faits par un autre modèle (HTTP 400 du 07/11/2026,
-    run 282 : le run DeepSeek a échoué à la bascule). Le sens de la conversation est conservé."""
-    plats = []
-    for m in messages:
-        m = dict(m)
-        if m.get("role") == "assistant" and m.get("tool_calls"):
-            appels = "; ".join(f"[appel d'outil {a.get('function', {}).get('name')}({(a.get('function', {}).get('arguments') or '')[:300]})]" for a in m.pop("tool_calls"))
-            m["content"] = ((m.get("content") or "") + "\n" + appels).strip()
-        elif m.get("role") == "tool":
-            m = {"role": "user", "content": f"[résultat de l'outil] {m.get('content') or ''}"}
-        plats.append(m)
-    return plats
-
-
-def _appel_secours(messages, max_tokens, outils_schemas=None, poster=requests.post, pause=time.sleep):
+def _appel_fournisseur_impose(messages, max_tokens, outils_schemas=None, poster=requests.post, pause=time.sleep):
+    """Appelle LE fournisseur imposé (jamais un autre). Relances du MÊME fournisseur : 429, 5xx, délai et réseau (5 essais, attente croissante) ; HTTP 402 « crédits
+    insuffisants pour cette requête » : max_tokens réduit de moitié (3 fois au plus) car la réserve de crédits est calculée sur max_tokens. Tout autre échec, ou l'absence
+    de fournisseur imposé, lève une erreur qui nomme le modèle et la cause réelle : aucune bascule."""
     courses = _fournisseurs_secours()
-    if _secours["choix"] in courses:   # le dernier couple qui a répondu passe en premier
-        courses.remove(_secours["choix"])
-        courses.insert(0, _secours["choix"])
-    derniere = "aucun fournisseur de secours configuré (GROQ_API_KEY, GEMINI_API_KEY ou OPENROUTER_API_KEY)"
-    essais = []   # chaque échec est conservé : le message final ne doit pas ne montrer que le dernier (la cause réelle était perdue)
-    for course in courses:
-        nom, url, cle, modele, extras = course
-        propres = _messages_pour_secours(messages)
-        if "generativelanguage" in url:   # Gemini : voir _aplatir_outils
-            propres = _aplatir_outils(propres)
-        charge = {"model": modele, "messages": propres,
-                  "tools": outils_schemas or OUTILS_SCHEMAS, "tool_choice": "auto",
-                  "max_tokens": min(max_tokens, MAX_TOKENS_SECOURS), **extras}
+    if not courses:
+        raise RuntimeError("Aucun fournisseur disponible pour ce modèle (clé absente) — aucun repli vers un autre modèle"
+                           + (f" | cause initiale : {_secours['cause_principale']}" if _secours.get("cause_principale") else ""))
+    course = courses[0]
+    nom, url, cle, modele, extras = course
+    propres = _messages_pour_secours(messages)
+    jetons = min(max_tokens, MAX_TOKENS_SECOURS)
+    derniere = ""
+    for tentative in range(1, 6):
+        charge = {"model": modele, "messages": propres, "tools": outils_schemas or OUTILS_SCHEMAS, "tool_choice": "auto", "max_tokens": jetons, **extras}
         try:
-            r = poster(url, headers={"Authorization": f"Bearer {cle}", "Content-Type": "application/json"},
-                       json=charge, timeout=DELAI_REQUETE)
+            r = poster(url, headers={"Authorization": f"Bearer {cle}", "Content-Type": "application/json"}, json=charge, timeout=DELAI_REQUETE)
         except (requests.Timeout, requests.ConnectionError) as e:
             derniere = f"{nom}/{modele} : {type(e).__name__}"
-            essais.append(derniere)
-            continue
+            if tentative < 5:
+                pause(5 * 2 ** (tentative - 1))
+                continue
+            break
         if r.status_code == 200:
             try:
                 data = r.json()
                 if data["choices"][0]["message"] is not None:
                     _secours["choix"] = course
-                    print(f"      🛟 Fournisseur : {nom} / {modele}")
                     return data, charge["max_tokens"]
             except (ValueError, KeyError, IndexError, TypeError):
                 pass
             derniere = f"{nom}/{modele} : réponse vide ou illisible"
+            break
+        derniere = f"{nom}/{modele} : HTTP {r.status_code} {r.text[:200] if r.content else ''}"
+        if r.status_code == 402 and jetons > 2048 and tentative < 4:
+            jetons = max(2048, jetons // 2)
+            print(f"      ↘️ {nom}/{modele} : crédits insuffisants pour cette requête — max_tokens réduit à {jetons}")
             continue
-        derniere = f"{nom}/{modele} : HTTP {r.status_code} {r.text[:120] if r.content else ''}"
-        essais.append(derniere[:160])
-        print(f"      ⚠️ Secours {derniere} — fournisseur suivant")
-    cause = _secours.get("cause_principale")
-    raise RuntimeError(f"Aucun fournisseur de secours n'a répondu ({derniere})"
-                       + (f" | cause initiale : {cause}" if cause else "") + (f" | essais : {' ; '.join(essais)}" if len(essais) > 1 else ""))
+        if r.status_code in STATUTS_A_REESSAYER and tentative < 5:
+            print(f"      ⏳ {nom}/{modele} : HTTP {r.status_code} — nouvelle tentative {tentative}/4 (même modèle)")
+            pause(5 * 2 ** (tentative - 1))
+            continue
+        break
+    raise RuntimeError(f"{derniere} — aucun repli vers un autre modèle (chaque modèle travaille seul)"
+                       + (f" | cause initiale : {_secours['cause_principale']}" if _secours.get("cause_principale") else ""))
 
 
 def _appel_api(cle, messages, max_tokens, outils_schemas=None, poster=requests.post, pause=time.sleep):
-    """DeepSeek d'abord ; s'il échoue (solde épuisé 402, clé refusée, panne), bascule sur les fournisseurs gratuits
-    pour le reste du run (_secours). Sans clé DeepSeek, direct sur le secours."""
+    """UN fournisseur, jamais de repli (07/11/2026) : l'API officielle DeepSeek, ou le fournisseur imposé (_fournisseurs_secours : PILOTE_MODELE ou réglage OpenRouter explicite).
+    Un échec remonte avec sa cause réelle (solde épuisé, clé refusée, panne) ; seules les relances du MÊME fournisseur (429, 5xx, délai) sont faites."""
     if cle and not _secours["actif"]:
         try:
             return _appel_deepseek(cle, messages, max_tokens, outils_schemas, poster, pause)
         except (CleRefusee, RuntimeError, requests.Timeout, requests.ConnectionError) as e:
-            if not secours_disponible():
-                raise
-            print(f"      🛟 DeepSeek indisponible ({str(e)[:120]}) — bascule sur les fournisseurs gratuits")
             _secours["cause_principale"] = f"{type(e).__name__}: {str(e)[:220]}"
-            _secours["actif"] = True
-    return _appel_secours(messages, max_tokens, outils_schemas, poster, pause)
+            raise
+    return _appel_fournisseur_impose(messages, max_tokens, outils_schemas, poster, pause)
 
 
 def _appel_deepseek(cle, messages, max_tokens, outils_schemas=None, poster=requests.post, pause=time.sleep):
@@ -545,7 +498,7 @@ def piloter(cle, outils, est_termine, mission, prompt_systeme=None, outils_schem
         if budget_ia_module().budget_atteint(_usage_pilote["cout_usd"], _budget_pilote["restant_usd"]):
             print(f"   💰 Budget IA atteint ({_usage_pilote['cout_usd']:.4f} $ dépensés par le pilote) : aucun nouvel appel.")
             return {"termine": est_termine(), "etapes": etape - 1, "arret": "budget IA atteint", "tokens": tokens}
-        print(f"   🤖 [Agent {'secours' if _secours['actif'] else 'DeepSeek'}] étape {etape}/{MAX_ETAPES}...")
+        print(f"   🤖 [Agent {'modèle imposé' if _secours['actif'] else 'DeepSeek'}] étape {etape}/{MAX_ETAPES}...")
         data, max_tokens = _appel_api(cle, messages, max_tokens, outils_schemas, poster, pause)
         usage = data.get("usage") or {}
         tokens += usage.get("total_tokens", 0)

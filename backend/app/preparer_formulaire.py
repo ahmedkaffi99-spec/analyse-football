@@ -9,8 +9,8 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "bet_agent"))
 from profils_smart import COULEURS, NIVEAUX, profils  # noqa: E402,F401
 
-MODELES = {"deepseek": "", "gpt-6.1-sol": "openai/gpt-6.1-sol", "gemini-4-argon": "google/gemini-4-argon",
-           "claude-sonnet-5.5": "anthropic/claude-sonnet-5.5"}
+MODELES = {"deepseek": "", "deepseek-openrouter": "deepseek/deepseek-v4.1-flash", "gpt-6.1-sol": "openai/gpt-6.1-sol",
+           "gemini-4-argon": "google/gemini-4-argon", "claude-sonnet-5.5": "anthropic/claude-sonnet-5.5"}
 VOTE_DEFAUT = "openai/gpt-6.1-sol,google/gemini-4-argon"
 
 

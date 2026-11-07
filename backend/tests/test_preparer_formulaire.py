@@ -62,3 +62,18 @@ def test_le_modele_duel_n_existe_plus():
     import pytest
     with pytest.raises(ValueError):
         pf.construire({"EVENEMENT": "workflow_dispatch", "MODELE": "duel"})
+
+
+def test_deepseek_via_openrouter_est_un_modele_independant_sans_vote():
+    """07/11/2026 : « lance DeepSeek sur l'API OpenRouter » — le pilote est DeepSeek via OpenRouter (modèle imposé, aucun repli), sans vote ni mélange avec d'autres modèles."""
+    s = pf.construire({"EVENEMENT": "workflow_dispatch", "MODELE": "deepseek-openrouter", "TELEGRAM_IN": "true"})
+    assert json.loads(s["matrice"]) == [{"etiquette": "deepseek-openrouter", "pilote": "deepseek/deepseek-v4.1-flash"}] and s["vote"] == "aucun"
+    officiel = pf.construire({"EVENEMENT": "workflow_dispatch", "MODELE": "deepseek"})
+    assert json.loads(officiel["matrice"])[0]["pilote"] == "" and officiel["vote"] == pf.VOTE_DEFAUT          # l'API officielle garde son comportement
+
+
+def test_le_formulaire_propose_deepseek_openrouter():
+    import yaml
+    from pathlib import Path
+    wf = yaml.safe_load((Path(__file__).resolve().parents[2] / ".github" / "workflows" / "pipeline-quotidien.yml").read_text(encoding="utf-8"))
+    assert set(wf[True]["workflow_dispatch"]["inputs"]["modele"]["options"]) == set(pf.MODELES)

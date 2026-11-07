@@ -50,10 +50,11 @@ on:
         type: string
         default: ""
       modele:
-        description: "10. Modèle qui pilote le run (DeepSeek par défaut)"
+        description: "10. Modèle qui pilote le run : deepseek (API officielle DeepSeek, par défaut) · deepseek-openrouter (même DeepSeek via l'API OpenRouter) · gpt-6.1-sol · gemini-4-argon · claude-sonnet-5.5. Aucun repli : un modèle qui échoue fait échouer le run"
         type: choice
         options:
           - "deepseek"
+          - "deepseek-openrouter"
           - "gpt-6.1-sol"
           - "gemini-4-argon"
           - "claude-sonnet-5.5"

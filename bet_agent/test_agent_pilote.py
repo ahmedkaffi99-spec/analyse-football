@@ -666,18 +666,17 @@ class TestMinimumDeJambesAdaptatifEtAbstentionSansTelegram(unittest.TestCase):
         self.assertFalse(resultat["envoye"])
 
 
-class TestSecoursGratuit(unittest.TestCase):
-    """22/10/2026 : DeepSeek 402 « Insufficient Balance » arrêtait tout le run — bascule sur Groq/Gemini/OpenRouter."""
+class TestAucunRepli(unittest.TestCase):
+    """07/11/2026 (demande du propriétaire : « aucun repli, laisse les modèles travailler indépendamment ») : un modèle qui échoue fait échouer le run avec sa vraie cause ;
+    jamais de bascule vers Groq, Gemini, des modèles gratuits ou un autre modèle. Seules les relances du MÊME fournisseur sont permises (429, 5xx, délai, max_tokens sur 402)."""
 
     def setUp(self):
-        pilote._secours.update(actif=False, choix=None)
-        self.env = mock.patch.dict(os.environ, {"GROQ_API_KEY": "g", "GEMINI_API_KEY": "", "OPENROUTER_API_KEY": "o",
-                                                "UTILISER_OPENROUTER": "1",
-                                                "GROQ_MODELES": "openai/gpt-oss-120b",
+        pilote._secours.update(actif=False, choix=None, cause_principale=None)
+        self.env = mock.patch.dict(os.environ, {"GROQ_API_KEY": "g", "GEMINI_API_KEY": "gm", "OPENROUTER_API_KEY": "o", "UTILISER_OPENROUTER": "1",
                                                 "OPENROUTER_MODELES": "gratuit/modele:free"})
         self.env.start()
         self.addCleanup(self.env.stop)
-        self.addCleanup(lambda: pilote._secours.update(actif=False, choix=None))
+        self.addCleanup(lambda: pilote._secours.update(actif=False, choix=None, cause_principale=None))
 
     @staticmethod
     def _reponse(code, corps=None):
@@ -685,104 +684,97 @@ class TestSecoursGratuit(unittest.TestCase):
         r.json.return_value = corps or {}
         return r
 
-    def test_402_deepseek_bascule_sur_groq(self):
-        ok = {"choices": [{"message": {"role": "assistant", "content": "ok"}}], "usage": {"total_tokens": 5}}
+    OK = {"choices": [{"message": {"role": "assistant", "content": "ok"}}], "usage": {"total_tokens": 5}}
+
+    def test_deepseek_solde_epuise_aucun_repli_l_erreur_remonte(self):
         appels = []
 
         def poster(url, **kw):
-            appels.append((url, kw["json"]))
-            if "deepseek" in url:
-                return self._reponse(402, {"error": {"message": "Insufficient Balance"}})
-            return self._reponse(200, ok)
+            appels.append(url)
+            return self._reponse(402, {"error": {"message": "Insufficient Balance"}})
+        with self.assertRaises(RuntimeError) as ctx:
+            pilote._appel_api("cle", [{"role": "user", "content": "x"}], 4096, poster=poster, pause=lambda s: None)
+        self.assertIn("402", str(ctx.exception))
+        self.assertTrue(all("api.deepseek.com" in u for u in appels))               # AUCUN appel vers OpenRouter, Groq ou Gemini
+        self.assertFalse(pilote._secours["actif"])
+        self.assertIn("402", pilote._secours["cause_principale"])                    # la vraie cause est conservée
 
-        messages = [{"role": "assistant", "content": "", "reasoning_content": "pensée DeepSeek"}]
-        data, _ = pilote._appel_api("cle", messages, 65536, poster=poster, pause=lambda s: None)
-        self.assertEqual(data, ok)
-        self.assertTrue(pilote._secours["actif"])
-        url_secours, charge = appels[-1]
-        self.assertIn("openrouter", url_secours)                              # OpenRouter/DeepSeek d'abord
-        self.assertEqual(charge["model"], "deepseek/deepseek-v4.1-flash")
-        self.assertNotIn("reasoning_content", charge["messages"][0])        # champ propre à DeepSeek retiré
-        self.assertEqual(charge["max_tokens"], pilote.MAX_TOKENS_SECOURS)    # plafonné pour les gratuits
-        # Étape suivante : DeepSeek n'est plus réessayé
-        appels.clear()
-        pilote._appel_api("cle", messages, 65536, poster=poster, pause=lambda s: None)
-        self.assertTrue(all("deepseek" not in u for u, _ in appels))
+    def test_un_seul_fournisseur_jamais_de_chaine(self):
+        self.assertEqual(pilote._fournisseurs_secours(), [])                          # pilote DeepSeek : l'API officielle seule, même avec toutes les clés présentes
+        with mock.patch.dict(os.environ, {"PILOTE_MODELE": "openai/gpt-6.1-sol"}):
+            courses = pilote._fournisseurs_secours()
+            self.assertEqual([(c[0], c[3]) for c in courses], [("OpenRouter", "openai/gpt-6.1-sol")])
+            self.assertTrue(pilote._secours_d_emblee())
+        with mock.patch.object(pilote, "FOURNISSEUR_PRINCIPAL", "openrouter"):
+            self.assertEqual([c[3] for c in pilote._fournisseurs_secours()], [pilote.MODELE_OPENROUTER_DEEPSEEK])
+        with mock.patch.dict(os.environ, {"PILOTE_MODELE": "openai/gpt-6.1-sol", "OPENROUTER_API_KEY": ""}):
+            self.assertEqual(pilote._fournisseurs_secours(), [])                      # sans clé : rien (jamais un autre modèle)
 
-    def test_fournisseur_suivant_quand_le_premier_echoue(self):
-        ok = {"choices": [{"message": {"role": "assistant", "content": "ok"}}]}
+    def test_modele_impose_en_echec_aucune_bascule_message_explicite(self):
+        appels = []
 
         def poster(url, **kw):
-            if "openrouter" in url:
-                return self._reponse(429, {})
-            return self._reponse(200, ok)
+            appels.append((url, kw["json"]["model"], kw["json"]["max_tokens"]))
+            return self._reponse(400, {"error": {"message": "requête refusée"}})
+        with mock.patch.dict(os.environ, {"PILOTE_MODELE": "openai/gpt-6.1-sol"}):
+            pilote._secours.update(actif=True)
+            with self.assertRaises(RuntimeError) as ctx:
+                pilote._appel_api(None, [{"role": "user", "content": "x"}], 65536, poster=poster, pause=lambda s: None)
+        self.assertEqual({(u, m) for u, m, _ in appels}, {("https://openrouter.ai/api/v1/chat/completions", "openai/gpt-6.1-sol")})
+        message = str(ctx.exception)
+        self.assertIn("openai/gpt-6.1-sol", message)
+        self.assertIn("aucun repli", message)
 
-        data, _ = pilote._appel_secours([{"role": "user", "content": "x"}], 4096, poster=poster)
-        self.assertEqual(data, ok)
-        self.assertIn("groq", pilote._secours["choix"][1])    # OpenRouter en 429 -> fournisseur suivant
+    def test_402_credits_reduit_max_tokens_sur_le_meme_modele(self):
+        tailles = []
 
-    def test_openrouter_desactive_par_defaut_et_deepseek_plateforme_principal(self):
-        # 25/10/2026 : « IA principale = plateforme DeepSeek, oublie OpenRouter »
-        self.assertEqual(pilote.FOURNISSEUR_PRINCIPAL, "deepseek")
-        with mock.patch.dict(os.environ, {"UTILISER_OPENROUTER": ""}):
-            self.assertIsNone(pilote._cle_openrouter())
-            courses = pilote._fournisseurs_secours()
-            # 07/11/2026 : DeepSeek PAYANT via OpenRouter est le premier repli dès qu'une clé OpenRouter existe (solde DeepSeek épuisé, HTTP 402) ;
-            # les modèles GRATUITS d'OpenRouter restent désactivés tant que UTILISER_OPENROUTER n'est pas posé.
-            self.assertEqual([c[3] for c in courses if c[0] == "OpenRouter"], [pilote.MODELE_OPENROUTER_DEEPSEEK])
-            self.assertFalse(pilote._secours_d_emblee())
-        with mock.patch.dict(os.environ, {"UTILISER_OPENROUTER": "1"}):
-            self.assertEqual(pilote._cle_openrouter(), "o")
+        def poster(url, **kw):
+            tailles.append(kw["json"]["max_tokens"])
+            if kw["json"]["max_tokens"] > 3000:
+                return self._reponse(402, {"error": {"message": "would exceed your available credits"}})
+            return self._reponse(200, self.OK)
+        with mock.patch.dict(os.environ, {"PILOTE_MODELE": "openai/gpt-6.1-sol"}):
+            pilote._secours.update(actif=True)
+            data, jetons = pilote._appel_api(None, [{"role": "user", "content": "x"}], 65536, poster=poster, pause=lambda s: None)
+        self.assertEqual(data, self.OK)
+        self.assertEqual(tailles, [pilote.MAX_TOKENS_SECOURS, pilote.MAX_TOKENS_SECOURS // 2, pilote.MAX_TOKENS_SECOURS // 4][:len(tailles)])
+        self.assertLessEqual(jetons, 3000)
+
+    def test_429_et_5xx_sont_relances_sur_le_meme_modele(self):
+        reponses = [self._reponse(429, {}), self._reponse(503, {}), self._reponse(200, self.OK)]
+        modeles = []
+
+        def poster(url, **kw):
+            modeles.append(kw["json"]["model"])
+            return reponses.pop(0)
+        with mock.patch.dict(os.environ, {"PILOTE_MODELE": "google/gemini-4-argon"}):
+            pilote._secours.update(actif=True)
+            data, _ = pilote._appel_api(None, [{"role": "user", "content": "x"}], 4096, poster=poster, pause=lambda s: None)
+        self.assertEqual(data, self.OK)
+        self.assertEqual(set(modeles), {"google/gemini-4-argon"})
+        self.assertEqual(len(modeles), 3)
+
+    def test_trop_d_echecs_sur_le_meme_fournisseur_l_erreur_remonte(self):
+        with mock.patch.dict(os.environ, {"PILOTE_MODELE": "anthropic/claude-sonnet-5.5"}):
+            pilote._secours.update(actif=True)
+            with self.assertRaises(RuntimeError) as ctx:
+                pilote._appel_api(None, [], 4096, poster=lambda url, **kw: self._reponse(500, {}), pause=lambda s: None)
+        self.assertIn("anthropic/claude-sonnet-5.5", str(ctx.exception))
+
+    def test_sans_aucun_fournisseur_erreur_claire(self):
+        with mock.patch.dict(os.environ, {"PILOTE_MODELE": "", "OPENROUTER_API_KEY": ""}):
+            pilote._secours.update(actif=True)
+            with self.assertRaises(RuntimeError) as ctx:
+                pilote._appel_api(None, [], 4096, poster=lambda url, **kw: self._reponse(200, self.OK))
+        self.assertIn("aucun repli", str(ctx.exception))
 
     def test_openrouter_deepseek_par_defaut_des_le_debut_du_run(self):
         with mock.patch.object(pilote, "FOURNISSEUR_PRINCIPAL", "openrouter"):
             self.assertTrue(pilote._secours_d_emblee())
         with mock.patch.object(pilote, "FOURNISSEUR_PRINCIPAL", "deepseek"):
             self.assertFalse(pilote._secours_d_emblee())
-        with mock.patch.object(pilote, "FOURNISSEUR_PRINCIPAL", "openrouter"), \
-                mock.patch.dict(os.environ, {"OPENROUTER_API_KEY": ""}):
-            self.assertFalse(pilote._secours_d_emblee())   # sans clé OpenRouter : DeepSeek officiel d'abord
-
-    def test_openrouter_deepseek_est_en_tete_de_liste(self):
-        premier = pilote._fournisseurs_secours()[0]
-        self.assertEqual((premier[0], premier[3]), ("OpenRouter", "deepseek/deepseek-v4.1-flash"))
-
-    def test_modele_impose_402_bascule_vers_un_autre_fournisseur(self):
-        ok = {"choices": [{"message": {"role": "assistant", "content": "ok"}}], "usage": {"total_tokens": 5}}
-        appels = []
-
-        def poster(url, **kw):
-            appels.append((url, kw["json"]["model"]))
-            if "openrouter" in url and kw["json"]["model"] == "openai/gpt-6.1-sol":
-                return self._reponse(402, {"error": {"message": "insufficient credits with in-flight requests"}})
-            return self._reponse(200, ok)
-
-        with mock.patch.dict(os.environ, {"PILOTE_MODELE": "openai/gpt-6.1-sol"}):
-            courses = pilote._fournisseurs_secours()
-            self.assertEqual(courses[0][3], "openai/gpt-6.1-sol")
-            self.assertGreater(len(courses), 1)
-            data, _ = pilote._appel_secours([{"role": "user", "content": "test"}], 65536, poster=poster)
-        self.assertEqual(data, ok)
-        self.assertEqual(appels[0][1], "openai/gpt-6.1-sol")
-        self.assertIn("groq", appels[1][0])
-        self.assertEqual(appels[1][1], "openai/gpt-oss-120b")
-
-    def test_sans_cle_deepseek_direct_sur_le_secours(self):
-        ok = {"choices": [{"message": {"role": "assistant", "content": "ok"}}]}
-        data, _ = pilote._appel_api(None, [{"role": "user", "content": "x"}], 4096,
-                                    poster=lambda url, **kw: self._reponse(200, ok))
-        self.assertEqual(data, ok)
-
-    def test_erreur_deepseek_remontee_sans_secours_configure(self):
-        with mock.patch.dict(os.environ, {"GROQ_API_KEY": "", "OPENROUTER_API_KEY": "", "GEMINI_API_KEY": ""}):
-            with self.assertRaises(RuntimeError):
-                pilote._appel_api("cle", [], 4096, pause=lambda s: None,
-                                  poster=lambda url, **kw: self._reponse(402, {"error": {"message": "Insufficient Balance"}}))
-
-    def test_tous_les_secours_en_echec_leve_une_erreur_claire(self):
-        with self.assertRaises(RuntimeError) as ctx:
-            pilote._appel_secours([], 4096, poster=lambda url, **kw: self._reponse(500, {}))
-        self.assertIn("Aucun fournisseur de secours", str(ctx.exception))
+        with mock.patch.object(pilote, "FOURNISSEUR_PRINCIPAL", "openrouter"), mock.patch.dict(os.environ, {"OPENROUTER_API_KEY": ""}):
+            self.assertFalse(pilote._secours_d_emblee())
 
 
 class TestRechercheWebDeepSeek(unittest.TestCase):
@@ -859,17 +851,17 @@ class TestJournalAgent(unittest.TestCase):
         self.assertEqual(len(j["raisons"]["c1"][0]["raison"]), 200)
 
 
-def test_pilote_modele_impose_essaie_d_abord_ce_modele_puis_dispose_de_replis(monkeypatch):
+def test_pilote_modele_impose_travaille_seul_sans_aucun_repli(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "cle-or")
     monkeypatch.setenv("DEEPSEEK_API_KEY", "cle-ds")
+    monkeypatch.setenv("GROQ_API_KEY", "g")
+    monkeypatch.setenv("GEMINI_API_KEY", "gm")
     monkeypatch.setenv("PILOTE_MODELE", "openai/gpt-6.1-sol")
     courses = pilote._fournisseurs_secours()
-    assert courses[0][3] == "openai/gpt-6.1-sol"  # modèle demandé essayé en premier
-    assert any(c[3].endswith(":free") or c[3] == "openrouter/free" for c in courses[1:])
-    assert all(c[3] != pilote.MODELE for c in courses)  # pas de bascule silencieuse vers DeepSeek officiel
+    assert [c[3] for c in courses] == ["openai/gpt-6.1-sol"]   # le modèle demandé, et RIEN d'autre : ni gratuit, ni Groq, ni Gemini, ni DeepSeek
     assert pilote._secours_d_emblee() is True
     monkeypatch.delenv("PILOTE_MODELE")
-    assert [c[0] for c in pilote._fournisseurs_secours()] == ["OpenRouter", "DeepSeek"]   # repli : DeepSeek payant via OpenRouter d'abord, puis l'API officielle (07/11/2026)
+    assert pilote._fournisseurs_secours() == []                # pilote DeepSeek : l'API officielle seule
 
 
 def test_donnees_reprises_evitent_toute_collecte(monkeypatch):
