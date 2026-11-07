@@ -3,15 +3,14 @@
 name: Vérification des résultats
 
 on:
-  # PAUSE 07/11/2026 (demande de l'utilisateur) : déclenchement automatique SUSPENDU, configuration conservée.
-  # Pour réactiver (UNIQUEMENT après validation explicite de l'utilisateur) : remplacer « # PAUSE schedule: » par « schedule: » (2 espaces)
-  # et « # PAUSE   - cron: » par « - cron: » (4 espaces d'indentation) ; ne rien d'autre à changer.
-  # PAUSE schedule:
+  # RÉACTIVÉ le 07/11/2026 (demande explicite de l'utilisateur) : pipeline-quotidien ET verification-resultats réactivés ensemble.
+  # Pour suspendre à nouveau : remettre « # PAUSE » devant « schedule: » et devant « - cron: » dans les DEUX fichiers.
+  schedule:
     # Vérification autonome : tous les quarts d'heure (23h15, 23h30, 23h45, 00h00...), le code (`verifier --si-du`)
     # ne vérifie que si un point de la grille du plan vient de tomber. Ce workflow est ACTIVÉ par l'agent de
     # planification dès que les coupons sont envoyés et DÉSACTIVÉ après le rapport final : aucun passage à vide
     # le reste du temps. Il est réactivé le lendemain par le run automatique du midi.
-  # PAUSE   - cron: "*/15 12-23,0-2 * * *"
+    - cron: "*/15 12-23,0-2 * * *"
   workflow_dispatch:
     inputs:
       telegram:
