@@ -857,12 +857,14 @@ class TestJournalAgent(unittest.TestCase):
         self.assertEqual(len(j["raisons"]["c1"][0]["raison"]), 200)
 
 
-def test_pilote_modele_impose_ne_laisse_que_ce_modele(monkeypatch):
+def test_pilote_modele_impose_essaie_d_abord_ce_modele_puis_dispose_de_replis(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "cle-or")
     monkeypatch.setenv("DEEPSEEK_API_KEY", "cle-ds")
     monkeypatch.setenv("PILOTE_MODELE", "openai/gpt-6.1-sol")
     courses = pilote._fournisseurs_secours()
-    assert [c[3] for c in courses] == ["openai/gpt-6.1-sol"]   # ni DeepSeek ni repli gratuit
+    assert courses[0][3] == "openai/gpt-6.1-sol"  # modèle demandé essayé en premier
+    assert any(c[3].endswith(":free") or c[3] == "openrouter/free" for c in courses[1:])
+    assert all(c[3] != pilote.MODELE for c in courses)  # pas de bascule silencieuse vers DeepSeek officiel
     assert pilote._secours_d_emblee() is True
     monkeypatch.delenv("PILOTE_MODELE")
     assert [c[0] for c in pilote._fournisseurs_secours()] == ["DeepSeek"]   # comportement habituel inchangé
