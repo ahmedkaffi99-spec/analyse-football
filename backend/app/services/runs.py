@@ -176,7 +176,7 @@ def executer_run(run_id, envoyer_telegram=False, rediger=True, depuis_run=None, 
             # "ne jamais basculer silencieusement").
             from app.services.moteur_central_run import executer_moteur_central
 
-            resultats = executer_moteur_central(db, donnees, ae)
+            resultats = executer_moteur_central(db, donnees, ae, profils=profils_personnalises)   # trois profils de risque si fournis (07/11/2026)
             textes = ae.agent4_rediger_coupons(resultats) if rediger else None
             enregistrer_coupons(db, run, resultats, index, textes=textes)
             if envoyer_telegram and textes:
@@ -187,7 +187,7 @@ def executer_run(run_id, envoyer_telegram=False, rediger=True, depuis_run=None, 
 
         # Agent 3.5 (raisonnement IA, pas un calcul de plus) : vrais taux de réussite mesurés
         # par marché sur les paris déjà jugés — voir ae.agent35_validation_ia.
-        resultats = ae.generer_coupons(donnees, qualite_marches=qualite_marches(db))
+        resultats = ae.generer_coupons(donnees, qualite_marches=qualite_marches(db), profils=profils_personnalises)   # idem : moteur déterministe à trois profils
         if not any(item["selections"] for item in resultats):
             run.statut, run.detail = "abandonne", "Aucun profil n'a trouvé de sélection valable."
             return

@@ -43,11 +43,9 @@ def construire(env):
     sortie["cote_max_jambe"] = "0"
     sortie["depuis_run"] = (env.get("DEPUIS_RUN") or "").strip()
     sortie["ignorer_diversite"] = "true"   # diversité de catégorie entre coupons retirée le 06/11/2026 (l'anti-doublon exact reste actif)
-    if moteur == "agent":
-        liste = profils(un_pari_par_match=_choix(env.get("UN_PARI_PAR_MATCH"), "actif") != "desactive")
-        sortie["profils"] = json.dumps(liste, ensure_ascii=False, separators=(",", ":"))
-    else:
-        sortie["profils"] = ""
+    # Les TROIS moteurs (agent, central, déterministe) reçoivent les mêmes trois profils de risque (07/11/2026) : comparaison équitable.
+    liste = profils(un_pari_par_match=_choix(env.get("UN_PARI_PAR_MATCH"), "actif") != "desactive")
+    sortie["profils"] = json.dumps(liste, ensure_ascii=False, separators=(",", ":"))
     return sortie
 
 

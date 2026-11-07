@@ -2375,7 +2375,7 @@ def agent35_validation_ia(combo, pool, qualite_marches):
     return nouveau_combo
 
 
-def generer_coupons(donnees, qualite_marches=None):
+def generer_coupons(donnees, qualite_marches=None, profils=None):
     """Compose le(s) coupon(s) de PROFILS_COUPON (un seul par défaut) à partir d'UN SEUL pool
     de candidats calculé une fois par Agent 3 (agent3_calcul_pool_candidats) — un seul calcul
     Poisson/edge par match, une composition en aval par profil configuré.
@@ -2400,6 +2400,17 @@ def generer_coupons(donnees, qualite_marches=None):
     # doivent entrer dans UN SEUL coupon — comportement inchangé, jamais la génération
     # dynamique ci-dessous (qui ne s'applique qu'à la sélection 100% automatique).
     mode_manuel = bool(donnees.get("mode_manuel"))
+    # Moteur DÉTERMINISTE à trois profils de risque (07/11/2026) : quand `profils` (prudent / équilibré / risque) est fourni, les coupons sont composés par les
+    # règles de bet_agent/moteur_deterministe.py (aucune cote cible, mêmes règles de cohérence que les autres moteurs). Sans `profils`, comportement historique inchangé.
+    if profils and not mode_manuel:
+        import moteur_deterministe
+        resultats = moteur_deterministe.composer(pool, profils)
+        for item in resultats:
+            etat = (f"{len(item['selections'])} jambes, cote totale {_produit_cotes(item['selections']):.2f}" if item["selections"]
+                    else f"abstention ({item.get('abstention')})")
+            print(f"   🧭 [{item['profil']['nom']}] moteur déterministe : {etat}")
+        verifier_unicite_matchs_coupons(resultats)
+        return resultats
     combos_deja_proposes = []
     resultats = []
 
@@ -2580,7 +2591,7 @@ def agent4_rediger_coupons(resultats_profils):
     for item in resultats_profils:
         profil, selections = item["profil"], item["selections"]
         if not selections and item.get("abstention"):
-            sections.append(f"{profil['nom']}\n🧭 _Pas de coupon aujourd'hui — l'IA s'abstient : {item['abstention']}_")
+            sections.append(f"{profil['nom']}\n🧭 _Pas de coupon aujourd'hui — le moteur s'abstient : {item['abstention']}_")
             continue
         if not selections:
             sections.append(f"{profil['nom']}\n_Aucune sélection ne remplit les critères de ce profil aujourd'hui._")

@@ -73,7 +73,7 @@ def _faux_modules():
     sans dépendre du vrai bet_agent (aucun appel réseau, aucun fichier réel hors tmp de test)."""
     cd = _FauxCollecteDonnees(SORTIE_JSON=None)
     ae = SimpleNamespace(
-        generer_coupons=lambda donnees, qualite_marches=None: _resultats_coupon_valide(),
+        generer_coupons=lambda donnees, qualite_marches=None, **_ignores: _resultats_coupon_valide(),
         agent4_rediger_coupons=lambda resultats: ["texte du coupon"],
         agent5_envoyer_coupons=lambda textes: True,  # jamais un vrai envoi : ce test ne mocke que la valeur de retour
         agent3_calcul_pool_candidats=lambda donnees: {},

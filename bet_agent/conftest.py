@@ -27,6 +27,19 @@ def plancher_de_remuneration_neutralise(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def planchers_des_moteurs_communs_neutralises(monkeypatch):
+    """Même raison : les planchers de rémunération partagés par les moteurs central et déterministe (moteur/profils_risque.py) sont neutralisés pour les tests existants."""
+    import os
+    import sys
+    racine = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+    if racine not in sys.path:
+        sys.path.insert(0, racine)
+    from moteur import profils_risque as pr
+    monkeypatch.setattr(pr, "COTE_MIN_JAMBE", 0.0)
+    monkeypatch.setattr(pr, "COTE_TOTALE_MIN_COUPON", 0.0)
+
+
+@pytest.fixture(autouse=True)
 def selection_meme_jour_neutralisee(monkeypatch):
     """Les tests existants de sélection utilisent des dates fictives (2099) : le filtre « matchs du
     jour seulement » (cd.MATCHS_UNIQUEMENT_DU_JOUR) y est désactivé, et testé explicitement dans

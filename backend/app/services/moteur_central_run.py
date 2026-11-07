@@ -209,7 +209,7 @@ def _rejoindre_candidat_bet_agent(pool, candidat_central):
         "plutôt qu'une jambe incomplète envoyée.")
 
 
-def executer_moteur_central(db, donnees, ae, cfg=None):
+def executer_moteur_central(db, donnees, ae, cfg=None, profils=None):
     """Calcule et sélectionne LE(S) coupon(s) RÉEL(S) via moteur_central/ à partir de la
     collecte déjà faite (donnees). Renvoie resultats_profils au format attendu par
     enregistrer_coupons/agent4_rediger_coupons (compatible bet_agent). Lève une exception si
@@ -271,6 +271,25 @@ def executer_moteur_central(db, donnees, ae, cfg=None):
               f"SANS AUCUN candidat éligible, donc exclu(s) du pool :")
         for match, raison in matchs_perdus:
             print(f"      • {match} — {raison}")
+
+    if profils:
+        # TROIS PROFILS DE RISQUE (07/11/2026) : recherche exhaustive par profil, sans cote cible (moteur_central/profils.py) ; mêmes règles de cohérence que
+        # les autres moteurs. Un profil sans combinaison cohérente s'abstient ; aucun coupon du tout = exception (jamais de repli vers un autre moteur).
+        from moteur_central.profils import selectionner_profils
+        choisis = selectionner_profils(pool_central, profils)
+        resultats = []
+        for r in choisis:
+            if not r["jambes"]:
+                print(f"   🧭 [Moteur central] {r['profil']['nom']} : abstention ({r['raison']}).")
+                resultats.append({"profil": r["profil"], "selections": [], "abstention": r["raison"]})
+                continue
+            selections = [_rejoindre_candidat_bet_agent(pool, c) for c in r["jambes"]]
+            print(f"   🧭 [Moteur central] {r['profil']['nom']} : {len(selections)} jambe(s), cote totale {r['cote_totale']}, probabilité jointe {r['proba_jointe']}.")
+            resultats.append({"profil": r["profil"], "selections": selections})
+        if not any(x["selections"] for x in resultats):
+            raise RuntimeError("Moteur central : aucun des trois profils n'a pu être composé — jamais de repli automatique vers un autre moteur.")
+        ae.verifier_unicite_matchs_coupons(resultats)
+        return resultats
 
     nb_matchs_eligibles = len({c.match for c in pool_central})
     if NB_COUPONS_CENTRAL:

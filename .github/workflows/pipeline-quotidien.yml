@@ -26,7 +26,7 @@ on:
         type: boolean
         default: false
       moteur:
-        description: "2. Moteur (agent par défaut ; central et deterministe sont les anciens moteurs)"
+        description: "2. Moteur : agent (IA, par défaut) · central (modèles statistiques, recherche exhaustive) · deterministe (règles Python). Les trois produisent les mêmes trois profils Prudent / Équilibré / Risque sur les mêmes données"
         type: choice
         options:
           - "agent"

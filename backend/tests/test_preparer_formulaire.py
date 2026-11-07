@@ -46,9 +46,13 @@ def test_modeles_et_vote():
     assert json.loads(c["matrice"])[0]["pilote"] == "anthropic/claude-sonnet-5.5"
 
 
-def test_autres_moteurs_sans_profils_ni_pilote():
-    s = pf.construire({"EVENEMENT": "workflow_dispatch", "MOTEUR": "deterministe", "MODELE": "gpt-6.1-sol"})
-    assert s["profils"] == "" and s["vote"] == "aucun" and json.loads(s["matrice"])[0]["pilote"] == ""
+def test_les_trois_moteurs_recoivent_les_memes_trois_profils_sans_pilote_ni_vote_pour_les_autres():
+    """Comparaison équitable (07/11/2026) : agent, central et déterministe reçoivent EXACTEMENT les mêmes trois profils ; seul l'agent a un pilote IA et un vote."""
+    profils = {m: pf.construire({"EVENEMENT": "workflow_dispatch", "MOTEUR": m, "MODELE": "gpt-6.1-sol"})["profils"] for m in ("agent", "central", "deterministe")}
+    assert profils["agent"] == profils["central"] == profils["deterministe"] and len(json.loads(profils["agent"])) == 3
+    for m in ("central", "deterministe"):
+        s = pf.construire({"EVENEMENT": "workflow_dispatch", "MOTEUR": m, "MODELE": "gpt-6.1-sol"})
+        assert s["moteur"] == m and s["vote"] == "aucun" and json.loads(s["matrice"]) == [{"etiquette": m, "pilote": ""}]
 
 
 def test_ecriture_dans_github_output(tmp_path):
