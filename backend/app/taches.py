@@ -98,8 +98,6 @@ def tache_run(args):
             _, ae, _ = pipeline.modules()
             with SessionLocal() as db:
                 alertes.envoyer_alerte_si_besoin(db, run_id, ae.notifier_telegram, cron=bool(args.si_aucun_ticket_aujourdhui))
-                alertes.envoyer_alerte_budget(db, run_id, ae.notifier_telegram)
-                alertes.envoyer_alerte_seuil_budget(db, run_id, ae.notifier_telegram)
         except Exception as e:
             print(f"⚠️ Alerte Telegram impossible : {str(e)[:150]}")
     return 1 if statut == "erreur" else 0
@@ -175,13 +173,11 @@ def tache_verifier(args):
 
 
 def tache_budget(args):
-    """Dépenses IA mesurées (lecture seule) : par jour, par modèle, gagnants du vote, budget restant aujourd'hui."""
+    """Dépenses IA mesurées (lecture seule) : par jour, par modèle, gagnants du vote. Aucun plafond."""
     from app.services import budget
     with SessionLocal() as db:
         r = budget.resume(db, jours=args.jours)
-        plafond = r["plafond_jour_usd"]
-        print(f"💰 Plafond journalier : {'aucun' if plafond is None else f'{plafond:.2f} $'} · dépensé aujourd'hui : {r['depense_aujourdhui_usd']:.2f} $"
-              + ("" if plafond is None else f" · restant : {max(0.0, plafond - r['depense_aujourdhui_usd']):.2f} $"))
+        print(f"💰 Dépensé aujourd'hui : {r['depense_aujourdhui_usd']:.2f} $ (aucun plafond)")
         for jour, total in r["par_jour"].items():
             print(f"   {jour} : {total:.2f} $")
         for modele, v in r["par_modele"].items():

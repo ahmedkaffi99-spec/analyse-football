@@ -328,8 +328,10 @@ def _fournisseurs_secours():
         return courses
     # En tête : DeepSeek via OpenRouter (demande du 22/10/2026 : « utilise celle d'OpenRouter, modèle DeepSeek »),
     # le même fournisseur/modèle que les agents de famille (OPENROUTER_MODELE_PAYANT).
-    if _cle_openrouter():
-        courses.append(("OpenRouter", "https://openrouter.ai/api/v1/chat/completions", _cle_openrouter(),
+    if os.getenv("OPENROUTER_API_KEY"):
+        # DeepSeek PAYANT via OpenRouter, essayé en premier dès qu'une clé OpenRouter existe, même si UTILISER_OPENROUTER est à 0 (ce réglage ne concerne que les
+        # modèles gratuits plus bas) : quand le solde de l'API DeepSeek est épuisé (HTTP 402, runs 282 et 284 du 07/11/2026), le run continue avec le MÊME modèle.
+        courses.append(("OpenRouter", "https://openrouter.ai/api/v1/chat/completions", os.getenv("OPENROUTER_API_KEY"),
                         MODELE_OPENROUTER_DEEPSEEK, {"reasoning": {"effort": "medium"}, "usage": {"include": True}}))
     if os.getenv("DEEPSEEK_API_KEY"):   # DeepSeek officiel : repli si OpenRouter échoue
         courses.append(("DeepSeek", URL_DEEPSEEK, os.getenv("DEEPSEEK_API_KEY"), MODELE,
@@ -833,7 +835,7 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
             if not modeles or not etat.get("catalogue") or not any(r["selections"] for r in etat["resultats_profils"]):
                 return
             # Budget journalier (Phase 3) : répartition entre les modèles, ou refus explicite (jamais silencieux).
-            plafond_modele = budget_ia.lire_budget(os.getenv("OMBRE_BUDGET_USD"))
+            plafond_modele = None   # aucun plafond de dépense par modèle (supprimé le 07/11/2026)
             restant_vote = None if budget_restant_usd is None else max(0.0, budget_restant_usd - _usage_pilote["cout_usd"])   # Phase 4 : le pilote a déjà dépensé
             budgets, ignores = budget_ia.repartir(restant_vote, modeles, plafond_modele)
             etat["vote_ignores"] = ignores
@@ -915,7 +917,7 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
         calculs et vetos Python restent identiques ; ce modèle compose les profils sur le même catalogue (mêmes règles de
         Python), et envoyer_telegram suit le flux normal. Aucun repli sur DeepSeek : un échec abandonne le run."""
         import ombre
-        plafond_modele = budget_ia.lire_budget(os.getenv("OMBRE_BUDGET_USD"))
+        plafond_modele = None   # aucun plafond de dépense par modèle (supprimé le 07/11/2026)
         restant_vote = None if budget_restant_usd is None else max(0.0, budget_restant_usd - _usage_pilote["cout_usd"])
         budgets, ignores = budget_ia.repartir(restant_vote, [modele], plafond_modele)
         etat["vote_ignores"] = ignores

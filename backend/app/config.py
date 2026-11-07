@@ -67,4 +67,4 @@ SUPABASE_FONCTIONS_URL = (os.getenv("SUPABASE_FONCTIONS_URL")
 HEURES_MAX_RUN = float(os.getenv("HEURES_MAX_RUN") or 2)
 # Phase 4 (07/11/2026) : au plus N runs PAYANTS ratés (erreur, abandon, interruption avec dépense mesurée) par jour pour les passages planifiés ;
 # au-delà, plus de relance payante (une alerte est envoyée au dernier passage). Les runs sans dépense (collecte vide...) ne comptent pas.
-MAX_ECHECS_PAYANTS_PAR_JOUR = int(os.getenv("MAX_ECHECS_PAYANTS_PAR_JOUR") or 2)
+MAX_ECHECS_PAYANTS_PAR_JOUR = int(os.getenv("MAX_ECHECS_PAYANTS_PAR_JOUR") or 0)   # 0 = aucun frein (défaut depuis le 07/11/2026 : c'est le propriétaire qui décide de la dépense)

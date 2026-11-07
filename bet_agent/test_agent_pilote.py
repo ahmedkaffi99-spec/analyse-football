@@ -726,8 +726,10 @@ class TestSecoursGratuit(unittest.TestCase):
         self.assertEqual(pilote.FOURNISSEUR_PRINCIPAL, "deepseek")
         with mock.patch.dict(os.environ, {"UTILISER_OPENROUTER": ""}):
             self.assertIsNone(pilote._cle_openrouter())
-            noms = [c[0] for c in pilote._fournisseurs_secours()]
-            self.assertNotIn("OpenRouter", noms)
+            courses = pilote._fournisseurs_secours()
+            # 07/11/2026 : DeepSeek PAYANT via OpenRouter est le premier repli dès qu'une clé OpenRouter existe (solde DeepSeek épuisé, HTTP 402) ;
+            # les modèles GRATUITS d'OpenRouter restent désactivés tant que UTILISER_OPENROUTER n'est pas posé.
+            self.assertEqual([c[3] for c in courses if c[0] == "OpenRouter"], [pilote.MODELE_OPENROUTER_DEEPSEEK])
             self.assertFalse(pilote._secours_d_emblee())
         with mock.patch.dict(os.environ, {"UTILISER_OPENROUTER": "1"}):
             self.assertEqual(pilote._cle_openrouter(), "o")
@@ -867,7 +869,7 @@ def test_pilote_modele_impose_essaie_d_abord_ce_modele_puis_dispose_de_replis(mo
     assert all(c[3] != pilote.MODELE for c in courses)  # pas de bascule silencieuse vers DeepSeek officiel
     assert pilote._secours_d_emblee() is True
     monkeypatch.delenv("PILOTE_MODELE")
-    assert [c[0] for c in pilote._fournisseurs_secours()] == ["DeepSeek"]   # comportement habituel inchangé
+    assert [c[0] for c in pilote._fournisseurs_secours()] == ["OpenRouter", "DeepSeek"]   # repli : DeepSeek payant via OpenRouter d'abord, puis l'API officielle (07/11/2026)
 
 
 def test_donnees_reprises_evitent_toute_collecte(monkeypatch):

@@ -160,7 +160,7 @@ jobs:
       # Plancher de rémunération d'un coupon (cote TOTALE minimale, 1.60 par défaut ; 0 = désactivé) : refuse un coupon à 1.04 qui gagne presque toujours mais ne rapporte rien.
       COTE_TOTALE_MIN_COUPON: ${{ vars.COTE_TOTALE_MIN_COUPON }}
       COUTS_FICHIER: ${{ github.workspace }}/backend/data/couts_run.json
-      MAX_ECHECS_PAYANTS_PAR_JOUR: ${{ vars.MAX_ECHECS_PAYANTS_PAR_JOUR || '2' }}
+      MAX_ECHECS_PAYANTS_PAR_JOUR: ${{ vars.MAX_ECHECS_PAYANTS_PAR_JOUR || '0' }}
       TELEGRAM_CHAT_IDS_SUPPLEMENTAIRES: ${{ vars.TELEGRAM_CHAT_IDS_SUPPLEMENTAIRES }}
       API_FOOTBALL_QUOTA_PAR_MINUTE: ${{ secrets.API_FOOTBALL_QUOTA_PAR_MINUTE }}
       STATS_DETAILLEES_ACTIVE: ${{ secrets.STATS_DETAILLEES_ACTIVE }}
@@ -169,12 +169,8 @@ jobs:
       DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
       DEEPSEEK_MODELES: ${{ vars.DEEPSEEK_MODELES }}
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-      # Plafonds financiers IA désactivés à la demande du propriétaire (07/11/2026).
-      # Les coûts restent mesurés et enregistrés dans JOURNAL_AGENT / COUTS_AGENT ; aucune limite USD ne bloque le run.
+      # AUCUN plafond ni alerte de budget IA (07/11/2026, demande du propriétaire) : les coûts sont seulement mesurés dans le détail des runs.
       MODELES_VOTE: ${{ needs.preparer.outputs.vote }}
-      OMBRE_BUDGET_USD: "aucun"
-      BUDGET_JOUR_USD: "aucun"
-      BUDGET_ALERTE_PCT: ${{ vars.BUDGET_ALERTE_PCT || '80' }}   # alerte Telegram quand cette part du budget du jour (UTC) est consommée, puis à l'épuisement
       OPENROUTER_MODELES: ${{ vars.OPENROUTER_MODELES }}
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       GROQ_MODELES: ${{ vars.GROQ_MODELES }}

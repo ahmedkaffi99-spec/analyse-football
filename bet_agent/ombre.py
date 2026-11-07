@@ -128,7 +128,7 @@ def composer_ombre(pool, profils, catalogue, catalogue_texte, modeles=None, cle=
     modeles = list(modeles or [])
     cle = cle or os.getenv("OPENROUTER_API_KEY")
     # Variable absente, vide ou « aucun » = aucune limite financière ; le coût reste mesuré.
-    budget_usd = budget_usd if budget_usd is not None else budget_ia.lire_budget(os.getenv("OMBRE_BUDGET_USD"))
+    budget_usd = budget_usd if budget_usd is not None else None
     nb_tours = nb_tours or int(os.getenv("OMBRE_NB_TOURS") or 2)
     duree_max_s = duree_max_s if duree_max_s is not None else float(os.getenv("OMBRE_DUREE_MAX_S") or 360)
     echeance = time.time() + duree_max_s

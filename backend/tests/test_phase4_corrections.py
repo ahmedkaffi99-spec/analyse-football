@@ -132,7 +132,7 @@ def test_finaliser_cloture_en_interrompu_et_conserve_les_couts(fichier_couts):
         run = db.get(Run, rid)
         assert run.statut == "interrompu" and run.termine_le is not None and "Interrompu" in run.detail
         couts = couts_du_run(run)
-        assert couts["total_usd"] == pytest.approx(0.72) and "estimé" in couts["alerte"]
+        assert couts["total_usd"] == pytest.approx(0.72) and "alerte" not in couts   # plus aucune alerte de budget
     with SessionLocal() as db:
         assert garde.echecs_payants_du_jour(db, TOT) == 1                       # comptabilisé comme échec payant du jour
 

@@ -16,7 +16,7 @@ from app.services import pipeline
 from app.services.archives import archiver_run, telecharger_collecte
 from app.services.persistance import enregistrer_collecte, enregistrer_coupons
 from app.services.qualite_marches import qualite_marches
-from app.services.budget import budget_restant, texte_couts_pour_detail
+from app.services.budget import texte_couts_pour_detail
 from app.services.statistiques import resume_pour_ia
 
 
@@ -103,11 +103,6 @@ def executer_run(run_id, envoyer_telegram=False, rediger=True, depuis_run=None, 
             if profils_personnalises is None:
                 profils_personnalises = ae.profils_agent_quotidien()
             options_reprise = {"donnees_reprises": donnees_reprises} if donnees_reprises is not None else {}
-            # Budget IA du jour (Phase 3) : transmis seulement quand un plafond est configuré (BUDGET_JOUR_USD) ; sans plafond, rien ne change.
-            restant = budget_restant(db)
-            if restant is not None:
-                options_reprise["budget_restant_usd"] = restant
-                print(f"💰 Budget IA restant aujourd'hui : {restant:.2f} $")
             resultat_agent = agent_pilote.executer(telegram=envoyer_telegram, profils=profils_personnalises,
                                                    ignorer_diversite_croisee=ignorer_diversite_croisee,
                                                    contexte_supplementaire=bilan, **options_reprise)

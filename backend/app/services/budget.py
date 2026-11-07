@@ -22,8 +22,9 @@ def _importer_budget_ia():
 
 
 def budget_jour_usd():
-    """Plafond journalier en $ (None = pas de plafond)."""
-    return _importer_budget_ia().lire_budget(os.getenv("BUDGET_JOUR_USD"))
+    """AUCUN plafond journalier (supprimé le 07/11/2026, demande du propriétaire : c'est lui qui décide de la dépense). BUDGET_JOUR_USD est ignorée. Les coûts restent
+    mesurés et enregistrés dans le détail des runs, sans alerte ni blocage."""
+    return None
 
 
 def couts_du_run(run):
@@ -54,10 +55,7 @@ def couts_depuis_fichier(donnees):
     pilote = donnees.get("pilote") or {}
     vote = donnees.get("vote") or []
     total = round(float(pilote.get("cout_usd") or 0.0) + sum(float(v.get("cout_usd") or 0.0) for v in vote), 4)
-    bilan = {"pilote": pilote, "vote": vote, "total_usd": total, "source": "fichier_couts"}
-    if pilote.get("appels_cout_estime"):
-        bilan["alerte"] = f"{pilote['appels_cout_estime']} appel(s) du pilote au coût estimé (non renvoyé par le fournisseur)"
-    return bilan
+    return {"pilote": pilote, "vote": vote, "total_usd": total, "source": "fichier_couts"}
 
 
 def _debut_du_jour(jour):
@@ -74,14 +72,6 @@ def depense_du_jour(db, maintenant=None):
         if couts:
             total += float(couts.get("total_usd") or 0.0)
     return round(total, 4)
-
-
-def budget_restant(db, maintenant=None):
-    """Budget restant aujourd'hui en $ (jamais négatif), ou None s'il n'y a pas de plafond."""
-    plafond = budget_jour_usd()
-    if plafond is None:
-        return None
-    return round(max(0.0, plafond - depense_du_jour(db, maintenant)), 4)
 
 
 def resume(db, jours=7, maintenant=None):
@@ -104,4 +94,4 @@ def resume(db, jours=7, maintenant=None):
             c["coupons_retenus"] += int(m.get("coupons_retenus") or 0)
     return {"par_jour": {j: round(v, 4) for j, v in sorted(par_jour.items())},
             "par_modele": {m: {**v, "cout_usd": round(v["cout_usd"], 4)} for m, v in sorted(par_modele.items())},
-            "plafond_jour_usd": budget_jour_usd(), "depense_aujourdhui_usd": depense_du_jour(db, maintenant)}
+            "depense_aujourdhui_usd": depense_du_jour(db, maintenant)}

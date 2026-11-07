@@ -45,7 +45,8 @@ def repartir(restant, modeles, plafond_modele, minimum=None):
         n -= 1
     retenus, ignores = modeles[:n], modeles[n:]
     part = restant / n if n else 0.0
-    return ({m: min(plafond_modele, part) for m in retenus},
+    plafond = float("inf") if plafond_modele is None else plafond_modele   # plafond propre None = aucun plafond par modèle (supprimé le 07/11/2026)
+    return ({m: min(plafond, part) for m in retenus},
             [(m, f"budget restant insuffisant ({restant:.2f} $ pour {len(modeles)} modèle(s), minimum {minimum:.2f} $ chacun)")
              for m in ignores])
 
