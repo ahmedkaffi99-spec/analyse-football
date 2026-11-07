@@ -1,0 +1,25 @@
+254|2026-10-23|🟢 COUPON 1 — cote 5 à 10 (5-10 jambes)|perdu|6.89|191
+255|2026-10-23|🟠 COUPON 2 — cote 10 à 50 (5-10 jambes)|gagne|11.46|191
+256|2026-10-23|🔴 COUPON 3 — cote 50 et plus (5-10 jambes)|vide||191
+257|2026-10-23|🔴 COUPON 3 — cote 25 et plus (5-10 jambes)|perdu|25.17|192
+258|2026-10-23|🟢 COUPON 1 — cote 5 à 10 (5-10 jambes)|gagne|5.09|194
+259|2026-10-23|🟠 COUPON 2 — cote 10 à 50 (5-10 jambes)|perdu|10.54|194
+260|2026-10-23|🔴 COUPON 3 — cote 25 et plus (5-10 jambes)|vide||194
+261|2026-10-23|🔴 COUPON 3 — cote 20 et plus (5-10 jambes)|perdu|20.22|196
+274|2026-10-24|🟢 FAIBLE (prudent)|perdu|6.64|201
+275|2026-10-24|🟠 MOYEN (équilibré)|perdu|20.7|201
+276|2026-10-24|🔴 RISQUÉ 1 (très risqué)|perdu|56.23|201
+277|2026-10-24|🔴 RISQUÉ 2 (très risqué)|perdu|84.48|201
+278|2026-10-24|🔴 RISQUÉ 3 (très risqué)|perdu|103.49|201
+281|2026-10-25|🟢 PETITE COTE — cote 5 à 15 (prudent) (5-7 jambes)|gagne|6.1|206
+282|2026-10-25|🟠 COTE MOYENNE — cote 20 à 40 (équilibré) (8-10 jambes)|perdu|20.55|206
+283|2026-10-25|🔴 HAUTE COTE — cote 50 à 100+ (très risqué) (11-15 jambes)|perdu|76.56|206
+293|2026-10-25|⭐ SPÉCIAL — cote 10 à 20|perdu|13.5|212
+294|2026-10-25|⭐ SPÉCIAL A — cote 10 à 20|perdu|10.25|213
+295|2026-10-25|⭐ SPÉCIAL B — cote 20 à 30|perdu|20.89|213
+296|2026-10-28|🟢 PETITE COTE — cote 5 à 10 (prudent) (5-10 jambes)|perdu|7.55|223
+297|2026-10-28|🟠 COTE MOYENNE — cote 10 à 18 (équilibré) (5-10 jambes)|perdu|15.75|223
+298|2026-10-28|🔴 HAUTE COTE — cote 18 à 35 (risqué) (5-10 jambes)|perdu|28.23|223
+341|2026-11-04|🟢 PETITE COTE — cote 5 à 10 (prudent) (5-8 jambes)|perdu|5.42|257
+342|2026-11-04|🟠 COTE MOYENNE — cote 10 à 18 (équilibré) (6-8 jambes)|perdu|11.57|257
+343|2026-11-04|🔴 HAUTE COTE — cote 18 à 35 (risqué) (7-8 jambes)|perdu|18.57|257

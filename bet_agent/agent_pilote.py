@@ -36,7 +36,7 @@ def construire_prompt_systeme(profils):
         regle_matchs = ("chacun choisissant ses jambes parmi les matchs du catalogue (par match : UN pari par EVENT 1xBet au "
                         "plus — le jeu principal (Total, Handicap, BTTS, Double Chance, buts par équipe) compte pour un event, "
                         "corners, cartons, fautes, tirs et hors-jeux chacun pour un autre ; un même match peut figurer dans "
-                        "plusieurs coupons, jamais le même risque — marché, équipe et sens, quelle que soit la ligne)")
+                        "plusieurs coupons, jamais le même pari exact)")
     else:
         regle_matchs = "chacun de matchs DIFFÉRENTS (un seul pari par match)"
     return f"""Tu es l'agent pilote d'un pipeline de coupons de paris football (1xBet). Tu conduis le run \
@@ -54,12 +54,10 @@ suffisent pas à l'atteindre avec le nombre de jambes minimum, ajoute une jambe 
 minimum) ou accepte une cote individuelle un peu plus haute (toujours dans le catalogue) plutôt que de \
 soumettre un coupon sous ce plancher. Tu composes les {n} coupons L'UN \
 APRÈS L'AUTRE (jamais en parallèle). Tu peux réutiliser un MATCH déjà pris dans un profil précédent, mais \
-jamais le MÊME pari exact (même marché, même sélection) — Python le refuse. Diversifie aussi les CATÉGORIES \
-à l'échelle des {n} profils, pas seulement à l'intérieur d'un seul coupon (ex: si un profil précédent a pris \
-"Corners Under 9.5", varie sur le profil suivant avec "Corners Over 10.5" ou une autre catégorie plutôt que \
-reprendre "Corners Under 9.5" sur un autre match — Over/Under = diversité, une ligne différente (9.5 vs 10.5, \
-2.5 vs 3.5) = diversité aussi). Tu peux t'abstenir sur UN profil si rien n'est défendable pour son nombre de \
-jambes minimum, sans que ça t'empêche de composer les autres.
+jamais le MÊME pari exact (même marché, même sélection) — Python le refuse. Tu es LIBRE du choix des marchés \
+(buts, corners, cartons, tirs, fautes, hors-jeux, handicaps, BTTS...) : prends les meilleures opportunités \
+statistiques, sans obligation de varier les catégories. Tu peux t'abstenir sur UN profil si rien n'est défendable, \
+sans que ça t'empêche de composer les autres.
 
 LE CATALOGUE EST DÉJÀ FILTRÉ ET TRIÉ PAR PYTHON (demande explicite du 01/10/2026 : "réduire les tâches de \
 l'IA, augmenter les tâches de Python") : il ne contient PLUS les 200-300 marchés bruts d'un match, seulement \
@@ -69,7 +67,7 @@ dépasse le seuil affiché par Python (60 % par défaut, 30 % en mode smart coup
 c'est que Python n'y a trouvé AUCUN pari assez solide — ne cherche pas à en inventer un, passe au suivant. \
 TOUT pari du catalogue a déjà une probabilité et un edge calculés : ta décision se base sur CES chiffres, pas \
 sur une estimation personnelle — ton rôle est de choisir PARMI une liste déjà vérifiée par Python, d'appliquer \
-la diversité entre matchs/catégories, et de justifier chaque choix avec le contexte (buts attendus, \
+la cohérence entre matchs, et de justifier chaque choix avec le contexte (buts attendus, \
 confrontations directes, blessures, prédictions API-Football, forme récente, presse). Le catalogue est \
 CALCULÉ UNE SEULE FOIS et partagé par les {n} profils.
 
@@ -77,14 +75,14 @@ MÉTHODE DE TRAVAIL : traite les matchs UN PAR UN, jamais en mélangeant plusieu
 match : lis tout son contexte (buts attendus, historique, blessures, prédictions), compare TOUS ses marchés \
 disponibles entre eux, retiens le(s) pari(s) les plus défendables pour CE match, puis seulement ensuite \
 passe au match suivant. Une fois tous les matchs analysés, compose le coupon du profil en cours (nombre de \
-jambes cible, diversité des catégories), PUIS passe au profil suivant en réutilisant la même analyse.
+bande de cote), PUIS passe au profil suivant en réutilisant la même analyse.
 
 ORDRE CONSEILLÉ (tu peux l'adapter, revenir en arrière ou chercher plus d'information) :
 1. collecter_donnees (une seule fois)  2. voir_catalogue (indique le profil EN COURS parmi les {n} — le \
 catalogue lui-même ne change pas)  3. RECOMMANDÉ : 2 à 4 rechercher_web (puis lire_page sur un lien au besoin) sur les matchs les plus importants de ton \
 catalogue, pour vérifier une blessure, une rotation, une composition probable, un enjeu — 5 recherches et 3 pages au \
 maximum par run ; un pari que l'actualité contredit se remplace  4. proposer_coupon pour le profil en cours (Python vérifie — identifiants valides, un pari par match, \
-nombre de jambes, diversité — rédige automatiquement le coupon une fois validé, et te dit s'il reste des \
+bande de cote — rédige automatiquement le coupon une fois validé, et te dit s'il reste des \
 profils)  5. répète 2-4 pour chaque profil restant  6. envoyer_telegram une fois les {n} profils traités \
 ({n} messages séparés, un par profil) — ou abandonner si RIEN n'est défendable pour AUCUN des {n} profils.
 
@@ -121,9 +119,10 @@ potentiel plus élevé en acceptant plus de risque, en plus du nombre de jambes 
 - SMART COUPON (demande explicite du 06/11/2026 : « je veux seulement des smart coupons, l'IA choisit librement ») : \
 la SEULE contrainte imposée est la bande de cote totale de chaque profil. Tu es LIBRE du nombre de jambes et de la \
 cote de chaque jambe. Objectif : la combinaison qui a le plus de chances de passer INTÉGRALEMENT (toutes les jambes \
-gagnent) en tombant dans la bande. Moins de jambes = moins de marge de bookmaker cumulée : pour atteindre une bande \
-haute, préfère quelques jambes à cote plus élevée (1.8, 2, 3 ou plus) plutôt que de nombreuses jambes à 1.2. \
-Le seuil de probabilité du catalogue peut être bas (30 %) : choisis TOI-MÊME les jambes les plus solides, fonde-toi sur \
+gagnent) en tombant dans la bande. CHERCHE L'ÉQUILIBRE entre le nombre de jambes et la hauteur des cotes : ni une longue liste \
+de jambes à 1.2 (chaque jambe ajoute de la marge de bookmaker et une chance de tout perdre), ni quelques paris très hauts et \
+improbables ; vise un nombre de jambes raisonnable avec des cotes moyennes (1.4 à 2) choisies parmi les plus solides. \
+Aucune probabilité minimale n'est imposée : choisis TOI-MÊME les jambes les plus solides, fonde-toi sur \
 la probabilité Python, l'edge et le contexte, et ne sors jamais de la bande. Une seule sélection par match dans un coupon.
 - MÉMOIRE D'APPRENTISSAGE (demande explicite du 06/11/2026 : « une mémoire pour étudier les erreurs d'hier, devenir pro \
 de cette tâche et améliorer avec le temps ta capacité de raisonnement ») : si ta mission commence par une section \
@@ -333,13 +332,13 @@ def _fournisseurs_secours():
     if (os.getenv("PILOTE_MODELE") or "").strip():
         if os.getenv("OPENROUTER_API_KEY"):   # indépendant de UTILISER_OPENROUTER : ce réglage est explicite
             courses.append(("OpenRouter", "https://openrouter.ai/api/v1/chat/completions", os.getenv("OPENROUTER_API_KEY"),
-                            os.getenv("PILOTE_MODELE").strip(), {"reasoning": {"effort": "medium"}}))
+                            os.getenv("PILOTE_MODELE").strip(), {"reasoning": {"effort": "medium"}, "usage": {"include": True}}))
         return courses
     # En tête : DeepSeek via OpenRouter (demande du 22/10/2026 : « utilise celle d'OpenRouter, modèle DeepSeek »),
     # le même fournisseur/modèle que les agents de famille (OPENROUTER_MODELE_PAYANT).
     if _cle_openrouter():
         courses.append(("OpenRouter", "https://openrouter.ai/api/v1/chat/completions", _cle_openrouter(),
-                        MODELE_OPENROUTER_DEEPSEEK, {"reasoning": {"effort": "medium"}}))
+                        MODELE_OPENROUTER_DEEPSEEK, {"reasoning": {"effort": "medium"}, "usage": {"include": True}}))
     if os.getenv("DEEPSEEK_API_KEY"):   # DeepSeek officiel : repli si OpenRouter échoue
         courses.append(("DeepSeek", URL_DEEPSEEK, os.getenv("DEEPSEEK_API_KEY"), MODELE,
                         {"thinking": {"type": "enabled"}}))
@@ -460,6 +459,22 @@ def _appel_deepseek(cle, messages, max_tokens, outils_schemas=None, poster=reque
         raise RuntimeError(f"DeepSeek HTTP {r.status_code} {message}")
 
 
+def _cout_appel(usage):
+    """Coût en $ d'un appel du pilote : valeur renvoyée par le fournisseur (OpenRouter, usage.cost) ; sinon estimation si les prix par
+    million de tokens sont configurés (DEEPSEEK_PRIX_ENTREE_USD_M / DEEPSEEK_PRIX_SORTIE_USD_M) ; sinon 0 (tokens seulement)."""
+    if usage.get("cost") is not None:
+        return float(usage.get("cost") or 0.0)
+    try:
+        prix_in, prix_out = float(os.getenv("DEEPSEEK_PRIX_ENTREE_USD_M") or 0), float(os.getenv("DEEPSEEK_PRIX_SORTIE_USD_M") or 0)
+    except ValueError:
+        return 0.0
+    return (int(usage.get("prompt_tokens") or 0) * prix_in + int(usage.get("completion_tokens") or 0) * prix_out) / 1_000_000
+
+
+# Consommation du pilote pour CE run (Phase 3) : remise à zéro au début de executer().
+_usage_pilote = {"appels": 0, "tokens_entree": 0, "tokens_sortie": 0, "cout_usd": 0.0}
+
+
 def piloter(cle, outils, est_termine, mission, prompt_systeme=None, outils_schemas=None,
             poster=requests.post, pause=time.sleep, horloge=time.monotonic):
     """Boucle agentique. outils = {nom: fonction(**arguments) -> dict}. est_termine() dit si un outil de fin
@@ -476,7 +491,12 @@ def piloter(cle, outils, est_termine, mission, prompt_systeme=None, outils_schem
             return {"termine": est_termine(), "etapes": etape - 1, "arret": "durée maximale atteinte", "tokens": tokens}
         print(f"   🤖 [Agent {'secours' if _secours['actif'] else 'DeepSeek'}] étape {etape}/{MAX_ETAPES}...")
         data, max_tokens = _appel_api(cle, messages, max_tokens, outils_schemas, poster, pause)
-        tokens += (data.get("usage") or {}).get("total_tokens", 0)
+        usage = data.get("usage") or {}
+        tokens += usage.get("total_tokens", 0)
+        _usage_pilote["appels"] += 1
+        _usage_pilote["tokens_entree"] += int(usage.get("prompt_tokens") or 0)
+        _usage_pilote["tokens_sortie"] += int(usage.get("completion_tokens") or 0)
+        _usage_pilote["cout_usd"] += _cout_appel(usage)
         msg = data["choices"][0]["message"]
         assistant = {"role": "assistant", "content": msg.get("content") or ""}
         if msg.get("reasoning_content") is not None:
@@ -518,7 +538,7 @@ def piloter(cle, outils, est_termine, mission, prompt_systeme=None, outils_schem
 
 
 def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croisee=False,
-            contexte_supplementaire=None, donnees_reprises=None):
+            contexte_supplementaire=None, donnees_reprises=None, budget_restant_usd=None):
     """Branche le moteur agentique ci-dessus (piloter) sur la collecte/analyse réelles :
     jusqu'ici (29/09/2026) ce fichier ne définissait que le moteur (prompt, schémas d'outils,
     boucle) sans jamais être appelé par aucun workflow — demande explicite de l'utilisateur
@@ -537,6 +557,9 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
     refus d'un pari EXACTEMENT identique à un profil précédent reste actif dans tous les cas
     (jamais désactivable — un même pari ne doit jamais apparaître deux fois dans le même run).
 
+    budget_restant_usd (Phase 3, 06/11/2026) : budget IA payant restant pour la journée (None = aucun plafond). Sert à répartir ou refuser
+    le vote final et le mode « modèle seul » ; tout refus ou dépassement est écrit dans journal["couts"] (jamais silencieux).
+
     contexte_supplementaire (01/10/2026, demande explicite "l'IA doit se souvenir du contexte") :
     texte optionnel (typiquement le bilan réel des runs précédents, voir backend.app.services.
     statistiques.resume_pour_ia) prépendu à la mission par défaut — ignoré si `mission` est
@@ -545,6 +568,8 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
     import analyser_et_envoyer as ae
     import agent_strategie as st
     import agents_familles
+    import budget_ia
+    _usage_pilote.update(appels=0, tokens_entree=0, tokens_sortie=0, cout_usd=0.0)
 
     cle = os.getenv("DEEPSEEK_API_KEY")
     _secours.update(actif=_secours_d_emblee(), choix=None)   # nouvel essai du fournisseur principal à chaque run
@@ -563,6 +588,7 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
         "donnees": None, "pool": None, "catalogue": None, "catalogue_texte": None, "contexte_texte": None,
         "profils": profils, "profil_index": 0, "textes": [], "resultats_profils": [],
         "nb_recherches": 0, "nb_lectures": 0, "journal_recherches": [], "journal_pages": [], "strategies": {}, "termine": False, "envoye": False, "raison_abandon": None,
+        "vote_ignores": [], "vote_gagnants": {}, "vote_resultats": [],
     }
 
     if donnees_reprises is not None:   # collecte d'un run précédent du jour (--depuis-run) : l'outil collecter_donnees ne rappelle aucune API
@@ -595,13 +621,7 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
             # donc ABSENTS du moteur agent. Même revue (veto Python + avis IA par famille) avant
             # que l'IA pilote ne voie le catalogue ; toute défaillance laisse le catalogue intact.
             if etat["catalogue"] and agents_familles.actif():
-                catalogue_avant_revue = dict(etat["catalogue"])
                 ecartes, avis = agents_familles.revoir_catalogue(etat["catalogue"], ae.appel_llm)
-                try:  # suivi des paris écartés (06/11/2026) : jugés ensuite avec les résultats réels
-                    import ombre
-                    etat["ecartes_details"] = ombre.details_ecartes(catalogue_avant_revue, ecartes, avis)
-                except Exception as e:
-                    print(f"   ℹ️ Suivi des paris écartés indisponible : {str(e)[:100]}")
                 if ecartes or avis:
                     etat["catalogue"], etat["catalogue_texte"] = st.construire_catalogue(
                         etat["pool"], seuil_proba=st.seuil_catalogue(etat["profils"]), ecartes=ecartes, avis=avis)
@@ -752,11 +772,26 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
             modeles = vote.modeles_vote()
             if not modeles or not etat.get("catalogue") or not any(r["selections"] for r in etat["resultats_profils"]):
                 return
+            # Budget journalier (Phase 3) : répartition entre les modèles, ou refus explicite (jamais silencieux).
+            plafond_modele = float(os.getenv("OMBRE_BUDGET_USD") or 1.5)
+            budgets, ignores = budget_ia.repartir(budget_restant_usd, modeles, plafond_modele)
+            etat["vote_ignores"] = ignores
+            for m, raison in ignores:
+                print(f"   💰 Vote : {m} non lancé — {raison}.")
+            modeles = [m for m in modeles if m in budgets]
+            if not modeles:
+                print("   💰 Vote final annulé (budget) : coupons du pilote conservés.")
+                return
             print(f"   🗳️ Vote final : {', '.join(modeles)} composent aussi les {len(etat['profils'])} coupons...")
             resultats = ombre.composer_ombre(etat.get("pool"), etat["profils"], etat["catalogue"], etat.get("catalogue_texte"), modeles,
-                                             duree_max_s=float(os.getenv("VOTE_DUREE_MAX_S") or 300))
+                                             duree_max_s=float(os.getenv("VOTE_DUREE_MAX_S") or 300),
+                                             budgets_par_modele=budgets if budget_restant_usd is not None else None)
             etat["vote_resultats"] = resultats
-            nouveaux, journal = vote.choisir(etat["profils"], etat["resultats_profils"], resultats)
+            for r in resultats:
+                print(f"   💰 {r.get('modele')} : {r.get('tokens_entree')} → {r.get('tokens_sortie')} tokens, "
+                      f"{r.get('cout_usd')} $, {len(r.get('coupons') or [])} coupon(s), erreur {r.get('erreur')}")
+            nouveaux, journal, gagnants = vote.choisir_detail(etat["profils"], etat["resultats_profils"], resultats)
+            etat["vote_gagnants"] = gagnants
             etat["vote_journal"] = journal
             for ligne in journal:
                 print(f"   🗳️ {ligne}")
@@ -786,8 +821,16 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
             # défendable » qui encombrait le fil sans coupon. Rétablissable : ENVOYER_ABSTENTION_TELEGRAM=1.
             print("   ℹ️ Aucun coupon composé : aucun message Telegram envoyé (abstention).")
             return {"envoye": False, "enregistre": True, "note": "abstention : aucun message Telegram"}
+        ae.DERNIER_ENVOI = None
         ok = ae.agent5_envoyer_coupons(etat["textes"])
         etat["envoye"] = ok
+        envoi = getattr(ae, "DERNIER_ENVOI", None)
+        if not ok and envoi and envoi[0] > 0:
+            # Envoi PARTIEL (06/11/2026) : des messages sont déjà partis. Le run doit le savoir, sinon le passage cron suivant croit que rien
+            # n'a été envoyé et renvoie trois nouveaux coupons.
+            etat["envoi_partiel"] = f"{envoi[0]}/{envoi[1]}"
+            print(f"   ⚠️ Envoi Telegram PARTIEL : {envoi[0]} message(s) sur {envoi[1]} partis — pas de relance automatique.")
+            return {"envoye": False, "envoi_partiel": etat["envoi_partiel"]}
         return {"envoye": ok}
 
     def abandonner_outil(raison):
@@ -810,6 +853,14 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
         calculs et vetos Python restent identiques ; ce modèle compose les profils sur le même catalogue (mêmes règles de
         Python), et envoyer_telegram suit le flux normal. Aucun repli sur DeepSeek : un échec abandonne le run."""
         import ombre
+        plafond_modele = float(os.getenv("OMBRE_BUDGET_USD") or 1.5)
+        budgets, ignores = budget_ia.repartir(budget_restant_usd, [modele], plafond_modele)
+        etat["vote_ignores"] = ignores
+        if ignores:   # budget épuisé ou insuffisant : aucun appel payant, abandon explicite (pas de repli : voir docstring)
+            raison = f"{modele} : non lancé — {ignores[0][1]}"
+            print(f"   💰 {raison}")
+            etat["termine"], etat["raison_abandon"] = True, f"budget IA : {raison}"
+            return {"termine": True, "arret": "budget insuffisant", "tokens": 0}
         collecter_donnees_outil()
         for i in range(len(etat["profils"])):   # adaptations de plancher de cote/jambes par profil, comme dans la boucle
             etat["profil_index"] = i
@@ -819,11 +870,14 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
                 return {"termine": True, "arret": "catalogue vide", "tokens": 0}
         etat["profil_index"] = 0
         resultats = ombre.composer_ombre(etat["pool"], etat["profils"], etat["catalogue"], etat["catalogue_texte"], [modele],
-                                         duree_max_s=float(os.getenv("COMPOSITEUR_DUREE_MAX_S") or 420))
+                                         duree_max_s=float(os.getenv("COMPOSITEUR_DUREE_MAX_S") or 420),
+                                         budgets_par_modele=budgets if budget_restant_usd is not None else None)
         r = resultats[0]
+        etat["vote_resultats"] = resultats
         etat["composition"] = {k: r.get(k) for k in ("modele", "erreur", "tokens_entree", "tokens_sortie", "cout_usd", "appels", "secondes")}
         print(f"   🤖 Composition par {modele} : {len(r['coupons'])} coupon(s), coût {r.get('cout_usd')} $, erreur {r.get('erreur')}")
         par_cle = {c["profil"]: c for c in r["coupons"] if c.get("selections")}
+        etat["vote_gagnants"] = {p["cle"]: modele for p in etat["profils"] if p["cle"] in par_cle}
         for profil in etat["profils"]:
             c = par_cle.get(profil["cle"])
             sel = c["selections"] if c else []
@@ -844,13 +898,33 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
     mission_defaut = f"Compose les {len(profils)} coupons combinés du jour."
     if contexte_supplementaire:
         mission_defaut = f"{contexte_supplementaire}\n\n{mission_defaut}"
-    if compositeur:
+    # Collecte vide (06/11/2026) : 11 jours sur 18 sans coupon, et des appels IA payés pour constater qu'il n'y avait rien à analyser.
+    # La collecte est faite ici, en Python ; sans match exploitable aucun modèle n'est appelé. Si la collecte plante, on laisse
+    # le déroulement habituel (l'outil renverra l'erreur à l'IA).
+    collecte_vide = False
+    try:
+        collecter_donnees_outil()
+        collecte_vide = not (etat["donnees"] or {}).get("nb_matchs_avec_marches")
+    except Exception as e:
+        print(f"   ⚠️ Collecte préalable impossible ({str(e)[:150]}) — l'agent la tentera lui-même.")
+    if collecte_vide:
+        etat["termine"], etat["raison_abandon"] = True, "aucun match avec marchés 1xBet collecté — aucun appel IA"
+        print(f"   ⏹️ {etat['raison_abandon']}.")
+        resultat = {"termine": True, "arret": "collecte vide", "tokens": 0}
+    elif budget_restant_usd is not None and budget_restant_usd <= 0:
+        # Budget du jour épuisé (Phase 3) : AUCUN appel payant — ni pilote, ni vote, ni agents de famille. Arrêt explicite et signalé.
+        etat["termine"], etat["raison_abandon"] = True, "budget IA du jour épuisé (0 $ restant) — aucun appel payant lancé"
+        etat["vote_ignores"] = [("pilote et vote", "plafond journalier atteint")]
+        print(f"   💰 {etat['raison_abandon']}.")
+        resultat = {"termine": True, "arret": "budget épuisé", "tokens": 0}
+    elif compositeur:
         resultat = composer_avec_un_seul_modele(compositeur)
     else:
         resultat = piloter(cle, outils, lambda: etat["termine"], mission or mission_defaut,
                            prompt_systeme=construire_prompt_systeme(profils),
                            outils_schemas=construire_outils_schemas(profils))
     resultat["envoye"] = etat["envoye"]
+    resultat["envoi_partiel"] = etat.get("envoi_partiel")
     resultat["raison_abandon"] = etat["raison_abandon"]
     # Champs consommés par backend/app/services/runs.py (fusion du 30/09/2026, demande explicite
     # de l'utilisateur : agent pilote = pipeline officiel, persisté en base comme l'ancien
@@ -860,10 +934,15 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
     resultat["resultats_profils"] = etat["resultats_profils"]
     resultat["textes"] = etat["textes"] if etat["textes"] else None
     resultat["journal"] = construire_journal(etat)
-    # Matière de la comparaison « en ombre » (paris écartés + catalogue revu), consommée par backend/app/services/runs.py
-    resultat["ombre"] = {"ecartes": etat.get("ecartes_details") or [], "pool": etat.get("pool"),
-                         "catalogue": etat.get("catalogue"), "catalogue_texte": etat.get("catalogue_texte"),
-                         "profils": profils, "resultats_vote": etat.get("vote_resultats") or []}
+    if isinstance(resultat.get("journal"), dict):
+        couts = budget_ia.bilan_couts(dict(_usage_pilote, cout_usd=round(_usage_pilote["cout_usd"], 4)), etat.get("vote_resultats"),
+                                      etat.get("vote_gagnants"), budget_restant_usd, etat.get("vote_ignores"))
+        resultat["journal"]["couts"] = couts
+        resultat["couts"] = couts
+        if couts.get("alerte"):
+            print(f"   💰 ⚠️ {couts['alerte']}")
+    if etat.get("envoi_partiel") and isinstance(resultat.get("journal"), dict):
+        resultat["journal"]["envoi_partiel"] = etat["envoi_partiel"]
     if etat.get("vote_journal") and isinstance(resultat.get("journal"), dict):
         resultat["journal"]["vote"] = etat["vote_journal"]
     if (os.getenv("PILOTE_MODELE") or "").strip() and isinstance(resultat.get("journal"), dict):

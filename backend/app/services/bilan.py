@@ -5,7 +5,7 @@ from collections import defaultdict
 
 from sqlalchemy import select
 
-from app.models import Coupon
+from app.models import Coupon, Run
 
 ICONES = {"gagne": "✅", "perdu": "❌", "push": "➖ remboursé", "non_verifiable": "❓ non vérifiable",
           "demi_gagne": "🟢½ demi-gain", "demi_perdu": "🔴½ demi-perte",
@@ -78,7 +78,11 @@ def envoyer_bilans(db, notifier, forcer_runs=()):
     """notifier(message) -> bool (analyser_et_envoyer.notifier_telegram). Renvoie le nombre de
     bilans envoyés. Un run dont un coupon est encore en attente est laissé pour plus tard."""
     par_run = defaultdict(list)
-    for c in db.scalars(select(Coupon).where(Coupon.bilan_envoye.is_(False))):
+    # Seuls les coupons de runs RÉELLEMENT envoyés sur Telegram ont un bilan (06/11/2026) : les runs d'essai (envoye_telegram faux) n'ont jamais
+    # été reçus par l'utilisateur, un « résultat du jour » pour eux serait un faux bilan.
+    requete = (select(Coupon).join(Run, Run.id == Coupon.run_id)
+               .where(Coupon.bilan_envoye.is_(False), Run.envoye_telegram.is_(True)))
+    for c in db.scalars(requete):
         par_run[c.run_id].append(c)
 
     envoyes = 0

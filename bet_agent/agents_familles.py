@@ -116,13 +116,9 @@ def famille_de(categorie):
 
 
 def veto_python(pick):
-    """Raison du veto déterministe, ou None."""
-    edge = pick.get("edge_pct")
-    if edge is not None and edge > EDGE_MAX_AGENT:
-        return f"edge suspect ({edge:g} % > {EDGE_MAX_AGENT:g} %)"
-    if pick.get("categorie") in ae.CATEGORIES_EXCLUES:
-        return f"catégorie exclue ({pick.get('categorie')})"
-    return desequilibre.veto(pick) or consensus_bookmakers.garde_fou(pick)
+    """Plus aucun veto automatique (06/11/2026, demande explicite : plafond d'edge, catégories exclues, match déséquilibré et garde-fou de
+    consensus retirés). Conservé pour les appelants : renvoie toujours None."""
+    return None
 
 
 def _prompt_famille(fid, nom, faits, lignes):

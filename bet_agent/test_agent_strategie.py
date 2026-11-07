@@ -363,23 +363,6 @@ class TestDiversiteDesMarches(unittest.TestCase):
     même si le prompt le déconseille déjà — la règle 5 seule n'avait pas suffi en pratique
     (l'IA a justifié un coupon 100% Under/No comme "stratégie délibérée de faible variance")."""
 
-    def test_trop_de_under_no_refuse_si_une_alternative_existe(self):
-        pool = {
-            "A vs B": [_sel("A vs B", "Total", "Under", 1.5)],                                    # P1 — pas d'alternative
-            "C vs D": [_sel("C vs D", "Total", "Under", 1.5)],                                    # P2 — pas d'alternative
-            "E vs F": [_sel("E vs F", "Total", "Under", 1.5)],                                    # P3 — pas d'alternative
-            "G vs H": [_sel("G vs H", "Total", "Under", 1.5), _sel("G vs H", "Total", "Over", 1.5)],  # P4, P5 — alternative dispo
-        }
-        catalogue, _ = st.construire_catalogue(pool)
-        profil = {"cle": "coupon", "nom": "x", "cote_min": 0.0, "cote_max": 1000.0, "nb_jambes": 4, "nb_jambes_min": 4}
-        proposition = {"coupons": [{"profil": "coupon", "strategie": "s",
-                                    "jambes": [{"id": "P1"}, {"id": "P2"}, {"id": "P3"}, {"id": "P4"}]}]}
-
-        acceptes, problemes, _ = st.valider(proposition, catalogue, [profil])
-
-        self.assertEqual(acceptes, {})
-        self.assertTrue(any("Under/No" in p and "G vs H" in p for p in problemes), problemes)
-
     def test_accepte_si_aucune_alternative_nulle_part(self):
         # Les 4 matchs n'offrent QUE du Under : impossible de varier, donc pas d'erreur.
         pool = {m: [_sel(m, "Total", "Under", 1.5)] for m in ("A vs B", "C vs D", "E vs F", "G vs H")}
@@ -393,30 +376,6 @@ class TestDiversiteDesMarches(unittest.TestCase):
         self.assertEqual(problemes, [])
         self.assertIn("coupon", acceptes)
 
-    def test_4_sur_5_conservateurs_refuse_regression_30_09(self):
-        # Reproduit exactement le coupon réel envoyé le 30/09/2026 (5 jambes, catégories
-        # TOUTES différentes — Total, Handicap Asiatique, Cartons, BTTS, Total Équipe 2 — mais
-        # 4/5 en Under/No quand même) : avec l'ancien seuil (math.ceil(5*0.7)=4), 4 n'est
-        # jamais > 4, donc AUCUNE règle ne s'appliquait (la règle par-catégorie ne voit rien,
-        # chaque catégorie n'apparaît qu'une fois ; la règle Under/No globale passait pile au
-        # plafond). Avec floor(5*0.7)=3, 4 > 3 doit refuser.
-        pool = {
-            "A vs B": [_sel("A vs B", "Total", "Under", 2.3), _sel("A vs B", "Total", "Over", 1.6)],
-            "C vs D": [_sel("C vs D", "Handicap Asiatique", "2", 2.3)],
-            "E vs F": [_sel("E vs F", "Total Cartons", "Under", 1.46), _sel("E vs F", "Total Cartons", "Over", 2.6)],
-            "G vs H": [_sel("G vs H", "BTTS", "No", 1.42), _sel("G vs H", "BTTS", "Yes", 2.7)],
-            "I vs J": [_sel("I vs J", "Total Équipe 2", "Under", 2.2), _sel("I vs J", "Total Équipe 2", "Over", 1.6)],
-        }
-        catalogue, _ = st.construire_catalogue(pool)
-        profil = {"cle": "coupon", "nom": "x", "cote_min": 0.0, "cote_max": 1000.0, "nb_jambes": 5, "nb_jambes_min": 1}
-        # A/Under, C/2 (handicap, pas conservateur), E/Under, G/No, I/Under = 4 conservateurs/5
-        proposition = {"coupons": [{"profil": "coupon", "strategie": "s",
-                                    "jambes": [{"id": "P1"}, {"id": "P3"}, {"id": "P4"}, {"id": "P6"}, {"id": "P8"}]}]}
-
-        acceptes, problemes, _ = st.valider(proposition, catalogue, [profil])
-
-        self.assertEqual(acceptes, {})
-        self.assertTrue(any("Under/No" in p for p in problemes), problemes)
 
 
 def _sel_ligne(match, categorie, selection, cote, handicap):
@@ -433,22 +392,6 @@ class TestDiversiteMemeCategorie(unittest.TestCase):
     même marché — si elle choisit un pari corner Under, un autre Over, et un autre but 3.5, un
     autre 2.5 » — généralise TestDiversiteDesMarches (Under/No) à N'IMPORTE QUELLE catégorie
     répétée, en exigeant soit une direction différente, soit une ligne différente."""
-
-    def test_meme_categorie_meme_ligne_refuse_si_alternative_existe(self):
-        pool = {
-            "A vs B": [_sel_ligne("A vs B", "Total Corners", "Under", 1.5, 9.5)],
-            "C vs D": [_sel_ligne("C vs D", "Total Corners", "Under", 1.5, 9.5),
-                       _sel_ligne("C vs D", "Total Corners", "Over", 1.5, 9.5)],  # alternative dispo
-        }
-        catalogue, _ = st.construire_catalogue(pool)
-        profil = {"cle": "coupon", "nom": "x", "cote_min": 0.0, "cote_max": 1000.0, "nb_jambes": 2, "nb_jambes_min": 2}
-        proposition = {"coupons": [{"profil": "coupon", "strategie": "s",
-                                    "jambes": [{"id": "P1"}, {"id": "P2"}]}]}
-
-        acceptes, problemes, _ = st.valider(proposition, catalogue, [profil])
-
-        self.assertEqual(acceptes, {})
-        self.assertTrue(any("Total Corners" in p and "C vs D" in p for p in problemes), problemes)
 
     def test_direction_differente_suffit_a_varier(self):
         pool = {
@@ -528,19 +471,6 @@ class TestCategorieDominante(unittest.TestCase):
             "G vs H": [_sel("G vs H", "Handicap Asiatique", "1", 1.62)],
             "I vs J": [_sel("I vs J", "Total Équipe 2", "Under", 1.25)],
         }
-
-    def test_double_chance_dominant_refuse_si_alternative_existe(self):
-        pool = self._pool_double_chance_dominant()
-        catalogue, _ = st.construire_catalogue(pool)
-        profil = {"cle": "coupon", "nom": "x", "cote_min": 0.0, "cote_max": 1000.0, "nb_jambes": 5, "nb_jambes_min": 1}
-        # P1 (A/2X), P3 (C/2X), P5 (E/1X), P7 (G/Handicap), P8 (I/Total Équipe 2) — 3/5 Double Chance
-        proposition = {"coupons": [{"profil": "coupon", "strategie": "s",
-                                    "jambes": [{"id": "P1"}, {"id": "P3"}, {"id": "P5"}, {"id": "P7"}, {"id": "P8"}]}]}
-
-        acceptes, problemes, _ = st.valider(proposition, catalogue, [profil])
-
-        self.assertEqual(acceptes, {})
-        self.assertTrue(any("Double Chance" in p and "dominant" in p for p in problemes), problemes)
 
     def test_meme_repartition_acceptee_si_aucune_alternative(self):
         # Mêmes 3 Double Chance, mais AUCUNE autre catégorie disponible sur ces 3 matchs :
@@ -622,38 +552,6 @@ class TestDiversiteEtDoublonsEntreProfils(unittest.TestCase):
         self.assertIn("p1", acceptes)
         self.assertNotIn("p2", acceptes)
         self.assertTrue(any("déjà utilisé dans un autre profil" in p for p in problemes), problemes)
-
-    def test_categorie_dominante_a_l_echelle_du_run_entier(self):
-        # profil1 : 1 seul pari "Double Chance" (P1) + 1 BTTS (P4) — pas dominant à lui seul
-        # (1/2, sous le seuil). profil2 ajoute un 2e Double Chance (P5) sur un autre match :
-        # à l'échelle du run, 2 Double Chance sur 3 paris (67%) dépasse le seuil de 40%, mais
-        # seulement visible en comptant le profil précédent (deja_presents).
-        pool = {
-            "A vs B": [_sel("A vs B", "Double Chance", "2X", 1.33), _sel("A vs B", "Total", "Over", 1.9)],
-            "C vs D": [_sel("C vs D", "Double Chance", "1X", 1.37), _sel("C vs D", "BTTS", "Yes", 1.8)],
-            "E vs F": [_sel("E vs F", "Double Chance", "2X", 1.6), _sel("E vs F", "Total", "Under", 1.5)],
-        }
-        catalogue, _ = st.construire_catalogue(pool)
-        profils = [{"cle": "p1", "nom": "x", "cote_min": 0.0, "cote_max": 1000.0, "nb_jambes": 2, "nb_jambes_min": 2},
-                   {"cle": "p2", "nom": "y", "cote_min": 0.0, "cote_max": 1000.0, "nb_jambes": 1, "nb_jambes_min": 1}]
-        proposition = {"coupons": [
-            {"profil": "p1", "strategie": "s", "jambes": [{"id": "P1"}, {"id": "P4"}]},  # A/2X, C/BTTS
-            {"profil": "p2", "strategie": "s", "jambes": [{"id": "P5"}]},  # E/2X — 2e Double Chance du run
-        ]}
-
-        acceptes, problemes, _ = st.valider(proposition, catalogue, profils)
-
-        self.assertIn("p1", acceptes)
-        self.assertNotIn("p2", acceptes)
-        self.assertTrue(any("Double Chance" in p and "dominant" in p for p in problemes), problemes)
-
-    def test_fonctions_diversite_acceptent_deja_presents_vide_par_defaut(self):
-        # Compatibilité : les appels existants sans deja_presents continuent de fonctionner
-        # exactement comme avant (aucune régression pour les appelants qui l'ignorent).
-        selections = [_sel("A vs B", "Total", "Over", 1.8), _sel("C vs D", "Total", "Over", 1.8)]
-        catalogue, _ = st.construire_catalogue({"A vs B": [selections[0]], "C vs D": [selections[1]]})
-        self.assertEqual(st._categories_peu_variees(selections, catalogue), [])
-        self.assertEqual(st._categories_dominantes(selections, catalogue), [])
 
     def test_ignorer_diversite_croisee_traite_chaque_profil_comme_le_premier(self):
         # Demande explicite du 01/10/2026 (run ponctuel à 6 profils) : "je veux que tu oublies
@@ -771,3 +669,43 @@ class TestCoupEnvoi(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestMarchesLibresPourLIA(unittest.TestCase):
+    """06/11/2026 (demande explicite) : plus de plafond d'Under/« non », ni d'obligation de variété des catégories, des directions
+    ou des familles dans un coupon. Python ne garantit que la validité technique."""
+
+    @staticmethod
+    def _catalogue():
+        cat = {}
+        for i in range(5):
+            cat[f"P{i + 1}"] = {"match": f"M{i} vs N{i}", "pick": {
+                "categorie": "Total Corners", "marche": "Corners - Over Under Full Time", "selection": "Under", "handicap": 9.5,
+                "cote": 1.3, "proba_modele_pct": 74.0, "edge_pct": 1.0, "marche_affichage": "Corners"}}
+        return cat
+
+    def test_cinq_under_de_la_meme_categorie_et_meme_ligne_sont_acceptes(self):
+        cat = self._catalogue()
+        profil = {"cle": "c1", "nom": "C", "nb_jambes_min": 1, "nb_jambes": 99, "cote_totale_min": 1.0, "cote_totale_max": 100.0,
+                  "jambes_max_par_match": 1}
+        prop = {"coupons": [{"profil": "c1", "strategie": "x", "jambes": [{"id": cid, "raison": "ok"} for cid in cat]}]}
+        acceptes, problemes, _ = st.valider(prop, cat, [profil])
+        self.assertIn("c1", acceptes, problemes)
+        self.assertEqual(len(acceptes["c1"]["selections"]), 5)
+
+    def test_le_nombre_de_jambes_n_est_plus_borne(self):
+        cat = self._catalogue()
+        profil = {"cle": "c1", "nom": "C", "nb_jambes_min": 4, "nb_jambes": 4, "cote_totale_min": 1.0, "cote_totale_max": 100.0,
+                  "jambes_max_par_match": 1}
+        prop = {"coupons": [{"profil": "c1", "strategie": "x", "jambes": [{"id": "P1", "raison": "ok"}]}]}
+        acceptes, problemes, _ = st.valider(prop, cat, [profil])
+        self.assertIn("c1", acceptes, problemes)
+
+    def test_la_bande_de_cote_et_les_identifiants_restent_verifies(self):
+        cat = self._catalogue()
+        profil = {"cle": "c1", "nom": "C", "nb_jambes_min": 1, "nb_jambes": 99, "cote_totale_min": 5.0, "cote_totale_max": 10.0,
+                  "jambes_max_par_match": 1}
+        trop_bas = {"coupons": [{"profil": "c1", "strategie": "x", "jambes": [{"id": "P1", "raison": "ok"}]}]}
+        self.assertIn("trop basse", st.valider(trop_bas, cat, [profil])[1][0])
+        inconnu = {"coupons": [{"profil": "c1", "strategie": "x", "jambes": [{"id": "P99", "raison": "ok"}]}]}
+        self.assertIn("identifiant inconnu", st.valider(inconnu, cat, [profil])[1][0])

@@ -1792,16 +1792,20 @@ class TestHandicapCornersEtCartonsExclus(unittest.TestCase):
          "selections": [{"selection": "Over", "cote": 1.9}, {"selection": "Under", "cote": 1.9}]},
     ]
 
-    def test_jamais_modelises_meme_avec_le_split_par_equipe(self):
+    def test_handicap_de_cartons_n_est_plus_exclu_par_defaut(self):
+        # 06/11/2026 : plus aucune catégorie exclue par défaut (demande explicite)
         candidats = ae.evaluer_marches_toutes(self.MARCHES, 1.5, 1.2, mu_corners_equipes=(6.0, 4.0),
                                               mu_cartons_equipes=(1.8, 2.3))
-        self.assertFalse({"Handicap Corners", "Handicap Cartons"} & {c["categorie"] for c in candidats})
+        self.assertIn("Handicap Cartons", {c["categorie"] for c in candidats})
+        with mock.patch.object(ae, "CATEGORIES_EXCLUES", ("Handicap Cartons",)):   # MARCHES_EXCLUS reste possible
+            candidats = ae.evaluer_marches_toutes(self.MARCHES, 1.5, 1.2, mu_corners_equipes=(6.0, 4.0),
+                                                  mu_cartons_equipes=(1.8, 2.3))
+        self.assertNotIn("Handicap Cartons", {c["categorie"] for c in candidats})
 
-    def test_jamais_reajoutes_en_marche_brut(self):
+    def test_marches_bruts_de_handicap_reajoutes_par_defaut(self):
         complets = ae.completer_avec_marches_bruts([], self.MARCHES)
         noms = {c["categorie"] for c in complets}
-        self.assertNotIn("Corners - Handicap", noms)
-        self.assertNotIn("Bookings - Handicap", noms)
+        self.assertIn("Corners - Handicap", noms)
         self.assertIn("Corners - Over Under Full Time", noms)
 
     def test_ligne_quart_jamais_modelisee_meme_avec_split_disponible(self):
@@ -1877,8 +1881,8 @@ class TestTotalCartonsParEquipe(unittest.TestCase):
              "selections": [{"selection": "1", "cote": 2.5}, {"selection": "2", "cote": 1.5}]}]
         categories = {c["categorie"] for c in ae.evaluer_marches_toutes(
             marches, 1.5, 1.2, mu_fautes_equipes=(10.0, 13.0), mu_hors_jeux_equipes=(2.0, 2.0))}
-        # le handicap de fautes est calculé mais EXCLU (handicap = buts seulement, 22/10/2026)
-        self.assertEqual(categories, {"Total Fautes Équipe 2", "Total Hors-jeux"})
+        # le handicap de fautes n'est plus exclu depuis le 06/11/2026
+        self.assertEqual(categories, {"Total Fautes Équipe 2", "Total Hors-jeux", "Handicap Fautes"})
 
     def test_guide_et_onglet_distinguent_equipe_1_et_2(self):
         guide1, onglet1 = ae.expliquer_marche("Total Cartons Équipe 1", "Over", 2.0)
@@ -3097,10 +3101,8 @@ class TestAvantageDuTerrainDesComptages(unittest.TestCase):
 class TestHandicapButsSeulement(unittest.TestCase):
     """22/10/2026, demande explicite : « handicap c'est but seul ou résultat »."""
 
-    def test_tous_les_handicaps_de_comptage_sont_exclus(self):
-        for c in ("Handicap Corners", "Handicap Cartons", "Handicap Fautes", "Handicap Hors-jeux",
-                  "Handicap Tirs", "Handicap Tirs Cadrés"):
-            self.assertIn(c, ae.CATEGORIES_EXCLUES)
+    def test_plus_aucun_handicap_de_comptage_exclu_par_defaut(self):
+        self.assertEqual(ae.CATEGORIES_EXCLUES, ())
 
     def test_handicap_de_buts_reste_autorise(self):
         self.assertNotIn("Handicap", ae.CATEGORIES_EXCLUES)
@@ -3110,11 +3112,10 @@ class TestHandicapButsSeulement(unittest.TestCase):
         categories = {c["categorie"] for c in ae.evaluer_marches_toutes(marches, 1.9, 1.1)}
         self.assertEqual(categories, {"Handicap"})
 
-    def test_marches_bruts_de_handicap_de_comptage_aussi_exclus(self):
+    def test_marches_bruts_de_handicap_de_comptage_ne_sont_plus_exclus(self):
         for nom in ("Fouls - Handicap", "Offsides - Handicap", "Corners Asian Handicap", "Yellow Asian Handicap",
-                    "Shots - Handicap", "ShotOnTarget Handicap"):
-            self.assertTrue(ae.est_marche_exclu(nom), nom)
-        self.assertFalse(ae.est_marche_exclu("Asian Handicap"))
+                    "Shots - Handicap", "ShotOnTarget Handicap", "Asian Handicap"):
+            self.assertFalse(ae.est_marche_exclu(nom), nom)
 
 
 class TestHandicapSeulementTempsReglementaire(unittest.TestCase):

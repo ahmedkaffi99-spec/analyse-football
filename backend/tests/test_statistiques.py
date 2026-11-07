@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from app.database import SessionLocal
 from app.services import pipeline
 from app.services.statistiques import gain_coupon, resume_pour_ia
-from tests.conftest import collecte_exemple, ticket_exemple
+from tests.conftest import collecte_exemple, importer_run_envoye, ticket_exemple
 
 
 def _jambe(resultat, cote):
@@ -42,7 +42,7 @@ def test_aucun_coupon_clos_renvoie_none(client):
 
 
 def test_bilan_global_apres_verification(client, monkeypatch):
-    client.post("/api/imports", json={"collecte": collecte_exemple(), "ticket": ticket_exemple()})
+    importer_run_envoye(client)
     _, _, vr = pipeline.modules()
     monkeypatch.setattr(vr, "recuperer_fixtures_du_jour", lambda: {"idLENSAUX": {
         "statusName": "Finished", "participant1Name": "RC Lens", "participant2Name": "AJ Auxerre"}})
@@ -56,7 +56,7 @@ def test_bilan_global_apres_verification(client, monkeypatch):
 
 
 def test_categories_faibles_et_solides_avec_assez_d_echantillon(client, monkeypatch):
-    client.post("/api/imports", json={"collecte": collecte_exemple(), "ticket": ticket_exemple()})
+    importer_run_envoye(client)
     _, _, vr = pipeline.modules()
     monkeypatch.setattr(vr, "recuperer_fixtures_du_jour", lambda: {"idLENSAUX": {
         "statusName": "Finished", "participant1Name": "RC Lens", "participant2Name": "AJ Auxerre"}})

@@ -602,11 +602,11 @@ class TestAgentsFamillesBranchesDansLePilote(unittest.TestCase):
                 mock.patch("agents_familles.revoir_catalogue", wraps=agents_familles.revoir_catalogue) as revue:
             pilote.executer(mission="test", telegram=True)
 
-        # P2 (edge suspect) a été écarté par le veto Python avant d'être montré à l'IA pilote.
+        # 06/11/2026 : plus de veto (même pour un edge de 45 %) : les deux paris restent visibles de l'IA pilote.
         self.assertEqual(revue.call_count, 1)
         catalogue_revu = revue.call_args.args[0]
         self.assertEqual(sorted(catalogue_revu), ["P1", "P2"])
-        self.assertIsNotNone(agents_familles.veto_python(catalogue_revu["P2"]["pick"]))
+        self.assertIsNone(agents_familles.veto_python(catalogue_revu["P2"]["pick"]))
         self.assertIsNone(agents_familles.veto_python(catalogue_revu["P1"]["pick"]))
 
 
@@ -642,14 +642,15 @@ class TestMinimumDeJambesAdaptatifEtAbstentionSansTelegram(unittest.TestCase):
         self.assertEqual(len(resultat["resultats_profils"][0]["selections"]), 8)  # 8 matchs -> 8 jambes
         envoi.assert_called_once()
 
-    def test_sous_le_plancher_absolu_le_minimum_n_est_pas_abaisse(self):
+    def test_le_nombre_de_jambes_n_est_plus_impose(self):
         profil = {"cle": "jour", "nom": "J", "cote_min": 0.0, "cote_max": 1000.0, "nb_jambes_min": 12, "nb_jambes": 15}
         jambes = [{"id": f"P{i}", "raison": "r"} for i in range(1, 4)]
         reponses = [_msg_outil("collecter_donnees", {}), _msg_outil("voir_catalogue", {}),
                     _msg_outil("proposer_coupon", {"strategie": "s", "jambes": jambes}),
                     _msg_outil("abandonner", {"raison": "trop peu de matchs"})]
         resultat, envoi = self._executer(self._pool(3), reponses, profil)
-        self.assertEqual(resultat["resultats_profils"], [])  # 3 matchs < 6 : le coupon de 3 jambes est refusé
+        # 06/11/2026 : le nombre de jambes n'est plus vérifié (le profil demande 12 à 15, le coupon de 3 jambes est accepté)
+        self.assertEqual(len(resultat["resultats_profils"][0]["selections"]), 3)
 
     def test_abstention_n_envoie_aucun_message_telegram(self):
         profil = {"cle": "jour", "nom": "J", "cote_min": 0.0, "cote_max": 1000.0, "nb_jambes_min": 2, "nb_jambes": 5}
@@ -883,7 +884,6 @@ def test_vote_final_remplace_un_coupon_du_pilote_par_celui_d_un_autre_modele(mon
     assert resultat["resultats_profils"][0]["selections"][0]["match"] == fort["match"]
     assert fort["match"] in envoi.call_args.args[0][0]
     assert resultat["journal"]["vote"][0].startswith(f"{PROFIL_1['cle']} : openai/gpt-6.1-sol retenu")
-    assert resultat["ombre"]["resultats_vote"][0]["modele"] == "openai/gpt-6.1-sol"
 
 
 def test_vote_final_en_echec_conserve_les_coupons_du_pilote(monkeypatch):
@@ -901,3 +901,92 @@ def test_vote_final_en_echec_conserve_les_coupons_du_pilote(monkeypatch):
             mock.patch.object(pilote, "_appel_api", side_effect=[(r, 65536) for r in reponses]):
         resultat = pilote.executer(telegram=True, profils=[PROFIL_1])
     assert resultat["envoye"] and len(envoi.call_args.args[0]) == 1
+
+
+def test_envoi_partiel_est_rapporte_par_le_pilote_et_non_relance(monkeypatch):
+    """2 messages sur 3 partis : le résultat porte envoi_partiel pour que le run compte comme envoyé (anti-doublon du cron)."""
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "cle-test")
+    reponses = [_msg_outil("collecter_donnees", {}), _msg_outil("voir_catalogue", {}),
+                _msg_outil("proposer_coupon", {"strategie": "s", "jambes": [{"id": "P1", "raison": "r"}]}),
+                _msg_outil("envoyer_telegram", {})]
+
+    def envoi_partiel(textes):
+        ae.DERNIER_ENVOI = (2, 3)
+        return False
+
+    with mock.patch.object(cd, "collecter_donnees", return_value=None), \
+            mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(DONNEES_FACTICES))), \
+            mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=POOL_SIX_MATCHS), \
+            mock.patch.object(ae, "agent5_envoyer_coupons", side_effect=envoi_partiel), \
+            mock.patch.object(pilote, "_appel_api", side_effect=[(r, 65536) for r in reponses]):
+        resultat = pilote.executer(telegram=True, profils=[PROFIL_1])
+    assert resultat["envoye"] is False
+    assert resultat["envoi_partiel"] == "2/3"
+    assert resultat["journal"]["envoi_partiel"] == "2/3"
+
+
+def test_echec_total_d_envoi_n_est_pas_un_envoi_partiel(monkeypatch):
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "cle-test")
+    reponses = [_msg_outil("collecter_donnees", {}), _msg_outil("voir_catalogue", {}),
+                _msg_outil("proposer_coupon", {"strategie": "s", "jambes": [{"id": "P1", "raison": "r"}]}),
+                _msg_outil("envoyer_telegram", {})]
+
+    def envoi_rate(textes):
+        ae.DERNIER_ENVOI = (0, 3)
+        return False
+
+    with mock.patch.object(cd, "collecter_donnees", return_value=None), \
+            mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(DONNEES_FACTICES))), \
+            mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=POOL_SIX_MATCHS), \
+            mock.patch.object(ae, "agent5_envoyer_coupons", side_effect=envoi_rate), \
+            mock.patch.object(pilote, "_appel_api", side_effect=[(r, 65536) for r in reponses]):
+        resultat = pilote.executer(telegram=True, profils=[PROFIL_1])
+    assert resultat["envoye"] is False and not resultat["envoi_partiel"]
+
+
+def test_collecte_vide_n_appelle_aucun_modele(monkeypatch):
+    """06/11/2026 : zéro match avec marchés -> abandon immédiat, aucun appel IA, rien envoyé."""
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "cle-test")
+    vide = dict(DONNEES_FACTICES, nb_matchs_demandes=0, nb_matchs_avec_marches=0, nb_marches_total=0)
+    with mock.patch.object(cd, "collecter_donnees", return_value=None), \
+            mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(vide))), \
+            mock.patch.object(ae, "agent5_envoyer_coupons") as envoi, \
+            mock.patch.object(pilote, "_appel_api") as appel:
+        resultat = pilote.executer(telegram=True, profils=[PROFIL_1])
+    appel.assert_not_called()
+    envoi.assert_not_called()
+    assert resultat["envoye"] is False and "aucun match" in resultat["raison_abandon"]
+
+
+def test_collecte_vide_reprise_n_appelle_aucun_modele(monkeypatch):
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "cle-test")
+    vide = dict(DONNEES_FACTICES, nb_matchs_avec_marches=0)
+    with mock.patch.object(pilote, "_appel_api") as appel:
+        resultat = pilote.executer(telegram=True, profils=[PROFIL_1], donnees_reprises=vide)
+    appel.assert_not_called()
+    assert "aucun match" in resultat["raison_abandon"]
+
+
+def test_collecte_qui_plante_laisse_l_agent_gerer(monkeypatch):
+    """Si la collecte préalable lève une erreur, le déroulement habituel (l'IA voit l'erreur de l'outil) est conservé."""
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "cle-test")
+    reponses = [_msg_outil("abandonner", {"raison": "collecte HS"})]
+    with mock.patch.object(cd, "collecter_donnees", side_effect=RuntimeError("API HS")), \
+            mock.patch.object(pilote, "_appel_api", side_effect=[(r, 65536) for r in reponses]) as appel:
+        resultat = pilote.executer(telegram=True, profils=[PROFIL_1])
+    assert appel.call_count == 1 and resultat["raison_abandon"] == "collecte HS"
+
+
+def test_seuil_proba_min_lecture_robuste_et_zero_valide():
+    """Phase 2 (06/11/2026) : SEUIL_PROBA_MIN illisible ne plante plus l'import ; 0 est une valeur valide."""
+    lire = ae.lire_seuil_proba
+    assert lire("0") == 0.0 and lire("65") == 65.0 and lire("65%") == 65.0 and lire(" 62,5 ") == 62.5
+    assert lire(None) == 70.0 and lire("") == 70.0
+    assert lire("abc") == 70.0 and lire("-5") == 70.0 and lire("150") == 70.0 and lire("nan") == 70.0
+    assert lire("abc", defaut=55) == 55.0
+
+
+def test_aucune_division_par_zero_avec_seuil_zero_ou_combo_vide(monkeypatch):
+    monkeypatch.setattr(ae, "PROBA_MIN_FORTE", 0.0)
+    assert ae._score_qualite_combo([]) == (0.0, 0.0, 0.0, 0)
+    assert ae.selectionner_combo_cote_cible({}, 0, 2.0, 5.0) is None   # 0 jambe : ni division par zéro ni coupon

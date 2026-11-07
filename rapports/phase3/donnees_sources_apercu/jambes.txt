@@ -1,0 +1,210 @@
+254|Ipswich vs Nottingham Forest|Total|Over Under Full Time (4.0)|4|Under|1.2|79|-5.2|gagne
+254|Ipswich vs Nottingham Forest|Total Équipe 2|Over Under Team 2 (0.5)|0.5|Over|1.22|77.9|-4.9|gagne
+254|Alaves vs Malaga|Handicap|Asian Handicap (0.0)|0|1|1.21|77.2|-6.5|push
+254|Alaves vs Malaga|Total Corners Équipe 2|Corners - Over Under Team 2 (2.5)|2.5|Over|1.23|76|-6.5|perdu
+254|Torino vs Monza|Double Chance|Double Chance Full Time||1X|1.34|76.1|2|gagne
+254|Torino vs Monza|Total Corners|Corners - Over Under Full Time (6.5)|6.5|Over|1.2|75.7|-9.2|gagne
+254|VfB Stuttgart vs Borussia Mönchengladbach|Total|Over Under Full Time (5.5)|5.5|Under|1.22|81|-1.1|gagne
+254|VfB Stuttgart vs Borussia Mönchengladbach|Total Fautes Équipe 1|Fouls - Over Under Team 1 (7.5)|7.5|Over|1.31|72.5|-5|gagne
+254|Stade Brestois 29 vs Nice|Total|Over Under Full Time (4.0)|4|Under|1.23|80.1|-1.5|gagne
+255|Ipswich vs Nottingham Forest|Handicap|Asian Handicap (1.5)|1.5|1|1.23|77.6|-4.6|gagne
+255|Ipswich vs Nottingham Forest|Total Corners Équipe 2|Corners - Over Under Team 2 (6.0)|6|Under|1.24|77|-4.5|gagne
+255|Alaves vs Malaga|Total Corners Équipe 1|Corners - Over Under Team 1 (7.5)|7.5|Under|1.25|76.7|-4.2|gagne
+255|Alaves vs Malaga|Total Équipe 1|Over Under Team 1 (2.5)|2.5|Under|1.28|74.4|-4.8|gagne
+255|Torino vs Monza|Total|Over Under Full Time (1.5)|1.5|Over|1.28|73.8|-5.6|gagne
+255|Torino vs Monza|Total Corners|Corners - Over Under Full Time (7.0)|7|Over|1.25|73.2|-8.5|push
+255|VfB Stuttgart vs Borussia Mönchengladbach|Total|Over Under Full Time (5.0)|5|Under|1.29|77.7|0.2|push
+255|VfB Stuttgart vs Borussia Mönchengladbach|Total Équipe 1|Over Under Team 1 (3.5)|3.5|Under|1.37|72|-1.4|gagne
+255|Stade Brestois 29 vs Nice|Handicap|Asian Handicap (-1.5)|-1.5|2|1.23|77.9|-4.2|gagne
+255|Stade Brestois 29 vs Nice|Double Chance|Double Chance Full Time||12|1.35|72.4|-2.3|gagne
+257|Ipswich vs Nottingham Forest|Total|Over Under Full Time (2.0)|2|Over|1.37|70.7|-3.1|push
+257|Ipswich vs Nottingham Forest|Handicap|Asian Handicap (1.0)|1|1|1.35|72|-2.9|gagne
+257|Alaves vs Malaga|Total Fautes|Fouls - Over Under Full Time (28.5)|28.5|Under|1.35|70.5|-4.8|gagne
+257|Alaves vs Malaga|Total|Over Under Full Time (1.5)|1.5|Over|1.34|70.6|-5.4|gagne
+257|Torino vs Monza|Total Équipe 2|Over Under Team 2 (1.5)|1.5|Under|1.44|70.3|1.3|perdu
+257|Torino vs Monza|Total Hors-jeux|Offsides - Over Under Full Time (2.5)|2.5|Over|1.37|70.6|-3.2|gagne
+257|VfB Stuttgart vs Borussia Mönchengladbach|Handicap|Asian Handicap (-2.5)|-2.5|2|1.41|70.5|-0.6|gagne
+257|VfB Stuttgart vs Borussia Mönchengladbach|Total Corners Équipe 2|Corners - Over Under Team 2 (2.5)|2.5|Over|1.38|71.3|-1.6|gagne
+257|Stade Brestois 29 vs Nice|Total Équipe 1|Over Under Team 1 (2.0)|2|Under|1.41|70.7|-0.4|gagne
+257|Stade Brestois 29 vs Nice|Total Hors-jeux Équipe 1|Offsides - Over Under Team 1 (0.5)|0.5|Over|1.39|71.5|-0.7|gagne
+258|Ipswich vs Nottingham Forest|Total|Over Under Full Time (4.0)|4|Under|1.2|79|-5.2|gagne
+258|Ipswich vs Nottingham Forest|Total Hors-jeux Équipe 1|Offsides - Over Under Team 1 (0.5)|0.5|Over|1.32|77.4|2.1|gagne
+258|Alaves vs Malaga|Handicap|Asian Handicap (0.0)|0|1|1.21|77.2|-6.5|push
+258|Alaves vs Malaga|Total Corners Équipe 1|Corners - Over Under Team 1 (7.5)|7.5|Under|1.25|76.7|-4.2|gagne
+258|Torino vs Monza|Double Chance|Double Chance Full Time||1X|1.34|76.1|2|gagne
+258|VfB Stuttgart vs Borussia Mönchengladbach|Total Fautes|Fouls - Over Under Full Time (18.5)|18.5|Over|1.31|73.8|-3.4|gagne
+258|Stade Brestois 29 vs Nice|Total Tirs Cadrés|Shots On Target - Over Under Full Time (6.5)|6.5|Over|1.21|76.7|-7.2|gagne
+259|Ipswich vs Nottingham Forest|Total Corners Équipe 2|Corners - Over Under Team 2 (6.5)|6.5|Under|1.2|79.1|-5|gagne
+259|Ipswich vs Nottingham Forest|Handicap|Asian Handicap (1.5)|1.5|1|1.23|77.6|-4.6|gagne
+259|Alaves vs Malaga|Total Corners Équipe 2|Corners - Over Under Team 2 (2.5)|2.5|Over|1.23|76|-6.5|perdu
+259|Alaves vs Malaga|Double Chance|Double Chance Full Time||12|1.3|75|-2.5|perdu
+259|Torino vs Monza|Total Équipe 1|Over Under Team 1 (0.5)|0.5|Over|1.21|79.2|-4.2|gagne
+259|Torino vs Monza|Total Hors-jeux|Offsides - Over Under Full Time (2.5)|2.5|Over|1.37|70.6|-3.2|gagne
+259|VfB Stuttgart vs Borussia Mönchengladbach|Total|Over Under Full Time (5.5)|5.5|Under|1.22|81|-1.1|gagne
+259|VfB Stuttgart vs Borussia Mönchengladbach|Total Hors-jeux Équipe 2|Offsides - Over Under Team 2 (1.0)|1|Over|1.37|72.3|-1|gagne
+259|Stade Brestois 29 vs Nice|Total|Over Under Full Time (4.0)|4|Under|1.23|80.1|-1.5|gagne
+259|Stade Brestois 29 vs Nice|Total Fautes|Fouls - Over Under Full Time (27.5)|27.5|Under|1.31|72.6|-4.8|perdu
+261|Ipswich vs Nottingham Forest|Handicap|Asian Handicap (1.0)|1|1|1.35|72|-2.9|gagne
+261|Ipswich vs Nottingham Forest|Total Hors-jeux Équipe 1|Offsides - Over Under Team 1 (0.5)|0.5|Over|1.32|77.4|2.1|gagne
+261|Alaves vs Malaga|Total|Over Under Full Time (1.5)|1.5|Over|1.34|70.6|-5.4|gagne
+261|Alaves vs Malaga|Total Corners Équipe 2|Corners - Over Under Team 2 (3.0)|3|Over|1.32|71.7|-5.4|perdu
+261|Torino vs Monza|Double Chance|Double Chance Full Time||1X|1.34|76.1|2|gagne
+261|Torino vs Monza|Total Hors-jeux|Offsides - Over Under Full Time (2.5)|2.5|Over|1.37|70.6|-3.2|gagne
+261|VfB Stuttgart vs Borussia Mönchengladbach|Handicap|Asian Handicap (-2.5)|-2.5|2|1.41|70.5|-0.6|gagne
+261|VfB Stuttgart vs Borussia Mönchengladbach|Total Corners Équipe 2|Corners - Over Under Team 2 (2.5)|2.5|Over|1.38|71.3|-1.6|gagne
+261|Stade Brestois 29 vs Nice|Double Chance|Double Chance Full Time||12|1.35|72.4|-2.3|gagne
+261|Stade Brestois 29 vs Nice|Total Corners|Corners - Over Under Full Time (11.5)|11.5|Under|1.33|71.7|-4.6|gagne
+274|Chelsea vs Tottenham|Total Cartons|Yellow Cards - Over Under Full Time (6.5)|6.5|Under|1.35|76.5|3.3|gagne
+274|Atletico Madrid vs Deportivo La Coruna|Total|Over Under Full Time (4.0)|4|Under|1.29|78.4|1.2|gagne
+274|Coventry vs Fulham|Handicap|Asian Handicap (1.0)|1|1|1.33|76.2|1.4|push
+274|RB Leipzig vs SV Elversberg|Handicap|Asian Handicap (-2.5)|-2.5|2|1.34|75.6|1.3|perdu
+274|Lens vs Paris FC|Handicap|Asian Handicap (1.0)|1|1|1.21|82.6|-0|gagne
+274|Aston Villa vs Manchester City|Total Hors-jeux Équipe 2|Offsides - Over Under Team 2 (3.5)|3.5|Under|1.45|73.2|6.2|gagne
+274|Rayo Vallecano vs Elche|Total Hors-jeux Équipe 1|Offsides - Over Under Team 1 (3.5)|3.5|Under|1.22|81.3|-0.8|perdu
+275|Arsenal vs Everton|Total|Over Under Full Time (3.0)|3|Under|1.57|64.5|1.3|gagne
+275|Aston Villa vs Manchester City|Handicap|Asian Handicap (1.5)|1.5|1|1.55|67.6|4.7|gagne
+275|Cagliari vs Bologna|Total Corners Équipe 1|Corners - Over Under Team 1 (3.5)|3.5|Over|1.48|68.1|0.9|perdu
+275|Chelsea vs Tottenham|Total Hors-jeux|Offsides - Over Under Full Time (2.5)|2.5|Over|1.42|68|-3.4|gagne
+275|Como vs Sassuolo|Full Time Result|Full Time Result||1|1.52|65|-1.2|gagne
+275|1. FC Köln vs FC Schalke 04|Double Chance|Double Chance Full Time||1X|1.36|73.1|-0.6|gagne
+275|Napoli vs AS Roma|Total|Over Under Full Time (3.5)|3.5|Under|1.36|71.6|-2.7|perdu
+275|Valencia vs Villarreal|Total|Over Under Full Time (3.5)|3.5|Under|1.44|69|-0.6|gagne
+276|Aston Villa vs Manchester City|Total Corners Équipe 1|Corners - Over Under Team 1 (2.5)|2.5|Over|1.24|77.5|-3.9|gagne
+276|FC Augsburg vs Union Berlin|Total Équipe 2|Over Under Team 2 (2.0)|2|Under|1.21|79.5|-3.8|gagne
+276|Chelsea vs Tottenham|Double Chance|Double Chance Full Time||1X|1.27|78.6|-0.2|perdu
+276|Como vs Sassuolo|Total Corners Équipe 1|Corners - Over Under Team 1 (8.0)|8|Under|1.31|73|-4.3|gagne
+276|Coventry vs Fulham|Total Équipe 1|Over Under Team 1 (0.5)|0.5|Over|1.31|75.7|-0.9|perdu
+276|Borussia Dortmund vs Eintracht Frankfurt|Total Cartons|Yellow Cards - Over Under Full Time (2.0)|2|Over|1.2|80.1|-3.8|push
+276|Lazio vs Parma|Total|Over Under Full Time (3.5)|3.5|Under|1.36|71.6|-2.6|gagne
+276|Lens vs Paris FC|Total Équipe 2|Over Under Team 2 (1.5)|1.5|Under|1.66|62.8|4.3|gagne
+276|FSV Mainz 05 vs Werder Bremen|Total|Over Under Full Time (4.0)|4|Under|1.34|73.7|-1.3|perdu
+276|SC Paderborn 07 vs Hamburger SV|Total Cartons|Yellow Cards - Over Under Full Time (4.0)|4|Under|1.67|60.8|1.5|gagne
+276|Racing Santander vs Espanyol|Total Cartons|Yellow Cards - Over Under Full Time (3.5)|3.5|Over|1.41|68.1|-4|gagne
+276|Rayo Vallecano vs Elche|Total Cartons|Yellow Cards - Over Under Full Time (3.5)|3.5|Over|1.49|64.5|-3.8|gagne
+276|Valencia vs Villarreal|Total Équipe 2|Over Under Team 2 (2.0)|2|Under|1.35|72.9|-1.5|push
+277|Arsenal vs Everton|Total Corners Équipe 1|Corners - Over Under Team 1 (7.0)|7|Under|1.58|65.7|3.8|perdu
+277|Aston Villa vs Manchester City|Total Tirs|Shots - Over Under Full Time (26.5)|26.5|Over|1.73|60.6|4.9|perdu
+277|FC Augsburg vs Union Berlin|Total Cartons|Yellow Cards - Over Under Full Time (2.5)|2.5|Over|1.3|73.8|-4.1|gagne
+277|Chelsea vs Tottenham|Total Fautes|Fouls - Over Under Full Time (28.5)|28.5|Under|1.45|70|1.5|gagne
+277|Borussia Dortmund vs Eintracht Frankfurt|Full Time Result|Full Time Result||1|1.54|64.1|-1.2|gagne
+277|RB Leipzig vs SV Elversberg|Total Équipe 1|Over Under Team 1 (3.0)|3|Under|1.5|68.6|2.9|perdu
+277|Lens vs Paris FC|Double Chance|Double Chance Full Time||1X|1.48|69.5|2.9|gagne
+277|FSV Mainz 05 vs Werder Bremen|Total Cartons|Yellow Cards - Over Under Full Time (2.5)|2.5|Over|1.53|63.4|-3|gagne
+277|Napoli vs AS Roma|Handicap|Asian Handicap (1.0)|1|1|1.24|78.4|-2.8|gagne
+277|Racing Santander vs Espanyol|Total|Over Under Full Time (3.5)|3.5|Under|1.48|66.6|-1.5|gagne
+277|Rayo Vallecano vs Elche|Total|Over Under Full Time (2.0)|2|Over|1.4|70.6|-1.2|gagne
+277|Valencia vs Villarreal|Handicap|Asian Handicap (1.5)|1.5|1|1.22|78.9|-3.7|gagne
+278|Arsenal vs Everton|Full Time Result|Full Time Result||1|1.5|66.2|-0.7|gagne
+278|Aston Villa vs Manchester City|Total Tirs Cadrés|Shots On Target - Over Under Full Time (8.5)|8.5|Over|1.56|66.6|3.8|gagne
+278|Atletico Madrid vs Deportivo La Coruna|Handicap|Asian Handicap (-2.5)|-2.5|2|1.44|71.8|3.3|gagne
+278|Chelsea vs Tottenham|Total Équipe 2|Over Under Team 2 (1.5)|1.5|Under|1.5|66|-0.9|perdu
+278|Como vs Sassuolo|Total Corners Équipe 2|Corners - Over Under Team 2 (2.5)|2.5|Over|1.51|65.7|-0.9|gagne
+278|Borussia Dortmund vs Eintracht Frankfurt|Total|Over Under Full Time (2.5)|2.5|Over|1.36|70.7|-3.9|perdu
+278|1. FC Köln vs FC Schalke 04|Total Cartons|Yellow Cards - Over Under Full Time (4.5)|4.5|Under|1.48|68.8|1.9|perdu
+278|Lazio vs Parma|Full Time Result|Full Time Result||1|1.44|67.4|-3|gagne
+278|RB Leipzig vs SV Elversberg|Total|Over Under Full Time (4.5)|4.5|Under|1.51|68|2.6|gagne
+278|Racing Santander vs Espanyol|Total Équipe 2|Over Under Team 2 (1.5)|1.5|Under|1.63|60.8|-0.9|gagne
+278|Rayo Vallecano vs Elche|Handicap|Asian Handicap (-1.5)|-1.5|2|1.44|70.5|1.5|gagne
+278|Valencia vs Villarreal|Double Chance|Double Chance Full Time||12|1.32|73.4|-3|gagne
+281|Hull City vs Brentford|Handicap|Asian Handicap (1.5)|1.5|1|1.5|70.9|6.3|gagne
+281|Manchester United vs Bournemouth|Total|Over Under Full Time (1.5)|1.5|Over|1.2|81.1|-2.7|gagne
+281|Marseille vs Le Havre|Double Chance|Double Chance Full Time||12|1.22|80.5|-1.8|gagne
+281|Atalanta vs Frosinone|Double Chance|Double Chance Full Time||1X|1.29|78.5|1.3|gagne
+281|SC Freiburg vs Bayern München|Handicap|Asian Handicap (2.5)|2.5|1|1.34|73.2|-1.9|gagne
+281|Inter vs Fiorentina|Total|Over Under Full Time (4.5)|4.5|Under|1.34|73.8|-1.2|gagne
+281|Celta Vigo vs Real Betis|Total Équipe 2|Over Under Team 2 (2.5)|2.5|Under|1.2|80.3|-3.6|gagne
+282|Manchester United vs Bournemouth|Double Chance|Double Chance Full Time||1X|1.4|69.9|-2.2|perdu
+282|Sunderland vs Leeds|Double Chance|Double Chance Full Time||12|1.38|70.8|-2.3|gagne
+282|1899 Hoffenheim vs Bayer Leverkusen|Handicap|Asian Handicap (-1.0)|-1|2|1.22|79.7|-2.7|perdu
+282|Lecce vs Juventus|Handicap|Asian Handicap (1.5)|1.5|1|1.65|64.6|6.5|gagne
+282|Monaco vs Lille|Total|Over Under Full Time (3.5)|3.5|Under|1.43|69.2|-1|gagne
+282|Auxerre vs Le Mans|Total|Over Under Full Time (2.0)|2|Over|1.35|72.1|-2.7|push
+282|Atalanta vs Frosinone|Total Équipe 2|Over Under Team 2 (2.0)|2|Under|1.27|79.8|1.4|perdu
+282|Sevilla vs Osasuna|Total Équipe 2|Over Under Team 2 (1.5)|1.5|Under|1.28|72.8|-6.8|gagne
+282|Genoa vs Venezia|Total Corners|Corners - Over Under Full Time (7.5)|7.5|Over|1.38|67.8|-6.5|gagne
+282|Barcelona vs Real Madrid|BTTS|Both Teams To Score||Yes|1.22|75.8|-7.6|gagne
+283|Crystal Palace vs Newcastle|Total|Over Under Full Time (3.5)|3.5|Under|1.58|64.2|1.4|gagne
+283|SC Freiburg vs Bayern München|Total|Over Under Full Time (3.0)|3|Over|1.41|68|-4.1|gagne
+283|Hull City vs Brentford|Total Équipe 1|Over Under Team 1 (0.5)|0.5|Over|1.45|68.8|-0.3|gagne
+283|Sevilla vs Osasuna|Total Équipe 1|Over Under Team 1 (1.0)|1|Over|1.43|67|-4.1|gagne
+283|Athletic Club vs Getafe|Handicap|Asian Handicap (-1.5)|-1.5|2|1.49|69.8|4|perdu
+283|Celta Vigo vs Real Betis|Handicap|Asian Handicap (1.0)|1|1|1.32|75.2|-0.8|gagne
+283|Angers vs Lorient|Double Chance|Double Chance Full Time||1X|1.59|62.4|-0.8|gagne
+283|Real Sociedad vs Levante|Full Time Result|Full Time Result||1|1.63|57.2|-6.8|gagne
+283|Inter vs Fiorentina|Total Corners|Corners - Over Under Full Time (11.0)|11|Under|1.38|67.8|-6.4|gagne
+283|Atalanta vs Frosinone|Total Corners|Corners - Over Under Full Time (12.5)|12.5|Under|1.25|72.2|-9.7|perdu
+283|1899 Hoffenheim vs Bayer Leverkusen|BTTS|Both Teams To Score||Yes|1.3|70.5|-8.3|perdu
+283|Liverpool vs Brighton|BTTS|Both Teams To Score||Yes|1.45|64.7|-6.1|perdu
+293|Real Sociedad vs Levante|Total|Over Under Full Time (4.0)|4|Under|1.38|72.9|0.6|gagne
+293|Toulouse vs Estac Troyes|Total|Over Under Full Time (4.0)|4|Under|1.3|75.4|-2|gagne
+293|Auxerre vs Le Mans|Total|Over Under Full Time (2.0)|2|Over|1.35|72.1|-2.7|push
+293|Udinese vs AC Milan|Handicap|Asian Handicap (1.5)|1.5|1|1.37|73.6|0.8|perdu
+293|SC Freiburg vs Bayern München|Double Chance|Double Chance Full Time||12|1.2|81|-2.7|gagne
+293|Marseille vs Le Havre|Double Chance|Double Chance Full Time||12|1.21|80.9|-2.1|gagne
+293|Barcelona vs Real Madrid|Total Équipe 2|Over Under Team 2 (2.0)|2|Under|1.4|68.5|-4.1|push
+293|Paris Saint Germain vs Lyon|Total Équipe 1|Over Under Team 1 (3.0)|3|Under|1.42|69.9|-0.7|gagne
+293|Sevilla vs Osasuna|Total Corners|Corners - Over Under Full Time (10.0)|10|Under|1.41|68|-4.1|perdu
+294|Sunderland vs Leeds|Double Chance|Double Chance Full Time||12|1.4|70.2|-1.7|gagne
+294|Lecce vs Juventus|Total Équipe 2|Over Under Team 2 (2.5)|2.5|Under|1.4|71.3|-0.2|gagne
+294|Udinese vs AC Milan|Handicap|Asian Handicap (1.5)|1.5|1|1.37|73.6|0.8|perdu
+294|Real Sociedad vs Levante|Total Équipe 1|Over Under Team 1 (2.5)|2.5|Under|1.52|66.2|0.6|gagne
+294|Barcelona vs Real Madrid|Handicap|Asian Handicap (0.0)|0|1|1.33|71.7|-4.7|perdu
+294|SC Freiburg vs Bayern München|Total|Over Under Full Time (2.5)|2.5|Over|1.3|73.1|-5|gagne
+294|Barcelona vs Real Madrid|Total Corners|Corners - Over Under Full Time (13.5)|13.5|Under|1.21|77.6|-6.1|gagne
+294|Udinese vs AC Milan|Total Corners|Corners - Over Under Full Time (11.0)|11|Under|1.2|76.3|-8.5|gagne
+295|Sunderland vs Leeds|Total|Over Under Full Time (3.0)|3|Under|1.37|71.7|-1.7|perdu
+295|Real Sociedad vs Levante|Total|Over Under Full Time (4.0)|4|Under|1.38|72.9|0.6|gagne
+295|Real Sociedad vs Levante|Total Corners|Corners - Over Under Full Time (8.5)|8.5|Over|1.32|67.3|-11.1|perdu
+295|Lecce vs Juventus|Handicap|Asian Handicap (1.5)|1.5|1|1.61|65.5|5.5|gagne
+295|Lecce vs Juventus|Total Corners|Corners - Over Under Full Time (11.5)|11.5|Under|1.28|72.2|-7.6|gagne
+295|SC Freiburg vs Bayern München|Total Équipe 2|Over Under Team 2 (3.5)|3.5|Under|1.28|73.9|-5.4|gagne
+295|SC Freiburg vs Bayern München|Total Corners|Corners - Over Under Full Time (11.5)|11.5|Under|1.34|66.9|-10.3|gagne
+295|Barcelona vs Real Madrid|Total|Over Under Full Time (5.5)|5.5|Under|1.31|72.9|-4.5|gagne
+295|Udinese vs AC Milan|Total|Over Under Full Time (2.0)|2|Over|1.47|67.9|-0.2|push
+295|Udinese vs AC Milan|Total Corners|Corners - Over Under Full Time (7.0)|7|Over|1.23|71.2|-12.5|gagne
+296|Venezia vs Inter|Total Équipe 2|Over Under Team 2 (3.5)|3.5|Under|1.32|74.3|-1.9|gagne
+296|Genoa vs Juventus|Total|Over Under Full Time (3.5)|3.5|Under|1.26|75.5|-4.9|gagne
+296|SC Paderborn 07 vs VfB Stuttgart|Total|Over Under Full Time (4.0)|4|Under|1.35|73.8|-0.4|gagne
+296|Bayern München vs 1. FC Magdeburg|Handicap|Asian Handicap (-4.5)|-4.5|2|1.39|77.7|8|perdu
+296|Monza vs Napoli|Double Chance|Double Chance Full Time||2X|1.24|78|-3.3|gagne
+296|Liverpool vs Chelsea|Total|Over Under Full Time (4.5)|4.5|Under|1.27|76.8|-2.4|gagne
+296|Fulham vs Crystal Palace|Double Chance|Double Chance Full Time||12|1.28|75|-4.1|gagne
+296|Sunderland vs Brentford|Total Corners|Corners - Over Under Full Time (12.0)|12|Under|1.2|74.1|-11.1|gagne
+297|Venezia vs Inter|Full Time Result|Full Time Result||2|1.36|71.1|-3.3|gagne
+297|Genoa vs Juventus|Handicap|Asian Handicap (1.5)|1.5|1|1.4|71.7|0.3|gagne
+297|Monza vs Napoli|Total|Over Under Full Time (2.0)|2|Over|1.35|71.8|-3.1|gagne
+297|Fulham vs Crystal Palace|Total Équipe 1|Over Under Team 1 (2.0)|2|Under|1.51|67.8|2.4|gagne
+297|Bayern München vs 1. FC Magdeburg|Total Équipe 1|Over Under Team 1 (4.5)|4.5|Under|1.6|70.8|13.4|perdu
+297|SC Freiburg vs VfL Wolfsburg|Total Corners|Corners - Over Under Full Time (8.5)|8.5|Over|1.28|70.8|-9.4|gagne
+297|Dynamo Dresden vs FC Schalke 04|Double Chance|Double Chance Full Time||12|1.27|74.2|-5.8|gagne
+297|Hannover 96 vs 1. FC Kaiserslautern|Total|Over Under Full Time (3.5)|3.5|Under|1.56|65.1|1.6|gagne
+298|Venezia vs Inter|Total|Over Under Full Time (4.0)|4|Under|1.59|65.7|4.5|gagne
+298|Genoa vs Juventus|Total Équipe 2|Over Under Team 2 (2.0)|2|Under|1.39|69.9|-2.9|gagne
+298|AC Milan vs Bologna|Total Corners|Corners - Over Under Full Time (10.0)|10|Under|1.3|68.7|-10.7|gagne
+298|Parma vs Udinese|Total|Over Under Full Time (3.0)|3|Under|1.35|67.9|-8.4|gagne
+298|Monza vs Napoli|Total Corners|Corners - Over Under Full Time (7.5)|7.5|Over|1.36|69.3|-5.8|perdu
+298|Sunderland vs Brentford|Total Équipe 2|Over Under Team 2 (2.0)|2|Under|1.35|68.1|-8.1|push
+298|Liverpool vs Chelsea|Double Chance|Double Chance Full Time||1X|1.4|67.7|-5.2|gagne
+298|Bayern München vs 1. FC Magdeburg|Total Corners|Corners - Over Under Full Time (8.5)|8.5|Over|1.32|68.4|-9.8|perdu
+298|Holstein Kiel vs 1899 Hoffenheim|Total|Over Under Full Time (2.5)|2.5|Over|1.3|69|-10.2|perdu
+298|Bournemouth vs Aston Villa|Double Chance|Double Chance Full Time||2X|1.65|62|2.2|perdu
+341|Fenerbahçe vs Liverpool|Handicap|Asian Handicap (2.0)|2|1|1.44|74.6|7.4|push
+341|Borussia Dortmund vs Real Betis|Total|Over Under Full Time (4.5)|4.5|Under|1.27|77.5|-1.5|gagne
+341|FC Porto vs Napoli|Total|Over Under Full Time (1.5)|1.5|Over|1.24|77.3|-4.2|gagne
+341|RB Leipzig vs Manchester City|Total Corners|Corners - Over Under Full Time (7.5)|7.5|Over|1.21|74.4|-10|gagne
+341|Viking vs Sabah FA|Handicap|Asian Handicap (-2.5)|-2.5|2|1.35|77.4|4.5|perdu
+341|PSV Eindhoven vs Club Brugge KV|Total Équipe 2|Over Under Team 2 (2.5)|2.5|Under|1.21|76.9|-7|gagne
+341|Cardiff vs West Ham|Double Chance|Double Chance Full Time||12|1.21|77.2|-6.6|perdu
+342|Fenerbahçe vs Liverpool|Total Équipe 1|Over Under Team 1 (0.5)|0.5|Over|1.42|70.7|0.3|gagne
+342|Borussia Dortmund vs Real Betis|Handicap|Asian Handicap (-1.5)|-1.5|2|1.51|70.9|7.1|gagne
+342|FC Porto vs Napoli|Total Équipe 1|Over Under Team 1 (2.5)|2.5|Under|1.28|74.9|-4.1|perdu
+342|PSV Eindhoven vs Club Brugge KV|Total Corners|Corners - Over Under Full Time (12.0)|12|Under|1.33|71.4|-5|perdu
+342|RB Leipzig vs Manchester City|Total|Over Under Full Time (2.5)|2.5|Over|1.3|74.5|-3.1|gagne
+342|Lens vs Como|Total|Over Under Full Time (4.0)|4|Under|1.33|74.5|-0.9|gagne
+342|Viking vs Sabah FA|Total Équipe 2|Over Under Team 2 (0.5)|0.5|Over|1.41|71.5|0.8|gagne
+342|Cardiff vs West Ham|Total|Over Under Full Time (4.5)|4.5|Under|1.3|74|-3.8|perdu
+343|AEK Athens FC vs Real Madrid|Total Équipe 2|Over Under Team 2 (3.0)|3|Under|1.8|||push
+343|Lens vs Como|Total|Over Under Full Time (3.25)|3.25|Under|1.79|||demi_gagne
+343|Slavia Praha vs Arsenal|Total|Over Under Full Time (3.0)|3|Under|1.74|||gagne
+343|Wrexham vs Middlesbrough|Total|Over Under Full Time (3.0)|3|Under|1.79|||gagne
+343|Bristol City vs Wolves|Total|Over Under Full Time (2.5)|2.5|Under|1.85|||perdu

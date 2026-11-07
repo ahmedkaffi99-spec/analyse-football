@@ -1,0 +1,82 @@
+{
+ "id": 21,
+ "run_id": 2,
+ "domicile": "Slovenia",
+ "exterieur": "Scotland",
+ "ligue": "UEFA Nations League",
+ "coup_envoi": "2026-09-26T13:00:00+00:00",
+ "fixture_id_oddspapi": "id1003621974861510",
+ "fixture_id_api_football": 1545658,
+ "score_domicile": null,
+ "score_exterieur": null,
+ "donnees": {
+  "stats_historiques": {
+   "home": {
+    "league_id": 10,
+    "league_name": "Friendlies",
+    "league_type": "Cup",
+    "season": 2024,
+    "matchs_joues": 5,
+    "buts_marques_domicile": "1.7",
+    "buts_marques_exterieur": "1.5",
+    "buts_encaisses_domicile": "0.7",
+    "buts_encaisses_exterieur": "1.0",
+    "forme": "WDWWD"
+   },
+   "away": {
+    "league_id": 10,
+    "league_name": "Friendlies",
+    "league_type": "Cup",
+    "season": 2024,
+    "matchs_joues": 4,
+    "buts_marques_domicile": "1.0",
+    "buts_marques_exterieur": "1.0",
+    "buts_encaisses_domicile": "1.5",
+    "buts_encaisses_exterieur": "2.0",
+    "forme": "LLWD"
+   }
+  },
+  "understat_xg": {
+   "home": null,
+   "away": null
+  },
+  "clubelo": {
+   "home": null,
+   "away": null
+  },
+  "classement": {
+   "home": null,
+   "away": null
+  },
+  "serper": {
+   "query": "Slovenia Srl vs Scotland SRL preview blessures forme",
+   "resultats": [
+    {
+     "titre": "Scotland SRL Fixtures Schedule & Predictions, Games ...",
+     "extrait": "Scores24 provides all the essential information about the team: results of past matches, upcoming match schedule, key statistics, player details, and much more.",
+     "lien": "https://scores24.live/en/soccer/t-scotland-srl-"
+    },
+    {
+     "titre": "Slovenia vs Scotland predictions: Uefa Nations League tips ...",
+     "extrait": "Harry Reynolds has three best bets for the Uefa Nations League Group B1 match between Slovenia and Scotland at Stadion Stozice in Ljubljana.",
+     "lien": "https://www.telegraph.co.uk/betting/football/slovenia-vs-scotland-nations-league-prediction-tips-2026/"
+    },
+    {
+     "titre": "Slovenia vs Scotland Prediction and Betting Tips",
+     "extrait": "Slovenia are on a poor run of form right now, as they've only won one match in their last ten, beating Montenegro in a friendly in March. They ...",
+     "lien": "https://www.sportskeeda.com/football/slovenia-vs-scotland-prediction-betting-tips-september-26th-2026"
+    },
+    {
+     "titre": "Slovenia vs Scotland | Prediction & xG Analysis",
+     "extrait": "Slovenia vs Scotland gets a full tactical and statistical preview ahead of this UEFA Nations League fixture. In this video, we break down ...",
+     "lien": "https://www.youtube.com/watch?v=eX1TEEQa17Y"
+    },
+    {
+     "titre": "Slovenia vs Scotland - prediction, team news, lineups",
+     "extrait": "Sports Mole previews Saturday's Nations League clash between Slovenia and Scotland, including predictions, team news and possible lineups.",
+     "lien": "https://www.sportsmole.co.uk/football/slovenia/uefa-nations-league/preview/slovenia-vs-scotland-prediction-team-news-lineups_605706.html"
+    }
+   ]
+  }
+ }
+}

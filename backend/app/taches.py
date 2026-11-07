@@ -14,44 +14,31 @@ import argparse
 import json
 import os
 import sys
+from pathlib import Path
 from datetime import datetime, time, timedelta, timezone
 
 from sqlalchemy import select
 
 from app.database import SessionLocal, init_db
-from app.models import Coupon, CouponOmbre, Match, Run
+from app.models import Coupon, MemoireAgent, Match, Run
 from app.services import pipeline
 from app.services.bilan import envoyer_bilans
+from app.garde import ticket_deja_produit_aujourdhui
 from app.services.runs import cloturer_runs_interrompus, executer_run
-from app.services import analyse_coupons, github_actions, plan_verification
+from app.services import alertes, analyse_coupons, github_actions, plan_verification
 from app.services.verification import etat_live_jambes, verification_due, verifier_coupons_en_attente
-
-
-def ticket_deja_produit_aujourdhui(db):
-    """Les passages planifiés (plusieurs, GitHub pouvant en sauter) ne lancent le pipeline que
-    si aucun coupon n'est encore parti sur Telegram aujourd'hui et qu'aucun run n'est en cours.
-    Un run manuel sans envoi Telegram ne bloque pas le passage du jour."""
-    aujourd_hui = datetime.now(timezone.utc).date()
-    debut_du_jour = datetime.combine(aujourd_hui, time.min, tzinfo=timezone.utc)
-    if db.scalar(select(Run).where(
-            Run.source == "api", Run.lance_le >= debut_du_jour,
-            (Run.statut == "en_cours") | ((Run.statut == "termine") & Run.envoye_telegram.is_(True)))) is not None:
-        return True
-    # Coupons préparés ET envoyés la veille pour les matchs d'AUJOURD'HUI (ex. utilisateur en voyage) : le jour est couvert,
-    # pas de second envoi. Seuls comptent les runs terminés et envoyés dont des matchs ont leur coup d'envoi aujourd'hui.
-    debut_veille = datetime.combine(aujourd_hui, time.min, tzinfo=timezone.utc) - timedelta(days=2)
-    fin_du_jour = debut_du_jour + timedelta(days=1)
-    return db.scalar(
-        select(Run.id).join(Match, Match.run_id == Run.id).where(
-            Run.source == "api", Run.statut == "termine", Run.envoye_telegram.is_(True),
-            Run.lance_le >= debut_veille, Run.lance_le < debut_du_jour,
-            Match.coup_envoi >= debut_du_jour, Match.coup_envoi < fin_du_jour).limit(1)) is not None
 
 
 def tache_run(args):
     with SessionLocal() as db:
         if args.si_aucun_ticket_aujourdhui and ticket_deja_produit_aujourdhui(db):
             print("ℹ️ Ticket du jour déjà produit (ou run en cours) — pas de relance.")
+            if args.telegram:   # dernier passage de la fenêtre sans aucun coupon envoyé (run bloqué) : on prévient
+                try:
+                    _, ae, _ = pipeline.modules()
+                    alertes.envoyer_alerte_passage_saute(db, ae.notifier_telegram)
+                except Exception as e:
+                    print(f"⚠️ Alerte Telegram impossible : {str(e)[:150]}")
             return 0
         run = Run(source="api", statut="en_cours")
         db.add(run)
@@ -82,6 +69,15 @@ def tache_run(args):
             tache_planifier(argparse.Namespace(run_id=run_id, coupons="", telegram=True, sans_ia=False))
         except Exception as e:
             print(f"⚠️ Planification de la vérification impossible : {e}")
+    if args.telegram:   # plus d'échec silencieux : abandon, erreur ou envoi partiel sont signalés (jamais bloquant)
+        try:
+            _, ae, _ = pipeline.modules()
+            with SessionLocal() as db:
+                alertes.envoyer_alerte_si_besoin(db, run_id, ae.notifier_telegram, cron=bool(args.si_aucun_ticket_aujourdhui))
+                alertes.envoyer_alerte_budget(db, run_id, ae.notifier_telegram)
+                alertes.envoyer_alerte_seuil_budget(db, run_id, ae.notifier_telegram)
+        except Exception as e:
+            print(f"⚠️ Alerte Telegram impossible : {str(e)[:150]}")
     return 1 if statut == "erreur" else 0
 
 
@@ -89,13 +85,6 @@ def tache_verifier(args):
     with SessionLocal() as db:
         compte = verifier_coupons_en_attente(db)
         print(f"🔎 Jambes jugées : {dict(compte) or 'aucune (rien en attente ou matchs pas terminés)'}")
-        try:  # jambes « en ombre » (paris écartés, modèles comparés) : jugées avec les mêmes résultats ; jamais bloquant
-            from app.services import ombre_persistance
-            compte_ombre = ombre_persistance.juger_ombre(db)
-            if compte_ombre:
-                print(f"🕶️ Jambes en ombre jugées : {dict(compte_ombre)}")
-        except Exception as e:
-            print(f"ℹ️ Jugement des jambes en ombre impossible : {str(e)[:120]}")
         if args.telegram:
             _, ae, _ = pipeline.modules()
             # Heure limite du plan dépassée : rapport final envoyé même si un match manque (partiel).
@@ -119,18 +108,50 @@ def tache_verifier(args):
     return 0
 
 
-def tache_rapport_ombre(args):
-    """Rapport du suivi en ombre : paris écartés contre gardés, comparaison de modèles (réussite, bande, tokens, coût)."""
-    from app.services import ombre_persistance
+def tache_budget(args):
+    """Dépenses IA mesurées (lecture seule) : par jour, par modèle, gagnants du vote, budget restant aujourd'hui."""
+    from app.services import budget
     with SessionLocal() as db:
-        print(ombre_persistance.rapport(db, jours=args.jours))
+        r = budget.resume(db, jours=args.jours)
+        plafond = r["plafond_jour_usd"]
+        print(f"💰 Plafond journalier : {'aucun' if plafond is None else f'{plafond:.2f} $'} · dépensé aujourd'hui : {r['depense_aujourdhui_usd']:.2f} $"
+              + ("" if plafond is None else f" · restant : {max(0.0, plafond - r['depense_aujourdhui_usd']):.2f} $"))
+        for jour, total in r["par_jour"].items():
+            print(f"   {jour} : {total:.2f} $")
+        for modele, v in r["par_modele"].items():
+            print(f"   {modele} : {v['cout_usd']:.2f} $ · {v['tokens_entree']} → {v['tokens_sortie']} tokens · {v['appels']} appel(s) · "
+                  f"{v['coupons_retenus']} coupon(s) retenu(s)")
     return 0
 
 
 def tache_apprendre(args):
-    """Étudie les jours déjà jugés (erreurs, jambes tueuses, fiabilité des probabilités) et alimente la mémoire de l'agent."""
+    """Étudie les jours déjà jugés (erreurs, jambes tueuses, fiabilité des probabilités) et alimente la mémoire de l'agent.
+    --exporter FICHIER : copie la mémoire dans un fichier JSON (lecture seule, refuse d'écraser un fichier existant).
+    --apercu : calcule les nouvelles études des jours demandés (coupons ENVOYÉS seulement) et les affiche à côté des anciennes,
+    SANS rien écrire ni supprimer (aucune validation requise : c'est le mode de contrôle avant `--refaire`)."""
     from app.services import apprentissage
     with SessionLocal() as db:
+        if getattr(args, "exporter", None):
+            chemin = Path(args.exporter)
+            if chemin.exists():
+                print(f"❌ {chemin} existe déjà : sauvegarde non écrasée.")
+                return 1
+            lignes = apprentissage.exporter_memoire(db)
+            chemin.write_text(json.dumps(lignes, ensure_ascii=False, indent=1), encoding="utf-8")
+            print(f"💾 {len(lignes)} étude(s) sauvegardée(s) dans {chemin} (base inchangée).")
+            return 0
+        if getattr(args, "apercu", False):
+            if not args.jour:
+                print("❌ --apercu demande --jour AAAA-MM-JJ[,AAAA-MM-JJ...]")
+                return 1
+            for jour in (j.strip() for j in args.jour.split(",") if j.strip()):
+                jour_date = datetime.fromisoformat(jour).date()
+                ancienne = db.scalars(select(MemoireAgent).where(MemoireAgent.jour == jour_date, MemoireAgent.type == "etude")).first()
+                nouvelle = apprentissage.etudier_jour(db, jour_date, avec_ia=not args.sans_ia, refaire=True, ecrire=False)
+                print(f"\n===== {jour} =====\n--- ANCIENNE ÉTUDE ---\n{ancienne.contenu if ancienne else '(aucune)'}\n"
+                      f"--- NOUVELLE ÉTUDE (coupons envoyés seulement) ---\n{nouvelle or '(aucun coupon envoyé entièrement jugé : rien à étudier)'}")
+            print("\nℹ️ Aperçu seulement : aucune écriture en base.")
+            return 0
         if args.jour:
             texte = apprentissage.etudier_jour(db, datetime.fromisoformat(args.jour).date(), avec_ia=not args.sans_ia, refaire=args.refaire)
             print(texte or f"ℹ️ Rien à étudier pour {args.jour} (déjà étudié, ou coupons pas tous jugés).")
@@ -147,7 +168,10 @@ def plan_verification_a_cloturer(db):
     clos = []
     for pv in db.scalars(select(PlanVerification).where(PlanVerification.rapport_final_envoye.is_(False))):
         coupons = list(db.scalars(select(Coupon).where(Coupon.run_id == pv.run_id)))
-        if coupons and all(c.bilan_envoye or not c.jambes for c in coupons):
+        run = db.get(Run, pv.run_id)
+        if run is not None and not run.envoye_telegram:   # run jamais envoyé : aucun bilan ne viendra, le plan ne reste pas ouvert
+            clos.append(pv)
+        elif coupons and all(c.bilan_envoye or not c.jambes for c in coupons):
             clos.append(pv)
     return clos
 
@@ -244,40 +268,6 @@ def tache_envoyer(args):
         print(f"{'✅' if run.envoye_telegram else '❌'} Run {run.id} : {len(textes)} coupon(s) "
               f"{'envoyé(s)' if run.envoye_telegram else 'non envoyé(s) — voir erreur Telegram ci-dessus'}")
         return 0 if run.envoye_telegram else 1
-
-
-def tache_envoyer_ombre(args):
-    """Envoie sur Telegram les coupons d'UN modèle comparé en ombre (ex. GPT-6.1 Sol du run 269), sur demande explicite.
-    Chaque message porte le nom du modèle. Jamais deux fois sans --forcer (statut « envoye »)."""
-    from sqlalchemy.orm import selectinload
-
-    with SessionLocal() as db:
-        coupons = list(db.scalars(select(CouponOmbre).options(selectinload(CouponOmbre.jambes))
-                                  .where(CouponOmbre.run_id == args.run_id, CouponOmbre.modele == args.modele,
-                                         CouponOmbre.profil != "_resume").order_by(CouponOmbre.profil)))
-        if not coupons:
-            print(f"❌ Aucun coupon du modèle {args.modele} pour le run {args.run_id}.")
-            return 1
-        if all(c.statut == "envoye" for c in coupons) and not args.forcer:
-            print("ℹ️ Déjà envoyés sur Telegram — rien à faire (--forcer pour renvoyer).")
-            return 0
-        noms = {c.profil: c.nom for c in db.scalars(select(Coupon).where(Coupon.run_id == args.run_id))}
-        _, ae, _ = pipeline.modules()
-        from formatage_tickets import rediger_ticket_court
-        etiquette = args.etiquette or args.modele.split("/")[-1]
-        textes = []
-        for c in coupons:
-            sels = [{"match": j.libelle_match, "pick": {"categorie": j.categorie, "marche": j.marche, "selection": j.selection,
-                                                          "handicap": j.handicap, "cote": j.cote}} for j in c.jambes]
-            nom = noms.get(c.profil) or c.profil
-            textes.append(f"*{nom} — cote {c.cote_totale}* ({len(sels)} jambes) · 🤖 {etiquette}\n\n{rediger_ticket_court(sels)}")
-        ok = bool(ae.agent5_envoyer_coupons(textes))
-        if ok:
-            for c in coupons:
-                c.statut = "envoye"
-            db.commit()
-        print(f"{'✅' if ok else '❌'} {len(textes)} coupon(s) {etiquette} {'envoyé(s)' if ok else 'non envoyé(s)'}")
-        return 0 if ok else 1
 
 
 def tache_backfill(args):
@@ -608,19 +598,15 @@ def main(argv=None):
     p_envoi = sous.add_parser("envoyer", help="envoie sur Telegram les coupons déjà calculés d'un run")
     p_envoi.add_argument("--run-id", type=int, help="numéro du run (défaut : dernier run terminé)")
     p_envoi.add_argument("--forcer", action="store_true", help="renvoie même si déjà envoyé")
-    p_eo = sous.add_parser("envoyer-ombre", help="envoie sur Telegram les coupons d'un modèle comparé en ombre")
-    p_eo.add_argument("--run-id", type=int, required=True)
-    p_eo.add_argument("--modele", required=True, help="ex. openai/gpt-6.1-sol")
-    p_eo.add_argument("--etiquette", default="", help="nom affiché dans le message (défaut : fin de l'identifiant)")
-    p_eo.add_argument("--forcer", action="store_true")
-    p_envoi.add_argument("--coupons", default="", help="numéros de coupons à envoyer, séparés par des virgules (défaut : tous ceux du run)")
-    p_ombre = sous.add_parser("rapport-ombre", help="rapport du suivi en ombre (paris écartés, comparaison de modèles)")
-    p_ombre.add_argument("--jours", type=int, default=30)
     p_appr = sous.add_parser("apprendre", help="étudie les erreurs des jours jugés et alimente la mémoire de l'agent")
     p_appr.add_argument("--jour", help="AAAA-MM-JJ : étudie ce jour seulement")
     p_appr.add_argument("--jours", type=int, default=14, help="sinon : étudie les N derniers jours jugés (défaut 14)")
     p_appr.add_argument("--sans-ia", action="store_true", help="leçons déterministes uniquement")
     p_appr.add_argument("--refaire", action="store_true", help="recalcule et remplace les études déjà enregistrées")
+    p_appr.add_argument("--apercu", action="store_true", help="avec --jour (liste séparée par des virgules) : affiche ancienne et nouvelle étude, sans rien écrire")
+    p_appr.add_argument("--exporter", metavar="FICHIER", help="sauvegarde la mémoire dans ce fichier JSON (lecture seule)")
+    p_budget = sous.add_parser("budget", help="dépenses IA mesurées (par jour, par modèle) et budget restant, lecture seule")
+    p_budget.add_argument("--jours", type=int, default=7, help="nombre de jours affichés (défaut 7)")
     sous.add_parser("tester-api", help="vérifie l'Edge Function api en ligne (jeton du Vault)")
     sous.add_parser("modeles-gratuits", help="liste les modèles gratuits d'OpenRouter (identifiants exacts)")
     sous.add_parser("tester-ia", help="teste les clés Groq, Gemini et OpenRouter avec une vraie réponse")
@@ -648,7 +634,7 @@ def main(argv=None):
     with SessionLocal() as db:
         cloturer_runs_interrompus(db)
     taches = {"run": tache_run, "verifier": tache_verifier, "planifier-verification": tache_planifier, "live": tache_live, "envoyer": tache_envoyer,
-              "tester-api": tache_tester_api, "backfill": tache_backfill, "apprendre": tache_apprendre, "rapport-ombre": tache_rapport_ombre, "envoyer-ombre": tache_envoyer_ombre}
+              "tester-api": tache_tester_api, "backfill": tache_backfill, "apprendre": tache_apprendre, "budget": tache_budget}
     return taches[args.tache](args)
 
 

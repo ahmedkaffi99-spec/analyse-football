@@ -1,0 +1,251 @@
+match_id,run_id,domicile,exterieur,ancienne_valeur_coup_envoi,nouvelle_valeur_coup_envoi_UTC,source_match_id,source_run_id,source,confiance,confirmation
+37,4,El Salvador,Martinique,NULL,2026-09-26 03:00,8,2,"heure du match 8 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+39,4,Kenya,Eritrea,NULL,2026-09-26 13:00,19,2,"heure du match 19 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+40,4,South Africa,Guinea,NULL,2026-09-26 13:00,20,2,"heure du match 20 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+41,4,Slovenia,Scotland,NULL,2026-09-26 13:00,9,2,"heure du match 9 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+46,4,Bulgaria,Luxembourg,NULL,2026-09-26 16:00,10,2,"heure du match 10 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+47,4,Iceland,Estonia,NULL,2026-09-26 16:00,11,2,"heure du match 11 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+48,4,Faroe Islands,Kazakhstan,NULL,2026-09-26 16:00,12,2,"heure du match 12 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+49,4,San Marino,Finland,NULL,2026-09-26 16:00,13,2,"heure du match 13 (run 2), mêmes équipes, une seule heure candidate",moyenne,mêmes équipes et domicile/extérieur ; fixture oddspapi différente entre les deux runs
+55,4,England,Spain,NULL,2026-09-26 18:45,15,2,"heure du match 15 (run 2), mêmes équipes, une seule heure candidate",moyenne,mêmes équipes et domicile/extérieur ; fixture oddspapi différente entre les deux runs
+56,4,Slovakia,Moldova,NULL,2026-09-26 18:45,14,2,"heure du match 14 (run 2), mêmes équipes, une seule heure candidate",moyenne,mêmes équipes et domicile/extérieur ; fixture oddspapi différente entre les deux runs
+57,4,Albania,Belarus,NULL,2026-09-26 18:45,16,2,"heure du match 16 (run 2), mêmes équipes, une seule heure candidate",moyenne,mêmes équipes et domicile/extérieur ; fixture oddspapi différente entre les deux runs
+66,4,Lithuania,Azerbaijan,NULL,2026-09-27 13:00,382,29,"heure du match 382 (run 29), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+67,5,El Salvador,Martinique,NULL,2026-09-26 03:00,8,2,"heure du match 8 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+69,5,Kenya,Eritrea,NULL,2026-09-26 13:00,19,2,"heure du match 19 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+70,5,South Africa,Guinea,NULL,2026-09-26 13:00,20,2,"heure du match 20 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+71,5,Slovenia,Scotland,NULL,2026-09-26 13:00,9,2,"heure du match 9 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+76,5,Bulgaria,Luxembourg,NULL,2026-09-26 16:00,10,2,"heure du match 10 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+77,5,Iceland,Estonia,NULL,2026-09-26 16:00,11,2,"heure du match 11 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+78,5,Faroe Islands,Kazakhstan,NULL,2026-09-26 16:00,12,2,"heure du match 12 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+79,5,San Marino,Finland,NULL,2026-09-26 16:00,13,2,"heure du match 13 (run 2), mêmes équipes, une seule heure candidate",moyenne,mêmes équipes et domicile/extérieur ; fixture oddspapi différente entre les deux runs
+85,5,England,Spain,NULL,2026-09-26 18:45,15,2,"heure du match 15 (run 2), mêmes équipes, une seule heure candidate",forte,fixture API-Football identique
+86,5,Slovakia,Moldova,NULL,2026-09-26 18:45,14,2,"heure du match 14 (run 2), mêmes équipes, une seule heure candidate",moyenne,mêmes équipes et domicile/extérieur ; fixture oddspapi différente entre les deux runs
+87,5,Albania,Belarus,NULL,2026-09-26 18:45,16,2,"heure du match 16 (run 2), mêmes équipes, une seule heure candidate",forte,fixture API-Football identique
+96,5,Lithuania,Azerbaijan,NULL,2026-09-27 13:00,382,29,"heure du match 382 (run 29), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+97,7,El Salvador,Martinique,NULL,2026-09-26 03:00,8,2,"heure du match 8 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+99,7,Kenya,Eritrea,NULL,2026-09-26 13:00,19,2,"heure du match 19 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+100,7,South Africa,Guinea,NULL,2026-09-26 13:00,20,2,"heure du match 20 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+101,7,Slovenia,Scotland,NULL,2026-09-26 13:00,9,2,"heure du match 9 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+106,7,Bulgaria,Luxembourg,NULL,2026-09-26 16:00,10,2,"heure du match 10 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+107,7,Iceland,Estonia,NULL,2026-09-26 16:00,11,2,"heure du match 11 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+108,7,Faroe Islands,Kazakhstan,NULL,2026-09-26 16:00,12,2,"heure du match 12 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+109,7,San Marino,Finland,NULL,2026-09-26 16:00,13,2,"heure du match 13 (run 2), mêmes équipes, une seule heure candidate",moyenne,mêmes équipes et domicile/extérieur ; fixture oddspapi différente entre les deux runs
+115,7,England,Spain,NULL,2026-09-26 18:45,15,2,"heure du match 15 (run 2), mêmes équipes, une seule heure candidate",moyenne,mêmes équipes et domicile/extérieur ; fixture oddspapi différente entre les deux runs
+116,7,Slovakia,Moldova,NULL,2026-09-26 18:45,14,2,"heure du match 14 (run 2), mêmes équipes, une seule heure candidate",moyenne,mêmes équipes et domicile/extérieur ; fixture oddspapi différente entre les deux runs
+117,7,Albania,Belarus,NULL,2026-09-26 18:45,16,2,"heure du match 16 (run 2), mêmes équipes, une seule heure candidate",moyenne,mêmes équipes et domicile/extérieur ; fixture oddspapi différente entre les deux runs
+126,7,Lithuania,Azerbaijan,NULL,2026-09-27 13:00,382,29,"heure du match 382 (run 29), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+127,8,El Salvador,Martinique,NULL,2026-09-26 03:00,8,2,"heure du match 8 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+129,8,Slovenia,Scotland,NULL,2026-09-26 13:00,9,2,"heure du match 9 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+134,8,Bulgaria,Luxembourg,NULL,2026-09-26 16:00,10,2,"heure du match 10 (run 2), mêmes équipes, une seule heure candidate",forte,fixture API-Football identique
+135,8,Iceland,Estonia,NULL,2026-09-26 16:00,11,2,"heure du match 11 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+136,8,Faroe Islands,Kazakhstan,NULL,2026-09-26 16:00,12,2,"heure du match 12 (run 2), mêmes équipes, une seule heure candidate",forte,fixture API-Football identique
+137,8,San Marino,Finland,NULL,2026-09-26 16:00,13,2,"heure du match 13 (run 2), mêmes équipes, une seule heure candidate",moyenne,mêmes équipes et domicile/extérieur ; fixture oddspapi différente entre les deux runs
+142,9,Slovenia,Scotland,NULL,2026-09-26 13:00,9,2,"heure du match 9 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+147,9,Bulgaria,Luxembourg,NULL,2026-09-26 16:00,10,2,"heure du match 10 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+148,9,Iceland,Estonia,NULL,2026-09-26 16:00,11,2,"heure du match 11 (run 2), mêmes équipes, une seule heure candidate",forte,fixture API-Football identique
+149,9,Faroe Islands,Kazakhstan,NULL,2026-09-26 16:00,12,2,"heure du match 12 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+150,9,San Marino,Finland,NULL,2026-09-26 16:00,13,2,"heure du match 13 (run 2), mêmes équipes, une seule heure candidate",moyenne,mêmes équipes et domicile/extérieur ; fixture oddspapi différente entre les deux runs
+155,9,England,Spain,NULL,2026-09-26 18:45,15,2,"heure du match 15 (run 2), mêmes équipes, une seule heure candidate",moyenne,mêmes équipes et domicile/extérieur ; fixture oddspapi différente entre les deux runs
+156,9,Slovakia,Moldova,NULL,2026-09-26 18:45,14,2,"heure du match 14 (run 2), mêmes équipes, une seule heure candidate",moyenne,mêmes équipes et domicile/extérieur ; fixture oddspapi différente entre les deux runs
+157,10,Slovenia,Scotland,NULL,2026-09-26 13:00,9,2,"heure du match 9 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+162,10,Bulgaria,Luxembourg,NULL,2026-09-26 16:00,10,2,"heure du match 10 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+163,10,Iceland,Estonia,NULL,2026-09-26 16:00,11,2,"heure du match 11 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+164,10,Faroe Islands,Kazakhstan,NULL,2026-09-26 16:00,12,2,"heure du match 12 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+165,10,San Marino,Finland,NULL,2026-09-26 16:00,13,2,"heure du match 13 (run 2), mêmes équipes, une seule heure candidate",moyenne,mêmes équipes et domicile/extérieur ; fixture oddspapi différente entre les deux runs
+170,10,England,Spain,NULL,2026-09-26 18:45,15,2,"heure du match 15 (run 2), mêmes équipes, une seule heure candidate",moyenne,mêmes équipes et domicile/extérieur ; fixture oddspapi différente entre les deux runs
+171,10,Slovakia,Moldova,NULL,2026-09-26 18:45,14,2,"heure du match 14 (run 2), mêmes équipes, une seule heure candidate",moyenne,mêmes équipes et domicile/extérieur ; fixture oddspapi différente entre les deux runs
+172,11,Slovenia,Scotland,NULL,2026-09-26 13:00,9,2,"heure du match 9 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+177,11,Bulgaria,Luxembourg,NULL,2026-09-26 16:00,10,2,"heure du match 10 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+178,11,Iceland,Estonia,NULL,2026-09-26 16:00,11,2,"heure du match 11 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+179,11,Faroe Islands,Kazakhstan,NULL,2026-09-26 16:00,12,2,"heure du match 12 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+180,11,San Marino,Finland,NULL,2026-09-26 16:00,13,2,"heure du match 13 (run 2), mêmes équipes, une seule heure candidate",moyenne,mêmes équipes et domicile/extérieur ; fixture oddspapi différente entre les deux runs
+185,11,England,Spain,NULL,2026-09-26 18:45,15,2,"heure du match 15 (run 2), mêmes équipes, une seule heure candidate",moyenne,mêmes équipes et domicile/extérieur ; fixture oddspapi différente entre les deux runs
+186,11,Slovakia,Moldova,NULL,2026-09-26 18:45,14,2,"heure du match 14 (run 2), mêmes équipes, une seule heure candidate",moyenne,mêmes équipes et domicile/extérieur ; fixture oddspapi différente entre les deux runs
+191,12,Bulgaria,Luxembourg,NULL,2026-09-26 16:00,10,2,"heure du match 10 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+192,12,Iceland,Estonia,NULL,2026-09-26 16:00,11,2,"heure du match 11 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+193,12,Faroe Islands,Kazakhstan,NULL,2026-09-26 16:00,12,2,"heure du match 12 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+194,12,San Marino,Finland,NULL,2026-09-26 16:00,13,2,"heure du match 13 (run 2), mêmes équipes, une seule heure candidate",moyenne,mêmes équipes et domicile/extérieur ; fixture oddspapi différente entre les deux runs
+199,12,England,Spain,NULL,2026-09-26 18:45,15,2,"heure du match 15 (run 2), mêmes équipes, une seule heure candidate",moyenne,mêmes équipes et domicile/extérieur ; fixture oddspapi différente entre les deux runs
+200,12,Slovakia,Moldova,NULL,2026-09-26 18:45,14,2,"heure du match 14 (run 2), mêmes équipes, une seule heure candidate",moyenne,mêmes équipes et domicile/extérieur ; fixture oddspapi différente entre les deux runs
+201,12,Albania,Belarus,NULL,2026-09-26 18:45,16,2,"heure du match 16 (run 2), mêmes équipes, une seule heure candidate",forte,fixture API-Football identique
+204,14,Mexico,Colombia,NULL,2026-09-27 01:00,376,29,"heure du match 376 (run 29), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+206,14,Slovakia,Moldova,NULL,2026-09-26 18:45,14,2,"heure du match 14 (run 2), mêmes équipes, une seule heure candidate",moyenne,mêmes équipes et domicile/extérieur ; fixture oddspapi différente entre les deux runs
+208,14,Faroe Islands,Kazakhstan,NULL,2026-09-26 16:00,12,2,"heure du match 12 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+209,14,Albania,Belarus,NULL,2026-09-26 18:45,16,2,"heure du match 16 (run 2), mêmes équipes, une seule heure candidate",forte,fixture API-Football identique
+210,14,England,Spain,NULL,2026-09-26 18:45,15,2,"heure du match 15 (run 2), mêmes équipes, une seule heure candidate",forte,fixture API-Football identique
+211,14,Bulgaria,Luxembourg,NULL,2026-09-26 16:00,10,2,"heure du match 10 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+212,14,Iceland,Estonia,NULL,2026-09-26 16:00,11,2,"heure du match 11 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+213,14,San Marino,Finland,NULL,2026-09-26 16:00,13,2,"heure du match 13 (run 2), mêmes équipes, une seule heure candidate",moyenne,mêmes équipes et domicile/extérieur ; fixture oddspapi différente entre les deux runs
+214,14,Lithuania,Azerbaijan,NULL,2026-09-27 13:00,382,29,"heure du match 382 (run 29), mêmes équipes, une seule heure candidate",forte,fixture API-Football identique
+217,15,Mexico,Colombia,NULL,2026-09-27 01:00,376,29,"heure du match 376 (run 29), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+219,15,Slovakia,Moldova,NULL,2026-09-26 18:45,14,2,"heure du match 14 (run 2), mêmes équipes, une seule heure candidate",moyenne,mêmes équipes et domicile/extérieur ; fixture oddspapi différente entre les deux runs
+221,15,Faroe Islands,Kazakhstan,NULL,2026-09-26 16:00,12,2,"heure du match 12 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+222,15,Albania,Belarus,NULL,2026-09-26 18:45,16,2,"heure du match 16 (run 2), mêmes équipes, une seule heure candidate",moyenne,mêmes équipes et domicile/extérieur ; fixture oddspapi différente entre les deux runs
+223,15,England,Spain,NULL,2026-09-26 18:45,15,2,"heure du match 15 (run 2), mêmes équipes, une seule heure candidate",forte,fixture API-Football identique
+224,15,Bulgaria,Luxembourg,NULL,2026-09-26 16:00,10,2,"heure du match 10 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+225,15,Iceland,Estonia,NULL,2026-09-26 16:00,11,2,"heure du match 11 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+226,15,San Marino,Finland,NULL,2026-09-26 16:00,13,2,"heure du match 13 (run 2), mêmes équipes, une seule heure candidate",moyenne,mêmes équipes et domicile/extérieur ; fixture oddspapi différente entre les deux runs
+227,15,Lithuania,Azerbaijan,NULL,2026-09-27 13:00,382,29,"heure du match 382 (run 29), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+230,16,Mexico,Colombia,NULL,2026-09-27 01:00,376,29,"heure du match 376 (run 29), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+232,16,Slovakia,Moldova,NULL,2026-09-26 18:45,14,2,"heure du match 14 (run 2), mêmes équipes, une seule heure candidate",moyenne,mêmes équipes et domicile/extérieur ; fixture oddspapi différente entre les deux runs
+234,16,Faroe Islands,Kazakhstan,NULL,2026-09-26 16:00,12,2,"heure du match 12 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+235,16,Albania,Belarus,NULL,2026-09-26 18:45,16,2,"heure du match 16 (run 2), mêmes équipes, une seule heure candidate",moyenne,mêmes équipes et domicile/extérieur ; fixture oddspapi différente entre les deux runs
+236,16,England,Spain,NULL,2026-09-26 18:45,15,2,"heure du match 15 (run 2), mêmes équipes, une seule heure candidate",moyenne,mêmes équipes et domicile/extérieur ; fixture oddspapi différente entre les deux runs
+237,16,Bulgaria,Luxembourg,NULL,2026-09-26 16:00,10,2,"heure du match 10 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+238,16,Iceland,Estonia,NULL,2026-09-26 16:00,11,2,"heure du match 11 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+239,16,San Marino,Finland,NULL,2026-09-26 16:00,13,2,"heure du match 13 (run 2), mêmes équipes, une seule heure candidate",moyenne,mêmes équipes et domicile/extérieur ; fixture oddspapi différente entre les deux runs
+240,16,Lithuania,Azerbaijan,NULL,2026-09-27 13:00,382,29,"heure du match 382 (run 29), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+243,17,Mexico,Colombia,NULL,2026-09-27 01:00,376,29,"heure du match 376 (run 29), mêmes équipes, une seule heure candidate",faible,mêmes équipes seulement (le match à corriger n'a aucun identifiant de fixture)
+245,17,Slovakia,Moldova,NULL,2026-09-26 18:45,14,2,"heure du match 14 (run 2), mêmes équipes, une seule heure candidate",faible,mêmes équipes seulement (le match à corriger n'a aucun identifiant de fixture)
+247,17,Faroe Islands,Kazakhstan,NULL,2026-09-26 16:00,12,2,"heure du match 12 (run 2), mêmes équipes, une seule heure candidate",faible,mêmes équipes seulement (le match à corriger n'a aucun identifiant de fixture)
+248,17,Albania,Belarus,NULL,2026-09-26 18:45,16,2,"heure du match 16 (run 2), mêmes équipes, une seule heure candidate",faible,mêmes équipes seulement (le match à corriger n'a aucun identifiant de fixture)
+249,17,England,Spain,NULL,2026-09-26 18:45,15,2,"heure du match 15 (run 2), mêmes équipes, une seule heure candidate",faible,mêmes équipes seulement (le match à corriger n'a aucun identifiant de fixture)
+250,17,Bulgaria,Luxembourg,NULL,2026-09-26 16:00,10,2,"heure du match 10 (run 2), mêmes équipes, une seule heure candidate",faible,mêmes équipes seulement (le match à corriger n'a aucun identifiant de fixture)
+251,17,Iceland,Estonia,NULL,2026-09-26 16:00,11,2,"heure du match 11 (run 2), mêmes équipes, une seule heure candidate",faible,mêmes équipes seulement (le match à corriger n'a aucun identifiant de fixture)
+252,17,San Marino,Finland,NULL,2026-09-26 16:00,13,2,"heure du match 13 (run 2), mêmes équipes, une seule heure candidate",faible,mêmes équipes seulement (le match à corriger n'a aucun identifiant de fixture)
+253,17,Lithuania,Azerbaijan,NULL,2026-09-27 13:00,382,29,"heure du match 382 (run 29), mêmes équipes, une seule heure candidate",faible,mêmes équipes seulement (le match à corriger n'a aucun identifiant de fixture)
+256,20,Mexico,Colombia,NULL,2026-09-27 01:00,376,29,"heure du match 376 (run 29), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+258,20,Slovakia,Moldova,NULL,2026-09-26 18:45,14,2,"heure du match 14 (run 2), mêmes équipes, une seule heure candidate",forte,fixture API-Football identique
+260,20,Faroe Islands,Kazakhstan,NULL,2026-09-26 16:00,12,2,"heure du match 12 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+261,20,Albania,Belarus,NULL,2026-09-26 18:45,16,2,"heure du match 16 (run 2), mêmes équipes, une seule heure candidate",forte,fixture API-Football identique
+262,20,England,Spain,NULL,2026-09-26 18:45,15,2,"heure du match 15 (run 2), mêmes équipes, une seule heure candidate",forte,fixture API-Football identique
+263,20,Bulgaria,Luxembourg,NULL,2026-09-26 16:00,10,2,"heure du match 10 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+264,20,Iceland,Estonia,NULL,2026-09-26 16:00,11,2,"heure du match 11 (run 2), mêmes équipes, une seule heure candidate",forte,fixture API-Football identique
+265,20,San Marino,Finland,NULL,2026-09-26 16:00,13,2,"heure du match 13 (run 2), mêmes équipes, une seule heure candidate",moyenne,mêmes équipes et domicile/extérieur ; fixture oddspapi différente entre les deux runs
+266,20,Lithuania,Azerbaijan,NULL,2026-09-27 13:00,382,29,"heure du match 382 (run 29), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+269,21,Mexico,Colombia,NULL,2026-09-27 01:00,376,29,"heure du match 376 (run 29), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+271,21,Slovakia,Moldova,NULL,2026-09-26 18:45,14,2,"heure du match 14 (run 2), mêmes équipes, une seule heure candidate",forte,fixture API-Football identique
+273,21,Faroe Islands,Kazakhstan,NULL,2026-09-26 16:00,12,2,"heure du match 12 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+274,21,Albania,Belarus,NULL,2026-09-26 18:45,16,2,"heure du match 16 (run 2), mêmes équipes, une seule heure candidate",forte,fixture API-Football identique
+275,21,England,Spain,NULL,2026-09-26 18:45,15,2,"heure du match 15 (run 2), mêmes équipes, une seule heure candidate",forte,fixture API-Football identique
+276,21,Bulgaria,Luxembourg,NULL,2026-09-26 16:00,10,2,"heure du match 10 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+277,21,Iceland,Estonia,NULL,2026-09-26 16:00,11,2,"heure du match 11 (run 2), mêmes équipes, une seule heure candidate",forte,fixture API-Football identique
+278,21,San Marino,Finland,NULL,2026-09-26 16:00,13,2,"heure du match 13 (run 2), mêmes équipes, une seule heure candidate",moyenne,mêmes équipes et domicile/extérieur ; fixture oddspapi différente entre les deux runs
+279,21,Lithuania,Azerbaijan,NULL,2026-09-27 13:00,382,29,"heure du match 382 (run 29), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+282,22,Mexico,Colombia,NULL,2026-09-27 01:00,376,29,"heure du match 376 (run 29), mêmes équipes, une seule heure candidate",faible,mêmes équipes seulement (le match à corriger n'a aucun identifiant de fixture)
+284,22,Slovakia,Moldova,NULL,2026-09-26 18:45,14,2,"heure du match 14 (run 2), mêmes équipes, une seule heure candidate",faible,mêmes équipes seulement (le match à corriger n'a aucun identifiant de fixture)
+286,22,Faroe Islands,Kazakhstan,NULL,2026-09-26 16:00,12,2,"heure du match 12 (run 2), mêmes équipes, une seule heure candidate",faible,mêmes équipes seulement (le match à corriger n'a aucun identifiant de fixture)
+287,22,Albania,Belarus,NULL,2026-09-26 18:45,16,2,"heure du match 16 (run 2), mêmes équipes, une seule heure candidate",faible,mêmes équipes seulement (le match à corriger n'a aucun identifiant de fixture)
+288,22,England,Spain,NULL,2026-09-26 18:45,15,2,"heure du match 15 (run 2), mêmes équipes, une seule heure candidate",faible,mêmes équipes seulement (le match à corriger n'a aucun identifiant de fixture)
+289,22,Bulgaria,Luxembourg,NULL,2026-09-26 16:00,10,2,"heure du match 10 (run 2), mêmes équipes, une seule heure candidate",faible,mêmes équipes seulement (le match à corriger n'a aucun identifiant de fixture)
+290,22,Iceland,Estonia,NULL,2026-09-26 16:00,11,2,"heure du match 11 (run 2), mêmes équipes, une seule heure candidate",faible,mêmes équipes seulement (le match à corriger n'a aucun identifiant de fixture)
+291,22,San Marino,Finland,NULL,2026-09-26 16:00,13,2,"heure du match 13 (run 2), mêmes équipes, une seule heure candidate",faible,mêmes équipes seulement (le match à corriger n'a aucun identifiant de fixture)
+292,22,Lithuania,Azerbaijan,NULL,2026-09-27 13:00,382,29,"heure du match 382 (run 29), mêmes équipes, une seule heure candidate",faible,mêmes équipes seulement (le match à corriger n'a aucun identifiant de fixture)
+295,23,Mexico,Colombia,NULL,2026-09-27 01:00,376,29,"heure du match 376 (run 29), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+297,23,Slovakia,Moldova,NULL,2026-09-26 18:45,14,2,"heure du match 14 (run 2), mêmes équipes, une seule heure candidate",forte,fixture API-Football identique
+299,23,Faroe Islands,Kazakhstan,NULL,2026-09-26 16:00,12,2,"heure du match 12 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+300,23,Albania,Belarus,NULL,2026-09-26 18:45,16,2,"heure du match 16 (run 2), mêmes équipes, une seule heure candidate",forte,fixture API-Football identique
+301,23,England,Spain,NULL,2026-09-26 18:45,15,2,"heure du match 15 (run 2), mêmes équipes, une seule heure candidate",forte,fixture API-Football identique
+302,23,Bulgaria,Luxembourg,NULL,2026-09-26 16:00,10,2,"heure du match 10 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+303,23,Iceland,Estonia,NULL,2026-09-26 16:00,11,2,"heure du match 11 (run 2), mêmes équipes, une seule heure candidate",forte,fixture API-Football identique
+304,23,San Marino,Finland,NULL,2026-09-26 16:00,13,2,"heure du match 13 (run 2), mêmes équipes, une seule heure candidate",moyenne,mêmes équipes et domicile/extérieur ; fixture oddspapi différente entre les deux runs
+305,23,Lithuania,Azerbaijan,NULL,2026-09-27 13:00,382,29,"heure du match 382 (run 29), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+308,24,Mexico,Colombia,NULL,2026-09-27 01:00,376,29,"heure du match 376 (run 29), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+310,24,Slovakia,Moldova,NULL,2026-09-26 18:45,14,2,"heure du match 14 (run 2), mêmes équipes, une seule heure candidate",forte,fixture API-Football identique
+312,24,Faroe Islands,Kazakhstan,NULL,2026-09-26 16:00,12,2,"heure du match 12 (run 2), mêmes équipes, une seule heure candidate",forte,fixture API-Football identique
+313,24,Albania,Belarus,NULL,2026-09-26 18:45,16,2,"heure du match 16 (run 2), mêmes équipes, une seule heure candidate",moyenne,mêmes équipes et domicile/extérieur ; fixture oddspapi différente entre les deux runs
+314,24,England,Spain,NULL,2026-09-26 18:45,15,2,"heure du match 15 (run 2), mêmes équipes, une seule heure candidate",forte,fixture API-Football identique
+315,24,Bulgaria,Luxembourg,NULL,2026-09-26 16:00,10,2,"heure du match 10 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+316,24,Iceland,Estonia,NULL,2026-09-26 16:00,11,2,"heure du match 11 (run 2), mêmes équipes, une seule heure candidate",forte,fixture API-Football identique
+317,24,San Marino,Finland,NULL,2026-09-26 16:00,13,2,"heure du match 13 (run 2), mêmes équipes, une seule heure candidate",moyenne,mêmes équipes et domicile/extérieur ; fixture oddspapi différente entre les deux runs
+318,24,Lithuania,Azerbaijan,NULL,2026-09-27 13:00,382,29,"heure du match 382 (run 29), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+321,25,Mexico,Colombia,NULL,2026-09-27 01:00,376,29,"heure du match 376 (run 29), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+323,25,Slovakia,Moldova,NULL,2026-09-26 18:45,14,2,"heure du match 14 (run 2), mêmes équipes, une seule heure candidate",forte,fixture API-Football identique
+325,25,Faroe Islands,Kazakhstan,NULL,2026-09-26 16:00,12,2,"heure du match 12 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+326,25,Albania,Belarus,NULL,2026-09-26 18:45,16,2,"heure du match 16 (run 2), mêmes équipes, une seule heure candidate",moyenne,mêmes équipes et domicile/extérieur ; fixture oddspapi différente entre les deux runs
+327,25,England,Spain,NULL,2026-09-26 18:45,15,2,"heure du match 15 (run 2), mêmes équipes, une seule heure candidate",forte,fixture API-Football identique
+328,25,Bulgaria,Luxembourg,NULL,2026-09-26 16:00,10,2,"heure du match 10 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+329,25,Iceland,Estonia,NULL,2026-09-26 16:00,11,2,"heure du match 11 (run 2), mêmes équipes, une seule heure candidate",forte,fixture API-Football identique
+330,25,San Marino,Finland,NULL,2026-09-26 16:00,13,2,"heure du match 13 (run 2), mêmes équipes, une seule heure candidate",moyenne,mêmes équipes et domicile/extérieur ; fixture oddspapi différente entre les deux runs
+331,25,Lithuania,Azerbaijan,NULL,2026-09-27 13:00,382,29,"heure du match 382 (run 29), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+334,26,Mexico,Colombia,NULL,2026-09-27 01:00,376,29,"heure du match 376 (run 29), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+336,26,Slovakia,Moldova,NULL,2026-09-26 18:45,14,2,"heure du match 14 (run 2), mêmes équipes, une seule heure candidate",forte,fixture API-Football identique
+338,26,Faroe Islands,Kazakhstan,NULL,2026-09-26 16:00,12,2,"heure du match 12 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+339,26,Albania,Belarus,NULL,2026-09-26 18:45,16,2,"heure du match 16 (run 2), mêmes équipes, une seule heure candidate",moyenne,mêmes équipes et domicile/extérieur ; fixture oddspapi différente entre les deux runs
+340,26,England,Spain,NULL,2026-09-26 18:45,15,2,"heure du match 15 (run 2), mêmes équipes, une seule heure candidate",forte,fixture API-Football identique
+341,26,Bulgaria,Luxembourg,NULL,2026-09-26 16:00,10,2,"heure du match 10 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+342,26,Iceland,Estonia,NULL,2026-09-26 16:00,11,2,"heure du match 11 (run 2), mêmes équipes, une seule heure candidate",forte,fixture API-Football identique
+343,26,San Marino,Finland,NULL,2026-09-26 16:00,13,2,"heure du match 13 (run 2), mêmes équipes, une seule heure candidate",moyenne,mêmes équipes et domicile/extérieur ; fixture oddspapi différente entre les deux runs
+344,26,Lithuania,Azerbaijan,NULL,2026-09-27 13:00,382,29,"heure du match 382 (run 29), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+347,27,Mexico,Colombia,NULL,2026-09-27 01:00,376,29,"heure du match 376 (run 29), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+349,27,Slovakia,Moldova,NULL,2026-09-26 18:45,14,2,"heure du match 14 (run 2), mêmes équipes, une seule heure candidate",forte,fixture API-Football identique
+351,27,Faroe Islands,Kazakhstan,NULL,2026-09-26 16:00,12,2,"heure du match 12 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+352,27,Albania,Belarus,NULL,2026-09-26 18:45,16,2,"heure du match 16 (run 2), mêmes équipes, une seule heure candidate",moyenne,mêmes équipes et domicile/extérieur ; fixture oddspapi différente entre les deux runs
+353,27,England,Spain,NULL,2026-09-26 18:45,15,2,"heure du match 15 (run 2), mêmes équipes, une seule heure candidate",forte,fixture API-Football identique
+354,27,Bulgaria,Luxembourg,NULL,2026-09-26 16:00,10,2,"heure du match 10 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+355,27,Iceland,Estonia,NULL,2026-09-26 16:00,11,2,"heure du match 11 (run 2), mêmes équipes, une seule heure candidate",forte,fixture API-Football identique
+356,27,San Marino,Finland,NULL,2026-09-26 16:00,13,2,"heure du match 13 (run 2), mêmes équipes, une seule heure candidate",moyenne,mêmes équipes et domicile/extérieur ; fixture oddspapi différente entre les deux runs
+357,27,Lithuania,Azerbaijan,NULL,2026-09-27 13:00,382,29,"heure du match 382 (run 29), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+360,28,Mexico,Colombia,NULL,2026-09-27 01:00,376,29,"heure du match 376 (run 29), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+362,28,Slovakia,Moldova,NULL,2026-09-26 18:45,14,2,"heure du match 14 (run 2), mêmes équipes, une seule heure candidate",forte,fixture API-Football identique
+364,28,Faroe Islands,Kazakhstan,NULL,2026-09-26 16:00,12,2,"heure du match 12 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+365,28,Albania,Belarus,NULL,2026-09-26 18:45,16,2,"heure du match 16 (run 2), mêmes équipes, une seule heure candidate",moyenne,mêmes équipes et domicile/extérieur ; fixture oddspapi différente entre les deux runs
+366,28,England,Spain,NULL,2026-09-26 18:45,15,2,"heure du match 15 (run 2), mêmes équipes, une seule heure candidate",forte,fixture API-Football identique
+367,28,Bulgaria,Luxembourg,NULL,2026-09-26 16:00,10,2,"heure du match 10 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+368,28,Iceland,Estonia,NULL,2026-09-26 16:00,11,2,"heure du match 11 (run 2), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+369,28,San Marino,Finland,NULL,2026-09-26 16:00,13,2,"heure du match 13 (run 2), mêmes équipes, une seule heure candidate",moyenne,mêmes équipes et domicile/extérieur ; fixture oddspapi différente entre les deux runs
+370,28,Lithuania,Azerbaijan,NULL,2026-09-27 13:00,382,29,"heure du match 382 (run 29), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+400,31,Lithuania,Azerbaijan,NULL,2026-09-27 13:00,382,29,"heure du match 382 (run 29), mêmes équipes, une seule heure candidate",forte,fixture API-Football identique
+405,31,Serbia,Netherlands,NULL,2026-09-27 16:00,380,29,"heure du match 380 (run 29), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+406,31,Denmark,Wales,NULL,2026-09-27 16:00,379,29,"heure du match 379 (run 29), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+407,31,Austria,Kosovo,NULL,2026-09-27 16:00,383,29,"heure du match 383 (run 29), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+408,31,Gibraltar,Andorra,NULL,2026-09-27 16:00,384,29,"heure du match 384 (run 29), mêmes équipes, une seule heure candidate",forte,fixture API-Football identique
+411,31,Germany,Greece,NULL,2026-09-27 18:45,381,29,"heure du match 381 (run 29), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+412,31,Norway,Portugal,NULL,2026-09-27 18:45,378,29,"heure du match 378 (run 29), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+414,32,Fiji,Papua New Guinea,NULL,2026-09-27 07:00,371,29,"heure du match 371 (run 29), mêmes équipes, une seule heure candidate",faible,mêmes équipes seulement (le match à corriger n'a aucun identifiant de fixture)
+415,32,China,New Zealand,NULL,2026-09-27 11:35,372,29,"heure du match 372 (run 29), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+416,32,Seychelles,Sri Lanka,NULL,2026-09-27 12:00,373,29,"heure du match 373 (run 29), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+417,32,Vanuatu,New Caledonia,NULL,2026-09-27 04:00,374,29,"heure du match 374 (run 29), mêmes équipes, une seule heure candidate",faible,mêmes équipes seulement (le match à corriger n'a aucun identifiant de fixture)
+418,32,Cook Islands,Tahiti,NULL,2026-09-27 04:00,375,29,"heure du match 375 (run 29), mêmes équipes, une seule heure candidate",faible,mêmes équipes seulement (le match à corriger n'a aucun identifiant de fixture)
+419,32,Mexico,Colombia,NULL,2026-09-27 01:00,376,29,"heure du match 376 (run 29), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+421,32,Norway,Portugal,NULL,2026-09-27 18:45,378,29,"heure du match 378 (run 29), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+422,32,Denmark,Wales,NULL,2026-09-27 16:00,379,29,"heure du match 379 (run 29), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+423,32,Serbia,Netherlands,NULL,2026-09-27 16:00,380,29,"heure du match 380 (run 29), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+424,32,Germany,Greece,NULL,2026-09-27 18:45,381,29,"heure du match 381 (run 29), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+425,32,Lithuania,Azerbaijan,NULL,2026-09-27 13:00,382,29,"heure du match 382 (run 29), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+426,32,Austria,Kosovo,NULL,2026-09-27 16:00,383,29,"heure du match 383 (run 29), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+427,32,Gibraltar,Andorra,NULL,2026-09-27 16:00,384,29,"heure du match 384 (run 29), mêmes équipes, une seule heure candidate",forte,fixture API-Football identique
+428,33,Germany,Greece,NULL,2026-09-27 18:45,381,29,"heure du match 381 (run 29), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+429,33,Norway,Portugal,NULL,2026-09-27 18:45,378,29,"heure du match 378 (run 29), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+438,33,Armenia,Montenegro,NULL,2026-09-28 16:00,443,34,"heure du match 443 (run 34), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+439,33,Latvia,Cyprus,NULL,2026-09-28 16:00,444,34,"heure du match 444 (run 34), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+440,33,Georgia,Ukraine,NULL,2026-09-28 16:00,445,34,"heure du match 445 (run 34), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+442,33,Belgium,France,NULL,2026-09-28 18:45,447,34,"heure du match 447 (run 34), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+473,36,Armenia,Montenegro,NULL,2026-09-28 16:00,443,34,"heure du match 443 (run 34), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+474,36,Latvia,Cyprus,NULL,2026-09-28 16:00,444,34,"heure du match 444 (run 34), mêmes équipes, une seule heure candidate",forte,fixture API-Football identique
+475,36,Georgia,Ukraine,NULL,2026-09-28 16:00,445,34,"heure du match 445 (run 34), mêmes équipes, une seule heure candidate",forte,fixture API-Football identique
+477,36,Belgium,France,NULL,2026-09-28 18:45,447,34,"heure du match 447 (run 34), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+479,36,Sweden,Poland,NULL,2026-09-28 18:45,449,34,"heure du match 449 (run 34), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+480,36,Northern Ireland,Hungary,NULL,2026-09-28 18:45,450,34,"heure du match 450 (run 34), mêmes équipes, une seule heure candidate",forte,fixture API-Football identique
+481,36,Guadeloupe,Barbados,NULL,2026-09-28 19:00,451,34,"heure du match 451 (run 34), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+482,36,Cuba,Bonaire,NULL,2026-09-28 21:00,452,34,"heure du match 452 (run 34), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+483,36,Suriname,Martinique,NULL,2026-09-28 22:00,453,34,"heure du match 453 (run 34), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+484,36,Jamaica,Honduras,NULL,2026-09-29 00:00,454,34,"heure du match 454 (run 34), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+487,36,Guatemala,El Salvador,NULL,2026-09-29 02:00,457,34,"heure du match 457 (run 34), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+489,37,Belgium,France,NULL,2026-09-28 18:45,447,34,"heure du match 447 (run 34), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+491,37,Sweden,Poland,NULL,2026-09-28 18:45,449,34,"heure du match 449 (run 34), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+492,37,Northern Ireland,Hungary,NULL,2026-09-28 18:45,450,34,"heure du match 450 (run 34), mêmes équipes, une seule heure candidate",forte,fixture API-Football identique
+493,37,Guadeloupe,Barbados,NULL,2026-09-28 19:00,451,34,"heure du match 451 (run 34), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+494,37,Cuba,Bonaire,NULL,2026-09-28 21:00,452,34,"heure du match 452 (run 34), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+495,37,Suriname,Martinique,NULL,2026-09-28 22:00,453,34,"heure du match 453 (run 34), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+496,37,Jamaica,Honduras,NULL,2026-09-29 00:00,454,34,"heure du match 454 (run 34), mêmes équipes, une seule heure candidate",forte,fixture API-Football identique
+499,37,Guatemala,El Salvador,NULL,2026-09-29 02:00,457,34,"heure du match 457 (run 34), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+516,53,Azerbaijan,Liechtenstein,NULL,2026-10-01 16:00,530,54,"heure du match 530 (run 54), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+517,53,Germany,Serbia,NULL,2026-10-01 18:45,531,54,"heure du match 531 (run 54), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+518,53,Greece,Netherlands,NULL,2026-10-01 18:45,532,54,"heure du match 532 (run 54), mêmes équipes, une seule heure candidate",forte,fixture API-Football identique
+519,53,Denmark,Portugal,NULL,2026-10-01 18:45,533,54,"heure du match 533 (run 54), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+520,53,Wales,Norway,NULL,2026-10-01 18:45,534,54,"heure du match 534 (run 54), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+521,53,Israel,Kosovo,NULL,2026-10-01 18:45,535,54,"heure du match 535 (run 54), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+523,53,Malta,Gibraltar,NULL,2026-10-01 18:45,537,54,"heure du match 537 (run 54), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+526,53,Dominica,Guyana,NULL,2026-10-01 21:00,540,54,"heure du match 540 (run 54), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+528,53,Dominican Republic,Haiti,NULL,2026-10-02 00:00,630,63,"heure du match 630 (run 63), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+529,53,Cayman Islands,Puerto Rico,NULL,2026-10-02 00:00,631,63,"heure du match 631 (run 63), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+542,54,Dominican Republic,Haiti,NULL,2026-10-02 00:00,630,63,"heure du match 630 (run 63), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+543,54,Cayman Islands,Puerto Rico,NULL,2026-10-02 00:00,631,63,"heure du match 631 (run 63), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+556,55,Dominican Republic,Haiti,NULL,2026-10-02 00:00,630,63,"heure du match 630 (run 63), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+557,55,Cayman Islands,Puerto Rico,NULL,2026-10-02 00:00,631,63,"heure du match 631 (run 63), mêmes équipes, une seule heure candidate",forte,fixture oddspapi identique
+2833,247,Bristol City,Wolves,NULL,2026-11-04 20:00,2895,255,"heure du match 2895 (run 255), mêmes équipes, une seule heure candidate",faible,mêmes équipes seulement (le match à corriger n'a aucun identifiant de fixture)
+2845,250,Bristol City,Wolves,NULL,2026-11-04 20:00,2895,255,"heure du match 2895 (run 255), mêmes équipes, une seule heure candidate",faible,mêmes équipes seulement (le match à corriger n'a aucun identifiant de fixture)
+2857,251,Bristol City,Wolves,NULL,2026-11-04 20:00,2895,255,"heure du match 2895 (run 255), mêmes équipes, une seule heure candidate",faible,mêmes équipes seulement (le match à corriger n'a aucun identifiant de fixture)
+2883,254,Bristol City,Wolves,NULL,2026-11-04 20:00,2895,255,"heure du match 2895 (run 255), mêmes équipes, une seule heure candidate",faible,mêmes équipes seulement (le match à corriger n'a aucun identifiant de fixture)

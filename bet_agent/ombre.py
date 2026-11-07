@@ -1,11 +1,8 @@
-"""Suivi « en ombre » (06/11/2026) : (1) paris ÉCARTÉS par les agents de familles (veto Python / IA), jugés ensuite avec les
-résultats réels pour savoir si ces écarts servent ; (2) comparaison de modèles IA payants (OpenRouter) sur le MÊME catalogue,
-sans jamais rien envoyer sur Telegram, avec les tokens et le coût réels de chaque modèle.
-
-Désactivé par défaut : la comparaison de modèles ne tourne que si MODELES_OMBRE (liste d'identifiants OpenRouter séparés par des
-virgules) est renseignée ; « base » = le modèle actuel (DeepSeek, sans mesure de coût). Plafond de dépense par run :
-OMBRE_BUDGET_USD (défaut 1.50) ; nombre de tours de correction : OMBRE_NB_TOURS (défaut 2) ; durée totale maximale :
-OMBRE_DUREE_MAX_S (défaut 360) ; effort de raisonnement demandé aux modèles : OMBRE_RAISONNEMENT (low/medium/high, défaut medium)."""
+"""Composition de coupons par des modèles OpenRouter (06/11/2026) : utilisée par le vote final (MODELES_VOTE) et par le mode « modèle seul »
+(COMPOSITEUR_MODELE). Chaque modèle compose les profils sur le MÊME catalogue, avec les mêmes règles de Python ; les tokens et le coût réels
+(usage OpenRouter) sont mesurés. Plafond de dépense : OMBRE_BUDGET_USD (défaut 1.50) ; tours de correction : OMBRE_NB_TOURS (défaut 2) ;
+durée totale maximale : OMBRE_DUREE_MAX_S (défaut 360) ; effort de raisonnement : OMBRE_RAISONNEMENT (low/medium/high, défaut medium).
+(Le suivi « en ombre » — paris écartés et comparaison enregistrée en base — a été retiré le 06/11/2026.)"""
 
 import math
 import os
@@ -15,28 +12,9 @@ import time
 import requests
 
 import agent_strategie as st
-import agents_familles
 import analyser_et_envoyer as ae
 
 URL_OPENROUTER = "https://openrouter.ai/api/v1/chat/completions"
-
-
-def modeles_ombre():
-    return [m.strip() for m in (os.getenv("MODELES_OMBRE") or "").split(",") if m.strip() and m.strip().lower() != "aucun"]
-
-
-def details_ecartes(catalogue, ecartes, avis):
-    """Paris écartés, avec leur origine (veto Python déterministe ou avis de l'IA de famille) et leur raison."""
-    sortie = []
-    for cid in sorted(ecartes):
-        c = catalogue.get(cid)
-        if not c:
-            continue
-        pick = c["pick"]
-        origine = "veto_python" if agents_familles.veto_python(pick) else "ia_famille"
-        sortie.append({"id": cid, "origine": origine, "famille": agents_familles.famille_de(pick.get("categorie"))[1],
-                       "raison": str(avis.get(cid, ""))[:200], "candidat": c})
-    return sortie
 
 
 class BudgetEpuise(Exception):
@@ -138,11 +116,13 @@ def _composer_un_modele(modele, pool, profils, catalogue, catalogue_texte, cle, 
 
 
 def composer_ombre(pool, profils, catalogue, catalogue_texte, modeles=None, cle=None, appel_base=None,
-                   budget_usd=None, nb_tours=None, duree_max_s=None):
+                   budget_usd=None, nb_tours=None, duree_max_s=None, budgets_par_modele=None):
     """Compose les coupons avec chaque modèle sur le même catalogue, EN PARALLÈLE et dans une durée totale bornée
-    (OMBRE_DUREE_MAX_S, défaut 360 s) : un modèle qui n'a pas fini à l'échéance est enregistré en erreur « délai dépassé »
+    (OMBRE_DUREE_MAX_S, défaut 360 s). budgets_par_modele (Phase 3) : plafond en $ propre à chaque modèle (répartition du budget journalier),
+    qui remplace budget_usd pour ce modèle. Ce plafond est vérifié AVANT chaque appel : le dernier appel peut le dépasser légèrement
+    (le dépassement est mesuré et signalé par budget_ia.bilan_couts, jamais silencieux) : un modèle qui n'a pas fini à l'échéance est enregistré en erreur « délai dépassé »
     sans bloquer le pipeline (fils daemon). Renvoie une liste de résultats par modèle, dans l'ordre demandé."""
-    modeles = modeles if modeles is not None else modeles_ombre()
+    modeles = list(modeles or [])
     cle = cle or os.getenv("OPENROUTER_API_KEY")
     budget_usd = budget_usd if budget_usd is not None else float(os.getenv("OMBRE_BUDGET_USD") or 1.5)
     nb_tours = nb_tours or int(os.getenv("OMBRE_NB_TOURS") or 2)
@@ -151,7 +131,8 @@ def composer_ombre(pool, profils, catalogue, catalogue_texte, modeles=None, cle=
     sortie, fils = {}, []
     for modele in modeles:
         t = threading.Thread(target=_composer_un_modele, daemon=True, name=f"ombre-{modele}",
-                             args=(modele, pool, profils, catalogue, catalogue_texte, cle, appel_base, budget_usd, nb_tours, echeance, sortie))
+                             args=(modele, pool, profils, catalogue, catalogue_texte, cle, appel_base,
+                                   (budgets_par_modele or {}).get(modele, budget_usd), nb_tours, echeance, sortie))
         t.start()
         fils.append(t)
     for t in fils:

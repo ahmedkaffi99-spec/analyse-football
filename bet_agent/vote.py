@@ -21,8 +21,14 @@ def cle_pari(sel):
 
 def choisir(profils, retenus_pilote, resultats_modeles, nom_pilote="pilote"):
     """-> (resultats_profils, journal). resultats_profils : même forme que etat["resultats_profils"]."""
+    sortie, journal, _ = choisir_detail(profils, retenus_pilote, resultats_modeles, nom_pilote)
+    return sortie, journal
+
+
+def choisir_detail(profils, retenus_pilote, resultats_modeles, nom_pilote="pilote"):
+    """-> (resultats_profils, journal, gagnants). gagnants : {clé du profil: nom du modèle retenu} (Phase 3 : le gagnant est conservé)."""
     par_pilote = {r["profil"]["cle"]: r["selections"] for r in retenus_pilote}
-    pris, sortie, journal = set(), [], []
+    pris, sortie, journal, gagnants = set(), [], [], {}
     for profil in profils:
         cle = profil["cle"]
         candidats = []
@@ -39,8 +45,9 @@ def choisir(profils, retenus_pilote, resultats_modeles, nom_pilote="pilote"):
             journal.append(f"{cle} : aucun candidat")
             continue
         nom, selections = choix
+        gagnants[cle] = nom
         pris.update(cle_pari(x) for x in selections)
         sortie.append({"profil": profil, "selections": selections})
         detail = " · ".join(f"{n} {proba_combinee(s) * 100:.1f}%" for n, s in candidats)
         journal.append(f"{cle} : {nom} retenu ({detail})")
-    return sortie, journal
+    return sortie, journal, gagnants

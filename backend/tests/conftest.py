@@ -94,3 +94,13 @@ def ticket_exemple():
             "profils": [{"cle": p["profil"]["cle"], "nom": p["profil"]["nom"], "selections": p["selections"]}
                         for p in profils_exemple()],
             "resultat_envoye": False}
+
+
+def importer_run_envoye(client, collecte=None, ticket=None):
+    """Importe un run et le marque comme réellement envoyé sur Telegram : seuls les runs envoyés comptent dans les résultats réels."""
+    from app.database import SessionLocal
+    from app.models import Run
+    client.post("/api/imports", json={"collecte": collecte or collecte_exemple(), "ticket": ticket or ticket_exemple()})
+    with SessionLocal() as db:
+        db.query(Run).update({"envoye_telegram": True})
+        db.commit()

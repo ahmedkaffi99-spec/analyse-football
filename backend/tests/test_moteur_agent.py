@@ -1,3 +1,4 @@
+import json
 """Fusion de l'agent pilote DeepSeek comme moteur officiel (30/09/2026, demande explicite de
 l'utilisateur) : mêmes tables/persistance que l'ancien enchaînement déterministe, mais piloté
 par bet_agent/agent_pilote.py au lieu de collecte->calcul->IA ratifie. IA simulée (aucun vrai
@@ -161,18 +162,15 @@ def test_moteur_agent_est_le_defaut_avec_profil_12_a_15_jambes(monkeypatch):
 
     assert len(appels) == 1
     profils = appels[0]["profils"]
+    from app import preparer_formulaire
+    # Phase 2 (06/11/2026) : le profil de secours EST le profil du formulaire (source unique, plus de règles retirées qui reviennent)
+    assert profils == preparer_formulaire.profils()
     assert [p["cle"] for p in profils] == ["coupon1", "coupon2", "coupon3"]
-    assert [(p["nb_jambes_min"], p["nb_jambes"]) for p in profils] == [(5, 8), (6, 8), (7, 8)]
-    assert all(p["jambes_max_par_match"] == 1 for p in profils)  # une seule sélection par match dans un coupon
-    # 1xBet : un seul pari par EVENT (« Event already added » sinon, 23/10/2026)
-    assert all(p["un_seul_pari_par_event"] and not p.get("tous_les_matchs_obligatoires") for p in profils)
-    assert all(p["diversifier_entre_coupons"] for p in profils)
-    assert all(p["couvrir_tous_les_matchs"] for p in profils) and [p.get("dernier_profil") for p in profils] == [None, None, True]
-    # 24/10/2026 : petite cote 5-15 (prudent), cote moyenne 20-40 (équilibré), haute cote 50-100+ (très risqué)
-    assert [(p["cote_totale_min"], p.get("cote_totale_max")) for p in profils] == [
-        (5.0, 10.0), (10.0, 18.0), (18.0, 35.0)]
-    assert [p["proba_min_pct"] for p in profils] == [70.0, 65.0, 60.0]
-    assert [p["proba_max_pct"] for p in profils] == [78.0, 75.0, 72.0]  # bilan du 25/10/2026 : cote croissante, 8 jambes au plus
+    assert [(p["cote_totale_min"], p["cote_totale_max"]) for p in profils] == [(5, 10), (12, 18), (20, 35)]
+    assert all(p["jambes_max_par_match"] == 1 and p["un_seul_pari_par_event"] for p in profils)
+    regles_retirees = {"proba_min_pct", "proba_max_pct", "couvrir_tous_les_matchs", "dernier_profil", "max_coupons_par_match",
+                       "diversifier_entre_coupons", "tous_les_matchs_obligatoires", "familles_obligatoires"}
+    assert not any(regles_retirees & set(p) for p in profils)
 
 
 def test_profil_agent_quotidien_respecte_nb_jambes_du_workflow(monkeypatch):
@@ -255,3 +253,81 @@ def test_moteur_agent_accepte_depuis_run(monkeypatch):
         run = Run(source="test", statut="en_cours"); db.add(run); db.commit(); rid = run.id
     runs.executer_run(rid, envoyer_telegram=False, depuis_run=271, moteur="agent")
     assert recu["donnees_reprises"]["marqueur"] == 271
+
+
+def test_envoi_partiel_compte_comme_envoye_et_bloque_le_passage_cron_suivant(monkeypatch):
+    """Si 2 coupons sur 3 sont partis, le run est « envoyé » : le cron des 20 minutes suivantes ne renvoie pas trois nouveaux coupons."""
+    from app.taches import ticket_deja_produit_aujourdhui
+    sel = {"match": "Lens vs Auxerre", "pick": {"categorie": "Total", "marche": "Over Under Full Time (2.5)", "selection": "Over",
+                                               "handicap": 2.5, "cote": 1.8, "proba_modele_pct": 60.0, "edge_pct": 1.0}}
+    _faux_agent_pilote(monkeypatch, {"donnees": collecte_exemple(), "textes": ["coupon"], "envoye": False, "envoi_partiel": "2/3",
+                                     "resultats_profils": [{"profil": {"cle": "p1", "nom": "P1"}, "selections": [sel]}]})
+    assert taches.main(["run", "--moteur", "agent", "--telegram"]) == 0
+    with SessionLocal() as db:
+        run = db.query(Run).one()
+        assert run.statut == "termine" and run.envoye_telegram is True
+        assert ticket_deja_produit_aujourdhui(db) is True
+
+
+def test_echec_total_d_envoi_laisse_le_run_non_envoye(monkeypatch):
+    sel = {"match": "Lens vs Auxerre", "pick": {"categorie": "Total", "marche": "Over Under Full Time (2.5)", "selection": "Over",
+                                               "handicap": 2.5, "cote": 1.8, "proba_modele_pct": 60.0, "edge_pct": 1.0}}
+    _faux_agent_pilote(monkeypatch, {"donnees": collecte_exemple(), "textes": ["coupon"], "envoye": False,
+                                     "resultats_profils": [{"profil": {"cle": "p1", "nom": "P1"}, "selections": [sel]}]})
+    taches.main(["run", "--moteur", "agent", "--telegram"])
+    with SessionLocal() as db:
+        assert db.query(Run).one().envoye_telegram is False
+
+
+def test_profil_de_secours_et_formulaire_sont_identiques_pour_toutes_les_options(monkeypatch):
+    import analyser_et_envoyer as ae
+    from app import preparer_formulaire as pf
+    monkeypatch.delenv("NB_JAMBES", raising=False)
+    monkeypatch.delenv("NB_JAMBES_MIN", raising=False)
+    assert ae.profils_agent_quotidien() == pf.profils()
+    # le formulaire, sans aucun choix, produit les mêmes profils que le secours
+    sortie = pf.construire({"EVENEMENT": "schedule"})
+    assert json.loads(sortie["profils"]) == ae.profils_agent_quotidien()
+    # catalogue : aucun seuil de probabilité hérité des profils (la valeur de SEUIL_PROBA_MIN, 0 en production, s'applique)
+    import agent_strategie as st
+    assert st.seuil_catalogue(ae.profils_agent_quotidien()) == st.SEUIL_PROBA_CATALOGUE
+
+
+def test_garde_un_run_envoye_bloque_le_passage_suivant_quel_que_soit_son_statut():
+    """Phase 2 (06/11/2026) : un run « erreur » ou « abandonné » APRÈS l'envoi ne doit pas déclencher un second envoi."""
+    from datetime import datetime, timezone
+    from app.taches import ticket_deja_produit_aujourdhui
+    maintenant = datetime.now(timezone.utc)
+    for statut, envoye, attendu in (("erreur", True, True), ("abandonne", True, True), ("termine", True, True),
+                                    ("erreur", False, False), ("abandonne", False, False), ("termine", False, False)):
+        with SessionLocal() as db:
+            db.query(Run).delete()
+            db.add(Run(source="api", statut=statut, envoye_telegram=envoye, lance_le=maintenant))
+            db.commit()
+            assert ticket_deja_produit_aujourdhui(db) is attendu, (statut, envoye)
+
+
+def test_plantage_apres_envoi_garde_le_run_envoye_et_empeche_le_renvoi(monkeypatch):
+    from app.services import runs as runs_service
+    profil = _profil_unique()
+    selections = profils_exemple()[0]["selections"]
+    appels = []
+    _faux_agent_pilote(monkeypatch, {
+        "donnees": collecte_exemple(), "resultats_profils": [{"profil": profil, "selections": selections}],
+        "textes": ["ticket envoyé"], "envoye": True, "raison_abandon": None,
+    }, appels=appels)
+
+    def coupons_qui_plantent(db, run, resultats, index, textes=None):
+        raise RuntimeError("panne base après envoi")
+
+    monkeypatch.setattr(runs_service, "enregistrer_coupons", coupons_qui_plantent)
+    assert taches.main(["run", "--telegram", "--si-aucun-ticket-aujourdhui", "--moteur", "agent"]) == 1
+    with SessionLocal() as db:
+        run = db.query(Run).one()
+        assert run.statut == "erreur" and run.envoye_telegram is True
+        assert run.detail.startswith("[APRES_ENVOI]")
+    # passage cron suivant : rien n'est relancé, donc aucun second envoi
+    assert taches.main(["run", "--telegram", "--si-aucun-ticket-aujourdhui", "--moteur", "agent"]) == 0
+    assert len(appels) == 1
+    with SessionLocal() as db:
+        assert db.query(Run).count() == 1

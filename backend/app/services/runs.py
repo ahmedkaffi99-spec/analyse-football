@@ -12,31 +12,13 @@ from app import config
 from app.config import DOSSIER_DONNEES
 from app.database import SessionLocal
 from app.models import Run
+from app.garde import cloturer_runs_interrompus  # noqa: F401 — déplacée dans app/garde.py (module léger), ré-exportée ici
 from app.services import pipeline
 from app.services.archives import archiver_run, telecharger_collecte
 from app.services.persistance import enregistrer_collecte, enregistrer_coupons
 from app.services.qualite_marches import qualite_marches
+from app.services.budget import budget_restant, texte_couts_pour_detail
 from app.services.statistiques import resume_pour_ia
-
-
-def cloturer_runs_interrompus(db, maintenant=None):
-    """Un run resté "en_cours" plus de HEURES_MAX_RUN heures a été tué (délai du job GitHub,
-    coupure réseau...) : il est clôturé en erreur, sinon il bloquerait pour toujours les
-    nouveaux runs (409) et le passage de secours ("ticket déjà en cours")."""
-    maintenant = maintenant or datetime.now(timezone.utc)
-    limite = maintenant - timedelta(hours=config.HEURES_MAX_RUN)
-    clotures = 0
-    for run in db.scalars(select(Run).where(Run.statut == "en_cours")):
-        lance_le = run.lance_le if run.lance_le.tzinfo else run.lance_le.replace(tzinfo=timezone.utc)
-        if lance_le < limite:
-            run.statut = "erreur"
-            run.detail = f"Interrompu : toujours en cours après {config.HEURES_MAX_RUN:g} h (job arrêté ou coupure)."
-            run.termine_le = maintenant
-            clotures += 1
-    if clotures:
-        db.commit()
-        print(f"🧹 {clotures} run(s) interrompu(s) clôturé(s) en erreur.")
-    return clotures
 
 
 def charger_collecte_du_jour(db, run_source_id, telecharger=telecharger_collecte):
@@ -111,18 +93,24 @@ def executer_run(run_id, envoyer_telegram=False, rediger=True, depuis_run=None, 
             if profils_personnalises is None:
                 profils_personnalises = ae.profils_agent_quotidien()
             options_reprise = {"donnees_reprises": donnees_reprises} if donnees_reprises is not None else {}
+            # Budget IA du jour (Phase 3) : transmis seulement quand un plafond est configuré (BUDGET_JOUR_USD) ; sans plafond, rien ne change.
+            restant = budget_restant(db)
+            if restant is not None:
+                options_reprise["budget_restant_usd"] = restant
+                print(f"💰 Budget IA restant aujourd'hui : {restant:.2f} $")
             resultat_agent = agent_pilote.executer(telegram=envoyer_telegram, profils=profils_personnalises,
                                                    ignorer_diversite_croisee=ignorer_diversite_croisee,
                                                    contexte_supplementaire=bilan, **options_reprise)
             donnees = resultat_agent.get("donnees")
             resultats = resultat_agent.get("resultats_profils") or []
             envoye = bool(resultat_agent.get("envoye"))
+            partiel = bool(resultat_agent.get("envoi_partiel"))   # des coupons sont partis, pas tous : le run compte comme envoyé (anti-doublon)
             # Le coupon est DÉJÀ parti sur Telegram quand on arrive ici : on le note tout de suite.
             # Constat réel du 21/10/2026 (runs 176 et 177) : un plantage de la persistance de la
             # collecte (marche_id trop long) faisait perdre le coupon déjà envoyé (run en
             # "erreur", envoye_telegram faux, aucune jambe en base) et le garde-fou "un ticket par
             # jour" renvoyait un 2e coupon trois heures plus tard.
-            if envoye:
+            if envoye or partiel:
                 run.envoye_telegram = True
                 db.commit()
             index = {}
@@ -138,31 +126,22 @@ def executer_run(run_id, envoyer_telegram=False, rediger=True, depuis_run=None, 
                           f"sauvegardé : {pipeline.masquer_secrets(str(e))[:150]}")
             if any(item["selections"] for item in resultats):
                 enregistrer_coupons(db, run, resultats, index, textes=resultat_agent.get("textes"))
-                run.envoye_telegram = envoye
+                run.envoye_telegram = envoye or partiel
                 run.statut = "termine"
                 # Journal de l'agent (recherches web, pages lues, stratégie et raison de chaque jambe) : enregistré dans
                 # runs.detail, colonne texte déjà existante (aucune modification du schéma).
                 journal = resultat_agent.get("journal")
-                if journal and (journal.get("recherches") or journal.get("pages") or journal.get("raisons")):
+                if journal and (journal.get("recherches") or journal.get("pages") or journal.get("raisons") or journal.get("couts")):
                     texte_journal = json.dumps(journal, ensure_ascii=False, separators=(",", ":"))
                     if len(texte_journal) > 30000:  # jamais un JSON tronqué : on retire les raisons détaillées
                         texte_journal = json.dumps(dict(journal, raisons={}), ensure_ascii=False, separators=(",", ":"))
                     run.detail = "JOURNAL_AGENT " + texte_journal
-                # Suivi « en ombre » (06/11/2026) : paris écartés par les agents de familles + comparaison de modèles IA (désactivée
-                # sans MODELES_OMBRE). Coupons réels figés AVANT, et jamais bloquant : toute erreur est ignorée.
-                try:
-                    db.commit()
-                    from app.services.ombre_persistance import executer_ombre
-                    jour_ombre = next((c.jour for c in run.coupons), None)
-                    if jour_ombre is not None and resultat_agent.get("ombre"):
-                        executer_ombre(db, run, jour_ombre, resultat_agent["ombre"], index)
-                except Exception as e:
-                    db.rollback()
-                    print(f"ℹ️ Suivi en ombre indisponible : {str(e)[:120]}")
+                db.commit()
             else:
                 run.statut = "abandonne"
                 run.detail = (resultat_agent.get("raison_abandon") or resultat_agent.get("arret")
                               or "Agent pilote : aucune sélection retenue.")
+                run.detail = (run.detail[:1500] + texte_couts_pour_detail(resultat_agent.get("couts")))   # une dépense n'est jamais perdue
             return
 
         if moteur == "central" and depuis_run:
@@ -302,6 +281,8 @@ def executer_run(run_id, envoyer_telegram=False, rediger=True, depuis_run=None, 
         db.rollback()
         run = db.get(Run, run_id)
         run.statut, run.detail = "erreur", pipeline.masquer_secrets(f"{type(e).__name__}: {e}")[:2000]
+        if run.envoye_telegram:   # coupons DÉJÀ partis : on le dit dans le détail (alerte, audit) ; le run reste compté comme envoyé
+            run.detail = ("[APRES_ENVOI] " + run.detail)[:2000]
     finally:
         run.termine_le = datetime.now(timezone.utc)
         db.commit()

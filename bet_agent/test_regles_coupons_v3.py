@@ -40,9 +40,10 @@ class TestDesequilibre(unittest.TestCase):
         self.assertIsNone(dq.veto(self._pick("Total", "Under", proba=60)))     # match équilibré
         self.assertIsNone(dq.veto({"categorie": "Total", "selection": "Under"}))  # non annoté
 
-    def test_branche_dans_le_veto_python_des_agents_familles(self):
-        self.assertIn("déséquilibré", af.veto_python({"categorie": "Total", "selection": "Under", "edge_pct": 1.0,
-                                                      "favori": "1", "proba_favori_pct": 90}))
+    def test_n_est_plus_branche_dans_le_veto_python_des_agents_familles(self):
+        # 06/11/2026 : plus aucun veto automatique ; le module dq.veto reste disponible mais n'est plus appelé
+        self.assertIsNone(af.veto_python({"categorie": "Total", "selection": "Under", "edge_pct": 1.0,
+                                          "favori": "1", "proba_favori_pct": 90}))
 
 
 def _cat(n_matchs):
@@ -63,13 +64,14 @@ class TestPlafondCouponsParMatch(unittest.TestCase):
         return [dict(catalogue[f"P{i}"], pick=dict(catalogue[f"P{i}"]["pick"], handicap=h))
                 for h in (0.5, 2.5) for i in matchs_par_coupon]
 
-    def test_troisieme_coupon_refuse_sur_un_match_deja_dans_deux(self):
+    def test_plus_de_plafond_de_coupons_par_match(self):
+        # 06/11/2026 : plafond retiré (demande explicite), même si un profil porte encore max_coupons_par_match
         cat = _cat(10)
         prec = self._precedentes(cat, [0])
         _, problemes, _ = st.valider({"coupons": [{"profil": "c", "strategie": "x",
                                                    "jambes": [{"id": "P0", "raison": "r"}]}]},
                                      cat, [self._profil()], selections_precedentes=prec)
-        self.assertTrue(any("maximum 2 par match" in p for p in problemes), problemes)
+        self.assertFalse(any("par match" in p and "maximum" in p for p in problemes), problemes)
 
     def test_plafond_inactif_avec_peu_de_matchs(self):
         cat = _cat(5)

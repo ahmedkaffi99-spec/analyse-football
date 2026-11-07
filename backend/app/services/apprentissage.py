@@ -14,6 +14,7 @@ from sqlalchemy import select
 
 from app.models import Coupon, Jambe, MemoireAgent
 from app.services import pipeline
+from app.services.envoyes import condition_coupon_envoye
 
 TRANCHES_PROBA = ((0, 60, "moins de 60 %"), (60, 70, "60-70 %"), (70, 80, "70-80 %"), (80, 101, "80 % et plus"))
 TRANCHES_COTE = ((0, 1.3, "cote < 1,30"), (1.3, 1.5, "cote 1,30-1,50"), (1.5, 2.0, "cote 1,50-2,00"), (2.0, 10**6, "cote 2,00 et plus"))
@@ -29,6 +30,11 @@ def _tranche(valeur, tranches):
     return None
 
 
+def _pct(valeur):
+    """« 77.4 % » ou, quand la probabilité n'a pas été enregistrée, « probabilité non enregistrée » (jamais « None % »)."""
+    return "probabilité non enregistrée" if valeur is None else f"{valeur} %"
+
+
 def _cle_jambe(j):
     return (j.libelle_match, j.marche, j.selection, j.handicap)
 
@@ -36,7 +42,8 @@ def _cle_jambe(j):
 def jambes_jugees(db, depuis=None, jour=None):
     """Jambes jugées, DÉDOUBLONNÉES : une même jambe (match, marché, sélection) présente dans plusieurs coupons du même jour
     ne compte qu'une fois — sinon une seule défaite pèse autant que le nombre de coupons qui la contiennent (06/11/2026)."""
-    requete = select(Jambe, Coupon.jour).join(Coupon, Jambe.coupon_id == Coupon.id).where(Jambe.resultat.in_(("gagne", "perdu")))
+    requete = select(Jambe, Coupon.jour).join(Coupon, Jambe.coupon_id == Coupon.id).where(
+        Jambe.resultat.in_(("gagne", "perdu")), condition_coupon_envoye())   # jamais les coupons d'un run non envoyé
     if jour is not None:
         requete = requete.where(Coupon.jour == jour)
     if depuis is not None:
@@ -53,7 +60,7 @@ def jambes_jugees(db, depuis=None, jour=None):
 def statistiques(jambes):
     """Fiabilité réelle par tranche de probabilité annoncée, par tranche de cote et par catégorie."""
     def vide():
-        return {"n": 0, "gagnees": 0, "proba_annoncee_somme": 0.0}
+        return {"n": 0, "gagnees": 0, "n_proba": 0, "proba_annoncee_somme": 0.0}
     par_proba, par_cote, par_categorie = defaultdict(vide), defaultdict(vide), defaultdict(vide)
     for j in jambes:
         gagne = j.resultat == "gagne"
@@ -67,22 +74,28 @@ def statistiques(jambes):
                 continue
             dico[cle]["n"] += 1
             dico[cle]["gagnees"] += gagne
-            dico[cle]["proba_annoncee_somme"] += j.proba_modele_pct or 0.0
+            if j.proba_modele_pct is not None:   # une jambe SANS probabilité enregistrée ne compte jamais comme « 0 % annoncé » (07/11/2026)
+                dico[cle]["n_proba"] += 1
+                dico[cle]["proba_annoncee_somme"] += j.proba_modele_pct
     def finir(dico):
         sortie = {}
         for cle, v in dico.items():
             sortie[cle] = {"n": v["n"], "gagnees": v["gagnees"], "reussite_pct": round(100 * v["gagnees"] / v["n"], 1),
-                           "annoncee_pct": round(v["proba_annoncee_somme"] / v["n"], 1)}
+                           # moyenne annoncée calculée sur les SEULES jambes qui ont une probabilité ; None si aucune
+                           "annoncee_pct": round(v["proba_annoncee_somme"] / v["n_proba"], 1) if v["n_proba"] else None}
+            if v["n_proba"] < v["n"]:
+                sortie[cle]["sans_proba"] = v["n"] - v["n_proba"]
         return sortie
     return {"par_proba": finir(par_proba), "par_cote": finir(par_cote), "par_categorie": finir(par_categorie),
-            "jambes_jugees": len(jambes)}
+            "jambes_jugees": len(jambes), **({"jambes_sans_proba": sum(1 for j in jambes if j.proba_modele_pct is None)}
+                                             if any(j.proba_modele_pct is None for j in jambes) else {})}
 
 
 def faits_du_jour(db, jour):
     """Coupons du jour entièrement jugés, avec leurs jambes ; [] s'il en reste d'en attente.
     `jambes_uniques` : chaque jambe une seule fois, avec le nombre de coupons qui la contenaient ;
     `matchs_pieges` : matchs où au moins 2 jambes DIFFÉRENTES ont perdu (un seul scénario inattendu)."""
-    coupons = [c for c in db.scalars(select(Coupon).where(Coupon.jour == jour)) if c.jambes]
+    coupons = [c for c in db.scalars(select(Coupon).where(Coupon.jour == jour, condition_coupon_envoye())) if c.jambes]
     if not coupons or any(j.resultat == "en_attente" for c in coupons for j in c.jambes):
         return []
     faits, uniques = [], {}
@@ -121,7 +134,7 @@ def lecons_deterministes(faits, stats):
                 cle = (x["match"], x["marche"], x["selection"])
                 if x["resultat"] == "perdu" and cle not in vus:
                     vus.add(cle)
-                    tueuses.append(f"{x['match']} — {x['marche']} {x['selection']} @{x['cote']} (annoncé {x['proba_pct']} %)")
+                    tueuses.append(f"{x['match']} — {x['marche']} {x['selection']} @{x['cote']} (annoncé {_pct(x['proba_pct'])})")
         lecons.append(f"{len(une)} coupon(s) perdu(s) par UNE seule jambe ({len(tueuses)} jambe(s) différente(s)) : "
                       + "; ".join(tueuses[:5]) + ". Une jambe de plus dans un coupon est une chance de plus de perdre.")
     for match, jambes in faits["matchs_pieges"].items():
@@ -135,7 +148,7 @@ def lecons_deterministes(faits, stats):
         lecons.append(f"Jambe annoncée à {u['proba_pct']} % perdue : {u['match']} — {u['marche']} {u['selection']} "
                       f"(dans {u['nb_coupons']} coupon(s)).")
     for tranche, v in stats["par_proba"].items():
-        if v["n"] >= MIN_ECHANTILLON and v["annoncee_pct"] - v["reussite_pct"] >= 12:
+        if v["n"] >= MIN_ECHANTILLON and v["annoncee_pct"] is not None and v["annoncee_pct"] - v["reussite_pct"] >= 12:
             lecons.append(f"Jambes annoncées {tranche} (moyenne {v['annoncee_pct']} %) : réussite réelle {v['reussite_pct']} % "
                           f"(n={v['n']}) — le modèle est trop optimiste sur cette tranche.")
     return lecons
@@ -170,17 +183,19 @@ def _etude_par_ia(faits, stats, precedentes, appel_llm):
     return texte
 
 
-def etudier_jour(db, jour, avec_ia=True, refaire=False):
+def etudier_jour(db, jour, avec_ia=True, refaire=False, ecrire=True):
     """Étudie un jour de coupons et enregistre l'étude. Idempotent : une étude par jour (refaire=True : recalcule et remplace
-    l'étude de ce jour — la mémoire est une table dérivée, jamais une donnée d'origine). Renvoie le texte ou None."""
+    l'étude de ce jour — la mémoire est une table dérivée, jamais une donnée d'origine). Renvoie le texte ou None.
+    ecrire=False (aperçu, Phase 3) : calcule la nouvelle étude à partir des coupons envoyés SANS rien écrire ni supprimer en base."""
     existante = db.scalars(select(MemoireAgent).where(MemoireAgent.jour == jour, MemoireAgent.type == "etude")).all()
     if existante and not refaire:
         return None
     faits = faits_du_jour(db, jour)
     if not faits:
         return None
-    for m in existante:
-        db.delete(m)
+    if ecrire:
+        for m in existante:
+            db.delete(m)
     stats = statistiques(jambes_jugees(db, jour=jour))
     deterministes = lecons_deterministes(faits, stats)
     texte = None
@@ -189,9 +204,16 @@ def etudier_jour(db, jour, avec_ia=True, refaire=False):
         precedentes = [m.contenu for m in db.scalars(select(MemoireAgent).order_by(MemoireAgent.jour.desc()).limit(4))]
         texte = _etude_par_ia(faits, stats, precedentes, ae.appel_llm)
     contenu = (("\n".join(deterministes) + "\nLEÇONS : " + texte) if texte else "\n".join(deterministes))[:LONGUEUR_ETUDE_MAX]
-    db.add(MemoireAgent(jour=jour, type="etude", contenu=contenu, stats=stats))
-    db.commit()
+    if ecrire:
+        db.add(MemoireAgent(jour=jour, type="etude", contenu=contenu, stats=stats))
+        db.commit()
     return contenu
+
+
+def exporter_memoire(db):
+    """Copie intégrale de la mémoire (lecture seule) : liste de dicts sérialisables, pour la sauvegarde avant toute régénération."""
+    return [{"id": m.id, "cree_le": m.cree_le.isoformat() if m.cree_le else None, "jour": m.jour.isoformat(), "type": m.type,
+             "contenu": m.contenu, "stats": m.stats} for m in db.scalars(select(MemoireAgent).order_by(MemoireAgent.id))]
 
 
 def etudier_recents(db, jours=7, avec_ia=True, refaire=False):
@@ -212,7 +234,11 @@ def etudier_recents(db, jours=7, avec_ia=True, refaire=False):
 
 def memoire_pour_prompt(db, max_etudes=6, jours_stats=21):
     """Texte de mémoire injecté dans la mission de l'agent ; None si rien n'a encore été appris."""
-    etudes = list(db.scalars(select(MemoireAgent).where(MemoireAgent.type == "etude").order_by(MemoireAgent.jour.desc()).limit(max_etudes)))
+    # Seules les études d'un jour ayant au moins un coupon RÉELLEMENT envoyé sont relues : une étude bâtie uniquement sur des runs d'essai
+    # n'a jamais décrit un résultat réel (Phase 2, 06/11/2026). Les lignes restent en base, simplement ignorées.
+    jours_envoyes = select(Coupon.jour).where(condition_coupon_envoye())
+    etudes = list(db.scalars(select(MemoireAgent).where(MemoireAgent.type == "etude", MemoireAgent.jour.in_(jours_envoyes))
+                             .order_by(MemoireAgent.jour.desc()).limit(max_etudes)))
     depuis = datetime.now(timezone.utc).date() - timedelta(days=jours_stats)
     stats = statistiques(jambes_jugees(db, depuis=depuis))
     lignes = []

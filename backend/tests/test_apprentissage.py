@@ -7,7 +7,7 @@ from app.services import apprentissage
 
 
 def _jour_avec_resultats(db, jour, resultats):
-    run = Run(source="api", statut="termine")
+    run = Run(source="api", statut="termine", envoye_telegram=True)
     db.add(run)
     db.flush()
     coupon = Coupon(run_id=run.id, jour=jour, profil="coupon1", nom="🟢 Test", cote_totale=5.0,
@@ -61,7 +61,7 @@ def test_jambe_presente_dans_deux_coupons_comptee_une_fois():
     jour = date.today() - timedelta(days=1)
     with SessionLocal() as db:
         for nom in ("🟢 A", "🟠 B"):
-            run = Run(source="api", statut="termine")
+            run = Run(source="api", statut="termine", envoye_telegram=True)
             db.add(run)
             db.flush()
             c = Coupon(run_id=run.id, jour=jour, profil="coupon1", nom=nom, cote_totale=5.0, statut="perdu")
@@ -78,7 +78,7 @@ def test_jambe_presente_dans_deux_coupons_comptee_une_fois():
 def test_match_piege_deux_jambes_differentes_perdues():
     jour = date.today() - timedelta(days=1)
     with SessionLocal() as db:
-        run = Run(source="api", statut="termine")
+        run = Run(source="api", statut="termine", envoye_telegram=True)
         db.add(run)
         db.flush()
         c = Coupon(run_id=run.id, jour=jour, profil="coupon1", nom="🟢 A", cote_totale=5.0, statut="perdu")
@@ -105,3 +105,39 @@ def test_etude_ia_sans_effectif_ecartee_et_refaire_remplace():
         assert apprentissage.etudier_jour(db, jour, avec_ia=False) is None
         assert apprentissage.etudier_jour(db, jour, avec_ia=False, refaire=True)
         assert db.query(MemoireAgent).count() == 1
+
+
+def test_jambes_sans_probabilite_ne_faussent_pas_la_moyenne_annoncee():
+    """07/11/2026 (étude du 04/11) : 5 jambes sans probabilité enregistrée comptaient comme « 0 % annoncé » : « annoncé 17,7 % » pour la tranche
+    de cote 1,50-2,00. La moyenne annoncée ne porte plus que sur les jambes qui ont une probabilité."""
+    from types import SimpleNamespace
+    def jambe(res, cote, proba, cat="Total"):
+        return SimpleNamespace(resultat=res, cote=cote, proba_modele_pct=proba, categorie=cat)
+    stats = apprentissage.statistiques([jambe("gagne", 1.6, 70.0), jambe("perdu", 1.7, 80.0), jambe("gagne", 1.8, None), jambe("perdu", 1.9, None)])
+    cote = stats["par_cote"]["cote 1,50-2,00"]
+    assert cote["n"] == 4 and cote["gagnees"] == 2 and cote["reussite_pct"] == 50.0
+    assert cote["annoncee_pct"] == 75.0 and cote["sans_proba"] == 2      # (70 + 80) / 2, et non (70 + 80 + 0 + 0) / 4 = 37,5
+    assert stats["par_categorie"]["Total"]["annoncee_pct"] == 75.0
+    assert stats["jambes_jugees"] == 4 and stats["jambes_sans_proba"] == 2
+    # aucune jambe avec probabilité : pas de moyenne inventée
+    seul = apprentissage.statistiques([jambe("gagne", 1.6, None)])
+    assert seul["par_cote"]["cote 1,50-2,00"]["annoncee_pct"] is None
+    # tout est renseigné : aucun champ supplémentaire
+    complet = apprentissage.statistiques([jambe("gagne", 1.6, 70.0)])
+    assert "jambes_sans_proba" not in complet and "sans_proba" not in complet["par_cote"]["cote 1,50-2,00"]
+
+
+def test_etude_sans_probabilite_n_ecrit_jamais_none_pour_cent():
+    jour = date.today() - timedelta(days=1)
+    with SessionLocal() as db:
+        run = Run(source="api", statut="termine", envoye_telegram=True)
+        db.add(run); db.flush()
+        coupon = Coupon(run_id=run.id, jour=jour, profil="coupon1", nom="T", cote_totale=3.0, statut="perdu")
+        db.add(coupon); db.flush()
+        db.add(Jambe(coupon_id=coupon.id, libelle_match="A vs B", categorie="Total", marche="Over Under Full Time (2.5)", selection="Under",
+                     cote=1.85, proba_modele_pct=None, edge_pct=None, resultat="perdu"))
+        db.add(Jambe(coupon_id=coupon.id, libelle_match="C vs D", categorie="Total", marche="Over Under Full Time (3.0)", selection="Under",
+                     cote=1.7, proba_modele_pct=72.0, edge_pct=0.0, resultat="gagne"))
+        db.commit()
+        texte = apprentissage.etudier_jour(db, jour, avec_ia=False)
+        assert "None" not in texte and "probabilité non enregistrée" in texte

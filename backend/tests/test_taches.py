@@ -1,6 +1,6 @@
 from app import taches
 from app.database import SessionLocal
-from app.models import Run
+from app.models import Coupon, Run
 from app.services import pipeline
 from app.services.bilan import envoyer_bilans
 from app.services.persistance import importer_fichiers
@@ -38,9 +38,12 @@ def test_tache_run_en_erreur_code_retour_1(monkeypatch):
         assert [r.statut for r in db.query(Run).order_by(Run.id)] == ["erreur", "termine"]
 
 
-def _importer_et_juger(monkeypatch, score):
+def _importer_et_juger(monkeypatch, score, run_envoye=True):
     with SessionLocal() as db:
         importer_fichiers(db, collecte_exemple(), ticket_exemple())
+        for run in db.query(Run):   # un bilan n'existe que pour un run réellement envoyé sur Telegram
+            run.envoye_telegram = run_envoye
+        db.commit()
     _, _, vr = pipeline.modules()
     monkeypatch.setattr(vr, "recuperer_fixtures_du_jour", lambda: {"idLENSAUX": {
         "statusName": "Finished", "participant1Name": "RC Lens", "participant2Name": "AJ Auxerre"}})
@@ -125,42 +128,19 @@ def test_garde_ticket_du_jour_couvert_par_coupons_envoyes_la_veille():
         assert ticket_deja_produit_aujourdhui(db) is False
 
 
-def test_envoyer_ombre_envoie_les_coupons_du_modele_une_seule_fois(monkeypatch):
-    from types import SimpleNamespace
-    from app import taches
-    from app.database import SessionLocal
-    from app.models import CouponOmbre, JambeOmbre, Run
-    from datetime import date
-    envoyes = []
-    ae = SimpleNamespace(agent5_envoyer_coupons=lambda t: envoyes.append(t) or True)
-    monkeypatch.setattr(taches.pipeline, "modules", lambda: (None, ae, None))
+def test_aucun_bilan_pour_un_run_non_envoye_sur_telegram(monkeypatch):
+    """06/11/2026 : les runs d'essai (jamais reçus) ne doivent jamais produire un « résultat du jour » sur Telegram."""
+    _importer_et_juger(monkeypatch, (2, 1), run_envoye=False)
+    messages = []
+    fausse_ae = type("AE", (), {"notifier_telegram": staticmethod(lambda m: messages.append(m) or True)})
+    monkeypatch.setattr(pipeline, "modules", lambda real=pipeline.modules: (None, fausse_ae, real()[2]))
+
+    assert taches.main(["verifier", "--telegram"]) == 0
+    assert messages == []
     with SessionLocal() as db:
-        run = Run(source="test", statut="termine", nb_matchs=0, nb_matchs_avec_marches=0, nb_marches=0, envoye_telegram=False)
-        db.add(run); db.flush()
-        c = CouponOmbre(run_id=run.id, jour=date(2026, 11, 7), modele="openai/gpt-6.1-sol", profil="coupon1", cote_totale=5.12, dans_la_bande=True)
-        c.jambes.append(JambeOmbre(libelle_match="A vs B", categorie="Total", marche="Over Under Full Time (2.5)", handicap=2.5,
-                                   selection="Under", cote=1.8, resultat="en_attente"))
-        db.add(c); db.commit(); rid = run.id
-    args = SimpleNamespace(run_id=rid, modele="openai/gpt-6.1-sol", etiquette="GPT-6.1 Sol", forcer=False)
-    assert taches.tache_envoyer_ombre(args) == 0 and len(envoyes) == 1
-    assert "GPT-6.1 Sol" in envoyes[0][0] and "cote 5.12" in envoyes[0][0]
-    assert taches.tache_envoyer_ombre(args) == 0 and len(envoyes) == 1   # pas de second envoi
-def test_envoyer_ne_garde_que_les_coupons_demandes(monkeypatch):
-    from types import SimpleNamespace
-    from datetime import date
-    from app import taches
-    from app.database import SessionLocal
-    from app.models import Coupon, Run
-    envoyes = []
-    monkeypatch.setattr(taches.pipeline, "modules", lambda: (None, SimpleNamespace(agent5_envoyer_coupons=lambda t: envoyes.append(t) or True), None))
-    with SessionLocal() as db:
-        run = Run(source="test", statut="termine", nb_matchs=0, nb_matchs_avec_marches=0, nb_marches=0, envoye_telegram=False)
-        db.add(run); db.flush()
-        ids = []
-        for i, nom in enumerate(("un", "deux", "trois")):
-            c = Coupon(run_id=run.id, jour=date(2026, 11, 6), profil=f"coupon{i + 1}", nom=nom, texte=f"texte {nom}", statut="en_attente")
-            db.add(c); db.flush(); ids.append(c.id)
-        db.commit(); rid = run.id
-    args = SimpleNamespace(run_id=rid, forcer=False, coupons=f"{ids[0]},{ids[2]}")
-    assert taches.tache_envoyer(args) == 0
-    assert envoyes == [["texte un", "texte trois"]]
+        assert all(not c.bilan_envoye for c in db.query(Coupon))   # laissés tels quels, jamais marqués envoyés
+        for run in db.query(Run):
+            run.envoye_telegram = True                              # une fois le run réellement envoyé : bilan normal
+        db.commit()
+    assert taches.main(["verifier", "--telegram"]) == 0
+    assert len(messages) == 1 and "RÉSULTATS DU JOUR" in messages[0]

@@ -5,13 +5,13 @@ import json
 import os
 import sys
 
-BANDES_DEFAUT = [(5, 10), (12, 18), (20, 35)]
-COULEURS = ["🟢", "🟠", "🔴", "🔵", "🟣"]
+# Les profils smart vivent à UN seul endroit (bet_agent/profils_smart.py, pur Python), partagé avec le profil de secours du moteur.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "bet_agent"))
+from profils_smart import BANDES_DEFAUT, COULEURS, CONSIGNE, lire_bande as _bande, profils  # noqa: E402,F401
+
 MODELES = {"deepseek": "", "gpt-6.1-sol": "openai/gpt-6.1-sol", "gemini-4-argon": "google/gemini-4-argon",
            "claude-sonnet-5.5": "anthropic/claude-sonnet-5.5"}
 VOTE_DEFAUT = "openai/gpt-6.1-sol,google/gemini-4-argon"
-CONSIGNE = ("Smart coupon : tu choisis LIBREMENT les paris et le nombre de jambes les plus probables et les mieux valorisés ; seule "
-            "contrainte : la cote totale doit être dans la bande de ce profil (une seule sélection par match dans un coupon).")
 
 
 def _choix(valeur, defaut="defaut"):
@@ -24,32 +24,6 @@ def _nombre(valeur):
     return int(v) if v.isdigit() else None
 
 
-def _bande(texte):
-    """« 12-18 » -> (12.0, 18.0)."""
-    a, _, b = texte.partition("-")
-    return float(a), float(b)
-
-
-def profils(nb_coupons=None, cotes=None, nb_min=None, nb_max=None, un_pari_par_match=True):
-    """Liste de profils. `cotes` : une bande (« 12-18 ») ou None par coupon ; sans choix, bande smart du rang du coupon (5-10, 12-18,
-    20-35, puis on recommence). Les choix au-delà du nombre de coupons sont ignorés."""
-    n = nb_coupons or 3
-    cotes = list(cotes or [])
-    bandes = [_bande(cotes[i]) if i < len(cotes) and cotes[i] else BANDES_DEFAUT[i % 3] for i in range(n)]
-    maximum = nb_max or 12
-    minimum = min(nb_min or 1, maximum)
-    sortie = []
-    for i, (bas, haut) in enumerate(bandes):
-        b0, b1 = f"{bas:g}", f"{haut:g}"
-        sortie.append({
-            "cle": f"coupon{i + 1}", "nom": f"{COULEURS[i % 5]} SMART COUPON — cote {b0} à {b1}",
-            "cote_min": bas, "cote_max": haut, "cote_totale_min": bas, "cote_totale_max": haut,
-            "nb_jambes_min": minimum, "nb_jambes": maximum, "proba_min_pct": 30, "proba_max_pct": 100,
-            "jambes_max_par_match": 1 if un_pari_par_match else 3, "match_repete_autorise": True,
-            "max_coupons_par_match": 3, "un_seul_pari_par_event": True, "consigne": CONSIGNE})
-    return sortie
-
-
 def construire(env):
     evenement = env.get("EVENEMENT", "")
     moteur = _choix(env.get("MOTEUR"), "") or "agent"
@@ -57,7 +31,6 @@ def construire(env):
     if modele not in MODELES:
         raise ValueError(f"modèle inconnu : {modele}")
     telegram = (env.get("TELEGRAM_IN") or "").strip().lower() == "true"
-    ombre = (env.get("OMBRE_IN") or "").strip()
     vote = "aucun"
     if moteur != "agent":            # les autres moteurs ne connaissent ni pilote IA, ni profils personnalisés
         matrice = [{"etiquette": moteur, "pilote": ""}]
@@ -65,22 +38,18 @@ def construire(env):
         matrice = [{"etiquette": modele, "pilote": MODELES[modele]}]
         if modele == "deepseek":     # vote final : seul le pilote DeepSeek est comparé aux autres modèles
             vote = (env.get("VOTE_VAR") or "").strip() or VOTE_DEFAUT
-        else:
-            ombre = ombre or "aucun"
     sortie = {"matrice": json.dumps(matrice, ensure_ascii=False, separators=(",", ":")), "moteur": moteur,
-              "telegram": "true" if telegram else "", "ombre": ombre, "vote": vote, "date_debut": "", "date_fin": "", "ttl": ""}
+              "telegram": "true" if telegram else "", "vote": vote, "date_debut": "", "date_fin": "", "ttl": ""}
     if evenement == "workflow_dispatch":
         sortie["ttl"] = "43200"
         sortie["date_debut"] = (env.get("DATE_DEBUT") or "").strip()
         sortie["date_fin"] = (env.get("DATE_FIN") or "").strip()
-    cote_min, cote_max = _choix(env.get("COTE_MIN_JAMBE")), _choix(env.get("COTE_MAX_JAMBE"))
-    sortie["cote_min_jambe"] = cote_min or "1.01"       # smart coupon : aucun plancher par jambe
-    sortie["cote_max_jambe"] = cote_max or "0"          # 0 = aucun plafond par jambe
+    sortie["cote_min_jambe"] = "0"   # plus de fourchette de cote par jambe (retirée le 06/11/2026) : 0 = aucune
+    sortie["cote_max_jambe"] = "0"
     sortie["depuis_run"] = (env.get("DEPUIS_RUN") or "").strip()
-    sortie["ignorer_diversite"] = "true" if (env.get("IGNORER_DIVERSITE") or "").strip().lower() == "true" else ""
+    sortie["ignorer_diversite"] = "true"   # diversité de catégorie entre coupons retirée le 06/11/2026 (l'anti-doublon exact reste actif)
     if moteur == "agent":
         liste = profils(_nombre(env.get("NB_COUPONS")), [_choix(env.get(f"COTE_COUPON_{i}")) or None for i in range(1, 6)],
-                        _nombre(env.get("NB_JAMBES_MIN")), _nombre(env.get("NB_JAMBES_MAX")),
                         un_pari_par_match=_choix(env.get("UN_PARI_PAR_MATCH"), "actif") != "desactive")
         sortie["profils"] = json.dumps(liste, ensure_ascii=False, separators=(",", ":"))
     else:
@@ -98,5 +67,5 @@ if __name__ == "__main__":
     resultat = construire(os.environ)
     ecrire(resultat, os.environ.get("GITHUB_OUTPUT") or os.devnull)
     print(f"Moteur {resultat['moteur']} · matrice {resultat['matrice']} · Telegram {resultat['telegram'] or 'non'} · "
-          f"vote {resultat['vote']} · ombre {resultat['ombre'] or 'défaut'} · reprise {resultat['depuis_run'] or 'non'}")
+          f"vote {resultat['vote']} · reprise {resultat['depuis_run'] or 'non'}")
     sys.exit(0)

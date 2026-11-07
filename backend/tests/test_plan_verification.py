@@ -3,7 +3,7 @@ activation par le plan et rapport final à l'échéance."""
 from datetime import datetime, timedelta, timezone
 
 from app.database import SessionLocal
-from app.models import PlanVerification
+from app.models import PlanVerification, Run
 from app.services import plan_verification as pv
 from app.services.verification import verification_due
 from tests.conftest import collecte_exemple, ticket_exemple
@@ -78,6 +78,8 @@ def test_rapport_final_partiel_force_a_l_echeance(client):
     client.post("/api/imports", json={"collecte": collecte_exemple(), "ticket": ticket_exemple()})
     messages = []
     with SessionLocal() as db:
+        db.get(Run, 1).envoye_telegram = True   # un bilan n'existe que pour un run réellement envoyé
+        db.commit()
         assert envoyer_bilans(db, lambda m: messages.append(m) or True) == 0      # jambes en attente : rien
         assert envoyer_bilans(db, lambda m: messages.append(m) or True, forcer_runs={1}) == 1
     assert "Rapport final partiel" in messages[0]

@@ -76,7 +76,25 @@ EDGE_MAX_PLAUSIBLE = 20.0  # % — resserré de 25 à 20 (16/10/2026, demande ex
 # Configurable (SEUIL_PROBA_MIN), 70 par défaut depuis le 03/10/2026 : sur 349 paris réellement
 # jugés, la tranche 60-70 % annoncée n'en gagnait que 52 % (ROI -17 %), la tranche 50-60 %
 # seulement 35 % ; au-dessus de 70 % le modèle est bien calibré (78-93 % réels, ROI positif).
-PROBA_MIN_FORTE = float(os.getenv("SEUIL_PROBA_MIN") or 70.0)  # % — un marché n'est retenu que si le modèle lui donne AU MOINS
+def lire_seuil_proba(valeur, defaut=70.0):
+    """Lecture robuste de SEUIL_PROBA_MIN (06/11/2026). Avant : float(valeur) plantait à l'import sur une saisie comme « 70% » ou « abc »,
+    et la valeur 0 (légitime depuis le retrait des seuils) provoquait une division par zéro dans le message « HORS CIBLE ».
+    Accepte « 65 », « 65% », « 65,5 » ; 0 est valide (aucun seuil) ; vide, illisible, négatif ou > 100 -> valeur par défaut."""
+    texte = str(valeur if valeur is not None else "").strip().replace("%", "").replace(",", ".").strip()
+    if not texte:
+        return float(defaut)
+    try:
+        seuil = float(texte)
+    except ValueError:
+        print(f"⚠️ SEUIL_PROBA_MIN « {valeur} » illisible — valeur par défaut {defaut:g}% utilisée.")
+        return float(defaut)
+    if not 0 <= seuil <= 100 or seuil != seuil:
+        print(f"⚠️ SEUIL_PROBA_MIN « {valeur} » hors de 0-100 — valeur par défaut {defaut:g}% utilisée.")
+        return float(defaut)
+    return seuil
+
+
+PROBA_MIN_FORTE = lire_seuil_proba(os.getenv("SEUIL_PROBA_MIN"))  # % — un marché n'est retenu que si le modèle lui donne AU MOINS
                          # cette probabilité de gagner (pas seulement un edge positif) : objectif
                          # "coupon smart" avec des jambes individuellement fortes, pas juste
                          # statistiquement avantageuses sur le papier
@@ -143,65 +161,28 @@ PROFILS_COUPON = [
      "cote_min": 1.1, "cote_max": 2.1, "nb_jambes_min": 2, "nb_jambes": 5},
 ]
 
-# Profils du moteur "agent" (agent pilote IA) en production depuis le 20/10/2026 ; passés à TROIS
-# coupons de 5 à 10 jambes le 22/10/2026 (demande explicite : "min 5 max 10 et trois types de coupon :
-# 1 = cote 5 à 10, 2 = cote 10 à 50, 3 = plus de 50"), coupon 3 ramené à 25 et plus le 23/10/2026. NB_JAMBES_MIN / NB_JAMBES (entrées du workflow,
-# déjà utilisées par le moteur déterministe) les remplacent pour UN run, pour les trois coupons.
-# cote_totale_min / cote_totale_max : vérifiés par Python (agent_strategie.valider) ; le coupon 3 n'a
-# pas de plafond. Depuis le 22/10/2026 (« match répété c'est bon, il faut les 5 matchs dans les 3
-# coupons ») les 3 coupons reprennent TOUS les matchs du pool (5 par défaut), 1 à 2 paris par match, un
-# même match pouvant figurer dans plusieurs coupons mais jamais le même pari exact.
-TRANCHES_COTE_AGENT = (
-    # (clé, libellé, cote totale min, cote totale max ou None, probabilité min par jambe %, jambes min, jambes max,
-    #  probabilité max par jambe %)
-    # 25/10/2026 (bilan de 1 757 jambes) : coupons de 5 à 8 jambes au maximum (11 jambes : 0 gagné sur 11 ; 8 à 10 : 2 sur 30 ; 6 à 7 : 3 sur 8),
-    # jambes à 70-78 % pour le coupon prudent (au-dessus de 80 % annoncés, la réussite réelle n'augmente plus). La cote
-    # AUGMENTE d'un coupon à l'autre par des jambes un peu moins probables et donc mieux payées : depuis le 21/10, les
-    # jambes annoncées à 60-70 % ont réussi à 70-86 % (89 jambes), le modèle y est prudent.
-    ("coupon1", "🟢 PETITE COTE — cote 5 à 10 (prudent)", 5.0, 10.0, 70.0, 5, 8, 78.0),
-    ("coupon2", "🟠 COTE MOYENNE — cote 10 à 18 (équilibré)", 10.0, 18.0, 65.0, 6, 8, 75.0),
-    ("coupon3", "🔴 HAUTE COTE — cote 18 à 35 (risqué)", 18.0, 35.0, 60.0, 7, 8, 72.0),
-)
-
-
-MAX_COUPONS_PAR_MATCH = int(os.getenv("MAX_COUPONS_PAR_MATCH") or 2)
 NB_MATCHS_SEUIL_PLAFOND_COUPONS = 8   # sous ce nombre de matchs, le plafond rendrait les coupons impossibles : inactif
 
 
 def profils_agent_quotidien():
+    """Profils du moteur « agent » quand AUCUN profil n'est fourni (profil de secours). Phase 2 (06/11/2026) : ce sont EXACTEMENT les profils
+    du formulaire « Run workflow » (bet_agent/profils_smart.py, source unique) — bandes 5-10 / 12-18 / 20-35, aucune contrainte par jambe.
+    Avant, ce secours gardait les règles retirées le même jour (probabilité min/max par jambe, couverture obligatoire de tous les matchs,
+    plafond de coupons par match, bandes 10-18 / 18-35). NB_JAMBES / NB_JAMBES_MIN (variables explicites, absentes du workflow actuel),
+    si fournies, bornent encore les coupons."""
+    import profils_smart
+
     def _entier(nom):
         valeur = (os.getenv(nom) or "").strip()
         return int(valeur) if valeur.isdigit() and int(valeur) > 0 else None
 
-    # NB_JAMBES / NB_JAMBES_MIN (entrées du workflow), si fournis, remplacent les bornes de TOUS les coupons.
     force_max, force_min = _entier("NB_JAMBES"), _entier("NB_JAMBES_MIN")
-    try:
-        proba_max = float(os.getenv("PROBA_MAX_JAMBE") or 0)   # 0 = plafonds des tranches ; sinon plafond commun plus strict
-    except ValueError:
-        proba_max = 0.0
-    profils = []
-    for cle, nom, cote_min, cote_max, proba_min, tr_min, tr_max, tr_proba_max in TRANCHES_COTE_AGENT:
-        nb_max = force_max or tr_max
-        nb_min = min(force_min or tr_min, nb_max)
-        profil = {"cle": cle, "nom": f"{nom} ({nb_min}-{nb_max} jambes)",
-                  "cote_min": cote_min, "cote_max": cote_max if cote_max else 100000.0,
-                  "cote_totale_min": cote_min, "nb_jambes_min": nb_min, "nb_jambes": nb_max,
-                  # un match peut figurer dans plusieurs coupons (22/10/2026) mais, dans UN coupon, une seule sélection
-                  # par match (24/10/2026, « interdit d'intégrer un match sur deux sélections sur un coupon »)
-                  "match_repete_autorise": True, "jambes_max_par_match": 1,
-                  # 28/10/2026 : Bayern-Magdeburg (6-1) était dans 5 des 6 coupons du jour et en a fait tomber la plupart ;
-                  # un match ne figure plus que dans MAX_COUPONS_PAR_MATCH coupons (jours à 8 matchs ou plus seulement).
-                  "max_coupons_par_match": MAX_COUPONS_PAR_MATCH,
-                  "un_seul_pari_par_event": True, "proba_min_pct": proba_min,
-                  **({"proba_max_pct": min(proba_max, tr_proba_max) if proba_max > 0 else tr_proba_max}),
-                  # diversification entre coupons (23/10/2026) : même risque (marché+équipe+sens, toute ligne) jamais repris
-                  "diversifier_entre_coupons": True,
-                  # couverture de TOUS les matchs sur l'ensemble des coupons (24/10/2026), complétée par le dernier
-                  "couvrir_tous_les_matchs": True}
-        if cote_max:
-            profil["cote_totale_max"] = cote_max
-        profils.append(profil)
-    profils[-1]["dernier_profil"] = True
+    profils = profils_smart.profils()
+    if force_max or force_min:
+        for profil in profils:
+            nb_max = force_max or profil["nb_jambes"]
+            profil["nb_jambes"] = nb_max
+            profil["nb_jambes_min"] = min(force_min or profil["nb_jambes_min"], nb_max)
     return profils
 
 
@@ -508,17 +489,15 @@ def cote_hors_fourchette(cote):
 CATEGORIES_HANDICAP_COMPTAGE_EXCLUES = (
     "Handicap Corners", "Handicap Cartons", "Handicap Fautes", "Handicap Hors-jeux", "Handicap Tirs",
     "Handicap Tirs Cadrés")
-CATEGORIES_EXCLUES = tuple(c.strip() for c in os.getenv("MARCHES_EXCLUS", "").split(",") if c.strip()) or (
-    CATEGORIES_HANDICAP_COMPTAGE_EXCLUES)
+# 06/11/2026 (demande explicite) : plus aucune catégorie exclue par défaut. MARCHES_EXCLUS="Cat1,Cat2" reste possible pour en exclure.
+CATEGORIES_EXCLUES = tuple(c.strip() for c in os.getenv("MARCHES_EXCLUS", "").split(",") if c.strip())
 
 
 def est_marche_exclu(nom_marche):
-    """Demande explicite du 03/10/2026 ("exclu les marchés handicap corner et yellow") après
-    deux jambes perdues le même jour (Belarus-San Marino, Estonia-Luxembourg) — exclus aussi
-    en brut (completer_avec_marches_bruts), sinon ils reviendraient par cette porte."""
+    """Plus d'exclusion automatique des handicaps de comptage (corners, cartons, fautes, hors-jeux, tirs) depuis le 06/11/2026 :
+    seuls les marchés listés dans MARCHES_EXCLUS sont écartés."""
     nom = (nom_marche or "").lower()
-    return "handicap" in nom and any(m in nom for m in (
-        "corner", "card", "booking", "yellow", "foul", "offside", "shot", "tackle", "save"))
+    return any(c.lower() in nom for c in CATEGORIES_EXCLUES)
 
 
 def _edge_calculable(edge, proba):
@@ -1391,11 +1370,32 @@ def _chats_destinataires():
     return chats
 
 
+TELEGRAM_TENTATIVES = int(os.getenv("TELEGRAM_TENTATIVES") or 3)
+STATUTS_TELEGRAM_A_RETENTER = (429, 502, 503, 504)   # message NON remis : 429 (trop de requêtes), erreurs de passerelle
+
+
+def _pause_telegram(secondes):
+    time.sleep(secondes)
+
+
 def _envoyer_a_un_chat(chat_id, message):
+    """Une seule remise par message : on ne retente que lorsque Telegram n'a PAS pu recevoir le message (429, 502-504, connexion
+    refusée ou coupée avant l'envoi). Un délai de lecture dépassé n'est jamais retenté : le message a pu partir (doublon)."""
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {"chat_id": chat_id, "text": message, "parse_mode": "Markdown"}
-    try:
-        r = requests.post(url, json=payload, timeout=15)
+    for tentative in range(1, max(1, TELEGRAM_TENTATIVES) + 1):
+        derniere = tentative >= max(1, TELEGRAM_TENTATIVES)
+        try:
+            r = requests.post(url, json=payload, timeout=15)
+        except requests.exceptions.ConnectionError as e:   # inclut ConnectTimeout : rien n'a été envoyé
+            print(f"❌ Erreur connexion Telegram (tentative {tentative}) : {e}")
+            if derniere:
+                return False
+            _pause_telegram(2 * tentative)
+            continue
+        except Exception as e:                              # délai de lecture dépassé, etc. : retenter risquerait un doublon
+            print(f"❌ Erreur Telegram : {e}")
+            return False
         if r.status_code == 200:
             print("✅ Message Telegram envoyé !")
             return True
@@ -1405,15 +1405,27 @@ def _envoyer_a_un_chat(chat_id, message):
             # on renvoie le même message en texte brut plutôt que de le perdre.
             print(f"   ⚠️ Markdown rejeté par Telegram ({r.text[:120]}) — renvoi en texte brut...")
             payload.pop("parse_mode")
-            r = requests.post(url, json=payload, timeout=15)
+            try:
+                r = requests.post(url, json=payload, timeout=15)
+            except Exception as e:
+                print(f"❌ Erreur connexion Telegram : {e}")
+                return False
             if r.status_code == 200:
                 print("✅ Message Telegram envoyé (texte brut) !")
                 return True
+        if r.status_code in STATUTS_TELEGRAM_A_RETENTER and not derniere:
+            attente = 2 * tentative
+            if r.status_code == 429:
+                try:
+                    attente = min(30, int((r.json().get("parameters") or {}).get("retry_after") or attente))
+                except Exception:
+                    pass
+            print(f"   ⏳ Telegram HTTP {r.status_code} — nouvelle tentative dans {attente} s ({tentative}/{TELEGRAM_TENTATIVES})")
+            _pause_telegram(attente)
+            continue
         print(f"❌ Erreur Telegram : {r.text}")
         return False
-    except Exception as e:
-        print(f"❌ Erreur connexion Telegram : {e}")
-        return False
+    return False
 
 
 def notifier_telegram(message):
@@ -2069,6 +2081,8 @@ def _score_qualite_combo(combo, qualite_marches=None, calibrateur=None):
     suffisamment mesuré retombe sur sa probabilité du jour (ni bonus ni pénalité inventés) :
     un coupon entièrement composé de marchés inédits n'est ni avantagé ni désavantagé par ce
     critère, seule la probabilité et l'edge du jour le départagent alors."""
+    if not combo:   # coupon vide : pas de moyenne (division par zéro) — score le plus bas
+        return (0.0, 0.0, 0.0, 0)
     probas = [_proba_pour_score(c["pick"], calibrateur) for c in combo]
     historiques = [_historique_fiable_pct(c["pick"], qualite_marches) for c in combo]
     historiques = [h if h is not None else p for h, p in zip(historiques, probas)]
@@ -2176,7 +2190,7 @@ def selectionner_combo_cote_cible(pool_par_match, nb_jambes, cote_min, cote_max,
     pool_par_match = {m: c for m, c in pool_par_match.items() if c}
     matchs = list(pool_par_match.keys())
     tous_candidats = [c for candidats in pool_par_match.values() for c in candidats]
-    if len(tous_candidats) < nb_jambes:
+    if nb_jambes < 1 or len(tous_candidats) < nb_jambes:
         return None
 
     # Cote "par jambe" typiquement nécessaire pour atteindre le milieu de la cible en
@@ -2530,7 +2544,7 @@ def generer_coupons(donnees, qualite_marches=None):
             # dans la cible une fois plusieurs jambes multipliées).
             etat_txt = (f"  ⚠️ HORS CIBLE — incompatible avec le seuil de probabilité actuel "
                         f"(PROBA_MIN_FORTE={PROBA_MIN_FORTE:.0f}%, cote individuelle minimale ~"
-                        f"{100 / PROBA_MIN_FORTE:.2f}), PAS un manque de matchs ({jambes_possibles} "
+                        f"{100 / max(PROBA_MIN_FORTE, 1.0):.2f}), PAS un manque de matchs ({jambes_possibles} "
                         f"exploitables aujourd'hui) — meilleur compromis gardé")
         print(f"   {'✓' if dans_cible else '⚠️'} [{profil['nom']}] {len(combo)} jambes, cote totale réelle "
               f"{cote_reelle:.2f} (cible {profil['cote_min']}-{profil['cote_max']}){etat_txt}")
@@ -2587,6 +2601,9 @@ def agent4_rediger_coupons(resultats_profils):
 
 
 
+DERNIER_ENVOI = None   # (messages partis, messages à envoyer) du dernier agent5_envoyer_coupons ; None avant tout envoi
+
+
 def agent5_envoyer_coupons(sections):
     """AGENT 5 — LIVRAISON. Envoie CHAQUE profil dans son PROPRE message (ou plusieurs
     messages successifs si trop long — voir decouper_message_telegram) — jamais un seul
@@ -2597,18 +2614,22 @@ def agent5_envoyer_coupons(sections):
     entete = "🎯 "
     pied = ""
 
-    tout_envoye = True
+    global DERNIER_ENVOI
+    tout_envoye, nb_ok, nb_total = True, 0, 0
     for i, section in enumerate(sections, start=1):
         messages = decouper_message_telegram(entete, section, pied)
         for j, message in enumerate(messages, start=1):
             suffixe_log = f" (partie {j}/{len(messages)})" if len(messages) > 1 else ""
             print(f"   📤 Envoi Telegram {i}/{len(sections)}{suffixe_log}...")
             ok = notifier_telegram(message)
+            nb_total += 1
+            nb_ok += bool(ok)
             tout_envoye = tout_envoye and ok
             if not ok:
                 print(f"   ❌ Échec d'envoi pour le message {i}/{len(sections)}{suffixe_log} — voir erreur ci-dessus.")
             time.sleep(1)  # évite de rafaler l'API Telegram entre plusieurs messages
 
+    DERNIER_ENVOI = (nb_ok, nb_total)   # (06/11/2026) un envoi PARTIEL (1 ou 2 messages partis sur 3) ne doit jamais être relancé comme un échec total
     return tout_envoye
 
 

@@ -1,0 +1,93 @@
+{
+ "avertissement": "Instantané de LECTURE du 07/11/2026 (base non modifiée). La sauvegarde de référence reste la copie exacte : `python -m app.taches apprendre --exporter ...` ou 06_sauvegarde_memoire.sql. Ici : `contenu_exact` = true si l'empreinte md5 du texte ci-dessous égale celle de la base ; false pour les études 9 et 12, dont les espaces fines insécables (U+202F) d'origine n'ont pas pu être recopiées (texte lisible mais non identique octet pour octet). Les `stats` ne sont pas recopiées : seules leur empreinte et leur taille sont données.",
+ "etudes": [
+  {
+   "id": 8,
+   "jour": "2026-10-23",
+   "type": "etude",
+   "cree_le": "2026-11-06 14:34:32.510209+00",
+   "contenu": "Bilan du jour : 4 coupon(s) gagné(s), 14 perdu(s) sur 18.\n4 coupon(s) perdu(s) par UNE seule jambe (4 jambe(s) différente(s)) : Alaves vs Malaga — Corners - Over Under Team 2 (2.5) Over @1.23 (annoncé 76.0 %); Torino vs Monza — Over Under Team 2 (1.5) Under @1.44 (annoncé 70.3 %); Alaves vs Malaga — Corners - Over Under Team 2 (3.0) Over @1.32 (annoncé 71.7 %); 1. FC Köln vs FC Schalke 04 — Yellow Cards - Over Under Full Time (4.5) Under @1.48 (annoncé 68.8 %). Une jambe de plus dans un coupon est une chance de plus de perdre.\nMatch piège : Alaves vs Malaga — 3 jambes DIFFÉRENTES perdues (Corners - Over Under Team 2 (2.5) Over; Double Chance Full Time 12; Corners - Over Under Team 2 (3.0) Over) : plusieurs paris sur un même match partagent le même scénario ; un résultat inattendu les fait tomber ensemble.\nMatch piège : Aston Villa vs Manchester City — 2 jambes DIFFÉRENTES perdues (Shots - Over Under Full Time (24.5) Over; Shots - Over Under Full Time (26.5) Over) : plusieurs paris sur un même match partagent le même scénario ; un résultat inattendu les fait tomber ensemble.\nMatch piège : RB Leipzig vs SV Elversberg — 3 jambes DIFFÉRENTES perdues (Asian Handicap (-2.5) 2; Asian Handicap (-2.0) 2; Over Under Team 1 (3.0) Under) : plusieurs paris sur un même match partagent le même scénario ; un résultat inattendu les fait tomber ensemble.\nMatch piège : Cagliari vs Bologna — 2 jam",
+   "contenu_exact": true,
+   "md5_contenu_base": "e36b963db44d6fdee50bd99f53214abb",
+   "md5_stats_base": "cbee242c67f675aa65d947209f7ebf22",
+   "taille_stats": 2118
+  },
+  {
+   "id": 9,
+   "jour": "2026-10-24",
+   "type": "etude",
+   "cree_le": "2026-11-06 14:34:36.365234+00",
+   "contenu": "Bilan du jour : 0 coupon(s) gagné(s), 7 perdu(s) sur 7.\nMatch piège : Borussia Dortmund vs Eintracht Frankfurt — 2 jambes DIFFÉRENTES perdues (Over Under Full Time (2.5) Over; Corners - Over Under Team 2 (2.5) Over) : plusieurs paris sur un même match partagent le même scénario ; un résultat inattendu les fait tomber ensemble.\nMatch piège : Chelsea vs Tottenham — 3 jambes DIFFÉRENTES perdues (Double Chance Full Time 1X; Over Under Team 2 (1.5) Under; Asian Handicap (0.0) 1) : plusieurs paris sur un même match partagent le même scénario ; un résultat inattendu les fait tomber ensemble.\nMatch piège : RB Leipzig vs SV Elversberg — 2 jambes DIFFÉRENTES perdues (Over Under Team 1 (3.0) Under; Asian Handicap (-2.5) 2) : plusieurs paris sur un même match partagent le même scénario ; un résultat inattendu les fait tomber ensemble.\nJambe annoncée à 81.3 % perdue : Rayo Vallecano vs Elche — Offsides - Over Under Team 1 (3.5) Under (dans 1 coupon(s)).\nJambe annoncée à 77.4 % perdue : Chelsea vs Tottenham — Double Chance Full Time 1X (dans 2 coupon(s)).\nJambe annoncée à 75.7 % perdue : Coventry vs Fulham — Over Under Team 1 (0.5) Over (dans 1 coupon(s)).\nJambe annoncée à 75.6 % perdue : RB Leipzig vs SV Elversberg — Asian Handicap (-2.5) 2 (dans 1 coupon(s)).\nLEÇONS : 1) Analyse des coupons :  \n- ⭐ SPÉCIAL A et 🟢 FAIBLE et 🟠 MOYEN et ⭐ SPÉCIAL B ont perdu parce que chaque jambe perdue étai",
+   "contenu_exact": false,
+   "md5_contenu_base": "25f13428326eaea78835a64a8e65c793",
+   "md5_stats_base": "405ce56e950292deca3ba3faa9ecef9e",
+   "taille_stats": 1923
+  },
+  {
+   "id": 10,
+   "jour": "2026-10-25",
+   "type": "etude",
+   "cree_le": "2026-11-06 14:34:39.131242+00",
+   "contenu": "Bilan du jour : 4 coupon(s) gagné(s), 11 perdu(s) sur 15.\n2 coupon(s) perdu(s) par UNE seule jambe (2 jambe(s) différente(s)) : Atalanta vs Frosinone — Over Under Full Time (5.5) Under @1.14 (annoncé 85.3 %); Atalanta vs Frosinone — Over Under Team 2 (2.0) Under @1.31 (annoncé 78.2 %). Une jambe de plus dans un coupon est une chance de plus de perdre.\nMatch piège : 1899 Hoffenheim vs Bayer Leverkusen — 4 jambes DIFFÉRENTES perdues (Asian Handicap (-1.5) 2; Asian Handicap (-1.0) 2; Both Teams To Score Yes) : plusieurs paris sur un même match partagent le même scénario ; un résultat inattendu les fait tomber ensemble.\nMatch piège : Sunderland vs Leeds — 2 jambes DIFFÉRENTES perdues (Over Under Team 2 (2.0) Under; Over Under Full Time (3.0) Under) : plusieurs paris sur un même match partagent le même scénario ; un résultat inattendu les fait tomber ensemble.\nMatch piège : Atalanta vs Frosinone — 4 jambes DIFFÉRENTES perdues (Over Under Full Time (5.5) Under; Over Under Team 2 (2.0) Under; Corners - Over Under Full Time (12.5) Under) : plusieurs paris sur un même match partagent le même scénario ; un résultat inattendu les fait tomber ensemble.\nMatch piège : Liverpool vs Brighton — 2 jambes DIFFÉRENTES perdues (Both Teams To Score Yes; Asian Handicap (-1.0) 2) : plusieurs paris sur un même match partagent le même scénario ; un résultat inattendu les fait tomber ensemble.\nJambe anno",
+   "contenu_exact": true,
+   "md5_contenu_base": "edae0c7914996aa5e6e4bdd20aea9c8c",
+   "md5_stats_base": "81c152484fb5efae8ff6ce7301c67f67",
+   "taille_stats": 1345
+  },
+  {
+   "id": 11,
+   "jour": "2026-10-28",
+   "type": "etude",
+   "cree_le": "2026-11-06 14:35:03.956175+00",
+   "contenu": "Bilan du jour : 0 coupon(s) gagné(s), 9 perdu(s) sur 9.\n3 coupon(s) perdu(s) par UNE seule jambe (3 jambe(s) différente(s)) : Bayern München vs 1. FC Magdeburg — Over Under Team 1 (5.0) Under @1.48 (annoncé 74.6 %); Bayern München vs 1. FC Magdeburg — Asian Handicap (-4.5) 2 @1.39 (annoncé 77.7 %); Bayern München vs 1. FC Magdeburg — Over Under Team 1 (4.5) Under @1.6 (annoncé 70.8 %). Une jambe de plus dans un coupon est une chance de plus de perdre.\nMatch piège : Bayern München vs 1. FC Magdeburg — 5 jambes DIFFÉRENTES perdues (Over Under Team 1 (5.0) Under; Over Under Full Time (5.5) Under; Asian Handicap (-4.5) 2) : plusieurs paris sur un même match partagent le même scénario ; un résultat inattendu les fait tomber ensemble.\nMatch piège : Frosinone vs Lecce — 3 jambes DIFFÉRENTES perdues (Asian Handicap (-1.5) 2; Over Under Full Time (4.0) Under; Over Under Team 1 (2.5) Under) : plusieurs paris sur un même match partagent le même scénario ; un résultat inattendu les fait tomber ensemble.\nMatch piège : Guijuelo vs Sporting Gijon — 2 jambes DIFFÉRENTES perdues (Over Under Full Time (3.5) Under; Over Under Team 2 (2.5) Under) : plusieurs paris sur un même match partagent le même scénario ; un résultat inattendu les fait tomber ensemble.\nMatch piège : Monza vs Napoli — 2 jambes DIFFÉRENTES perdues (Asian Handicap (1.5) 1; Corners - Over Under Full Time (7.5) Over) : plusieurs p",
+   "contenu_exact": true,
+   "md5_contenu_base": "22b65812c8b051e29aa3d2072f37b953",
+   "md5_stats_base": "6c40d8ec8d46b5844b68e05e6594f5df",
+   "taille_stats": 1092
+  },
+  {
+   "id": 12,
+   "jour": "2026-10-29",
+   "type": "etude",
+   "cree_le": "2026-11-06 14:35:06.747037+00",
+   "contenu": "Bilan du jour : 0 coupon(s) gagné(s), 3 perdu(s) sur 3.\nMatch piège : Frosinone vs Lecce — 2 jambes DIFFÉRENTES perdues (Over Under Full Time (4.0) Under; Asian Handicap (-1.5) 2) : plusieurs paris sur un même match partagent le même scénario ; un résultat inattendu les fait tomber ensemble.\nMatch piège : Laredo vs Burgos — 2 jambes DIFFÉRENTES perdues (Asian Handicap (1.5) 1; Over Under Full Time (3.5) Under) : plusieurs paris sur un même match partagent le même scénario ; un résultat inattendu les fait tomber ensemble.\nJambes annoncées 70-80 % (moyenne 72.9 %) : réussite réelle 53.3 % (n=15) — le modèle est trop optimiste sur cette tranche.\nJambes annoncées 60-70 % (moyenne 67.1 %) : réussite réelle 50.0 % (n=6) — le modèle est trop optimiste sur cette tranche.\nLEÇONS : 1) Causes de pertes :  \n- Coupon 🟠 «COTE MOYENNE» : 4 jambes perdues, dont deux “handicap” (Everton‑Newcastle, Laredo‑Burgos) et deux “total” (Covadonga‑Valladolid, Laredo‑Burgos Over/Under 3,5) où les cotes étaient très serrées ; aucune jambe “push” n’a compensé les pertes.  \n- Coupon 🔴 «HAUTE COTE» : 4 jambes perdues, deux issues “push” (Poblense‑Ceuta Asian Handicap 1,0 ; Guijuelo‑Sporting Handicap 2,0) mais trois pertes critiques sur des marchés “handicap” et “total” où le modèle affichait un edge positif (Frosinone‑Lecce AH ‑1,5, Laredo‑Burgos AH 1,5).  \n- Coupon 🟢 «PETITE COTE» : 2 pertes (Cieza‑Granada ",
+   "contenu_exact": false,
+   "md5_contenu_base": "af82755fc236c6eaf32c6bd002a1d618",
+   "md5_stats_base": "419369f2ff386626ccc809a9b18faf31",
+   "taille_stats": 909
+  },
+  {
+   "id": 13,
+   "jour": "2026-11-03",
+   "type": "etude",
+   "cree_le": "2026-11-06 14:35:09.836487+00",
+   "contenu": "Bilan du jour : 0 coupon(s) gagné(s), 6 perdu(s) sur 6.\n1 coupon(s) perdu(s) par UNE seule jambe (1 jambe(s) différente(s)) : West Brom vs Southampton — Corners - Over Under Full Time (9.0) Over @1.37 (annoncé 66.9 %). Une jambe de plus dans un coupon est une chance de plus de perdre.\nMatch piège : Birmingham vs Millwall — 2 jambes DIFFÉRENTES perdues (Asian Handicap (-1.0) 2; Over Under Team 1 (2.0) Under) : plusieurs paris sur un même match partagent le même scénario ; un résultat inattendu les fait tomber ensemble.\nMatch piège : Villarreal vs Paris Saint Germain — 2 jambes DIFFÉRENTES perdues (Asian Handicap (1.5) 1; Over Under Full Time (4.5) Under) : plusieurs paris sur un même match partagent le même scénario ; un résultat inattendu les fait tomber ensemble.\nMatch piège : Atletico Madrid vs Bayern München — 3 jambes DIFFÉRENTES perdues (Over Under Team 1 (2.0) Under; Over Under Full Time (4.0) Under; Over Under Full Time (4.5) Under) : plusieurs paris sur un même match partagent le même scénario ; un résultat inattendu les fait tomber ensemble.\nMatch piège : Watford vs Lincoln — 2 jambes DIFFÉRENTES perdues (Corners - Over Under Full Time (11.5) Under; Over Under Full Time (1.5) Over) : plusieurs paris sur un même match partagent le même scénario ; un résultat inattendu les fait tomber ensemble.\nMatch piège : West Brom vs Southampton — 2 jambes DIFFÉRENTES perdues (Corner",
+   "contenu_exact": true,
+   "md5_contenu_base": "92d857620ef415daca304f79857b9fa8",
+   "md5_stats_base": "7678f3d7fd3371a812664f16a55620f8",
+   "taille_stats": 1086
+  },
+  {
+   "id": 14,
+   "jour": "2026-11-05",
+   "type": "etude",
+   "cree_le": "2026-11-06 14:35:14.027122+00",
+   "contenu": "Bilan du jour : 0 coupon(s) gagné(s), 3 perdu(s) sur 3.\n1 coupon(s) perdu(s) par UNE seule jambe (1 jambe(s) différente(s)) : Bayer Leverkusen vs Marseille — Over Under Full Time (2.5) Over @1.38 (annoncé 67.0 %). Une jambe de plus dans un coupon est une chance de plus de perdre.\nJambe annoncée à 77.3 % perdue : Lillestrom vs Plzen — Over Under Full Time (2.0) Over (dans 1 coupon(s)).\nJambe annoncée à 76.5 % perdue : NEC Nijmegen vs Omonia Nicosia — Asian Handicap (-1.5) 2 (dans 1 coupon(s)).\nJambes annoncées 70-80 % (moyenne 75.4 %) : réussite réelle 62.5 % (n=8) — le modèle est trop optimiste sur cette tranche.",
+   "contenu_exact": true,
+   "md5_contenu_base": "ba19f610528a8d73afcbaeed3b55727d",
+   "md5_stats_base": "99c1a380c89f5843e4c6bae895c2f2c9",
+   "taille_stats": 995
+  },
+  {
+   "id": 15,
+   "jour": "2026-11-04",
+   "type": "etude",
+   "cree_le": "2026-11-06 21:18:35.927659+00",
+   "contenu": "Bilan du jour : 2 coupon(s) gagné(s), 14 perdu(s) sur 18.\n8 coupon(s) perdu(s) par UNE seule jambe (8 jambe(s) différente(s)) : PSV Eindhoven vs Club Brugge — Asian Handicap (0.0) 1 @2.23 (annoncé None %); Porto vs Napoli — Over Under Full Time (2.75) Under @2.72 (annoncé None %); Cardiff vs West Ham — Over Under Full Time (3.25) Under @2.007 (annoncé None %); Fenerbahçe vs Liverpool — Asian Handicap (1.0) 1 @1.38 (annoncé 70.2 %); Lens vs Como — Double Chance Full Time 2X @1.32 (annoncé 72.4 %). Une jambe de plus dans un coupon est une chance de plus de perdre.\nMatch piège : Cardiff vs West Ham — 4 jambes DIFFÉRENTES perdues (Double Chance Full Time 12; Over Under Full Time (3.25) Under; Over Under Full Time (4.5) Under) : plusieurs paris sur un même match partagent le même scénario ; un résultat inattendu les fait tomber ensemble.\nMatch piège : Fenerbahçe vs Liverpool — 3 jambes DIFFÉRENTES perdues (Asian Handicap (1.0) 1; Over Under Team 2 (2.5) Under; Over Under Team 1 (2.0) Under) : plusieurs paris sur un même match partagent le même scénario ; un résultat inattendu les fait tomber ensemble.\nJambe annoncée à 77.4 % perdue : Viking vs Sabah FA — Asian Handicap (-2.5) 2 (dans 1 coupon(s)).\nJambe annoncée à 77.2 % perdue : Cardiff vs West Ham — Double Chance Full Time 12 (dans 1 coupon(s)).\nJambe annoncée à 77.1 % perdue : Cardiff vs West Ham — Double Chance Full Time 12 (dan",
+   "contenu_exact": true,
+   "md5_contenu_base": "0e6c7ae951e899cbcb3fa42c6e35d2dd",
+   "md5_stats_base": "db93ac69f8efaf0c40dc60585cde73bf",
+   "taille_stats": 1358
+  }
+ ]
+}

@@ -129,9 +129,9 @@ class TestGardeFou(unittest.TestCase):
         self.assertEqual(cb.annoter_candidats([self._pick()], None), 0)
         self.assertIsNone(cb.garde_fou({}))
 
-    def test_veto_python_des_agents_familles_utilise_le_garde_fou(self):
+    def test_veto_python_des_agents_familles_n_utilise_plus_le_garde_fou(self):
         import agents_familles as af
         pick = {"categorie": "1X2", "edge_pct": 1.0, "ecart_consensus_pts": -6.0, "consensus_nb_bookmakers": 8}
-        self.assertIn("consensus", af.veto_python(pick))
-        pick["ecart_consensus_pts"] = -1.0
+        # 06/11/2026 : le garde-fou de consensus n'est plus branché dans le veto des agents de famille
         self.assertIsNone(af.veto_python(pick))
+        self.assertIn("consensus", cb.garde_fou(pick))   # la fonction elle-même reste disponible

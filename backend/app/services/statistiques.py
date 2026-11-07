@@ -6,6 +6,7 @@ from collections import defaultdict
 from sqlalchemy import select
 
 from app.models import Coupon, Jambe
+from app.services.envoyes import condition_coupon_envoye, condition_jambe_envoyee
 
 
 def gain_coupon(coupon):
@@ -25,7 +26,7 @@ def gain_coupon(coupon):
 
 
 def calculer(db):
-    coupons = list(db.scalars(select(Coupon)))
+    coupons = list(db.scalars(select(Coupon).where(condition_coupon_envoye())))   # résultats RÉELS : coupons envoyés seulement
     par_profil = defaultdict(lambda: {"coupons": 0, "clos": 0, "gagnes": 0, "gain_net": 0.0})
     for c in coupons:
         p = par_profil[c.profil]
@@ -48,7 +49,7 @@ def calculer(db):
         })
 
     par_categorie = defaultdict(lambda: {"jugees": 0, "gagnees": 0})
-    for j in db.scalars(select(Jambe).where(Jambe.resultat.in_(("gagne", "perdu")))):
+    for j in db.scalars(select(Jambe).where(Jambe.resultat.in_(("gagne", "perdu")), condition_jambe_envoyee())):
         par_categorie[j.categorie]["jugees"] += 1
         par_categorie[j.categorie]["gagnees"] += j.resultat == "gagne"
     categories = [

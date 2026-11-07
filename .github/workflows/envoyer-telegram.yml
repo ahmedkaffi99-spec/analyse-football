@@ -9,10 +9,6 @@ on:
         description: "Numéro du run (vide = dernier run terminé)"
         required: false
         default: ""
-      modele_ombre:
-        description: "Envoyer plutôt les coupons de ce modèle comparé en ombre (ex. openai/gpt-6.1-sol), du run_id indiqué"
-        required: false
-        default: ""
       coupons:
         description: "Numéros de coupons à envoyer, séparés par des virgules (vide = tous ceux du run)"
         required: false
@@ -37,7 +33,6 @@ jobs:
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       RUN_ID: ${{ inputs.run_id }}
       FORCER: ${{ inputs.forcer }}
-      MODELE_OMBRE: ${{ inputs.modele_ombre }}
       COUPONS: ${{ inputs.coupons }}
     steps:
       - uses: actions/checkout@v4
@@ -56,18 +51,13 @@ jobs:
         working-directory: backend
         run: |
           ARGS="envoyer"
-          if [ -n "$MODELE_OMBRE" ]; then
-            case "$MODELE_OMBRE" in *[!A-Za-z0-9/._-]*) echo "::error::modele_ombre invalide"; exit 1 ;; esac
-            [ -n "$RUN_ID" ] || { echo "::error::run_id requis avec modele_ombre"; exit 1; }
-            ARGS="envoyer-ombre --modele $MODELE_OMBRE"
-          fi
           if [ -n "$RUN_ID" ]; then
             case "$RUN_ID" in
               *[!0-9]*) echo "::error::run_id doit être un nombre"; exit 1 ;;
             esac
             ARGS="$ARGS --run-id $RUN_ID"
           fi
-          if [ -n "$COUPONS" ] && [ -z "$MODELE_OMBRE" ]; then
+          if [ -n "$COUPONS" ]; then
             case "$COUPONS" in *[!0-9,]*) echo "::error::coupons doit être une liste de nombres"; exit 1 ;; esac
             ARGS="$ARGS --coupons $COUPONS"
           fi

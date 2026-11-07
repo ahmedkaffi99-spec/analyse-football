@@ -68,16 +68,15 @@ def test_famille_de_categorie_connue_et_inconnue():
     assert af.famille_de("Score Exact Bizarre")[0] == "derives"
 
 
-def test_veto_python_edge_suspect():
-    assert af.veto_python({"categorie": "Total", "edge_pct": 25.0}) is not None
-    assert af.veto_python({"categorie": "Total", "edge_pct": 20.0}) is None
+def test_plus_aucun_veto_python_meme_avec_un_edge_eleve():
+    # 06/11/2026 : le plafond d'edge est retiré (demande explicite).
+    assert af.veto_python({"categorie": "Total", "edge_pct": 25.0}) is None
     assert af.veto_python({"categorie": "Total", "edge_pct": None}) is None
 
 
-def test_veto_python_categorie_exclue():
-    assert "Handicap Corners" in ae.CATEGORIES_EXCLUES
-    assert af.veto_python({"categorie": "Handicap Corners", "edge_pct": 1.0}) is not None
-    # Total Tirs réintégré le 22/10/2026 (bug de troncature corrigé) : plus de veto de catégorie
+def test_plus_de_categorie_exclue_par_defaut():
+    assert ae.CATEGORIES_EXCLUES == ()
+    assert af.veto_python({"categorie": "Handicap Corners", "edge_pct": 1.0}) is None
     assert af.veto_python({"categorie": "Total Tirs", "edge_pct": 1.0}) is None
 
 
@@ -98,13 +97,11 @@ def test_une_famille_d_un_seul_candidat_n_est_jamais_videe(monkeypatch):
     assert id_dc not in ecartes
 
 
-def test_revoir_catalogue_veto_python_sans_ia(monkeypatch):
+def test_revoir_catalogue_sans_ia_n_ecarte_plus_rien(monkeypatch):
     catalogue, _ = st.construire_catalogue(_pool())
     monkeypatch.setattr(ae, "budget_ia_epuise", lambda: True)
     ecartes, avis = af.revoir_catalogue(catalogue, appel=lambda *a, **k: pytest.fail("IA appelée"))
-    ids_corners = [i for i, c in catalogue.items() if c["pick"]["categorie"] == "Total Corners"]
-    assert set(ids_corners) == ecartes
-    assert "edge suspect" in avis[ids_corners[0]]
+    assert ecartes == set() and avis == {}
 
 
 def test_revoir_catalogue_ia_ecarte_un_pari_valide(monkeypatch):
@@ -140,8 +137,7 @@ def test_reponse_ia_invalide_laisse_la_famille_inchangee(monkeypatch):
     catalogue, _ = st.construire_catalogue(_pool())
     monkeypatch.setattr(ae, "budget_ia_epuise", lambda: False)
     ecartes, _ = af.revoir_catalogue(catalogue, appel=lambda *a, **k: "pas du json")
-    ids_corners = {i for i, c in catalogue.items() if c["pick"]["categorie"] == "Total Corners"}
-    assert ecartes == ids_corners
+    assert ecartes == set()
 
 
 def test_catalogue_ids_stables_et_pari_ecarte_masque():
@@ -208,34 +204,10 @@ def _sel(match, categorie, selection="Under", cote=1.5):
                                       "edge_pct": 1.0, "handicap": 2.5}}
 
 
-def test_famille_dominante_signalee_quand_une_alternative_existe():
-    # 10 jambes dont 5 en "buts par équipe" (Total Équipe 1 x4 + Total Équipe 2 x1) : chaque
-    # catégorie reste <= 40 % séparément, mais la FAMILLE vaut 50 % (> 40 %).
-    selections = [_sel(f"M{i} vs X{i}", "Total Équipe 1") for i in range(4)]
-    selections.append(_sel("M4 vs X4", "Total Équipe 2"))
-    selections += [_sel(f"M{i} vs X{i}", "Total") for i in range(5, 10)]
-    catalogue = {f"P{i}": s for i, s in enumerate(selections)}
-    catalogue["PALT"] = _sel("M0 vs X0", "Double Chance", "1X")  # alternative d'une autre famille
-    assert st._categories_dominantes(selections, catalogue) == []
-    erreurs = st._familles_dominantes(selections, catalogue)
-    assert len(erreurs) == 1 and "buts par équipe" in erreurs[0].lower()
 
 
-def test_famille_dominante_sans_alternative_ne_bloque_pas():
-    selections = [_sel(f"M{i} vs X{i}", "Total Équipe 1") for i in range(4)]
-    selections += [_sel(f"N{i} vs Y{i}", "Total") for i in range(2)]
-    catalogue = {f"P{i}": s for i, s in enumerate(selections)}  # aucune autre famille disponible
-    assert st._familles_dominantes(selections, catalogue) == []
 
 
-def test_coupon_equilibre_entre_familles_accepte():
-    selections = [_sel("A vs B", "Total"), _sel("C vs D", "Total Équipe 1"), _sel("E vs F", "Total Corners"),
-                  _sel("G vs H", "Double Chance", "1X"), _sel("I vs J", "BTTS", "Yes")]
-    catalogue = {f"P{i}": s for i, s in enumerate(selections)}
-    assert st._familles_dominantes(selections, catalogue) == []
-
-
-# ------------------------------------------------------------------ profil « toutes les familles » + plafond de cote
 def _pool_familles():
     return {
         "A vs B": [_cand("A vs B", "Double Chance", "12", 1.3, 80.0, 3.0), _cand("A vs B", "Total", "Over", 1.5, 76.0, 4.0)],
@@ -404,21 +376,16 @@ def test_un_seul_pari_resultat_par_match_sur_l_ensemble_des_coupons():
     assert "p2" not in acceptes and "même risque" in problemes[0]   # deuxième pari « résultat » sur A–B : refusé
 
 
-def test_probabilite_minimale_par_profil_et_seuil_du_catalogue():
-    # 24/10/2026 : le coupon « très risqué » accepte des jambes moins probables, les autres gardent leur minimum.
-    profils = [{"cle": "p1", "proba_min_pct": 70.0}, {"cle": "p3", "proba_min_pct": 55.0}]
-    assert st.seuil_catalogue(profils) == 55.0
-    assert st.seuil_catalogue([]) == st.SEUIL_PROBA_CATALOGUE
-    pool = {"A vs B": [_cand("A vs B", "Total", "Over", 1.8, 60.0, 2.0), _cand("A vs B", "BTTS", "Yes", 1.4, 75.0, 2.0)]}
-    catalogue, _ = st.construire_catalogue(pool, seuil_proba=55.0)
-    par_cat = {c["pick"]["categorie"]: cid for cid, c in catalogue.items()}
-    assert "Total" in par_cat                                   # visible grâce au seuil abaissé
-    base = {"nom": "P", "nb_jambes": 8, "nb_jambes_min": 1, "cote_totale_min": 1.0}
-    prop = {"coupons": [{"profil": "p1", "strategie": "s", "jambes": [{"id": par_cat["Total"], "raison": "ok"}]},
-                        {"profil": "p3", "strategie": "s", "jambes": [{"id": par_cat["Total"], "raison": "ok"}]}]}
-    acceptes, problemes, _ = st.valider(prop, catalogue, [dict(base, cle="p1", proba_min_pct=70.0),
-                                                         dict(base, cle="p3", proba_min_pct=55.0)])
-    assert "p3" in acceptes and "p1" not in acceptes and "trop basse pour CE profil" in problemes[0]
+def test_plus_de_probabilite_minimale_ni_maximale_par_jambe():
+    # 06/11/2026 : la probabilité par jambe n'est plus vérifiée par Python, même si un profil en porte encore une.
+    pool = {"A vs B": [_cand("A vs B", "Total", "Over", 1.8, 20.0, 2.0)], "C vs D": [_cand("C vs D", "Total", "Over", 1.25, 95.0, 2.0)]}
+    catalogue, _ = st.construire_catalogue(pool, seuil_proba=0.0)
+    ids = {c["match"]: cid for cid, c in catalogue.items()}
+    base = {"cle": "p1", "nom": "P", "nb_jambes": 8, "nb_jambes_min": 1, "cote_totale_min": 1.0, "proba_min_pct": 70.0, "proba_max_pct": 78.0}
+    for match in ids:
+        prop = {"coupons": [{"profil": "p1", "strategie": "s", "jambes": [{"id": ids[match], "raison": "ok"}]}]}
+        acceptes, problemes, _ = st.valider(prop, catalogue, [base])
+        assert "p1" in acceptes, problemes
 
 
 def test_dernier_coupon_doit_couvrir_tous_les_matchs_restants():
@@ -450,47 +417,27 @@ def test_consigne_speciale_du_profil_est_dans_le_prompt():
     assert "CONSIGNE SPÉCIALE" not in sans
 
 
-def test_categories_exclues_par_defaut_tirs_et_corners_d_equipe(monkeypatch):
+def test_aucune_categorie_exclue_du_catalogue_par_defaut(monkeypatch):
     monkeypatch.delenv("CATEGORIES_EXCLUES", raising=False)
     pool = {"A vs B": [_cand("A vs B", cat, "Over", 1.5, 72.0, 2.0)
                        for cat in ("Total Tirs", "Total Corners Équipe 1", "Total Corners", "Total Cartons", "BTTS",
                                    "Handicap Asiatique")]}
     cat, _ = st.construire_catalogue(pool, seuil_proba=60.0)
-    assert sorted(c["pick"]["categorie"] for c in cat.values()) == ["Total Cartons", "Total Corners"]
-    monkeypatch.setenv("CATEGORIES_EXCLUES", "aucune")
-    cat, _ = st.construire_catalogue(pool, seuil_proba=60.0)
     assert len(cat) == 6
+    monkeypatch.setenv("CATEGORIES_EXCLUES", "BTTS,Total Tirs")
+    cat, _ = st.construire_catalogue(pool, seuil_proba=60.0)
+    assert sorted(c["pick"]["categorie"] for c in cat.values()) == ["Handicap Asiatique", "Total Cartons", "Total Corners", "Total Corners Équipe 1"]
 
 
-def test_probabilite_maximale_par_jambe_refusee_au_dessus_du_plafond():
-    # 25/10/2026 : jambes à 70-78 % (au-delà de 80 % annoncés, la réussite réelle n'augmente plus : 72,9 % pour 82,1 %)
-    pool = {"A vs B": [_cand("A vs B", "Total", "Over", 1.25, 82.0, 2.0)],
-            "C vs D": [_cand("C vs D", "Total", "Over", 1.35, 74.0, 2.0)]}
-    catalogue, _ = st.construire_catalogue(pool, seuil_proba=70.0)
-    par_match = {c["match"]: cid for cid, c in catalogue.items()}
-    base = {"cle": "p1", "nom": "P", "nb_jambes": 8, "nb_jambes_min": 1, "cote_totale_min": 1.0,
-            "proba_min_pct": 70.0, "proba_max_pct": 78.0}
-    haut = {"coupons": [{"profil": "p1", "strategie": "s", "jambes": [{"id": par_match["A vs B"], "raison": "ok"}]}]}
-    acceptes, problemes, _ = st.valider(haut, catalogue, [base])
-    assert "p1" not in acceptes and "trop haute pour CE profil" in problemes[0]
-    ok = {"coupons": [{"profil": "p1", "strategie": "s", "jambes": [{"id": par_match["C vs D"], "raison": "ok"}]}]}
-    acceptes, problemes, _ = st.valider(ok, catalogue, [base])
-    assert "p1" in acceptes, problemes
-    assert "PROBABILITÉ MAXIMALE PAR JAMBE" in st.construire_prompt(pool, [base], "cat")
+def test_catalogue_plafonne_le_nombre_de_paris_par_match(monkeypatch):
+    monkeypatch.setattr(st, "CATALOGUE_MAX_PAR_MATCH", 3)
+    pool = {"A vs B": [_cand("A vs B", "Total", "Over", 1.5, 10.0 + i, 2.0) for i in range(8)]}
+    cat, _ = st.construire_catalogue(pool, seuil_proba=0.0)
+    assert sorted(c["pick"]["proba_modele_pct"] for c in cat.values()) == [15.0, 16.0, 17.0]   # les plus probables d'abord
 
 
-def test_plafond_edge_defaut_3_pct(monkeypatch):
-    """Edge > 3 % : écarté d'office (bilan du 03/11 : 55 % réels sur 3-6 %, 60 % au-delà, contre 77-80 % si edge < 0)."""
-    import importlib
-    import agents_familles as af
-    monkeypatch.delenv("EDGE_MAX_AGENT_PCT", raising=False)
-    importlib.reload(af)
-    assert af.EDGE_MAX_AGENT == 3.0
-    assert "edge suspect" in af.veto_python({"edge_pct": 3.5, "categorie": "Total"})
-    raison = af.veto_python({"edge_pct": 2.9, "categorie": "Total"})
-    assert raison is None or "edge suspect" not in raison
-    raison = af.veto_python({"edge_pct": -4.0, "categorie": "Total"})
-    assert raison is None or "edge suspect" not in raison
+def test_plus_de_plafond_d_edge():
+    assert af.veto_python({"edge_pct": 30.0, "categorie": "Total"}) is None
 
 
 def test_consommation_estimee_par_famille():
@@ -501,11 +448,11 @@ def test_consommation_estimee_par_famille():
     assert entree > 100 and sortie >= 1
 
 
-def test_par_defaut_aucun_appel_ia_mais_vetos_python_gardes(monkeypatch):
+def test_par_defaut_aucun_appel_ia_et_aucun_veto(monkeypatch):
     monkeypatch.delenv("AGENTS_FAMILLES_IA", raising=False)
     cat = {"P1": _cand("A vs B", "Total", "Over", 1.8, 60, 1.0), "P2": _cand("C vs D", "Total", "Over", 1.8, 60, 25.0)}
 
     def interdit(*a, **k):
         raise AssertionError("aucun appel IA attendu")
     ecartes, avis = af.revoir_catalogue(cat, appel=interdit)
-    assert ecartes == {"P2"} and "edge suspect" in avis["P2"]
+    assert ecartes == set() and avis == {}

@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 from app.services import pipeline
 from app.services.verification import statut_coupon
-from tests.conftest import collecte_exemple, profils_exemple, ticket_exemple
+from tests.conftest import collecte_exemple, importer_run_envoye, profils_exemple, ticket_exemple
 
 
 def test_sante(client):
@@ -121,7 +121,7 @@ def test_un_seul_run_a_la_fois(client):
 
 
 def test_verification_et_statistiques(client, monkeypatch):
-    client.post("/api/imports", json={"collecte": collecte_exemple(), "ticket": ticket_exemple()})
+    importer_run_envoye(client)
     _, _, vr = pipeline.modules()  # vrai module : vraie logique de jugement (grader_pick)
     monkeypatch.setattr(vr, "recuperer_fixtures_du_jour", lambda: {"idLENSAUX": {
         "statusName": "Finished", "participant1Name": "RC Lens", "participant2Name": "AJ Auxerre"}})

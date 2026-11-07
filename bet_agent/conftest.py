@@ -33,3 +33,10 @@ def categories_exclues_neutralisees(monkeypatch):
     d'exclusion de production (agent_strategie.CATEGORIES_EXCLUES_PAR_DEFAUT) y est neutralisée, et testée
     explicitement dans test_categories_exclues_par_defaut_* (qui retire cette variable)."""
     monkeypatch.setenv("CATEGORIES_EXCLUES", "aucune")
+
+
+@pytest.fixture(autouse=True)
+def telegram_sans_attente(monkeypatch):
+    """Les nouvelles tentatives Telegram (429, passerelle, connexion) attendent quelques secondes en production : aucune attente en test."""
+    import analyser_et_envoyer as ae
+    monkeypatch.setattr(ae, "_pause_telegram", lambda secondes: None)
