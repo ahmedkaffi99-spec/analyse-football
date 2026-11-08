@@ -492,6 +492,17 @@ SEUIL_TEXTE_ALLEGE = 2000
 MENTION_ALLEGEE = "(retiré de l'historique : le catalogue complet est dans le résultat voir_catalogue le plus récent)"
 
 
+def journaliser_coupon_valide(profil, selections, cote_totale):
+    """Affiche dans les logs la liste COMPLÈTE des paris d'un coupon validé (08/11/2026) : les coupons validés par Python n'étaient écrits nulle part avant l'enregistrement en base, donc
+    perdus si le run plantait ensuite (run 301 : seuls des résumés tronqués à 160 caractères restaient dans le journal GitHub)."""
+    print(f"   🧾 COUPON VALIDÉ — {profil.get('nom')} : {len(selections)} jambes, cote totale {cote_totale}")
+    for s in selections:
+        pick = s.get("pick") or {}
+        proba = pick.get("proba_modele_pct")
+        print(f"      • {s.get('match')} — {pick.get('marche') or pick.get('categorie')} : {pick.get('selection')} @ {pick.get('cote')}"
+              + (f" (probabilité {proba}%)" if proba is not None else ""))
+
+
 def alleger_catalogues(messages):
     """Remplace, dans tous les résultats voir_catalogue SAUF le plus récent, les textes de plus de SEUIL_TEXTE_ALLEGE caractères par MENTION_ALLEGEE. Modifie la liste en place ;
     renvoie le nombre de résultats allégés. Ne touche jamais aux autres outils ni aux messages du modèle."""
@@ -813,6 +824,7 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
             cote_totale, _ = ae.calculer_stats_combine(selections)
             etat["textes"].append(f"*{profil['nom']} — cote {cote_totale}* ({len(selections)} jambes)\n\n"
                                   f"{ae.rediger_ticket_court(selections)}")
+            journaliser_coupon_valide(profil, selections, cote_totale)
         else:
             texte = f"_{resultat_profil.get('abstention') or 'Aucun pari jugé défendable pour ce profil.'}_"
             etat["textes"].append(f"*{profil['nom']}*\n\n{texte}")

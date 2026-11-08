@@ -283,3 +283,22 @@ def test_la_conversation_n_enfle_plus_a_chaque_profil(monkeypatch):
     with mock.patch.object(pilote, "_appel_api", side_effect=faux_appel):
         pilote.piloter("cle", outils, lambda: etat["fini"], "mission")
     assert tailles[3] > 2.5 * tailles[1] - 20000                                                       # sans allègement la conversation s'alourdit à chaque profil
+
+
+# ---- liste complète des paris validés dans les logs ----------------------------------------------------------------------------------------------------------------------
+def test_les_paris_valides_sont_listes_en_entier_dans_les_logs(capsys, monkeypatch):
+    import agent_pilote as pilote
+    import analyser_et_envoyer as ae
+    from unittest import mock
+    from test_agent_pilote import POOL_SIX_MATCHS, PROFIL_1, _msg_outil
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "cle-test")
+    reponses = [(_msg_outil("collecter_donnees", {}), 65536), (_msg_outil("voir_catalogue", {}), 65536),
+                (_msg_outil("proposer_coupon", {"strategie": "s", "jambes": [{"id": "P1", "raison": "r"}]}), 65536), (_msg_outil("envoyer_telegram", {}), 65536)]
+    with mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=POOL_SIX_MATCHS), \
+            mock.patch.object(ae, "agent5_envoyer_coupons", return_value=True), \
+            mock.patch.object(pilote, "_appel_api", side_effect=reponses):
+        resultat = pilote.executer(telegram=False, profils=[PROFIL_1], donnees_reprises=_donnees_a_venir())
+    sortie = capsys.readouterr().out
+    selection = resultat["resultats_profils"][0]["selections"][0]
+    assert "COUPON VALIDÉ" in sortie and PROFIL_1["nom"] in sortie
+    assert f"• {selection['match']}" in sortie and f"@ {selection['pick']['cote']}" in sortie                    # match, pari et cote de chaque jambe
