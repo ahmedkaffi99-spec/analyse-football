@@ -73,6 +73,19 @@ def expliquer_marche(categorie, selection_brute, handicap):
                  else "au moins une des deux équipes ne doit PAS marquer")
         return guide, "onglet Les deux équipes marquent (BTTS)"
 
+    if categorie == "European Handicap":
+        # European Handicap (3 voies 1/X/2, 08/11/2026) : la ligne ENTIÈRE s'ajoute aux buts du DOMICILE, puis on lit le résultat du score ajusté ; le nul reste possible (jamais remboursé).
+        h_txt = f"{float(handicap):+g}" if handicap is not None else "?"
+        if sel in ("1", "home"):
+            guide = f"après application du handicap {h_txt} au domicile, le domicile doit GAGNER"
+        elif sel in ("x", "draw"):
+            guide = f"après application du handicap {h_txt} au domicile, le score ajusté doit être NUL"
+        elif sel in ("2", "away"):
+            guide = f"après application du handicap {h_txt} au domicile, l'extérieur doit GAGNER"
+        else:
+            return f"handicap européen : {selection_brute}", "onglet European Handicap"
+        return guide, "onglet European Handicap"
+
     if categorie == "Double Chance":
         sel_norm = re.sub(r"[^a-z0-9]", "", sel)
         if sel_norm == "1x":
@@ -259,6 +272,15 @@ def _libelle_pari_court(selection_finale):
             return "Match nul (1X2 : X)"
         if sel_norm == "2":
             return f"{exterieur} gagne (1X2 : W2)"
+    if categorie == "European Handicap" and ligne is not None:
+        # 3 voies : la ligne ENTIÈRE est référencée domicile ; l'extérieur porte la ligne opposée.
+        valeur = float(ligne)
+        if sel_norm == "1":
+            return f"{domicile} gagne avec handicap {valeur:+g} (handicap européen)"
+        if sel_norm in ("x", "draw"):
+            return f"Match nul avec handicap {valeur:+g} du domicile (handicap européen)"
+        if sel_norm == "2":
+            return f"{exterieur} gagne avec handicap {-valeur:+g} (handicap européen)"
     if categorie == "Double Chance":
         return {"1x": f"{domicile} ou match nul", "x2": f"Match nul ou {exterieur}",
                 "2x": f"Match nul ou {exterieur}",

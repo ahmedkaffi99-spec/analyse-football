@@ -671,6 +671,19 @@ def issues_handicap(mu_pour, mu_contre, handicap, dispersion=1.0):
     return resultat
 
 
+def proba_handicap_europeen(mu_home, mu_away, ligne, dispersion=1.0):
+    """Probabilités {'1': p, 'X': p, '2': p} d'un European Handicap (3 voies, ligne ENTIÈRE appliquée au DOMICILE). Même règle que la vérification des résultats
+    (moteur.modeles.marches.resultat_handicap_europeen) : le nul reste un résultat possible, jamais de remboursement."""
+    if not _marches.ligne_europeenne_valide(ligne):
+        raise ValueError(f"ligne de handicap européen invalide (entier attendu) : {ligne}")
+    d_home, d_away = _distribution_comptage(mu_home, dispersion), _distribution_comptage(mu_away, dispersion)
+    resultat = {"1": 0.0, "X": 0.0, "2": 0.0}
+    for i, pi in enumerate(d_home):
+        for j, pj in enumerate(d_away):
+            resultat[_marches.resultat_handicap_europeen(i, j, ligne)] += pi * pj
+    return resultat
+
+
 def proba_equivalente(issues, cote):
     """Probabilité « équivalente » p telle que p*cote - 1 = espérance exacte du pari. Remplace
     l'ancienne approximation p_gain + 0.5*p_remboursement (EV fausse dès que cote != 2, audit C3) ;

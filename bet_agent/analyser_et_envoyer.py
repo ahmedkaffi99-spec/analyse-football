@@ -409,6 +409,7 @@ from modele_probabilites import (  # noqa: E402,F401
     estimer_expected_goals_depuis_marches,
     estimer_ligne_equilibree,
     issues_handicap,
+    proba_handicap_europeen,
     issues_total,
     proba_1x2,
     proba_btts,
@@ -490,6 +491,9 @@ CATEGORIES_HANDICAP_COMPTAGE_EXCLUES = (
     "Handicap Corners", "Handicap Cartons", "Handicap Fautes", "Handicap Hors-jeux", "Handicap Tirs",
     "Handicap Tirs Cadrés")
 # 06/11/2026 (demande explicite) : plus aucune catégorie exclue par défaut. MARCHES_EXCLUS="Cat1,Cat2" reste possible pour en exclure.
+# Lignes de quart de l'Asian Handicap (.25/.75) : modélisées depuis le 08/11/2026 (demande explicite : AH entier, demi et quart, avec demi-gains et demi-pertes). HANDICAP_ASIATIQUE_QUARTS=0 rétablit l'ancien comportement.
+HANDICAP_ASIATIQUE_QUARTS = os.getenv("HANDICAP_ASIATIQUE_QUARTS", "1").strip().lower() not in ("0", "non", "false", "no")
+from moteur.modeles import marches as marches_modele  # noqa: E402  (règle de règlement UNIQUE : calcul et vérification)
 CATEGORIES_EXCLUES = tuple(c.strip() for c in os.getenv("MARCHES_EXCLUS", "").split(",") if c.strip())
 
 
@@ -903,8 +907,9 @@ def _evaluer_marches_brut(marches, mu_home, mu_away, mu_corners=None, mu_cartons
         elif "asian handicap" in nom and "corner" not in nom and "card" not in nom and "booking" not in nom:
             if handicap is None:
                 continue
-            if _est_ligne_quart(handicap):
-                continue  # ligne .25/.75 non fiable comme option réelle sur 1xbet
+            quart = _est_ligne_quart(handicap)
+            if quart and not HANDICAP_ASIATIQUE_QUARTS:
+                continue  # HANDICAP_ASIATIQUE_QUARTS=0 : ancien comportement (lignes .25/.75 jamais proposées)
             for s in selections:
                 sel = s["selection"].lower()
                 if "home" in sel or sel == "1":
@@ -916,7 +921,29 @@ def _evaluer_marches_brut(marches, mu_home, mu_away, mu_corners=None, mu_cartons
                 proba = proba_equivalente(issues, s["cote"])
                 edge = calc_edge(proba, s["cote"]) if proba is not None else None
                 if _edge_calculable(edge, proba):
-                    candidats.append(_candidat(marche["marche"], handicap, s, proba, edge, "Handicap"))
+                    # 08/11/2026 : lignes de quart modélisées (deux demi-mises, issues demi-gagné / demi-perdu) ; cote juste et EV exacts joints au pari (information, jamais affichés au catalogue).
+                    cote_j = marches_modele.cote_juste(issues)
+                    candidats.append(_candidat(marche["marche"], handicap, s, proba, edge, "Handicap Asiatique" if quart else "Handicap",
+                                               extras={"cote_juste": round(cote_j, 3) if cote_j else None,
+                                                       "ev_pct": round(marches_modele.esperance(issues, s["cote"]) * 100, 1)}))
+
+        # --- European Handicap (3 voies 1/X/2, ligne ENTIÈRE appliquée au domicile) ---
+        # Marché DISTINCT de l'Asian Handicap (08/11/2026) : le nul reste un résultat, jamais de remboursement ; probabilité exacte de chaque sélection depuis le score ajusté.
+        elif "european handicap" in nom and not any(x in nom for x in ("corner", "card", "booking", "foul", "shot", "offside")):
+            if handicap is None or not marches_modele.ligne_europeenne_valide(handicap):
+                continue   # ligne non entière : jamais un handicap européen exploitable
+            probas_eh = proba_handicap_europeen(mu_home, mu_away, handicap)
+            for s in selections:
+                sel = str(s["selection"]).strip().upper()
+                if sel not in probas_eh:
+                    continue
+                proba = probas_eh[sel]
+                edge = calc_edge(proba, s["cote"])
+                if _edge_calculable(edge, proba):
+                    candidats.append(_candidat(marche["marche"], handicap, s, proba, edge, "European Handicap",
+                                               extras={"cote_juste": round(1 / proba, 3) if proba > 1e-12 else None,
+                                                       "ev_pct": round((proba * s["cote"] - 1) * 100, 1)}))
+
 
         # --- Handicap Corners / Handicap Cartons ---
         # Demande explicite du 01/10/2026 ("carton et corner faut calcule en poisson [le
@@ -1050,7 +1077,7 @@ def _nom_avec_ligne(nom_marche, handicap):
     return f"{nom_marche} ({handicap})"
 
 
-def _candidat(nom_marche, handicap, selection, proba, edge, categorie):
+def _candidat(nom_marche, handicap, selection, proba, edge, categorie, extras=None):
     sel = selection["selection"]
     # "marche" reste la ligne BRUTE domicile-référencée d'OddsPapi (nom + handicap) — jamais
     # touchée ici, parce que evaluer_marches_toutes() s'en sert comme CLÉ DE JOINTURE vers
@@ -1085,6 +1112,7 @@ def _candidat(nom_marche, handicap, selection, proba, edge, categorie):
         "edge_pct": round(edge, 1),
         "guide": guide,
         "onglet": onglet,
+        **(extras or {}),
     }
 
 

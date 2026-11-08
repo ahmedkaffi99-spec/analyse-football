@@ -10,7 +10,8 @@ Convention des marchés (marche, ligne, selection) :
     resultat         None   "1" | "X" | "2"
     double_chance    None   "1X" | "X2" | "12"
     dnb              None   "1" | "2"                 (draw no bet : remboursé sur nul)
-    handicap         h      "1" | "2"                 (h appliqué à l'équipe sélectionnée)
+    handicap         h      "1" | "2"                 (Asian Handicap : h appliqué à l'équipe sélectionnée)
+    handicap_europeen h     "1" | "X" | "2"           (European Handicap, 3 voies : h ENTIER appliqué au DOMICILE)
     buts_total       L      "over" | "under"
     buts_equipe1/2   L      "over" | "under"
     btts             None   "oui" | "non"
@@ -50,6 +51,50 @@ def issue_ligne(marge_sans_ligne, ligne):
     return "rembourse"
 
 
+# --- HANDICAP EUROPÉEN (3 voies) -----------------------------------------------------------------------------------------------------------------------------------
+# Marché distinct de l'Asian Handicap : on AJOUTE le handicap (ligne ENTIÈRE, référencée du point de vue du DOMICILE, comme les cotes OddsPapi) aux buts du domicile, puis on lit
+# le résultat 1/X/2 du score ajusté. Le nul reste un résultat possible (donc jamais de remboursement ni de demi-issue : un pari 1/X/2 est gagné ou perdu). Ligne 0 = 1X2 classique.
+def ligne_europeenne_valide(ligne):
+    """Ligne entière (… -2, -1, 0, +1, +2 …) ; une demi-ligne ou un quart n'a aucun sens en 3 voies (aucun nul possible)."""
+    return ligne is not None and abs(ligne - round(ligne)) < 1e-9
+
+
+def resultat_handicap_europeen(h, a, ligne):
+    """'1', 'X' ou '2' pour le score ajusté (h + ligne) - a."""
+    if not ligne_europeenne_valide(ligne):
+        raise ValueError(f"ligne de handicap européen invalide (entier attendu) : {ligne}")
+    ajuste = h + round(ligne)
+    return "1" if ajuste > a else ("X" if ajuste == a else "2")
+
+
+def issue_handicap_europeen(h, a, ligne, selection):
+    """gagne / perdu pour une sélection '1', 'X' ou '2' ; ValueError si la sélection ou la ligne est invalide."""
+    sel = str(selection).strip().upper()
+    if sel not in ("1", "X", "2"):
+        raise ValueError(f"sélection de handicap européen invalide : {selection}")
+    return "gagne" if resultat_handicap_europeen(h, a, ligne) == sel else "perdu"
+
+
+def distribution_handicap_europeen(matrice, ligne):
+    """{'1': p, 'X': p, '2': p} sur une matrice de scores [domicile][extérieur]."""
+    d = {"1": 0.0, "X": 0.0, "2": 0.0}
+    for h, rangee in enumerate(matrice):
+        for a, p in enumerate(rangee):
+            if p:
+                d[resultat_handicap_europeen(h, a, ligne)] += p
+    return d
+
+
+def cote_juste(issues):
+    """Cote « juste » (Fair Odds) d'une distribution d'issues : la cote qui rend l'espérance nulle.
+    EV = P(g)(c-1) + P(dg)(c-1)/2 - P(dp)/2 - P(p) = 0  =>  c = 1 + (P(dp)/2 + P(p)) / (P(g) + P(dg)/2).
+    Sur un marché binaire c = 1/P(g). None si le pari ne peut jamais rapporter (P(g) + P(dg)/2 = 0)."""
+    gain = issues["gagne"] + issues["demi_gagne"] / 2
+    if gain <= 1e-12:
+        return None
+    return 1 + (issues["demi_perdu"] / 2 + issues["perdu"]) / gain
+
+
 def issue_buts(marche, ligne, selection, h, a):
     """Issue d'un marché de buts pour le score final (h, a). Sert au calcul ET à la
     vérification des résultats (même règle, jamais deux implémentations)."""
@@ -71,6 +116,8 @@ def issue_buts(marche, ligne, selection, h, a):
         # dès que ligne != 0 (ex: ligne=-1.5, domicile gagne 1 but seulement : "2" doit gagner
         # son pari — l'extérieur n'a pas couvert -1.5 — mais le code bogué renvoyait "perdu").
         return issue_ligne(h - a, ligne) if selection == "1" else issue_ligne(a - h, -ligne)
+    if marche == "handicap_europeen":
+        return issue_handicap_europeen(h, a, ligne, selection)
     if marche == "btts":
         les_deux = h > 0 and a > 0
         return "gagne" if les_deux == (selection == "oui") else "perdu"

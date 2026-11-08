@@ -44,7 +44,7 @@ def veto(pick):
         raison = "moins de buts"
     elif cat == "Total Équipe " + fav and sel.lower() == "under":
         raison = "moins de buts du favori"
-    elif cat in ("Handicap", "Handicap Asiatique", "Handicap Européen") and sel == outsider:
+    elif cat in ("Handicap", "Handicap Asiatique", "Handicap Européen", "European Handicap") and sel == outsider:
         raison = "handicap de l'outsider"
     elif cat == "Double Chance" and ((fav == "1" and sel_norm in ("X2", "2X")) or (fav == "2" and sel_norm == "1X")):
         raison = "double chance couvrant l'outsider"

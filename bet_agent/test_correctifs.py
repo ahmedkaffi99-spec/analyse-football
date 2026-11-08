@@ -1666,20 +1666,20 @@ class TestAsianHandicapVsEuropeanHandicapMarchesDistincts(unittest.TestCase):
             self.assertEqual(c["categorie"], "Handicap")
             self.assertTrue(c["marche"].startswith("Asian Handicap ("))
 
-    def test_european_handicap_3_voies_jamais_modelise_reste_en_brut_sous_son_nom(self):
-        # "European Handicap" (avec un vrai "X") ne matche aucune branche de
-        # _evaluer_marches_brut (pas de "asian handicap" dans son nom) : reste en marché brut,
-        # jamais transformé en "Handicap"/"Handicap Asiatique"/"Handicap Européen".
+    def test_european_handicap_3_voies_est_modelise_sous_son_propre_nom(self):
+        # 08/11/2026 : "European Handicap" (3 voies, un vrai "X") est désormais MODÉLISÉ (probabilités exactes du score ajusté, voir test_handicaps_ah_eh.py), mais garde son nom et sa
+        # catégorie propres : jamais transformé en "Handicap"/"Handicap Asiatique"/"Handicap Européen" (ancienne règle : jamais modélisé, restée valable pour la distinction des noms).
         marches = [{"marche": "European Handicap", "handicap": -1, "periode": "fulltime",
                     "selections": [{"selection": "1", "cote": 2.0}, {"selection": "X", "cote": 3.42},
                                    {"selection": "2", "cote": 2.75}]}]
         modelises = ae.evaluer_marches_toutes(marches, 1.6, 1.1)
-        self.assertEqual(modelises, [])
+        self.assertEqual({c["selection"] for c in modelises}, {"1", "X", "2"})
         complets = ae.completer_avec_marches_bruts(modelises, marches)
-        self.assertEqual(len(complets), 3)
+        self.assertEqual(len(complets), 3)   # aucun doublon : les 3 sélections modélisées ne sont pas rajoutées en brut
         for c in complets:
             self.assertEqual(c["categorie"], "European Handicap")
             self.assertTrue(c["marche"].startswith("European Handicap ("))
+            self.assertIsNotNone(c["proba_modele_pct"])
 
     def test_les_deux_marches_coexistent_sur_le_meme_match_sans_collision(self):
         # Même ligne (-1) sur le même match, mais deux marchés OddsPapi distincts avec des
@@ -1699,7 +1699,7 @@ class TestAsianHandicapVsEuropeanHandicapMarchesDistincts(unittest.TestCase):
         categories = {c["categorie"] for c in complets}
         self.assertEqual(categories, {"Handicap", "European Handicap"})
 
-    def test_ligne_de_quart_en_brut_garde_sa_propre_categorie_asiatique(self):
+    def test_ligne_de_quart_modelisee_garde_sa_propre_categorie_asiatique(self):
         # Signalé par l'utilisateur le 01/10/2026 ("erreur de rédaction du 3 marché handicap",
         # Asian vs European encore confondus), puis reconfirmé avec 3 nouvelles captures 1xBet
         # (Grèce-Pays-Bas) montrant bien 3 ONGLETS visuels distincts côté 1xBet : "Asian
@@ -1712,13 +1712,18 @@ class TestAsianHandicapVsEuropeanHandicapMarchesDistincts(unittest.TestCase):
         # (-0.75)" (nom brut OddsPapi, inchangé) dans les deux cas.
         marches = [{"marche": "Asian Handicap", "handicap": -0.75, "periode": "fulltime",
                     "selections": [{"selection": "1", "cote": 3.9}, {"selection": "2", "cote": 1.222}]}]
+        # 08/11/2026 : les lignes de quart sont désormais modélisées (deux demi-mises) ; HANDICAP_ASIATIQUE_QUARTS=0 rétablit l'ancien comportement (jamais modélisées, toujours en brut).
         modelises = ae.evaluer_marches_toutes(marches, 1.6, 1.1)
-        self.assertEqual(modelises, [])  # ligne de quart : jamais modélisée, toujours en brut
+        self.assertEqual(len(modelises), 2)
         complets = ae.completer_avec_marches_bruts(modelises, marches)
         self.assertEqual(len(complets), 2)
         for c in complets:
             self.assertEqual(c["categorie"], "Handicap Asiatique")
             self.assertTrue(c["marche"].startswith("Asian Handicap ("))
+        with unittest.mock.patch.object(ae, "HANDICAP_ASIATIQUE_QUARTS", False):
+            self.assertEqual(ae.evaluer_marches_toutes(marches, 1.6, 1.1), [])
+            brut = ae.completer_avec_marches_bruts([], marches)
+            self.assertEqual({c["categorie"] for c in brut}, {"Handicap Asiatique"})
 
     def test_ligne_entiere_asian_handicap_en_brut_devient_aussi_categorie_handicap(self):
         # Même marché "Asian Handicap", mais une ligne entière/demi non modélisée (ex: pas de

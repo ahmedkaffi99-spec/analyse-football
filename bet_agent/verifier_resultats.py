@@ -20,6 +20,12 @@ from dotenv import load_dotenv
 from unidecode import unidecode
 from rapidfuzz import fuzz
 
+import sys as _sys
+_racine_depot = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+if _racine_depot not in _sys.path:
+    _sys.path.insert(0, _racine_depot)
+from moteur.modeles import marches as _marches  # noqa: E402  (règle de règlement partagée avec le calcul des probabilités)
+
 # Voir collecte_donnees.py pour le détail : OddsPapi est intercepté par un boîtier réseau
 # (Fortinet) qui re-signe son certificat avec une CA non reconnue — désactivé uniquement
 # pour ce domaine précis (déjà intercepté de toute façon), jamais pour Telegram.
@@ -472,6 +478,17 @@ def juger_handicap(handicap, selection, home_g, away_g):
     return "gagne" if marge > 0 else "perdu"
 
 
+def juger_handicap_europeen(handicap, selection, home_g, away_g):
+    """European Handicap (3 voies 1/X/2, 08/11/2026) : la ligne ENTIÈRE (référencée domicile) s'ajoute aux buts du domicile, puis le résultat du score ajusté est comparé à la sélection (1, X ou 2).
+    gagné ou perdu seulement (le nul reste un résultat possible, jamais remboursé) ; ligne non entière ou sélection inconnue -> None (jamais un faux verdict). Règle UNIQUE : moteur.modeles.marches."""
+    if handicap is None:
+        return None
+    try:
+        return _marches.issue_handicap_europeen(home_g, away_g, handicap, selection)
+    except ValueError:
+        return None
+
+
 def juger_pair_impair(selection, home_g, away_g):
     total = home_g + away_g
     sel = selection.lower()
@@ -503,7 +520,7 @@ def juger_win_to_nil(categorie, selection, home_g, away_g):
 
 ALIAS_CATEGORIES = {"Over Under Full Time": "Total", "Over Under Team 1": "Total Équipe 1", "Over Under Team 2": "Total Équipe 2",
                     "Double Chance Full Time": "Double Chance", "Résultat 1X2": "Full Time Result",
-                    "Both Teams To Score": "BTTS", "Asian Handicap": "Handicap", "European Handicap": "Handicap Européen",
+                    "Both Teams To Score": "BTTS", "Asian Handicap": "Handicap", "European Handicap": "European Handicap",
                     "Team 1 Win To Nil": "Win To Nil Équipe 1", "Team 2 Win To Nil": "Win To Nil Équipe 2",
                     "Team 1 Clean Sheet": "Clean Sheet Équipe 1", "Team 2 Clean Sheet": "Clean Sheet Équipe 2"}
 
@@ -528,6 +545,9 @@ def grader_pick(pick, home_g, away_g):
         return juger_double_chance(selection, home_g, away_g)
     if categorie == "Draw No Bet":
         return juger_draw_no_bet(selection, home_g, away_g)
+    if categorie == "European Handicap":
+        # 3 voies 1/X/2 (08/11/2026) : jamais jugé comme l'Asian Handicap (le nul n'est pas un remboursement).
+        return juger_handicap_europeen(handicap, selection, home_g, away_g)
     if categorie in ("Handicap", "Handicap Européen", "Handicap Asiatique"):
         # "Handicap" : lignes entières/demi du marché OddsPapi "Asian Handicap" (onglet
         # "Handicap" sur 1xBet, voir analyser_et_envoyer._evaluer_marches_brut, 01/10/2026).
