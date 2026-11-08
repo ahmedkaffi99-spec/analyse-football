@@ -375,6 +375,8 @@ def _appel_fournisseur_impose(messages, max_tokens, outils_schemas=None, poster=
             derniere = f"{nom}/{modele} : réponse vide ou illisible"
             break
         derniere = f"{nom}/{modele} : HTTP {r.status_code} {r.text[:200] if r.content else ''}"
+        if r.status_code == 402:   # message final lisible (07/11/2026) : le run échoue tout de suite, sans masquer qu'il suffit de recharger le solde
+            derniere += " — CRÉDITS INSUFFISANTS chez ce fournisseur : recharger le solde puis relancer"
         if r.status_code == 402 and jetons > 2048 and tentative < 4:
             jetons = max(2048, jetons // 2)
             print(f"      ↘️ {nom}/{modele} : crédits insuffisants pour cette requête — max_tokens réduit à {jetons}")
@@ -603,8 +605,17 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
         "vote_ignores": [], "vote_gagnants": {}, "vote_resultats": [],
     }
 
+    def _sans_matchs_commences(donnees):
+        """Retire les matchs déjà commencés (matchs_a_venir.py) et le dit clairement ; renvoie les données filtrées."""
+        import matchs_a_venir
+        filtrees, retires = matchs_a_venir.retirer_matchs_commences(donnees)
+        if retires:
+            etat["nb_matchs_retires"] = len(retires)
+            print(f"   ⏱️ {len(retires)} match(s) déjà commencé(s) ou sur le point de commencer retiré(s) : {', '.join(retires)}.")
+        return filtrees
+
     if donnees_reprises is not None:   # collecte d'un run précédent du jour (--depuis-run) : l'outil collecter_donnees ne rappelle aucune API
-        etat["donnees"] = donnees_reprises
+        etat["donnees"] = _sans_matchs_commences(donnees_reprises)
 
     def collecter_donnees_outil():
         if etat["donnees"] is not None:
@@ -616,7 +627,7 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
         # cet outil avec "TypeError: 'NoneType' object is not subscriptable".
         cd.collecter_donnees()
         with open(cd.SORTIE_JSON, "r", encoding="utf-8") as f:
-            etat["donnees"] = json.load(f)
+            etat["donnees"] = _sans_matchs_commences(json.load(f))
         d = etat["donnees"]
         return {"nb_matchs_demandes": d["nb_matchs_demandes"], "nb_matchs_avec_marches": d["nb_matchs_avec_marches"],
                 "nb_marches_total": d["nb_marches_total"]}
@@ -840,7 +851,14 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
             print("   ℹ️ Aucun coupon composé : aucun message Telegram envoyé (abstention).")
             return {"envoye": False, "enregistre": True, "note": "abstention : aucun message Telegram"}
         ae.DERNIER_ENVOI = None
-        ok = ae.agent5_envoyer_coupons(etat["textes"])
+        # Fraîcheur des cotes (07/11/2026) : heure de relevé et prochain match ajoutés à chaque coupon envoyé (jamais aux messages d'abstention).
+        try:
+            import matchs_a_venir
+            fraicheur = matchs_a_venir.ligne_fraicheur(etat["donnees"])
+        except Exception:
+            fraicheur = ""
+        textes_envoyes = [t if (not fraicheur or "Aucun pari jugé défendable" in t) else f"{t}\n\n{fraicheur}" for t in etat["textes"]]
+        ok = ae.agent5_envoyer_coupons(textes_envoyes)
         etat["envoye"] = ok
         envoi = getattr(ae, "DERNIER_ENVOI", None)
         if not ok and envoi and envoi[0] > 0:
@@ -927,7 +945,8 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
     except Exception as e:
         print(f"   ⚠️ Collecte préalable impossible ({str(e)[:150]}) — l'agent la tentera lui-même.")
     if collecte_vide:
-        etat["termine"], etat["raison_abandon"] = True, "aucun match avec marchés 1xBet collecté — aucun appel IA"
+        etat["termine"], etat["raison_abandon"] = True, ("aucun match à venir avec marchés 1xBet : les %d match(s) restants ont déjà commencé — aucun appel IA" % etat["nb_matchs_retires"]
+                                                         if etat.get("nb_matchs_retires") else "aucun match avec marchés 1xBet collecté — aucun appel IA")
         print(f"   ⏹️ {etat['raison_abandon']}.")
         resultat = {"termine": True, "arret": "collecte vide", "tokens": 0}
     elif budget_restant_usd is not None and budget_restant_usd <= 0:

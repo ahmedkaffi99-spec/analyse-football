@@ -916,9 +916,22 @@ def trouver_classement(team_id, league_id, season, nom_affichage):
     }
 
 
+# Quota journalier API-Football épuisé (constaté le 07/11/2026 : runs 293, 294, 297, 298 à 0 match, abandonnés sans cause lisible). Vrai dès qu'un
+# appel a répondu « request limit for the day » ; lu par backend/app/services/runs.py pour réutiliser la collecte du jour ou échouer avec la vraie cause.
+QUOTA_API_FOOTBALL_EPUISE = False
+
+
+def quota_api_football_epuise_dans(erreurs):
+    """True si le champ « errors » d'API-Football (dict, liste ou texte) indique un quota atteint."""
+    texte = str(erreurs or "").lower()
+    return "request limit" in texte or "limit for the day" in texte or "rate limit" in texte
+
+
 def recuperer_fixtures_api_football():
     """Interroge hier/aujourd'hui/demain (3 appels) pour éviter qu'un match ne disparaisse
     de la liste à cause d'un décalage de fuseau horaire entre l'heure locale et l'API."""
+    global QUOTA_API_FOOTBALL_EPUISE
+    QUOTA_API_FOOTBALL_EPUISE = False
     fixtures = []
     for delta_jours in (-1, 0, 1):
         date_cible = (datetime.now() + timedelta(days=delta_jours)).strftime("%Y-%m-%d")
@@ -936,6 +949,8 @@ def recuperer_fixtures_api_football():
                 # silencieusement "0 matchs", indiscernable d'un vrai jour sans match
                 # (constaté le 2026-09-26, lors du repli de vérification des résultats).
                 print(f"⚠️ API-Football erreur ({date_cible}) : {erreurs}")
+                if quota_api_football_epuise_dans(erreurs):
+                    QUOTA_API_FOOTBALL_EPUISE = True
                 continue
             fixtures.extend(data.get("response", []))
         except Exception as e:

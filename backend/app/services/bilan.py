@@ -11,6 +11,28 @@ ICONES = {"gagne": "✅", "perdu": "❌", "push": "➖ remboursé", "non_verifia
           "demi_gagne": "🟢½ demi-gain", "demi_perdu": "🔴½ demi-perte",
           "en_attente": "⏳", "annule": "🚫 match annulé/reporté (remboursé)",
           "perime": "⌛ périmé (résultat jamais confirmé)"}
+# Multiplicateur de mise de chaque résultat de jambe pour la cote PAYÉE d'un coupon (07/11/2026 : les coupons 392 et 395 annonçaient 1,74 et 5,39 mais
+# payaient 1,20 et 3,09, des jambes ayant été remboursées). None = jambe pas encore jugée : la cote payée est alors inconnue.
+MULTIPLICATEUR_JAMBE = {"gagne": None, "push": 1.0, "annule": 1.0, "demi_perdu": 0.5, "demi_gagne": "demi", "perdu": 0.0}
+
+
+def cote_payee(jambes):
+    """Cote réellement payée d'un coupon dont toutes les jambes sont jugées : produit des cotes des jambes gagnées (jambe remboursée = 1,00 ; demi-gain = moitié
+    de la mise à la cote, moitié remboursée ; demi-perte = moitié perdue). 0.0 si une jambe est perdue, None si une jambe n'est pas jugée (en attente, non vérifiable, périmée)."""
+    total = 1.0
+    for j in jambes:
+        r = j.resultat
+        if r not in MULTIPLICATEUR_JAMBE:
+            return None
+        if r == "gagne":
+            total *= float(j.cote)
+        elif r == "demi_gagne":
+            total *= 0.5 * float(j.cote) + 0.5
+        else:
+            total *= MULTIPLICATEUR_JAMBE[r]
+    return round(total, 2)
+
+
 VERDICTS = {"gagne": "✅ GAGNÉ", "perdu": "❌ PERDU", "incertain": "❓ INCERTAIN (au moins une jambe non vérifiable)"}
 
 
@@ -40,8 +62,12 @@ def construire_message(coupons, partiel=False):
             detail += f" · 🚫 {compte['annule']} annulé(s)/remboursé(s)"
         if compte["perime"]:
             detail += f" · ⌛ {compte['perime']} périmé(s)"
+        payee = cote_payee(c.jambes)
+        ligne_payee = ""
+        if payee and c.cote_totale and abs(payee - float(c.cote_totale)) >= 0.01:   # jambes remboursées : la cote annoncée n'est pas celle qui est payée
+            ligne_payee = f"\n💵 Cote payée (jambes remboursées déduites) : *{payee}*"
         sections.append(f"{c.nom} — {VERDICTS.get(c.statut, c.statut)}\n\n" + "\n".join(lignes)
-                        + f"\n\n{detail}\n💰 Cote totale : *{c.cote_totale}*")
+                        + f"\n\n{detail}\n💰 Cote totale annoncée : *{c.cote_totale}*{ligne_payee}")
     jour = coupons[0].jour.isoformat()
     separateur = "\n\n━━━━━━━━━━━━━━━━━━━━\n\n"
     nb = len(coupons)

@@ -31,6 +31,69 @@ def charger_collecte_du_jour(db, run_source_id, telecharger=telecharger_collecte
     return telecharger(db, source)
 
 
+def _normaliser(texte):
+    import re
+    import unicodedata
+    brut = unicodedata.normalize("NFKD", str(texte or "")).encode("ascii", "ignore").decode().lower()
+    return re.sub(r"[^a-z0-9 ]+", " ", brut)
+
+
+def collecte_compatible(donnees, matchs_manuels):
+    """La collecte d'un autre run peut-elle servir une sélection manuelle ? Sans sélection manuelle : oui. Sinon chaque match demandé (« A - B ») doit se retrouver dans
+    la collecte : un mot significatif (4 lettres ou plus) de chaque équipe doit figurer dans les noms d'un même match collecté. Jamais de match substitué en silence."""
+    demandes = [m.strip() for m in str(matchs_manuels or "").replace("\n", ",").split(",") if m.strip()]
+    if not demandes:
+        return True
+    collectes = []
+    for m in (donnees or {}).get("matchs", []):
+        af, demande = m.get("api_football") or {}, m.get("match_demande") or {}
+        collectes.append(_normaliser(f"{af.get('home_name') or demande.get('home') or ''} {af.get('away_name') or demande.get('away') or ''} "
+                                     f"{demande.get('home') or ''} {demande.get('away') or ''}"))
+    for demande in demandes:
+        equipes = [e for e in demande.replace(" – ", " - ").split(" - ") if e.strip()]
+        mots = [max((w for w in _normaliser(e).split() if len(w) >= 4), key=len, default="") for e in equipes]
+        if not mots or not all(mots) or not any(all(mot in nom for mot in mots) for nom in collectes):
+            return False
+    return True
+
+
+def derniere_collecte_reutilisable(db, run_exclu, matchs_manuels=None, telecharger=telecharger_collecte):
+    """Collecte du JOUR la plus récente, avec au moins un match muni de marchés, compatible avec la sélection manuelle. (run_id, donnees) ou None."""
+    aujourd_hui = datetime.now(timezone.utc).date()
+    candidats = db.query(Run).filter(Run.id != run_exclu, Run.nb_matchs_avec_marches > 0).order_by(Run.id.desc()).limit(20).all()
+    for source in candidats:
+        if source.lance_le is None or source.lance_le.date() != aujourd_hui:
+            continue
+        try:
+            donnees = telecharger(db, source)
+        except Exception:
+            continue
+        if (donnees or {}).get("nb_matchs_avec_marches") and collecte_compatible(donnees, matchs_manuels):
+            return source.id, donnees
+    return None
+
+
+def version_et_regles(profils, moteur="agent"):
+    """Version du code et règles appliquées à ce run (07/11/2026) : sans cela, comparer des runs avant/après un changement de règle obligeait à deviner la règle d'après
+    l'heure de lancement. Écrit dans le journal de l'agent (runs.detail). Ne lève jamais."""
+    try:
+        import agent_strategie as st
+        return {"commit": (os.getenv("GITHUB_SHA") or "")[:7] or None, "moteur": moteur, "modele": (os.getenv("PILOTE_MODELE") or "deepseek (API officielle)"),
+                "profils": {p.get("cle"): {"jambes": [p.get("nb_jambes_min"), p.get("nb_jambes")],
+                                           "bande_cote": [p.get("cote_totale_min"), p.get("cote_totale_max")],
+                                           "plafond_coupons_par_match": p.get("max_coupons_par_match"),
+                                           "match_repete": bool(p.get("match_repete_autorise"))} for p in (profils or [])},
+                "remplissage": {"cote_max": st.COTE_JAMBE_REMPLISSAGE, "max_par_coupon": st.MAX_JAMBES_REMPLISSAGE},
+                "plancher_jambe": st.COTE_MIN_JAMBE_AGENT, "plancher_cote_totale": st.COTE_TOTALE_MIN_COUPON,
+                "collecte_reutilisee_du_run": os.getenv("DEPUIS_RUN") or None}
+    except Exception as e:
+        return {"erreur": str(e)[:100]}
+
+
+def _quota_api_football_epuise(cd):
+    return bool(getattr(cd, "QUOTA_API_FOOTBALL_EPUISE", False))
+
+
 def _couts_du_fichier():
     """Texte « | COUTS_AGENT {...} » des coûts écrits par l'agent pour ce job, ou vide. Ne lève jamais."""
     try:
@@ -83,6 +146,14 @@ def executer_run(run_id, envoyer_telegram=False, rediger=True, depuis_run=None, 
             # Reprise de collecte avec le moteur agent (06/11/2026) : la collecte archivée d'un run du JOUR est relue, l'agent ne
             # rappelle aucune API sportive ; le reste (catalogue, vetos, pilote) est identique.
             donnees_reprises = charger_collecte_du_jour(db, depuis_run) if depuis_run else None
+            # Second modèle d'une comparaison (REUTILISER_COLLECTE, voir le workflow) : il relit la collecte du jour du premier — mêmes données, aucun appel API sportif.
+            if donnees_reprises is None and os.getenv("REUTILISER_COLLECTE", "").strip() in ("1", "true", "oui"):
+                precedente = derniere_collecte_reutilisable(db, run_id, os.getenv("MATCHS_MANUELS"))
+                if precedente is not None:
+                    print(f"♻️ Comparaison de modèles : réutilisation de la collecte du run {precedente[0]} (mêmes données que le premier modèle).")
+                    donnees_reprises = precedente[1]
+                else:
+                    print("ℹ️ Aucune collecte du jour réutilisable : nouvelle collecte.")
             agent_pilote = pipeline.charger_agent_pilote()
             DOSSIER_DONNEES.mkdir(parents=True, exist_ok=True)
             cd.SORTIE_JSON = str(DOSSIER_DONNEES / f"collecte_run_{run_id}.json")
@@ -106,6 +177,20 @@ def executer_run(run_id, envoyer_telegram=False, rediger=True, depuis_run=None, 
             resultat_agent = agent_pilote.executer(telegram=envoyer_telegram, profils=profils_personnalises,
                                                    ignorer_diversite_croisee=ignorer_diversite_croisee,
                                                    contexte_supplementaire=bilan, **options_reprise)
+            # Quota API-Football épuisé (07/11/2026, runs 293/294/297/298 : 0 match, « succès » trompeur) : la collecte du jour déjà faite est réutilisée (aucun
+            # appel sportif) ; sans collecte compatible le run échoue avec la VRAIE cause (job rouge + alerte Telegram), jamais « abandonné » en silence.
+            collecte_vide = not (resultat_agent.get("donnees") or {}).get("nb_matchs_avec_marches")
+            if (collecte_vide and not depuis_run and _quota_api_football_epuise(cd)
+                    and not any(item["selections"] for item in (resultat_agent.get("resultats_profils") or []))):
+                reutilisable = derniere_collecte_reutilisable(db, run_id, os.getenv("MATCHS_MANUELS"))
+                if reutilisable is None:
+                    raise RuntimeError("Quota journalier API-Football épuisé et aucune collecte du jour réutilisable pour cette sélection "
+                                       "(relancer après la remise à zéro du quota ou avec depuis_run)")
+                source_id, donnees_reprises = reutilisable
+                print(f"♻️ Quota API-Football épuisé : réutilisation automatique de la collecte du run {source_id} (aucun appel sportif).")
+                resultat_agent = agent_pilote.executer(telegram=envoyer_telegram, profils=profils_personnalises,
+                                                       ignorer_diversite_croisee=ignorer_diversite_croisee,
+                                                       contexte_supplementaire=bilan, donnees_reprises=donnees_reprises)
             donnees = resultat_agent.get("donnees")
             resultats = resultat_agent.get("resultats_profils") or []
             envoye = bool(resultat_agent.get("envoye"))
@@ -136,6 +221,8 @@ def executer_run(run_id, envoyer_telegram=False, rediger=True, depuis_run=None, 
                 # Journal de l'agent (recherches web, pages lues, stratégie et raison de chaque jambe) : enregistré dans
                 # runs.detail, colonne texte déjà existante (aucune modification du schéma).
                 journal = resultat_agent.get("journal")
+                if journal is not None:
+                    journal = dict(journal, version=version_et_regles(profils_personnalises, moteur))
                 if journal and (journal.get("recherches") or journal.get("pages") or journal.get("raisons") or journal.get("couts")):
                     texte_journal = json.dumps(journal, ensure_ascii=False, separators=(",", ":"))
                     if len(texte_journal) > 30000:  # jamais un JSON tronqué : on retire les raisons détaillées

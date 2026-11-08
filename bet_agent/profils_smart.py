@@ -44,7 +44,32 @@ NIVEAUX = (
 )
 
 
-def profils(un_pari_par_match=True, contraintes=True):
+def _entier_env(nom, defaut):
+    try:
+        return max(0, int(os.getenv(nom) or defaut))
+    except ValueError:
+        return defaut
+
+
+def analyser_intervalle(texte, entier=False):
+    """« 5-12 » (ou « 5 - 12 », « 5,5-10 ») -> (min, max) ou None si le texte est vide ou invalide (le défaut est alors gardé : jamais d'erreur silencieuse sur la config)."""
+    brut = str(texte or "").strip().replace(",", ".").replace(" ", "")
+    if not brut or brut.count("-") != 1:
+        return None
+    try:
+        bas, haut = (float(x) for x in brut.split("-"))
+    except ValueError:
+        return None
+    if not (0 < bas < haut) and not (entier and 0 < bas <= haut):
+        return None
+    return (int(bas), int(haut)) if entier else (bas, haut)
+
+
+def profils(un_pari_par_match=True, contraintes=True, jambes=None, bandes=None, max_coupons_par_match=None):
+    """jambes : (min, max) de jambes par coupon (défaut 5 à 12). bandes : {niveau: (min, max)} de cote totale (défaut : variables BANDE_COTE_* puis 5-10 / 12-20 / 25-50).
+    max_coupons_par_match : nombre maximal de coupons du run où un même match peut figurer (défaut 2, variable MAX_COUPONS_PAR_MATCH ; 0 = pas de plafond)."""
+    jambes_min, jambes_max = jambes or (NB_JAMBES_MIN_COUPON, NB_JAMBES_MAX_COUPON)
+    plafond_match = _entier_env("MAX_COUPONS_PAR_MATCH", 2) if max_coupons_par_match is None else max_coupons_par_match
     """Les TROIS profils de risque : 5 à 12 jambes, cote totale dans une bande propre à chaque profil (bandes espacées, minimum 5). Aucune cote imposée par jambe."""
     sortie = []
     # contraintes=False : profils « libres » (2 jambes minimum, aucune bande de cote), réservés aux tests des règles de cohérence indépendantes de la bande.
@@ -52,8 +77,9 @@ def profils(un_pari_par_match=True, contraintes=True):
         sortie.append({
             "cle": cle, "nom": f"{COULEURS[i]} {libelle}", "niveau_risque": niveau, "consigne": consigne,
             # 5 à 12 jambes (vérifié par Python dans valider) et bande de cote totale espacée des autres profils.
-            "nb_jambes_min": NB_JAMBES_MIN_COUPON if contraintes else 2, "nb_jambes": NB_JAMBES_MAX_COUPON if contraintes else 99,
-            **({"cote_totale_min": bande_cote(niveau)[0], "cote_totale_max": bande_cote(niveau)[1]} if contraintes else {}),
+            "nb_jambes_min": jambes_min if contraintes else 2, "nb_jambes": jambes_max if contraintes else 99,
+            **({"cote_totale_min": (bandes or {}).get(niveau, bande_cote(niveau))[0], "cote_totale_max": (bandes or {}).get(niveau, bande_cote(niveau))[1]} if contraintes else {}),
+            **({"max_coupons_par_match": plafond_match} if contraintes and plafond_match else {}),
             "jambes_max_par_match": 1 if un_pari_par_match else 3,
             # Demande du 07/11/2026 : un même match peut figurer dans PLUSIEURS coupons du run à condition que les paris soient DIFFÉRENTS (le pari exact reste
             # interdit dans deux coupons) ; dans un coupon, un seul pari par match. Sans cela, 3 coupons de 5 à 12 jambes épuisent les 19 matchs et le 3e s'abstient.

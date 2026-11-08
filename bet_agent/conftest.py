@@ -37,6 +37,10 @@ def planchers_des_moteurs_communs_neutralises(monkeypatch):
     from moteur import profils_risque as pr
     monkeypatch.setattr(pr, "COTE_MIN_JAMBE", 0.0)
     monkeypatch.setattr(pr, "COTE_TOTALE_MIN_COUPON", 0.0)
+    monkeypatch.setattr(pr, "MAX_JAMBES_REMPLISSAGE", 0)
+    import agent_strategie as st
+    monkeypatch.setattr(st, "MAX_JAMBES_REMPLISSAGE", 0)   # limite des jambes de remplissage : testée explicitement dans test_ameliorations_07_11.py
+    monkeypatch.setenv("FILTRER_MATCHS_COMMENCES", "0")      # les tests existants utilisent des dates fictives : le filtre des matchs commencés est testé à part
 
 
 @pytest.fixture(autouse=True)

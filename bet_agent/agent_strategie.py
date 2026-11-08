@@ -71,6 +71,24 @@ except ValueError:
     COTE_TOTALE_MIN_COUPON = 1.60
 
 
+# JAMBES DE REMPLISSAGE (07/11/2026) : une jambe à cote quasi minimale (≤ COTE_JAMBE_REMPLISSAGE) ne sert souvent qu'à atteindre le nombre de jambes ou la bande de cote
+# demandés, et ses probabilités sont surestimées (annoncé 82 %, réel 71 % le 07/11). Au plus MAX_JAMBES_REMPLISSAGE par coupon (0 = pas de limite).
+def _lire_reel(nom, defaut):
+    try:
+        return max(0.0, float(os.getenv(nom) or defaut))
+    except ValueError:
+        return defaut
+
+
+COTE_JAMBE_REMPLISSAGE = _lire_reel("COTE_JAMBE_REMPLISSAGE", 1.22)
+MAX_JAMBES_REMPLISSAGE = int(_lire_reel("MAX_JAMBES_REMPLISSAGE", 2))
+
+
+def jambes_de_remplissage(cotes):
+    """Nombre de cotes ≤ COTE_JAMBE_REMPLISSAGE dans la liste."""
+    return sum(1 for c in cotes if c is not None and float(c) <= COTE_JAMBE_REMPLISSAGE)
+
+
 def rentabilite(selections):
     """(probabilité jointe, valeur espérée) d'un coupon à partir des probabilités ET des cotes du catalogue (jambes indépendantes : matchs différents).
     Valeur espérée = probabilité jointe × cote totale − 1 (par unité misée). (None, None) si une probabilité manque : rien n'est inventé."""
@@ -574,6 +592,11 @@ def valider(proposition, catalogue, profils, signatures_existantes=(), selection
         cote = ae._produit_cotes(selections) if selections else 0
         proba_jointe, valeur_esperee = rentabilite(selections)
         moyenne = f", cote moyenne par jambe {cote ** (1 / len(selections)):.2f}" if selections and cote > 0 else ""
+        if selections and MAX_JAMBES_REMPLISSAGE:
+            remplissage = jambes_de_remplissage([s["pick"].get("cote") for s in selections])
+            if remplissage > MAX_JAMBES_REMPLISSAGE:
+                erreurs.append(f"{remplissage} jambes de remplissage (cote ≤ {COTE_JAMBE_REMPLISSAGE:g}) : maximum {MAX_JAMBES_REMPLISSAGE} — "
+                               "remplace-les par des paris un peu mieux cotés au lieu de les empiler pour atteindre la bande ou le nombre de jambes")
         calculs.append(f"{cle} : {len(selections)} paris, cote totale {cote:.2f}{moyenne}"
                        + ("" if proba_jointe is None else f", probabilité jointe {proba_jointe:.1%}, valeur espérée {valeur_esperee:+.0%} par unité misée"))
         if selections and plancher and cote < plancher:

@@ -7,10 +7,13 @@ import sys
 
 # Les profils smart vivent à UN seul endroit (bet_agent/profils_smart.py, pur Python), partagé avec le profil de secours du moteur.
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "bet_agent"))
-from profils_smart import COULEURS, NIVEAUX, profils  # noqa: E402,F401
+from profils_smart import COULEURS, NIVEAUX, analyser_intervalle, profils  # noqa: E402,F401
 
 MODELES = {"deepseek": "", "deepseek-openrouter": "deepseek/deepseek-v4.1-flash", "gpt-6.1-sol": "openai/gpt-6.1-sol",
            "gemini-4-argon": "google/gemini-4-argon", "claude-sonnet-5.5": "anthropic/claude-sonnet-5.5"}
+# Modèle par défaut (formulaire et passages planifiés) : DeepSeek via OpenRouter, un seul modèle sans vote (07/11/2026). L'API officielle DeepSeek reste choisissable (« deepseek »).
+MODELE_DEFAUT = "deepseek-openrouter"
+NIVEAUX_TECH = ("prudent", "equilibre", "risque")
 VOTE_DEFAUT = "openai/gpt-6.1-sol,google/gemini-4-argon"
 
 
@@ -22,16 +25,21 @@ def _choix(valeur, defaut="defaut"):
 def construire(env):
     evenement = env.get("EVENEMENT", "")
     moteur = _choix(env.get("MOTEUR"), "") or "agent"
-    modele = _choix(env.get("MODELE"), "") or "deepseek"
+    modele = _choix(env.get("MODELE"), "") or MODELE_DEFAUT
     if modele not in MODELES:
         raise ValueError(f"modèle inconnu : {modele}")
+    modele_2 = _choix(env.get("MODELE_2"), "aucun")
+    if modele_2 and (modele_2 not in MODELES or modele_2 == modele):
+        raise ValueError(f"second modèle invalide ou identique au premier : {modele_2}")
     telegram = (env.get("TELEGRAM_IN") or "").strip().lower() == "true"
     vote = "aucun"
     if moteur != "agent":            # les autres moteurs ne connaissent ni pilote IA, ni profils personnalisés
-        matrice = [{"etiquette": moteur, "pilote": ""}]
+        matrice = [{"etiquette": moteur, "pilote": "", "reutiliser": ""}]
     else:
-        matrice = [{"etiquette": modele, "pilote": MODELES[modele]}]
-        if modele == "deepseek":     # vote final : seul le pilote DeepSeek est comparé aux autres modèles
+        matrice = [{"etiquette": modele, "pilote": MODELES[modele], "reutiliser": ""}]
+        if modele_2:   # comparaison de deux modèles dans le même lancement (07/11/2026) : l'un après l'autre, le second relit la collecte du premier (mêmes données, un seul appel API)
+            matrice.append({"etiquette": modele_2, "pilote": MODELES[modele_2], "reutiliser": "1"})
+        if modele == "deepseek" and not modele_2:     # vote final : seul le pilote DeepSeek est comparé aux autres modèles
             vote = (env.get("VOTE_VAR") or "").strip() or VOTE_DEFAUT
     sortie = {"matrice": json.dumps(matrice, ensure_ascii=False, separators=(",", ":")), "moteur": moteur,
               "telegram": "true" if telegram else "", "vote": vote, "date_debut": "", "date_fin": "", "ttl": ""}
@@ -44,7 +52,11 @@ def construire(env):
     sortie["depuis_run"] = (env.get("DEPUIS_RUN") or "").strip()
     sortie["ignorer_diversite"] = "true"   # diversité de catégorie entre coupons retirée le 06/11/2026 (l'anti-doublon exact reste actif)
     # Les TROIS moteurs (agent, central, déterministe) reçoivent les mêmes trois profils de risque (07/11/2026) : comparaison équitable.
-    liste = profils(un_pari_par_match=_choix(env.get("UN_PARI_PAR_MATCH"), "actif") != "desactive")
+    # Nombre de jambes et bandes de cote totale paramétrables (07/11/2026) ; une valeur vide ou invalide garde le défaut (5-12 jambes, 5-10 / 12-20 / 25-50).
+    jambes = analyser_intervalle(env.get("JAMBES"), entier=True)
+    bandes_saisies = [analyser_intervalle(x) for x in str(env.get("BANDES") or "").replace(",", " ").split("/")]
+    bandes = dict(zip(NIVEAUX_TECH, bandes_saisies)) if len(bandes_saisies) == 3 and all(bandes_saisies) else None
+    liste = profils(un_pari_par_match=_choix(env.get("UN_PARI_PAR_MATCH"), "actif") != "desactive", jambes=jambes, bandes=bandes)
     sortie["profils"] = json.dumps(liste, ensure_ascii=False, separators=(",", ":"))
     return sortie
 

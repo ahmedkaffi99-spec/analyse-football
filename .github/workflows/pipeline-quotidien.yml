@@ -50,15 +50,26 @@ on:
         type: string
         default: ""
       modele:
-        description: "10. Modèle qui pilote le run : deepseek (API officielle DeepSeek, par défaut) · deepseek-openrouter (même DeepSeek via l'API OpenRouter) · gpt-6.1-sol · gemini-4-argon · claude-sonnet-5.5. Aucun repli : un modèle qui échoue fait échouer le run"
+        description: "10. Modèle qui pilote le run : deepseek-openrouter (DeepSeek via l'API OpenRouter, par défaut, un seul modèle sans vote) · deepseek (API officielle DeepSeek) · gpt-6.1-sol · gemini-4-argon · claude-sonnet-5.5. Aucun repli : un modèle qui échoue fait échouer le run"
         type: choice
         options:
+          - "deepseek-openrouter"
+          - "deepseek"
+          - "gpt-6.1-sol"
+          - "gemini-4-argon"
+          - "claude-sonnet-5.5"
+        default: "deepseek-openrouter"
+      modele_2:
+        description: "11. Second modèle à comparer (optionnel) : il tourne APRÈS le premier, sur la MÊME collecte (mêmes données, un seul appel aux API sportives), sans vote. aucun = un seul modèle"
+        type: choice
+        options:
+          - "aucun"
           - "deepseek"
           - "deepseek-openrouter"
           - "gpt-6.1-sol"
           - "gemini-4-argon"
           - "claude-sonnet-5.5"
-        default: "deepseek"
+        default: "aucun"
       un_pari_par_match:
         description: "12. Un seul pari par match dans un coupon : actif (1 par match) ou desactive (jusqu'à 3 paris d'events différents par match)"
         type: choice
@@ -66,6 +77,14 @@ on:
           - "actif"
           - "desactive"
         default: "actif"
+      jambes:
+        description: "13. Nombre de jambes par coupon : min-max (défaut 5-12). Valeur invalide = défaut"
+        type: string
+        default: "5-12"
+      bandes:
+        description: "14. Bandes de cote totale Prudent / Équilibré / Risque (défaut 5-10 / 12-20 / 25-50). Valeur invalide = défaut"
+        type: string
+        default: "5-10 / 12-20 / 25-50"
 
 concurrency:
   # Exécution strictement séquentielle : éviter les deadlocks Supabase et la saturation API-Football.
@@ -107,6 +126,9 @@ jobs:
           DATE_DEBUT: ${{ inputs.date_debut }}
           DATE_FIN: ${{ inputs.date_fin }}
           MODELE: ${{ inputs.modele }}
+          MODELE_2: ${{ inputs.modele_2 }}
+          JAMBES: ${{ inputs.jambes }}
+          BANDES: ${{ inputs.bandes }}
           UN_PARI_PAR_MATCH: ${{ inputs.un_pari_par_match }}
           VOTE_VAR: ${{ vars.MODELES_VOTE }}
         run: python backend/app/preparer_formulaire.py
@@ -154,6 +176,12 @@ jobs:
       SANS_API_FOOTBALL: ""
       # Plafond d'edge et autres vetos automatiques retirés le 06/11/2026 (les cotes restent celles de 1xBet SEUL, demande du 04/11).
       PILOTE_MODELE: ${{ matrix.pilote }}
+      # Second modèle d'une comparaison : relit la collecte du jour du premier (aucun nouvel appel API-Football) — voir backend/app/services/runs.py.
+      REUTILISER_COLLECTE: ${{ matrix.reutiliser }}
+      # Jambes de remplissage (cote basse) et plafond de coupons par match : défauts dans le code (1.22 / 2 / 2), remplaçables par variables du dépôt (0 = pas de limite).
+      COTE_JAMBE_REMPLISSAGE: ${{ vars.COTE_JAMBE_REMPLISSAGE }}
+      MAX_JAMBES_REMPLISSAGE: ${{ vars.MAX_JAMBES_REMPLISSAGE }}
+      MAX_COUPONS_PAR_MATCH: ${{ vars.MAX_COUPONS_PAR_MATCH }}
       # Phase 4 (07/11/2026, corrections contrôlées) : durée de l'agent < délai du job (60 min) pour un arrêt PROPRE avec journal et coûts ; coûts écrits
       # au fil de l'eau dans COUTS_FICHIER (relus par l'étape « Finaliser le run » même si le job est tué) ; au plus N runs payants ratés par jour pour
       # les passages planifiés ; second chat Telegram UNIQUEMENT via la variable du dépôt TELEGRAM_CHAT_IDS_SUPPLEMENTAIRES (plus de valeur par défaut codée).

@@ -33,6 +33,10 @@ PROBA_JOINTE_MIN = {"prudent": 0.0, "equilibre": 0.0, "risque": 0.02}   # planch
 COTE_MIN_JAMBE = _lire("COTE_MIN_JAMBE_AGENT", 1.20)
 COTE_TOTALE_MIN_COUPON = _lire("COTE_TOTALE_MIN_COUPON", 1.60)
 
+# Jambes de remplissage : mêmes variables et même défaut que l'agent (agent_strategie.COTE_JAMBE_REMPLISSAGE / MAX_JAMBES_REMPLISSAGE) ; 0 = pas de limite.
+COTE_JAMBE_REMPLISSAGE = _lire("COTE_JAMBE_REMPLISSAGE", 1.22)
+MAX_JAMBES_REMPLISSAGE = int(_lire("MAX_JAMBES_REMPLISSAGE", 2))
+
 _SENS_MOTS = (("over", ("over", "plus")), ("under", ("under", "moins")), ("yes", ("yes", "oui")), ("no", ("no", "non")))
 
 
@@ -170,6 +174,10 @@ def regles_coupon(jambes, niveau=None, profil=None):
             problemes.append(f"{j.get('match')} : {raison}")
     if not diversite_ok(jambes):
         problemes.append("trop de jambes de la même famille et du même sens")
+    if MAX_JAMBES_REMPLISSAGE:
+        remplissage = sum(1 for j in jambes if j.get("cote") is not None and float(j["cote"]) <= COTE_JAMBE_REMPLISSAGE)
+        if remplissage > MAX_JAMBES_REMPLISSAGE:
+            problemes.append(f"{remplissage} jambes de remplissage (cote ≤ {COTE_JAMBE_REMPLISSAGE:g}) : maximum {MAX_JAMBES_REMPLISSAGE}")
     bas, haut = profil.get("cote_totale_min"), profil.get("cote_totale_max")
     if jambes and bas and cote_totale(jambes) < bas:
         problemes.append(f"cote totale {cote_totale(jambes):.2f} sous le minimum {bas:g} du profil")
@@ -186,10 +194,21 @@ def pari_exact(j):
     return (j["match"], j.get("categorie"), j.get("selection"))
 
 
-def regles_entre_coupons(coupons, match_repete_autorise=False):
+def plafond_coupons_par_match(profils):
+    """Plafond de coupons par match demandé par les profils (le plus bas des plafonds donnés), ou None. Sans effet quand les matchs ne peuvent pas se répéter."""
+    valeurs = [p.get("max_coupons_par_match") for p in profils if p.get("max_coupons_par_match")]
+    return min(valeurs) if valeurs else None
+
+
+def regles_entre_coupons(coupons, match_repete_autorise=False, plafond_par_match=None):
     """coupons : liste de listes de jambes d'un même run. Par défaut un match n'apparaît que dans un coupon ; avec match_repete_autorise (demande du 07/11/2026) un match peut
     figurer dans plusieurs coupons mais jamais avec le MÊME pari exact. Deux coupons ne sont jamais identiques. Renvoie les problèmes."""
     problemes, vus, empreintes, exacts = [], {}, set(), {}
+    if plafond_par_match:
+        for match in {j["match"] for jambes in coupons for j in jambes}:
+            nb = sum(1 for jambes in coupons if any(j["match"] == match for j in jambes))
+            if nb > plafond_par_match:
+                problemes.append(f"match {match} dans {nb} coupons (maximum {plafond_par_match})")
     for i, jambes in enumerate(coupons):
         for j in jambes:
             if match_repete_autorise:

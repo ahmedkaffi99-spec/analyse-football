@@ -8,3 +8,4 @@ def planchers_de_remuneration_neutralises(monkeypatch):
     from moteur import profils_risque as pr
     monkeypatch.setattr(pr, "COTE_MIN_JAMBE", 0.0)
     monkeypatch.setattr(pr, "COTE_TOTALE_MIN_COUPON", 0.0)
+    monkeypatch.setattr(pr, "MAX_JAMBES_REMPLISSAGE", 0)   # limite des jambes de remplissage : testée explicitement dans bet_agent/test_ameliorations_07_11.py
