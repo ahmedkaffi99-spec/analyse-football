@@ -1215,13 +1215,18 @@ jobs:
           import analyser_et_envoyer as ae
 
           # « 284 » : conversation Telegram par défaut ; « 284@8083070670 » : autre conversation (chat id) pour cet envoi ;
-          # « recap:410-427@8083070670 » : UN message récapitulatif « coupon par modèle » pour les coupons 410 à 427 (aucun coupon n'est renvoyé)
+          # « 410@principal:123 » : même chose mais avec le bot principal ; « recap:410-427@8083070670 » : UN message récapitulatif « coupon par modèle » pour les coupons 410 à 427 (aucun coupon n'est renvoyé)
           reference, _, autre_chat = os.environ['MATCH_RECHERCHE'].partition('@')
           if autre_chat.strip():
-              ae.TELEGRAM_CHAT_ID = autre_chat.strip()
-              # bot séparé pour cette conversation (secret TELEGRAM_TOKEN_FRERE) ; jamais le bot principal
-              assert os.environ.get('TELEGRAM_TOKEN_FRERE'), 'secret TELEGRAM_TOKEN_FRERE absent'
-              ae.TELEGRAM_TOKEN = os.environ['TELEGRAM_TOKEN_FRERE']
+              autre_chat = autre_chat.strip()
+              if autre_chat.startswith('principal:'):
+                  # « 410@principal:1446772592 » : cette conversation est jointe par le bot PRINCIPAL (TELEGRAM_TOKEN, déjà dans l'environnement)
+                  ae.TELEGRAM_CHAT_ID = autre_chat[len('principal:'):].strip()
+              else:
+                  ae.TELEGRAM_CHAT_ID = autre_chat
+                  # bot séparé pour cette conversation (secret TELEGRAM_TOKEN_FRERE) ; jamais le bot principal sans le préfixe « principal: »
+                  assert os.environ.get('TELEGRAM_TOKEN_FRERE'), 'secret TELEGRAM_TOKEN_FRERE absent'
+                  ae.TELEGRAM_TOKEN = os.environ['TELEGRAM_TOKEN_FRERE']
           from app.services import recapitulatif
           plage = recapitulatif.reference_recapitulatif(reference)
           if plage is not None:
