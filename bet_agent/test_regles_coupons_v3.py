@@ -64,14 +64,16 @@ class TestPlafondCouponsParMatch(unittest.TestCase):
         return [dict(catalogue[f"P{i}"], pick=dict(catalogue[f"P{i}"]["pick"], handicap=h))
                 for h in (0.5, 2.5) for i in matchs_par_coupon]
 
-    def test_plus_de_plafond_de_coupons_par_match(self):
-        # 06/11/2026 : plafond retiré (demande explicite), même si un profil porte encore max_coupons_par_match
+    def test_plafond_de_coupons_par_match_applique(self):
+        # 07/11/2026 : plafond rétabli (demande explicite) — un match déjà dans 2 coupons ne peut pas entrer dans un 3e ; sans la clé du profil, aucun plafond
         cat = _cat(10)
         prec = self._precedentes(cat, [0])
-        _, problemes, _ = st.valider({"coupons": [{"profil": "c", "strategie": "x",
-                                                   "jambes": [{"id": "P0", "raison": "r"}]}]},
-                                     cat, [self._profil()], selections_precedentes=prec)
-        self.assertFalse(any("par match" in p and "maximum" in p for p in problemes), problemes)
+        proposition = {"coupons": [{"profil": "c", "strategie": "x", "jambes": [{"id": "P0", "raison": "r"}]}]}
+        _, problemes, _ = st.valider(proposition, cat, [self._profil()], selections_precedentes=prec)
+        self.assertTrue(any("maximum 2 par match" in p for p in problemes), problemes)
+        sans_plafond = {k: v for k, v in self._profil().items() if k != "max_coupons_par_match"}
+        _, problemes, _ = st.valider(proposition, cat, [sans_plafond], selections_precedentes=prec)
+        self.assertFalse(any("maximum 2 par match" in p for p in problemes), problemes)
 
     def test_plafond_inactif_avec_peu_de_matchs(self):
         cat = _cat(5)

@@ -524,6 +524,12 @@ def valider(proposition, catalogue, profils, signatures_existantes=(), selection
                                "(même avec un marché ou une sélection différents) — choisis un autre match "
                                "pour ce profil")
                 continue
+            # Plafond de coupons par match (07/11/2026) : le plafond était calculé plus haut mais jamais appliqué (constaté au run 300 : Crystal Palace–Liverpool et Inter–Como dans
+            # les 3 coupons). Avec un seul pari par match et par coupon, le nombre de jambes déjà prises sur ce match est le nombre de coupons où il figure.
+            if max_coupons and max_par_match == 1 and coupons_par_match.get(selection["match"], 0) >= max_coupons:
+                erreurs.append(f"{cid} : {selection['match']} figure déjà dans {coupons_par_match[selection['match']]} coupon(s) de ce run (maximum {max_coupons} par match) — "
+                               "choisis un autre match pour ce profil")
+                continue
             if _cle_pari(selection) in paris_deja_utilises:
                 erreurs.append(f"{cid} : même pari exact ({selection['match']}, {selection['pick']['marche']}, "
                                f"{selection['pick']['selection']}) déjà pris dans un autre coupon — choisis un autre "

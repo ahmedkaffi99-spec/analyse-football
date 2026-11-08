@@ -168,3 +168,28 @@ def test_tous_les_matchs_commences_aucun_appel_ia(monkeypatch):
         resultat = pilote.executer(telegram=True, profils=[PROFIL_1], donnees_reprises=donnees)
     appel.assert_not_called()
     assert "aucun match" in resultat["raison_abandon"]
+
+
+def test_l_agent_applique_le_plafond_de_coupons_par_match():
+    """Constaté au run 300 : le plafond de 2 coupons par match était dans les profils mais jamais appliqué (un match dans les 3 coupons)."""
+    pool = {f"M{i} - X{i}": [{"match": f"M{i} - X{i}", "competition": "L1",
+                              "pick": {"categorie": cat, "marche": f"M{k}", "selection": sel, "handicap": 2.5, "cote": 1.5, "proba_modele_pct": 65.0, "edge_pct": 1.0,
+                                       "marche_affichage": f"M{k}"}} for k, (cat, sel) in enumerate((("Total", "Over"), ("BTTS", "Yes"), ("Double Chance", "1X")))]
+            for i in range(8)}
+    catalogue, _ = st.construire_catalogue(pool, seuil_proba=0)
+    par_match = {}
+    for cid, c in catalogue.items():
+        par_match.setdefault(c["match"], []).append(cid)
+    matchs = list(par_match)
+    base = dict(profils_smart.profils(contraintes=False)[0], nb_jambes_min=1, nb_jambes=12, max_coupons_par_match=2, match_repete_autorise=True)
+    profils = [dict(base, cle=f"c{i}") for i in (1, 2, 3)]
+
+    def coupon(cle, indices_matchs, k):
+        return {"profil": cle, "strategie": "s", "jambes": [{"id": par_match[matchs[i]][k], "raison": "r"} for i in indices_matchs]}
+    # le match 0 dans les coupons 1 et 2 (2 coupons) : accepté ; dans le coupon 3 aussi : refusé
+    propositions = {"coupons": [coupon("c1", [0, 1], 0), coupon("c2", [0, 2], 1), coupon("c3", [0, 3], 2)]}
+    acceptes, problemes, _ = st.valider(propositions, catalogue, profils)
+    assert set(acceptes) == {"c1", "c2"} and "maximum 2 par match" in " ".join(problemes)
+    sans_plafond = [dict(p, max_coupons_par_match=0) for p in profils]
+    acceptes, _, _ = st.valider(propositions, catalogue, sans_plafond)
+    assert set(acceptes) == {"c1", "c2", "c3"}                                            # 0 = pas de plafond
