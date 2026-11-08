@@ -484,6 +484,37 @@ def enregistrer_couts_en_cours():
                          restant_usd=_budget_pilote["restant_usd"]), chemin)
 
 
+# Contexte allégé (08/11/2026) : voir_catalogue renvoie TOUT le catalogue à chaque profil et chaque résultat restait dans la conversation, renvoyée en entier à chaque étape
+# (50 000 puis 100 000 puis 150 000 tokens par appel). Seul le résultat le plus récent garde ses gros textes ; les précédents sont remplacés par une mention courte. L'information
+# visible par le modèle reste complète (le dernier catalogue contient tout) et le traitement est identique pour TOUS les modèles : la comparaison reste équitable.
+ALLEGER_CONTEXTE = os.getenv("ALLEGER_CONTEXTE", "1").strip().lower() not in ("0", "non", "false", "no")
+SEUIL_TEXTE_ALLEGE = 2000
+MENTION_ALLEGEE = "(retiré de l'historique : le catalogue complet est dans le résultat voir_catalogue le plus récent)"
+
+
+def alleger_catalogues(messages):
+    """Remplace, dans tous les résultats voir_catalogue SAUF le plus récent, les textes de plus de SEUIL_TEXTE_ALLEGE caractères par MENTION_ALLEGEE. Modifie la liste en place ;
+    renvoie le nombre de résultats allégés. Ne touche jamais aux autres outils ni aux messages du modèle."""
+    noms = {a["id"]: a["function"]["name"] for m in messages if m.get("role") == "assistant" for a in (m.get("tool_calls") or [])}
+    indices = [i for i, m in enumerate(messages) if m.get("role") == "tool" and noms.get(m.get("tool_call_id")) == "voir_catalogue"]
+    allegés = 0
+    for i in indices[:-1]:
+        try:
+            contenu = json.loads(messages[i]["content"])
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(contenu, dict):
+            continue
+        change = False
+        for cle_, valeur in list(contenu.items()):
+            if isinstance(valeur, str) and len(valeur) > SEUIL_TEXTE_ALLEGE and valeur != MENTION_ALLEGEE:
+                contenu[cle_], change = MENTION_ALLEGEE, True
+        if change:
+            messages[i] = dict(messages[i], content=json.dumps(contenu, ensure_ascii=False, default=str))
+            allegés += 1
+    return allegés
+
+
 def piloter(cle, outils, est_termine, mission, prompt_systeme=None, outils_schemas=None,
             poster=requests.post, pause=time.sleep, horloge=time.monotonic):
     """Boucle agentique. outils = {nom: fonction(**arguments) -> dict}. est_termine() dit si un outil de fin
@@ -545,6 +576,8 @@ def piloter(cle, outils, est_termine, mission, prompt_systeme=None, outils_schem
             texte = json.dumps(resultat, ensure_ascii=False, default=str)
             print(f"      🔧 {nom} → {texte[:160]}{'…' if len(texte) > 160 else ''}")
             messages.append({"role": "tool", "tool_call_id": appel["id"], "content": texte})
+        if ALLEGER_CONTEXTE:
+            alleger_catalogues(messages)
         if est_termine():
             return {"termine": True, "etapes": etape, "arret": "terminé", "tokens": tokens}
     return {"termine": est_termine(), "etapes": MAX_ETAPES, "arret": "nombre d'étapes maximal atteint", "tokens": tokens}

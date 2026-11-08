@@ -233,3 +233,53 @@ def test_modele_en_panne_avant_la_fin_de_la_validation_l_erreur_remonte(monkeypa
         with pytest.raises(RuntimeError, match="402"):
             pilote.executer(telegram=True, profils=[PROFIL_1], donnees_reprises=_donnees_a_venir())
     envoi.assert_not_called()                                                               # aucun coupon validé : rien n'est envoyé, l'erreur reste une erreur
+
+
+# ---- contexte allégé : un seul catalogue complet dans la conversation (identique pour tous les modèles) ------------------------------------------------------------
+def _appel_outil(identifiant, nom):
+    return {"role": "assistant", "content": "", "tool_calls": [{"id": identifiant, "type": "function", "function": {"name": nom, "arguments": "{}"}}]}
+
+
+def test_alleger_catalogues_garde_le_plus_recent_et_ne_touche_rien_d_autre():
+    import json
+    import agent_pilote as pilote
+    gros = "x" * 5000
+    messages = [{"role": "system", "content": "s"}, {"role": "user", "content": "m"},
+                _appel_outil("1", "voir_catalogue"), {"role": "tool", "tool_call_id": "1", "content": json.dumps({"profil": {"nom": "P1"}, "catalogue": gros})},
+                _appel_outil("2", "proposer_coupon"), {"role": "tool", "tool_call_id": "2", "content": json.dumps({"valide": True, "info": gros})},
+                _appel_outil("3", "voir_catalogue"), {"role": "tool", "tool_call_id": "3", "content": json.dumps({"profil": {"nom": "P2"}, "catalogue": gros})}]
+    assert pilote.alleger_catalogues(messages) == 1
+    ancien, autre, dernier = json.loads(messages[3]["content"]), json.loads(messages[5]["content"]), json.loads(messages[7]["content"])
+    assert ancien["catalogue"] == pilote.MENTION_ALLEGEE and ancien["profil"] == {"nom": "P1"}        # gros texte retiré, le reste conservé
+    assert autre["info"] == gros and dernier["catalogue"] == gros                                      # autre outil et dernier catalogue intacts
+    assert pilote.alleger_catalogues(messages) == 0                                                    # idempotent
+    assert messages[0]["content"] == "s" and messages[1]["content"] == "m"
+
+
+def test_la_conversation_n_enfle_plus_a_chaque_profil(monkeypatch):
+    import json
+    import agent_pilote as pilote
+    from unittest import mock
+    from test_agent_pilote import _msg_outil
+    gros = "y" * 20000
+    tailles = []
+    suite = [_msg_outil("voir_catalogue", {}), _msg_outil("voir_catalogue", {}), _msg_outil("voir_catalogue", {}), _msg_outil("envoyer_telegram", {})]
+
+    def faux_appel(cle, messages, max_tokens, *a, **k):
+        tailles.append(len(json.dumps(messages)))
+        return suite[len(tailles) - 1], max_tokens
+    etat = {"fini": False}
+
+    def envoyer():
+        etat["fini"] = True
+        return {"envoye": True}
+    outils = {"voir_catalogue": lambda **k: {"catalogue": gros}, "envoyer_telegram": envoyer}
+    monkeypatch.setattr(pilote, "ALLEGER_CONTEXTE", True)
+    with mock.patch.object(pilote, "_appel_api", side_effect=faux_appel):
+        pilote.piloter("cle", outils, lambda: etat["fini"], "mission")
+    assert len(tailles) == 4 and tailles[3] < tailles[1] + 3000                                        # 3 catalogues demandés : le 4e appel n'en porte qu'un seul en entier
+    tailles.clear(); etat["fini"] = False
+    monkeypatch.setattr(pilote, "ALLEGER_CONTEXTE", False)
+    with mock.patch.object(pilote, "_appel_api", side_effect=faux_appel):
+        pilote.piloter("cle", outils, lambda: etat["fini"], "mission")
+    assert tailles[3] > 2.5 * tailles[1] - 20000                                                       # sans allègement la conversation s'alourdit à chaque profil
