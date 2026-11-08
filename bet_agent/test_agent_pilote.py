@@ -737,7 +737,10 @@ class TestAucunRepli(unittest.TestCase):
             pilote._secours.update(actif=True)
             data, jetons = pilote._appel_api(None, [{"role": "user", "content": "x"}], 65536, poster=poster, pause=lambda s: None)
         self.assertEqual(data, self.OK)
-        self.assertEqual(tailles, [pilote.MAX_TOKENS_SECOURS, pilote.MAX_TOKENS_SECOURS // 2, pilote.MAX_TOKENS_SECOURS // 4][:len(tailles)])
+        attendu = [pilote.MAX_TOKENS_SECOURS]
+        while attendu[-1] > 3000:
+            attendu.append(max(2048, attendu[-1] // 2))
+        self.assertEqual(tailles, attendu)
         self.assertLessEqual(jetons, 3000)
 
     def test_429_et_5xx_sont_relances_sur_le_meme_modele(self):

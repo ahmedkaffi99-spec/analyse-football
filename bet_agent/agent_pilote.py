@@ -216,7 +216,7 @@ class CleRefusee(Exception):
 # outils) : Groq, puis Gemini, puis OpenRouter (modèles gratuits). Essayés dans cet ordre dès que DeepSeek
 # échoue (solde, clé refusée, panne) ; le premier couple fournisseur/modèle qui répond est gardé pour la suite du run.
 # Réserve moins de crédits par requête OpenRouter ; ajustable par variable d'environnement.
-MAX_TOKENS_SECOURS = int(os.getenv("AGENT_SECOURS_MAX_TOKENS") or "8192")
+MAX_TOKENS_SECOURS = int(os.getenv("AGENT_SECOURS_MAX_TOKENS") or str(MAX_TOKENS))   # 08/11/2026 : plus de limite réduite pour les modèles imposés (même longueur de réponse que le pilote par défaut)
 MODELE_OPENROUTER_DEEPSEEK = os.getenv("OPENROUTER_MODELE_PAYANT") or "deepseek/deepseek-v4.1-flash"
 # AGENT_FOURNISSEUR_PRINCIPAL : "deepseek" (défaut depuis le 25/10/2026 : API officielle, puis Groq/Gemini en repli) ou
 # "openrouter" (DeepSeek via OpenRouter d'abord — exige UTILISER_OPENROUTER=1).
@@ -354,7 +354,7 @@ def _appel_fournisseur_impose(messages, max_tokens, outils_schemas=None, poster=
     propres = _messages_pour_secours(messages)
     jetons = min(max_tokens, MAX_TOKENS_SECOURS)
     derniere = ""
-    for tentative in range(1, 6):
+    for tentative in range(1, 9):   # 8 essais : 5 pour 429/5xx/réseau, et jusqu'à 5 réductions de max_tokens sur HTTP 402
         charge = {"model": modele, "messages": propres, "tools": outils_schemas or OUTILS_SCHEMAS, "tool_choice": "auto", "max_tokens": jetons, **extras}
         try:
             r = poster(url, headers={"Authorization": f"Bearer {cle}", "Content-Type": "application/json"}, json=charge, timeout=DELAI_REQUETE)
@@ -377,7 +377,7 @@ def _appel_fournisseur_impose(messages, max_tokens, outils_schemas=None, poster=
         derniere = f"{nom}/{modele} : HTTP {r.status_code} {r.text[:200] if r.content else ''}"
         if r.status_code == 402:   # message final lisible (07/11/2026) : le run échoue tout de suite, sans masquer qu'il suffit de recharger le solde
             derniere += " — CRÉDITS INSUFFISANTS chez ce fournisseur : recharger le solde puis relancer"
-        if r.status_code == 402 and jetons > 2048 and tentative < 4:
+        if r.status_code == 402 and jetons > 2048 and tentative < 8:
             jetons = max(2048, jetons // 2)
             print(f"      ↘️ {nom}/{modele} : crédits insuffisants pour cette requête — max_tokens réduit à {jetons}")
             continue
