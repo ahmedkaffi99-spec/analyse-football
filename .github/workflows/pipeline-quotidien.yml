@@ -82,9 +82,9 @@ on:
         type: string
         default: "5-12"
       bandes:
-        description: "14. Bandes de cote totale Prudent / Équilibré / Risque (défaut 5-10 / 12-20 / 25-50). Valeur invalide = défaut"
+        description: "14. Bandes de cote totale Prudent / Équilibré / Risque (défaut 5-10 / 11-15 / 16-25). Valeur invalide = défaut"
         type: string
-        default: "5-10 / 12-20 / 25-50"
+        default: "5-10 / 11-15 / 16-25"
 
 concurrency:
   # Exécution strictement séquentielle : éviter les deadlocks Supabase et la saturation API-Football.

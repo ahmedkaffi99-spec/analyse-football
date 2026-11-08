@@ -7,6 +7,7 @@ Même catalogue, mêmes données et mêmes règles de cohérence que les autres 
   3. taille de référence par profil (prudent 3, équilibré 4, risque 5 jambes), ramenée au nombre de matchs disponibles, jamais sous 2 ;
   4. chaque coupon final passe `regles_coupon` ; un profil qui ne peut pas être composé s'abstient (aucun coupon forcé).
 Aucune cote totale ni individuelle n'est ciblée. Les utilités sont des heuristiques documentées, pas des résultats validés."""
+import itertools
 import math
 import os
 import sys
@@ -41,9 +42,21 @@ def _dans_la_bande(legs, profil):
         return legs
     minimum = profil.get("nb_jambes_min") or pr.NB_JAMBES_MIN
     valides = [k for k in range(minimum, len(legs) + 1) if bas <= pr.cote_totale(legs[:k]) <= (haut or float("inf"))]
-    if not valides:
+    if valides:
+        return legs[:min(valides, key=lambda k: (pr.desequilibre(legs[:k], profil), k))]
+    # Aucune taille n'entre dans la bande (bande étroite, 08/11/2026 : le produit cumulé saute par-dessus l'intervalle) : recherche exhaustive d'un sous-ensemble des jambes
+    # déjà retenues (au plus 14 jambes, donc au plus 16 384 combinaisons) dont la cote totale entre dans la bande ; préférence aux combinaisons qui respectent les autres
+    # règles (famille, sens…), puis à la plus équilibrée, puis aux jambes les plus utiles. Sinon les jambes sont renvoyées telles quelles (le profil s'abstiendra).
+    if len(legs) > 14:
         return legs
-    return legs[:min(valides, key=lambda k: (pr.desequilibre(legs[:k], profil), k))]
+    niveau = profil.get("niveau_risque") or "prudent"
+    essais = [[legs[i] for i in idx] for k in range(minimum, len(legs) + 1) for idx in itertools.combinations(range(len(legs)), k)
+              if bas <= pr.cote_totale([legs[i] for i in idx]) <= (haut or float("inf"))]
+    if not essais:
+        return legs
+    conformes = [e for e in essais if not pr.regles_coupon(e, niveau, profil)]
+    rang = {id(j): i for i, j in enumerate(legs)}
+    return min(conformes or essais, key=lambda e: (pr.desequilibre(e, profil), sum(rang[id(j)] for j in e), len(e)))
 
 
 def composer(pool, profils, taille_reference=None):

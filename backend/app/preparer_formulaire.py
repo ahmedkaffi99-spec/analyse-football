@@ -52,7 +52,7 @@ def construire(env):
     sortie["depuis_run"] = (env.get("DEPUIS_RUN") or "").strip()
     sortie["ignorer_diversite"] = "true"   # diversité de catégorie entre coupons retirée le 06/11/2026 (l'anti-doublon exact reste actif)
     # Les TROIS moteurs (agent, central, déterministe) reçoivent les mêmes trois profils de risque (07/11/2026) : comparaison équitable.
-    # Nombre de jambes et bandes de cote totale paramétrables (07/11/2026) ; une valeur vide ou invalide garde le défaut (5-12 jambes, 5-10 / 12-20 / 25-50).
+    # Nombre de jambes et bandes de cote totale paramétrables (07/11/2026) ; une valeur vide ou invalide garde le défaut (5-12 jambes, 5-10 / 11-15 / 16-25).
     jambes = analyser_intervalle(env.get("JAMBES"), entier=True)
     bandes_saisies = [analyser_intervalle(x) for x in str(env.get("BANDES") or "").replace(",", " ").split("/")]
     bandes = dict(zip(NIVEAUX_TECH, bandes_saisies)) if len(bandes_saisies) == 3 and all(bandes_saisies) else None

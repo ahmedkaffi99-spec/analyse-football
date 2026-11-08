@@ -12,7 +12,7 @@ def test_defauts_donnent_trois_profils_de_risque_sans_cote_imposee():
     assert [p["cle"] for p in liste] == ["coupon1", "coupon2", "coupon3"]
     assert all(not any(k in p for k in ("cote_min", "cote_max", "proba_min_pct", "proba_max_pct", "prefere_cote_elevee")) for p in liste)
     bandes = [(p["cote_totale_min"], p["cote_totale_max"]) for p in liste]
-    assert bandes == [(5.0, 10.0), (12.0, 20.0), (25.0, 50.0)] and min(b[0] for b in bandes) >= 5
+    assert bandes == [(5.0, 10.0), (11.0, 15.0), (16.0, 25.0)] and min(b[0] for b in bandes) >= 5
     assert all(bandes[i][1] < bandes[i + 1][0] for i in range(2))                      # intervalles espacés : aucun chevauchement
     assert all(p["consigne"] for p in liste) and len({p["consigne"] for p in liste}) == 3
     # règles de cohérence conservées : 5 à 12 jambes (Python), un match dans un seul coupon, un pari par match
@@ -41,7 +41,7 @@ def test_choix_du_formulaire_sont_appliques():
 def test_anciens_champs_de_cote_et_de_nombre_de_coupons_sont_ignores():
     """Un ancien appel qui fournirait NB_COUPONS ou COTE_COUPON_n ne peut plus changer la bande ni le nombre de coupons."""
     liste = json.loads(pf.construire({"EVENEMENT": "workflow_dispatch", "NB_COUPONS": "5", "COTE_COUPON_1": "50-100"})["profils"])
-    assert len(liste) == 3 and [p["cote_totale_max"] for p in liste] == [10.0, 20.0, 50.0]
+    assert len(liste) == 3 and [p["cote_totale_max"] for p in liste] == [10.0, 15.0, 25.0]
 
 
 def test_modeles_et_vote():
@@ -103,6 +103,6 @@ def test_jambes_et_bandes_parametrables_avec_defaut_en_cas_de_valeur_invalide():
     liste = json.loads(pf.construire({"EVENEMENT": "workflow_dispatch", "JAMBES": "3-6", "BANDES": "5-8 / 10-18 / 22-40"})["profils"])
     assert [(p["nb_jambes_min"], p["nb_jambes"], p["cote_totale_min"], p["cote_totale_max"]) for p in liste] == [(3, 6, 5.0, 8.0), (3, 6, 10.0, 18.0), (3, 6, 22.0, 40.0)]
     defaut = json.loads(pf.construire({"EVENEMENT": "workflow_dispatch", "JAMBES": "abc", "BANDES": "5-8 / 10-18"})["profils"])
-    assert [(p["nb_jambes_min"], p["nb_jambes"], p["cote_totale_min"]) for p in defaut] == [(5, 12, 5.0), (5, 12, 12.0), (5, 12, 25.0)]
+    assert [(p["nb_jambes_min"], p["nb_jambes"], p["cote_totale_min"]) for p in defaut] == [(5, 12, 5.0), (5, 12, 11.0), (5, 12, 16.0)]
     vide = json.loads(pf.construire({"EVENEMENT": "schedule"})["profils"])
     assert [(p["nb_jambes_min"], p["nb_jambes"]) for p in vide] == [(5, 12)] * 3
