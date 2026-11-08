@@ -1214,14 +1214,24 @@ jobs:
 
           import analyser_et_envoyer as ae
 
-          # « 284 » : conversation Telegram par défaut ; « 284@8083070670 » : autre conversation (chat id) pour cet envoi
+          # « 284 » : conversation Telegram par défaut ; « 284@8083070670 » : autre conversation (chat id) pour cet envoi ;
+          # « recap:410-427@8083070670 » : UN message récapitulatif « coupon par modèle » pour les coupons 410 à 427 (aucun coupon n'est renvoyé)
           reference, _, autre_chat = os.environ['MATCH_RECHERCHE'].partition('@')
-          coupon_id = int(reference)
           if autre_chat.strip():
               ae.TELEGRAM_CHAT_ID = autre_chat.strip()
               # bot séparé pour cette conversation (secret TELEGRAM_TOKEN_FRERE) ; jamais le bot principal
               assert os.environ.get('TELEGRAM_TOKEN_FRERE'), 'secret TELEGRAM_TOKEN_FRERE absent'
               ae.TELEGRAM_TOKEN = os.environ['TELEGRAM_TOKEN_FRERE']
+          from app.services import recapitulatif
+          plage = recapitulatif.reference_recapitulatif(reference)
+          if plage is not None:
+              with SessionLocal() as db:
+                  message = recapitulatif.construire_message(recapitulatif.lignes_recapitulatif(db, plage))
+              print(message)
+              ok = ae.agent5_envoyer_coupons([message])
+              print('ENVOYE' if ok else 'ECHEC')
+              sys.exit(0 if ok else 1)
+          coupon_id = int(reference)
           with SessionLocal() as db:
               texte = db.get(Coupon, coupon_id).texte
           assert texte, 'coupon sans texte'
