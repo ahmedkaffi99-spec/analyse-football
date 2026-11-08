@@ -1,8 +1,9 @@
 """AGENT PILOTE (DeepSeek) : DeepSeek conduit le pipeline avec des outils, en mode thinking.
-Limites via variables : AGENT_MAX_ETAPES (24), AGENT_DUREE_MAX_MIN (75),
+Limites via variables : AGENT_MAX_ETAPES (0 = illimité), AGENT_DUREE_MAX_MIN (75),
 AGENT_DELAI_REQUETE (900 s), AGENT_MAX_TOKENS (65536), AGENT_EFFORT (high|max).
 En mode thinking avec outils, reasoning_content doit etre renvoye a l'API (sinon 400)."""
 
+import itertools
 import json
 import os
 import re
@@ -12,17 +13,16 @@ import requests
 
 URL_DEEPSEEK = "https://api.deepseek.com/chat/completions"
 MODELE = (os.getenv("DEEPSEEK_MODELES") or "deepseek-flash").split(",")[0].strip() or "deepseek-flash"
-# 08/11/2026 : 24 étapes (était 40) : suffisant pour 3 profils, quelques recherches web et les corrections.
-MAX_ETAPES = int(os.getenv("AGENT_MAX_ETAPES") or "24")
+# 08/11/2026 (demande du propriétaire) : plus de plafond d'étapes, de recherches ni de pages lues (0 = illimité). Seule la durée maximale (AGENT_DUREE_MAX_MIN) arrête encore le run.
+MAX_ETAPES = int(os.getenv("AGENT_MAX_ETAPES") or "0")
 # Phase 4 (07/11/2026) : 45 min par défaut (était 75 > timeout-minutes 60 du job : le job était tué avant l'arrêt propre, coûts perdus).
 DUREE_MAX_S = float(os.getenv("AGENT_DUREE_MAX_MIN") or "45") * 60
 DELAI_REQUETE = float(os.getenv("AGENT_DELAI_REQUETE") or "900")
 MAX_TOKENS = int(os.getenv("AGENT_MAX_TOKENS") or "65536")
 EFFORT = os.getenv("AGENT_EFFORT") or "high"
 STATUTS_A_REESSAYER = (429, 500, 502, 503, 504)
-# 08/11/2026 : 4 recherches et 2 pages par run (étaient 5 et 3) ; la recherche web et la lecture de pages restent disponibles.
-MAX_RECHERCHES_WEB = int(os.getenv("MAX_RECHERCHES_WEB") or "4")
-MAX_LECTURES_PAGE = int(os.getenv("MAX_LECTURES_PAGE") or "2")
+MAX_RECHERCHES_WEB = int(os.getenv("MAX_RECHERCHES_WEB") or "0")   # 0 = illimité
+MAX_LECTURES_PAGE = int(os.getenv("MAX_LECTURES_PAGE") or "0")
 
 def construire_prompt_systeme(profils):
     """Génère le prompt système à partir des profils réels du run — généralisé le 01/10/2026
@@ -32,6 +32,8 @@ def construire_prompt_systeme(profils):
     produit est équivalent à l'ancien PROMPT_SYSTEME fixe."""
     n = len(profils)
     noms = ", ".join(p["nom"] for p in profils)
+    limite_web = ("aucune limite de recherches ni de pages lues" if not MAX_RECHERCHES_WEB and not MAX_LECTURES_PAGE else
+                  f"{MAX_RECHERCHES_WEB or 'sans limite de'} recherches et {MAX_LECTURES_PAGE or 'sans limite de'} pages au maximum par run")
     if any(p.get("tous_les_matchs_obligatoires") for p in profils):
         regle_matchs = ("chacun reprenant TOUS les matchs du catalogue (par match : UN pari par EVENT 1xBet au plus — "
                         "le jeu principal (Total, Handicap, BTTS, Double Chance, buts par équipe) compte pour un event, "
@@ -77,9 +79,8 @@ passe au match suivant. Une fois tous les matchs analysés, compose le coupon du
 
 ORDRE CONSEILLÉ (tu peux l'adapter, revenir en arrière ou chercher plus d'information) :
 1. collecter_donnees (une seule fois ; déjà fait par Python)  2. voir_catalogue (indique le profil EN COURS parmi les {n} — le \
-catalogue lui-même ne change pas ; quand ta mission contient déjà le CATALOGUE et le CONTEXTE PAR MATCH, il n'est pas renvoyé)  3. RECOMMANDÉ : 2 à {MAX_RECHERCHES_WEB} rechercher_web (puis lire_page sur un lien au besoin) sur les matchs les plus importants de ton \
-catalogue, pour vérifier une blessure, une rotation, une composition probable, un enjeu — {MAX_RECHERCHES_WEB} recherches et {MAX_LECTURES_PAGE} pages au \
-maximum par run ; un pari que l'actualité contredit se remplace  4. proposer_coupon pour le profil en cours (Python vérifie — identifiants valides, au moins 2 jambes, un pari par match, \
+catalogue lui-même ne change pas ; quand ta mission contient déjà le CATALOGUE et le CONTEXTE PAR MATCH, il n'est pas renvoyé)  3. RECOMMANDÉ : autant de rechercher_web (puis lire_page sur un lien au besoin) que nécessaire sur les matchs de ton \
+catalogue, pour vérifier une blessure, une rotation, une composition probable, un enjeu — {limite_web} ; un pari que l'actualité contredit se remplace  4. proposer_coupon pour le profil en cours (Python vérifie — identifiants valides, au moins 2 jambes, un pari par match, \
 match non repris d'un autre coupon — rédige automatiquement le coupon une fois validé, et te dit s'il reste des \
 profils)  5. répète 2-4 pour chaque profil restant  6. envoyer_telegram une fois les {n} profils traités \
 ({n} messages séparés, un par profil) — ou abandonner si RIEN n'est défendable pour AUCUN des {n} profils.
@@ -303,6 +304,11 @@ def construire_journal(etat):
             "strategies": etat.get("strategies", {}), "raisons": raisons}
 
 
+def _effort_openrouter():
+    """Effort de raisonnement des pilotes OpenRouter : « high » par défaut (08/11/2026, plus de limite de réflexion), réglable par AGENT_EFFORT (low|medium|high ; « max » devient « high »)."""
+    return EFFORT if EFFORT in ("low", "medium", "high") else "high"
+
+
 def _fournisseurs_secours():
     """[(nom, url, cle, modele, extras)] : le SEUL fournisseur imposé pour ce run, ou []. AUCUN REPLI (07/11/2026, demande du propriétaire : « aucun repli, laisse les modèles
     travailler indépendamment ») : un modèle qui échoue fait échouer le run avec sa vraie cause, jamais une bascule vers un autre modèle ou fournisseur (Groq, Gemini,
@@ -314,11 +320,11 @@ def _fournisseurs_secours():
     if (os.getenv("PILOTE_MODELE") or "").strip():
         if cle:
             return [("OpenRouter", "https://openrouter.ai/api/v1/chat/completions", cle, os.getenv("PILOTE_MODELE").strip(),
-                     {"reasoning": {"effort": "medium"}, "usage": {"include": True}})]
+                     {"reasoning": {"effort": _effort_openrouter()}, "usage": {"include": True}})]
         return []
     if FOURNISSEUR_PRINCIPAL == "openrouter" and _cle_openrouter():
         return [("OpenRouter", "https://openrouter.ai/api/v1/chat/completions", _cle_openrouter(), MODELE_OPENROUTER_DEEPSEEK,
-                 {"reasoning": {"effort": "medium"}, "usage": {"include": True}})]
+                 {"reasoning": {"effort": _effort_openrouter()}, "usage": {"include": True}})]
     return []
 
 
@@ -541,13 +547,13 @@ def piloter(cle, outils, est_termine, mission, prompt_systeme=None, outils_schem
     outils_schemas = outils_schemas or OUTILS_SCHEMAS
     messages = [{"role": "system", "content": prompt_systeme}, {"role": "user", "content": mission}]
     debut, max_tokens, relances, tokens = horloge(), MAX_TOKENS, 0, 0
-    for etape in range(1, MAX_ETAPES + 1):
+    for etape in (range(1, MAX_ETAPES + 1) if MAX_ETAPES else itertools.count(1)):
         if horloge() - debut > DUREE_MAX_S:
             return {"termine": est_termine(), "etapes": etape - 1, "arret": "durée maximale atteinte", "tokens": tokens}
         if budget_ia_module().budget_atteint(_usage_pilote["cout_usd"], _budget_pilote["restant_usd"]):
             print(f"   💰 Budget IA atteint ({_usage_pilote['cout_usd']:.4f} $ dépensés par le pilote) : aucun nouvel appel.")
             return {"termine": est_termine(), "etapes": etape - 1, "arret": "budget IA atteint", "tokens": tokens}
-        print(f"   🤖 [Agent {'modèle imposé' if _secours['actif'] else 'DeepSeek'}] étape {etape}/{MAX_ETAPES}...")
+        print(f"   🤖 [Agent {'modèle imposé' if _secours['actif'] else 'DeepSeek'}] étape {etape}/{MAX_ETAPES or '∞'}...")
         data, max_tokens = _appel_api(cle, messages, max_tokens, outils_schemas, poster, pause)
         usage = data.get("usage") or {}
         tokens += usage.get("total_tokens", 0)
@@ -771,7 +777,7 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
         }
 
     def rechercher_web_outil(requete):
-        if etat["nb_recherches"] >= MAX_RECHERCHES_WEB:
+        if MAX_RECHERCHES_WEB and etat["nb_recherches"] >= MAX_RECHERCHES_WEB:
             return {"erreur": f"limite de {MAX_RECHERCHES_WEB} recherches atteinte pour ce run"}
         etat["nb_recherches"] += 1
         if cle and os.getenv("RECHERCHE_WEB_DEEPSEEK", "1") != "0":
@@ -799,7 +805,7 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
                               for r in organic]}
 
     def lire_page_outil(url):
-        if etat["nb_lectures"] >= MAX_LECTURES_PAGE:
+        if MAX_LECTURES_PAGE and etat["nb_lectures"] >= MAX_LECTURES_PAGE:
             return {"erreur": f"limite de {MAX_LECTURES_PAGE} pages lues atteinte pour ce run"}
         if not str(url).startswith(("http://", "https://")):
             return {"erreur": "url invalide (http ou https attendu)"}

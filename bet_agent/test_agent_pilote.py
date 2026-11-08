@@ -1054,12 +1054,21 @@ def test_aucune_division_par_zero_avec_seuil_zero_ou_combo_vide(monkeypatch):
 
 
 class TestAllegementDesAppels0811(unittest.TestCase):
-    def test_limites_par_defaut(self):
-        self.assertEqual(pilote.MAX_ETAPES, 24)
-        self.assertEqual(pilote.MAX_RECHERCHES_WEB, 4)
-        self.assertEqual(pilote.MAX_LECTURES_PAGE, 2)
+    def test_aucune_limite_par_defaut(self):
+        self.assertEqual(pilote.MAX_ETAPES, 0)
+        self.assertEqual(pilote.MAX_RECHERCHES_WEB, 0)
+        self.assertEqual(pilote.MAX_LECTURES_PAGE, 0)
 
-    def test_prompt_annonce_les_limites_de_recherche(self):
+    def test_prompt_annonce_l_absence_de_limite_de_recherche(self):
         prompt = pilote.construire_prompt_systeme([PROFIL])
-        self.assertIn("4 recherches et 2 pages", prompt)
+        self.assertIn("aucune limite de recherches ni de pages lues", prompt)
         self.assertIn("rechercher_web", prompt)
+
+    def test_effort_openrouter_high_par_defaut(self):
+        self.assertEqual(pilote._effort_openrouter(), "high")
+
+    def test_effort_openrouter_max_devient_high(self):
+        with mock.patch.object(pilote, "EFFORT", "max"):
+            self.assertEqual(pilote._effort_openrouter(), "high")
+        with mock.patch.object(pilote, "EFFORT", "medium"):
+            self.assertEqual(pilote._effort_openrouter(), "medium")
