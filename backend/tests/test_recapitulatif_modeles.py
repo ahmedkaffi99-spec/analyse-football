@@ -54,7 +54,7 @@ def test_run_sans_modele_enregistre_ne_plante_pas():
         _coupon(db, 70, 7, "coupon3", 30.0, None)
         db.commit()
         texte = rc.construire_message(rc.lignes_recapitulatif(db, [70]))
-    assert rc.MODELE_INCONNU in texte and "🔴 Risque" in texte and "probabilité" not in texte
+    assert rc.MODELE_INCONNU in texte and "🔴 Gainer" in texte and "probabilité" not in texte
 
 
 def test_aucun_coupon():

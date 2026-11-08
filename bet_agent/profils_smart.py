@@ -2,7 +2,7 @@
 le formulaire « Run workflow » (backend/app/preparer_formulaire.py) ET par le profil de secours (analyser_et_envoyer.profils_agent_quotidien).
 
 STRATÉGIE (demande du 07/11/2026) : l'IA choisit LIBREMENT les paris, les marchés, les sélections et les combinaisons ; elle construit TROIS coupons
-selon un niveau de risque (PRUDENT, ÉQUILIBRÉ, RISQUE). AUCUNE cote totale cible ni cote individuelle obligatoire n'est imposée : seules restent les
+selon un niveau de risque (PRUDENT, ÉQUILIBRÉ, GAINER ; le niveau technique du troisième reste « risque »). AUCUNE cote totale cible ni cote individuelle obligatoire n'est imposée : seules restent les
 validations de Python (identifiants et cotes du catalogue, un pari par match et par event dans un coupon, pas de pari identique ni de match commun
 entre coupons, deux jambes minimum, aucun coupon en double)."""
 
@@ -11,7 +11,7 @@ import os
 COULEURS = ["🟢", "🟠", "🔴"]
 # Demande du 07/11/2026 : chaque coupon compte de 5 à 12 jambes (un seul pari par match), la cote totale minimale est 5 et les trois coupons occupent
 # des intervalles de cote totale ESPACÉS (aucun chevauchement). Bandes par défaut (08/11/2026, après l'étude des 3 derniers jours : 12-20 et 25-50 donnaient environ 7 % et 3 % de chance de
-# gagner, soit 0 coupon sur 12 le 8/11) : PRUDENT 5-10, ÉQUILIBRÉ 11-15, RISQUE 16-25 ; modifiables par les
+# gagner, soit 0 coupon sur 12 le 8/11) : PRUDENT 5-10, ÉQUILIBRÉ 11-15, GAINER 16-25 ; modifiables par les
 # variables BANDE_COTE_PRUDENT / BANDE_COTE_EQUILIBRE / BANDE_COTE_RISQUE (« min-max »). Ce sont des contraintes vérifiées par Python, pas une promesse de gain.
 NB_JAMBES_MIN_COUPON = 5
 NB_JAMBES_MAX_COUPON = 12
@@ -38,8 +38,8 @@ NIVEAUX = (
     ("coupon2", "equilibre", "ÉQUILIBRÉ",
      "Profil ÉQUILIBRÉ : cherche le meilleur COMPROMIS entre probabilité et rendement. Combine des jambes solides et quelques jambes "
      "mieux valorisées (edge du catalogue positif), sans sacrifier la probabilité de passer le coupon en entier."),
-    ("coupon3", "risque", "RISQUE",
-     "Profil RISQUE : accepte davantage de risque pour viser un gain potentiel plus élevé. Tu peux retenir des jambes moins probables mais "
+    ("coupon3", "risque", "GAINER",
+     "Profil GAINER (niveau de risque le plus élevé) : accepte davantage de risque pour viser un gain potentiel plus élevé. Tu peux retenir des jambes moins probables mais "
      "bien valorisées (cote et edge du catalogue intéressants) et des combinaisons plus ambitieuses, en restant dans le catalogue et en "
      "justifiant chaque pari."),
 )

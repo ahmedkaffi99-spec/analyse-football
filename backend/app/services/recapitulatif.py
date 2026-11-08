@@ -13,7 +13,7 @@ NOMS_MODELES = {
     "google/gemini-4-argon": "Gemini 4 Argon",
     "anthropic/claude-sonnet-5.5": "Claude Sonnet 5.5",
 }
-PROFILS = {"coupon1": "🟢 Prudent", "coupon2": "🟠 Équilibré", "coupon3": "🔴 Risque"}
+PROFILS = {"coupon1": "🟢 Prudent", "coupon2": "🟠 Équilibré", "coupon3": "🔴 Gainer"}
 MODELE_INCONNU = "modèle non enregistré"
 
 

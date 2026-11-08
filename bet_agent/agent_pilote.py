@@ -93,7 +93,7 @@ Python du catalogue quand elle existe (ta propre analyse vient en complément, j
 faible).
 - TROIS PROFILS DE RISQUE (demande du 07/11/2026) : le niveau du profil en cours est donné par voir_catalogue (niveau_risque et \
 consigne). PRUDENT = sécurité : les probabilités les plus élevées du catalogue et le contexte le plus solide, même pour un gain faible. \
-ÉQUILIBRÉ = bon compromis entre probabilité et rendement : jambes solides et quelques jambes mieux valorisées (edge positif). RISQUE = \
+ÉQUILIBRÉ = bon compromis entre probabilité et rendement : jambes solides et quelques jambes mieux valorisées (edge positif). GAINER (niveau risque) = \
 davantage de risque pour viser un gain potentiel plus élevé : jambes moins probables mais bien valorisées, combinaisons plus \
 ambitieuses. Les trois coupons doivent réellement différer par leur niveau de risque. Si voir_catalogue indique une bande ou un \
 plancher de cote (profil personnalisé seulement), respecte-le : Python le vérifie.
@@ -101,7 +101,7 @@ plancher de cote (profil personnalisé seulement), respecte-le : Python le véri
 Python exclut les cotes individuelles inférieures à 1.20 (garde-fou technique, réglable par COTE_MIN_JAMBE_AGENT) ; ne tente jamais de contourner ce filtre. \
 N'ajoute jamais une jambe seulement pour faire monter ou descendre la cote totale. Une jambe est FRAGILE si elle cumule un de ces \
 signaux : ligne de quart (.25/.75), probabilité basse parmi le catalogue, données faibles sur ce match. Un coupon perd dès qu'UNE \
-jambe perd : PRUDENT n'en contient aucune, ÉQUILIBRÉ au plus une, RISQUE peut en accepter davantage à condition de justifier chacune.
+jambe perd : PRUDENT n'en contient aucune, ÉQUILIBRÉ au plus une, GAINER peut en accepter davantage à condition de justifier chacune.
 - COMPTE SUR LA PROBABILITÉ ET SUR LA RÉMUNÉRATION : un bon coupon n'est ni celui qui gagne presque toujours en ne rapportant presque rien (un coupon à \
 cote totale 1.04 ne vaut rien), ni une loterie. Python te renvoie, pour chaque proposition, la cote totale, la probabilité jointe et la valeur espérée \
 (probabilité × cote − 1) : utilise-les. Python refuse un coupon dont la cote totale est sous le plancher de rémunération (1.60 par défaut) ; au-dessus, tu \
