@@ -220,6 +220,29 @@ def test_coupons_valides_envoyes_par_python_quand_le_modele_tombe_apres_validati
     assert "402" in resultat["journal"]["erreur_modele"]                                    # la cause reste visible dans le journal du run
 
 
+def test_un_coupon_valide_sur_deux_est_envoye_avec_une_note_quand_le_modele_tombe(monkeypatch):
+    """Run 303 : 2 coupons validés sur 3 puis HTTP 402 ; les coupons validés partent, une note nomme le profil manquant, l'erreur reste dans le journal."""
+    import agent_pilote as pilote
+    import analyser_et_envoyer as ae
+    from unittest import mock
+    from test_agent_pilote import POOL_SIX_MATCHS, PROFIL_1, _msg_outil
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "cle-test")
+    profil_2 = dict(PROFIL_1, cle="coupon2", nom="🟠 DEUXIEME")
+    reponses = [(_msg_outil("collecter_donnees", {}), 65536), (_msg_outil("voir_catalogue", {}), 65536),
+                (_msg_outil("proposer_coupon", {"strategie": "s", "jambes": [{"id": "P1", "raison": "r"}]}), 65536),
+                RuntimeError("OpenRouter/openai/gpt-6.1-sol : HTTP 402 crédits insuffisants")]
+    with mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=POOL_SIX_MATCHS), \
+            mock.patch.object(ae, "agent5_envoyer_coupons", return_value=True) as envoi, \
+            mock.patch.object(pilote, "_appel_api", side_effect=reponses):
+        resultat = pilote.executer(telegram=True, profils=[PROFIL_1, profil_2], donnees_reprises=_donnees_a_venir())
+    envoi.assert_called_once()
+    textes = envoi.call_args[0][0]
+    assert len(textes) == 2 and "DEUXIEME" in textes[-1] and "non composé" in textes[-1]      # coupon validé + note sur le profil manquant
+    assert len(resultat["resultats_profils"]) == 1 and resultat["resultats_profils"][0]["selections"]
+    assert len(resultat["textes"]) == 1                                                       # la note n'est pas enregistrée comme un coupon
+    assert resultat["envoye"] is True and "402" in resultat["journal"]["erreur_modele"]
+
+
 def test_modele_en_panne_avant_la_fin_de_la_validation_l_erreur_remonte(monkeypatch):
     import agent_pilote as pilote
     import analyser_et_envoyer as ae
@@ -302,3 +325,37 @@ def test_les_paris_valides_sont_listes_en_entier_dans_les_logs(capsys, monkeypat
     selection = resultat["resultats_profils"][0]["selections"][0]
     assert "COUPON VALIDÉ" in sortie and PROFIL_1["nom"] in sortie
     assert f"• {selection['match']}" in sortie and f"@ {selection['pick']['cote']}" in sortie                    # match, pari et cote de chaque jambe
+
+
+def test_chaque_message_telegram_mentionne_le_modele_du_coupon(monkeypatch):
+    import agent_pilote as pilote
+    import analyser_et_envoyer as ae
+    from unittest import mock
+    from test_agent_pilote import POOL_SIX_MATCHS, PROFIL_1, _msg_outil
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "cle-test")
+    monkeypatch.setenv("PILOTE_MODELE", "openai/gpt-6.1-sol")
+    reponses = [(_msg_outil("collecter_donnees", {}), 65536), (_msg_outil("voir_catalogue", {}), 65536),
+                (_msg_outil("proposer_coupon", {"strategie": "s", "jambes": [{"id": "P1", "raison": "r"}]}), 65536), (_msg_outil("envoyer_telegram", {}), 65536)]
+    with mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=POOL_SIX_MATCHS), \
+            mock.patch.object(ae, "agent5_envoyer_coupons", return_value=True) as envoi, \
+            mock.patch.object(pilote, "_appel_api", side_effect=reponses):
+        resultat = pilote.executer(telegram=True, profils=[PROFIL_1], donnees_reprises=_donnees_a_venir())
+    textes = envoi.call_args[0][0]
+    assert len(textes) == 1 and "🤖 Modèle : openai/gpt-6.1-sol" in textes[0]
+    assert "Modèle" not in resultat["textes"][0]                                              # le texte enregistré en base reste le coupon seul
+
+
+def test_le_modele_par_defaut_est_nomme_sans_pilote_impose(monkeypatch):
+    import agent_pilote as pilote
+    import analyser_et_envoyer as ae
+    from unittest import mock
+    from test_agent_pilote import POOL_SIX_MATCHS, PROFIL_1, _msg_outil
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "cle-test")
+    monkeypatch.delenv("PILOTE_MODELE", raising=False)
+    reponses = [(_msg_outil("collecter_donnees", {}), 65536), (_msg_outil("voir_catalogue", {}), 65536),
+                (_msg_outil("proposer_coupon", {"strategie": "s", "jambes": [{"id": "P1", "raison": "r"}]}), 65536), (_msg_outil("envoyer_telegram", {}), 65536)]
+    with mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=POOL_SIX_MATCHS), \
+            mock.patch.object(ae, "agent5_envoyer_coupons", return_value=True) as envoi, \
+            mock.patch.object(pilote, "_appel_api", side_effect=reponses):
+        pilote.executer(telegram=True, profils=[PROFIL_1], donnees_reprises=_donnees_a_venir())
+    assert f"🤖 Modèle : {pilote.MODELE} (API DeepSeek)" in envoi.call_args[0][0][0]

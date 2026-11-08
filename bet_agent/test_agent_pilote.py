@@ -768,7 +768,7 @@ class TestAucunRepli(unittest.TestCase):
 
         def poster(url, **kw):
             tailles.append(kw["json"]["max_tokens"])
-            if kw["json"]["max_tokens"] > 3000:
+            if kw["json"]["max_tokens"] > 20000:
                 return self._reponse(402, {"error": {"message": "would exceed your available credits"}})
             return self._reponse(200, self.OK)
         with mock.patch.dict(os.environ, {"PILOTE_MODELE": "openai/gpt-6.1-sol"}):
@@ -776,10 +776,24 @@ class TestAucunRepli(unittest.TestCase):
             data, jetons = pilote._appel_api(None, [{"role": "user", "content": "x"}], 65536, poster=poster, pause=lambda s: None)
         self.assertEqual(data, self.OK)
         attendu = [pilote.MAX_TOKENS_SECOURS]
-        while attendu[-1] > 3000:
-            attendu.append(max(2048, attendu[-1] // 2))
+        while attendu[-1] > 20000:
+            attendu.append(max(pilote.MAX_TOKENS_PLANCHER, attendu[-1] // 2))
         self.assertEqual(tailles, attendu)
-        self.assertLessEqual(jetons, 3000)
+        self.assertLessEqual(jetons, 20000)
+
+    def test_402_s_arrete_au_plancher_de_max_tokens_sans_insister(self):
+        tailles = []
+
+        def poster(url, **kw):
+            tailles.append(kw["json"]["max_tokens"])
+            return self._reponse(402, {"error": {"message": "would exceed your available credits"}})
+        with mock.patch.dict(os.environ, {"PILOTE_MODELE": "openai/gpt-6.1-sol"}):
+            pilote._secours.update(actif=True)
+            with self.assertRaisesRegex(RuntimeError, "402"):
+                pilote._appel_api(None, [{"role": "user", "content": "x"}], 65536, poster=poster, pause=lambda s: None)
+        self.assertEqual(min(tailles), pilote.MAX_TOKENS_PLANCHER)          # jamais en dessous du plancher
+        self.assertEqual(tailles[-1], pilote.MAX_TOKENS_PLANCHER)
+        self.assertEqual(tailles.count(pilote.MAX_TOKENS_PLANCHER), 1)      # un seul essai au plancher : échec immédiat
 
     def test_429_et_5xx_sont_relances_sur_le_meme_modele(self):
         reponses = [self._reponse(429, {}), self._reponse(503, {}), self._reponse(200, self.OK)]

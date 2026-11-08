@@ -221,6 +221,8 @@ class CleRefusee(Exception):
 # outils) : Groq, puis Gemini, puis OpenRouter (modèles gratuits). Essayés dans cet ordre dès que DeepSeek
 # échoue (solde, clé refusée, panne) ; le premier couple fournisseur/modèle qui répond est gardé pour la suite du run.
 # Réserve moins de crédits par requête OpenRouter ; ajustable par variable d'environnement.
+# Plancher de max_tokens sur HTTP 402 (08/11/2026) : en dessous, la réponse est trop courte pour un coupon complet (raisonnement + outils) ; le run échoue alors tout de suite avec sa vraie cause.
+MAX_TOKENS_PLANCHER = int(os.getenv("AGENT_MAX_TOKENS_PLANCHER") or "8192")
 MAX_TOKENS_SECOURS = int(os.getenv("AGENT_SECOURS_MAX_TOKENS") or str(MAX_TOKENS))   # 08/11/2026 : plus de limite réduite pour les modèles imposés (même longueur de réponse que le pilote par défaut)
 MODELE_OPENROUTER_DEEPSEEK = os.getenv("OPENROUTER_MODELE_PAYANT") or "deepseek/deepseek-v4.1-flash"
 # AGENT_FOURNISSEUR_PRINCIPAL : "deepseek" (défaut depuis le 25/10/2026 : API officielle, puis Groq/Gemini en repli) ou
@@ -351,7 +353,7 @@ def _messages_pour_secours(messages):
 
 def _appel_fournisseur_impose(messages, max_tokens, outils_schemas=None, poster=requests.post, pause=time.sleep):
     """Appelle LE fournisseur imposé (jamais un autre). Relances du MÊME fournisseur : 429, 5xx, délai et réseau (5 essais, attente croissante) ; HTTP 402 « crédits
-    insuffisants pour cette requête » : max_tokens réduit de moitié (3 fois au plus) car la réserve de crédits est calculée sur max_tokens. Tout autre échec, ou l'absence
+    insuffisants pour cette requête » : max_tokens réduit de moitié jusqu'au plancher MAX_TOKENS_PLANCHER (8 192) car la réserve de crédits est calculée sur max_tokens ; au plancher, nouvel échec immédiat. Tout autre échec, ou l'absence
     de fournisseur imposé, lève une erreur qui nomme le modèle et la cause réelle : aucune bascule."""
     courses = _fournisseurs_secours()
     if not courses:
@@ -362,7 +364,7 @@ def _appel_fournisseur_impose(messages, max_tokens, outils_schemas=None, poster=
     propres = _messages_pour_secours(messages)
     jetons = min(max_tokens, MAX_TOKENS_SECOURS)
     derniere = ""
-    for tentative in range(1, 9):   # 8 essais : 5 pour 429/5xx/réseau, et jusqu'à 5 réductions de max_tokens sur HTTP 402
+    for tentative in range(1, 9):   # 8 essais : 5 pour 429/5xx/réseau, et les réductions de max_tokens sur HTTP 402 (jusqu'au plancher)
         charge = {"model": modele, "messages": propres, "tools": outils_schemas or OUTILS_SCHEMAS, "tool_choice": "auto", "max_tokens": jetons, **extras}
         try:
             r = poster(url, headers={"Authorization": f"Bearer {cle}", "Content-Type": "application/json"}, json=charge, timeout=DELAI_REQUETE)
@@ -385,8 +387,8 @@ def _appel_fournisseur_impose(messages, max_tokens, outils_schemas=None, poster=
         derniere = f"{nom}/{modele} : HTTP {r.status_code} {r.text[:200] if r.content else ''}"
         if r.status_code == 402:   # message final lisible (07/11/2026) : le run échoue tout de suite, sans masquer qu'il suffit de recharger le solde
             derniere += " — CRÉDITS INSUFFISANTS chez ce fournisseur : recharger le solde puis relancer"
-        if r.status_code == 402 and jetons > 2048 and tentative < 8:
-            jetons = max(2048, jetons // 2)
+        if r.status_code == 402 and jetons > MAX_TOKENS_PLANCHER and tentative < 8:
+            jetons = max(MAX_TOKENS_PLANCHER, jetons // 2)
             print(f"      ↘️ {nom}/{modele} : crédits insuffisants pour cette requête — max_tokens réduit à {jetons}")
             continue
         if r.status_code in STATUTS_A_REESSAYER and tentative < 5:
@@ -897,12 +899,24 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
         except Exception as e:
             print(f"   ℹ️ Vote final indisponible, coupons du pilote conservés : {str(e)[:160]}")
 
-    def envoyer_telegram_outil():
-        if etat["profil_index"] < len(etat["profils"]):
+    def modele_du_coupon(cle_profil):
+        """Nom du modèle qui a composé le coupon de ce profil : gagnant du vote s'il y en a un, sinon le pilote du run (modèle imposé, DeepSeek via OpenRouter, ou DeepSeek officiel)."""
+        gagnant = (etat.get("vote_gagnants") or {}).get(cle_profil)
+        if gagnant and gagnant != "pilote":
+            return gagnant
+        impose = (os.getenv("PILOTE_MODELE") or "").strip()
+        if impose:
+            return impose
+        return MODELE_OPENROUTER_DEEPSEEK if _secours_d_emblee() else f"{MODELE} (API DeepSeek)"
+
+    def envoyer_telegram_outil(partiel=False):
+        """partiel=True (erreur du modèle après au moins un coupon validé) : envoie les coupons déjà validés, sans vote final, avec une note sur les profils manquants."""
+        if not partiel and etat["profil_index"] < len(etat["profils"]):
             return {"erreur": f"{len(etat['profils']) - etat['profil_index']} profil(s) sans coupon — "
                               "compose-les (proposer_coupon) avant d'envoyer"}
         etat["termine"] = True
-        _voter_entre_modeles()
+        if not partiel:
+            _voter_entre_modeles()
         if not telegram:
             return {"envoye": False, "enregistre": True, "note": "envoi désactivé pour ce run (essai)"}
         if not any(r["selections"] for r in etat["resultats_profils"]) \
@@ -918,7 +932,17 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
             fraicheur = matchs_a_venir.ligne_fraicheur(etat["donnees"])
         except Exception:
             fraicheur = ""
-        textes_envoyes = [t if (not fraicheur or "Aucun pari jugé défendable" in t) else f"{t}\n\n{fraicheur}" for t in etat["textes"]]
+        textes_envoyes = []
+        for i, t in enumerate(etat["textes"]):
+            if "Aucun pari jugé défendable" in t or not (i < len(etat["resultats_profils"]) and etat["resultats_profils"][i]["selections"]):
+                textes_envoyes.append(t)   # message d'abstention : ni modèle ni fraîcheur
+                continue
+            # Le modèle qui a composé CE coupon (08/11/2026) : pilote du run, ou gagnant du vote pour ce profil.
+            lignes = [t, f"🤖 Modèle : {modele_du_coupon(etat['resultats_profils'][i]['profil']['cle'])}"] + ([fraicheur] if fraicheur else [])
+            textes_envoyes.append("\n\n".join(lignes))
+        if partiel:   # note d'information envoyée avec les coupons validés (non enregistrée comme coupon)
+            manquants = ", ".join(p["nom"] for p in etat["profils"][etat["profil_index"]:])
+            textes_envoyes = textes_envoyes + [f"⚠️ Run interrompu par une erreur du modèle : profil(s) non composé(s) — {manquants}."]
         ok = ae.agent5_envoyer_coupons(textes_envoyes)
         etat["envoye"] = ok
         envoi = getattr(ae, "DERNIER_ENVOI", None)
@@ -1034,16 +1058,17 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
                                prompt_systeme=construire_prompt_systeme(profils),
                                outils_schemas=construire_outils_schemas(profils))
         except Exception as e:
-            # Coupons DÉJÀ validés par Python mais modèle en panne ensuite (08/11/2026, run 301 : GPT-6.1 Sol a composé et fait valider ses 3 coupons, puis HTTP 402 à l'étape
-            # suivante ; run en erreur, 0,45 $ dépensés, trois coupons perdus). Si tous les profils ont leur coupon ou leur abstention, il ne reste que l'envoi : Python le fait.
-            # Sinon l'erreur remonte comme avant (run en « erreur », cause réelle conservée).
-            if etat["profil_index"] < len(etat["profils"]) or not any(r["selections"] for r in etat["resultats_profils"]):
+            # Coupons DÉJÀ validés par Python mais modèle en panne ensuite (08/11/2026, runs 301 et 303 : GPT-6.1 Sol a fait valider 2 ou 3 coupons, puis HTTP 402 ; run en erreur et coupons
+            # perdus). Dès qu'au moins UN coupon est validé, Python envoie et enregistre ceux-là (une note signale les profils non composés). Sans aucun coupon validé,
+            # l'erreur remonte comme avant (run en « erreur », cause réelle conservée).
+            if not any(r["selections"] for r in etat["resultats_profils"]):
                 raise
             etat["erreur_modele"] = f"{type(e).__name__}: {str(e)[:300]}"
-            print(f"   ⚠️ Le modèle a échoué après la validation des {len(etat['profils'])} coupons ({etat['erreur_modele'][:160]}) — "
+            valides = sum(1 for r in etat["resultats_profils"] if r["selections"])
+            print(f"   ⚠️ Le modèle a échoué après la validation de {valides}/{len(etat['profils'])} coupon(s) ({etat['erreur_modele'][:160]}) — "
                   "les coupons validés sont conservés et envoyés par Python.")
             if not etat["termine"]:
-                envoyer_telegram_outil()
+                envoyer_telegram_outil(partiel=etat["profil_index"] < len(etat["profils"]))
             resultat = {"termine": True, "arret": "terminé par Python après une erreur du modèle", "tokens": 0}
     resultat["envoye"] = etat["envoye"]
     resultat["envoi_partiel"] = etat.get("envoi_partiel")
