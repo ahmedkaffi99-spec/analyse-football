@@ -1,5 +1,5 @@
 """AGENT PILOTE (DeepSeek) : DeepSeek conduit le pipeline avec des outils, en mode thinking.
-Limites larges via variables : AGENT_MAX_ETAPES (40), AGENT_DUREE_MAX_MIN (75),
+Limites via variables : AGENT_MAX_ETAPES (24), AGENT_DUREE_MAX_MIN (75),
 AGENT_DELAI_REQUETE (900 s), AGENT_MAX_TOKENS (65536), AGENT_EFFORT (high|max).
 En mode thinking avec outils, reasoning_content doit etre renvoye a l'API (sinon 400)."""
 
@@ -12,13 +12,17 @@ import requests
 
 URL_DEEPSEEK = "https://api.deepseek.com/chat/completions"
 MODELE = (os.getenv("DEEPSEEK_MODELES") or "deepseek-flash").split(",")[0].strip() or "deepseek-flash"
-MAX_ETAPES = int(os.getenv("AGENT_MAX_ETAPES") or "40")
+# 08/11/2026 : 24 étapes (était 40) : suffisant pour 3 profils, quelques recherches web et les corrections.
+MAX_ETAPES = int(os.getenv("AGENT_MAX_ETAPES") or "24")
 # Phase 4 (07/11/2026) : 45 min par défaut (était 75 > timeout-minutes 60 du job : le job était tué avant l'arrêt propre, coûts perdus).
 DUREE_MAX_S = float(os.getenv("AGENT_DUREE_MAX_MIN") or "45") * 60
 DELAI_REQUETE = float(os.getenv("AGENT_DELAI_REQUETE") or "900")
 MAX_TOKENS = int(os.getenv("AGENT_MAX_TOKENS") or "65536")
 EFFORT = os.getenv("AGENT_EFFORT") or "high"
 STATUTS_A_REESSAYER = (429, 500, 502, 503, 504)
+# 08/11/2026 : 4 recherches et 2 pages par run (étaient 5 et 3) ; la recherche web et la lecture de pages restent disponibles.
+MAX_RECHERCHES_WEB = int(os.getenv("MAX_RECHERCHES_WEB") or "4")
+MAX_LECTURES_PAGE = int(os.getenv("MAX_LECTURES_PAGE") or "2")
 
 def construire_prompt_systeme(profils):
     """Génère le prompt système à partir des profils réels du run — généralisé le 01/10/2026
@@ -72,9 +76,9 @@ disponibles entre eux, retiens le(s) pari(s) les plus défendables pour CE match
 passe au match suivant. Une fois tous les matchs analysés, compose le coupon du profil en cours, PUIS passe au profil suivant en réutilisant la même analyse.
 
 ORDRE CONSEILLÉ (tu peux l'adapter, revenir en arrière ou chercher plus d'information) :
-1. collecter_donnees (une seule fois)  2. voir_catalogue (indique le profil EN COURS parmi les {n} — le \
-catalogue lui-même ne change pas)  3. RECOMMANDÉ : 2 à 4 rechercher_web (puis lire_page sur un lien au besoin) sur les matchs les plus importants de ton \
-catalogue, pour vérifier une blessure, une rotation, une composition probable, un enjeu — 5 recherches et 3 pages au \
+1. collecter_donnees (une seule fois ; déjà fait par Python)  2. voir_catalogue (indique le profil EN COURS parmi les {n} — le \
+catalogue lui-même ne change pas ; quand ta mission contient déjà le CATALOGUE et le CONTEXTE PAR MATCH, il n'est pas renvoyé)  3. RECOMMANDÉ : 2 à {MAX_RECHERCHES_WEB} rechercher_web (puis lire_page sur un lien au besoin) sur les matchs les plus importants de ton \
+catalogue, pour vérifier une blessure, une rotation, une composition probable, un enjeu — {MAX_RECHERCHES_WEB} recherches et {MAX_LECTURES_PAGE} pages au \
 maximum par run ; un pari que l'actualité contredit se remplace  4. proposer_coupon pour le profil en cours (Python vérifie — identifiants valides, au moins 2 jambes, un pari par match, \
 match non repris d'un autre coupon — rédige automatiquement le coupon une fois validé, et te dit s'il reste des \
 profils)  5. répète 2-4 pour chaque profil restant  6. envoyer_telegram une fois les {n} profils traités \
@@ -239,8 +243,6 @@ _secours = {"actif": False, "choix": None}   # état du run : DeepSeek abandonn�
 # réponse brute pour vérification. Tout ce qui revient du web est une donnée NON FIABLE.
 URL_RECHERCHE_DEEPSEEK = "https://api.deepseek.com/v1/tools/search"
 URL_LECTURE_DEEPSEEK = "https://api.deepseek.com/v1/tools/fetch"
-MAX_RECHERCHES_WEB = int(os.getenv("MAX_RECHERCHES_WEB") or "5")
-MAX_LECTURES_PAGE = int(os.getenv("MAX_LECTURES_PAGE") or "3")
 MAX_CARACTERES_PAGE = int(os.getenv("MAX_CARACTERES_PAGE") or "4000")
 MAX_CARACTERES_EXTRAIT = int(os.getenv("MAX_CARACTERES_EXTRAIT") or "700")
 
@@ -488,6 +490,8 @@ def enregistrer_couts_en_cours():
 # (50 000 puis 100 000 puis 150 000 tokens par appel). Seul le résultat le plus récent garde ses gros textes ; les précédents sont remplacés par une mention courte. L'information
 # visible par le modèle reste complète (le dernier catalogue contient tout) et le traitement est identique pour TOUS les modèles : la comparaison reste équitable.
 ALLEGER_CONTEXTE = os.getenv("ALLEGER_CONTEXTE", "1").strip().lower() not in ("0", "non", "false", "no")
+# Catalogue et contexte joints au premier message (08/11/2026) : voir_catalogue ne les renvoie plus à chaque profil. CATALOGUE_DANS_MISSION=0 rétablit l'ancien comportement.
+CATALOGUE_DANS_MISSION = os.getenv("CATALOGUE_DANS_MISSION", "1").strip().lower() not in ("0", "non", "false", "no")
 SEUIL_TEXTE_ALLEGE = 2000
 MENTION_ALLEGEE = "(retiré de l'historique : le catalogue complet est dans le résultat voir_catalogue le plus récent)"
 
@@ -646,7 +650,7 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
         "donnees": None, "pool": None, "catalogue": None, "catalogue_texte": None, "contexte_texte": None,
         "profils": profils, "profil_index": 0, "textes": [], "resultats_profils": [],
         "nb_recherches": 0, "nb_lectures": 0, "journal_recherches": [], "journal_pages": [], "strategies": {}, "termine": False, "envoye": False, "raison_abandon": None,
-        "vote_ignores": [], "vote_gagnants": {}, "vote_resultats": [],
+        "vote_ignores": [], "vote_gagnants": {}, "vote_resultats": [], "catalogue_dans_mission": False,
     }
 
     def _sans_matchs_commences(donnees):
@@ -676,9 +680,8 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
         return {"nb_matchs_demandes": d["nb_matchs_demandes"], "nb_matchs_avec_marches": d["nb_matchs_avec_marches"],
                 "nb_marches_total": d["nb_marches_total"]}
 
-    def voir_catalogue_outil():
-        if etat["donnees"] is None:
-            return {"erreur": "appelle d'abord collecter_donnees"}
+    def preparer_catalogue():
+        """Construit une seule fois (par Python) le pool, le catalogue, la revue des agents de famille et le contexte par match."""
         if etat["catalogue"] is None:
             etat["pool"] = ae.agent3_calcul_pool_candidats(etat["donnees"])
             etat["catalogue"], etat["catalogue_texte"] = st.construire_catalogue(
@@ -698,6 +701,11 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
             # demande explicitement à l'IA de s'en servir — st._contexte(pool) le construisait
             # déjà pour le moteur déterministe (construire_prompt), jamais branché ici.
             etat["contexte_texte"] = st._contexte(etat["pool"])
+
+    def voir_catalogue_outil():
+        if etat["donnees"] is None:
+            return {"erreur": "appelle d'abord collecter_donnees"}
+        preparer_catalogue()
         if not etat["catalogue"]:
             return {"erreur": "aucun candidat exploitable — pas assez de matchs avec marchés 1xBet collectés"}
         if etat["profil_index"] >= len(etat["profils"]):
@@ -756,8 +764,10 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
                        **({"familles_obligatoires": True,
                            "familles_a_couvrir": sorted(st.familles_du_catalogue(etat["catalogue"]).values())}
                           if profil.get("familles_obligatoires") else {})},
-            "catalogue": etat["catalogue_texte"],
-            "contexte_par_match": etat["contexte_texte"],
+            # Catalogue et contexte déjà dans le premier message (08/11/2026) : ils ne sont pas renvoyés à chaque profil.
+            **({"catalogue": "(déjà fourni dans ta mission : section CATALOGUE DES PARIS)",
+                "contexte_par_match": "(déjà fourni dans ta mission : section CONTEXTE PAR MATCH)"} if etat["catalogue_dans_mission"] else
+               {"catalogue": etat["catalogue_texte"], "contexte_par_match": etat["contexte_texte"]}),
         }
 
     def rechercher_web_outil(requete):
@@ -1003,8 +1013,18 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
     elif compositeur:
         resultat = composer_avec_un_seul_modele(compositeur)
     else:
+        mission_finale = mission or mission_defaut
+        if CATALOGUE_DANS_MISSION:
+            try:   # catalogue et contexte construits par Python et donnés UNE fois, dans le premier message ; en cas d'échec le déroulement habituel (voir_catalogue) reste valable
+                preparer_catalogue()
+                if etat["catalogue"]:
+                    mission_finale += ("\n\n=== CATALOGUE DES PARIS (calculé par Python, commun aux profils) ===\n" + str(etat["catalogue_texte"])
+                                       + "\n\n=== CONTEXTE PAR MATCH ===\n" + str(etat["contexte_texte"]))
+                    etat["catalogue_dans_mission"] = True
+            except Exception as e:
+                print(f"   ⚠️ Catalogue non joint à la mission ({str(e)[:150]}) : l'agent l'obtiendra par voir_catalogue.")
         try:
-            resultat = piloter(cle, outils, lambda: etat["termine"], mission or mission_defaut,
+            resultat = piloter(cle, outils, lambda: etat["termine"], mission_finale,
                                prompt_systeme=construire_prompt_systeme(profils),
                                outils_schemas=construire_outils_schemas(profils))
         except Exception as e:

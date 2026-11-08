@@ -137,7 +137,8 @@ class TestExecuterAgentPilote(unittest.TestCase):
         contenus_outils = [m["content"] for m in dernier_appel_messages if m.get("role") == "tool"]
         self.assertTrue(any("erreur" in c for c in contenus_outils))
 
-    def test_voir_catalogue_transmet_le_contexte_par_match(self):
+    def test_catalogue_et_contexte_sont_dans_le_premier_message_une_seule_fois(self):
+        # 08/11/2026 : Python joint le catalogue et le contexte par match à la mission ; voir_catalogue ne les renvoie plus à chaque profil.
         # Correctif réel (01/10/2026) : voir_catalogue ne renvoyait QUE les lignes de paris,
         # jamais le contexte par match (buts attendus, forme...) alors que le prompt système
         # demande explicitement à l'IA de s'en servir — st._contexte(pool) existait déjà pour
@@ -155,6 +156,43 @@ class TestExecuterAgentPilote(unittest.TestCase):
         ]
         with mock.patch.object(cd, "collecter_donnees", return_value=None), \
                 mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(DONNEES_FACTICES))), \
+                mock.patch.object(ae, "PROFILS_COUPON", [PROFIL]), \
+                mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=pool_avec_contexte), \
+                mock.patch.object(pilote, "_appel_api", side_effect=[(r, 65536) for r in reponses]) as appel:
+            pilote.executer(mission="test", telegram=False)
+        messages = appel.call_args_list[-1].args[1]
+        mission = next(m["content"] for m in messages if m.get("role") == "user")
+        self.assertIn("=== CATALOGUE DES PARIS", mission)
+        self.assertIn("Buts attendus (modèle) : 1.8", mission)
+        self.assertIn("Forme récente (équipe domicile", mission)
+        self.assertIn("2.1 point(s)/match", mission)
+        self.assertIn("4 clean sheet(s) sur 10", mission)
+        contenus_outils = [m["content"] for m in messages if m.get("role") == "tool"]
+        texte_outil = next(c for c in contenus_outils if "contexte_par_match" in c)
+        self.assertIn("déjà fourni dans ta mission", texte_outil)
+        self.assertNotIn("Buts attendus", texte_outil)
+        self.assertEqual("".join(m["content"] for m in messages if m.get("role") == "tool").count("Buts attendus"), 0)
+
+    def test_voir_catalogue_transmet_le_contexte_par_match_sans_catalogue_dans_la_mission(self):
+        # CATALOGUE_DANS_MISSION=0 : ancien comportement, le catalogue et le contexte sont renvoyés par l'outil.
+        # Correctif réel (01/10/2026) : voir_catalogue ne renvoyait QUE les lignes de paris,
+        # jamais le contexte par match (buts attendus, forme...) alors que le prompt système
+        # demande explicitement à l'IA de s'en servir — st._contexte(pool) existait déjà pour
+        # le moteur déterministe mais n'était jamais appelé ici.
+        pool_avec_contexte = {"A vs B": [{
+            "match": "A vs B", "pick": {"categorie": "Total", "marche": "Total (2.5)", "selection": "Over",
+                                        "cote": 1.8, "proba_modele_pct": 72.0, "edge_pct": 8.0},
+            "contexte": {"buts_attendus": {"domicile": 1.8, "exterieur": 1.1},
+                         "forme": {"domicile": {"points_par_match": 2.1, "clean_sheets_sur_10": 4}}},
+        }]}
+        reponses = [
+            _msg_outil("collecter_donnees", {}),
+            _msg_outil("voir_catalogue", {}),
+            _msg_outil("abandonner", {"raison": "test"}),
+        ]
+        with mock.patch.object(cd, "collecter_donnees", return_value=None), \
+                mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(DONNEES_FACTICES))), \
+                mock.patch.object(pilote, "CATALOGUE_DANS_MISSION", False), \
                 mock.patch.object(ae, "PROFILS_COUPON", [PROFIL]), \
                 mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=pool_avec_contexte), \
                 mock.patch.object(pilote, "_appel_api", side_effect=[(r, 65536) for r in reponses]) as appel:
@@ -1013,3 +1051,15 @@ def test_aucune_division_par_zero_avec_seuil_zero_ou_combo_vide(monkeypatch):
     monkeypatch.setattr(ae, "PROBA_MIN_FORTE", 0.0)
     assert ae._score_qualite_combo([]) == (0.0, 0.0, 0.0, 0)
     assert ae.selectionner_combo_cote_cible({}, 0, 2.0, 5.0) is None   # 0 jambe : ni division par zéro ni coupon
+
+
+class TestAllegementDesAppels0811(unittest.TestCase):
+    def test_limites_par_defaut(self):
+        self.assertEqual(pilote.MAX_ETAPES, 24)
+        self.assertEqual(pilote.MAX_RECHERCHES_WEB, 4)
+        self.assertEqual(pilote.MAX_LECTURES_PAGE, 2)
+
+    def test_prompt_annonce_les_limites_de_recherche(self):
+        prompt = pilote.construire_prompt_systeme([PROFIL])
+        self.assertIn("4 recherches et 2 pages", prompt)
+        self.assertIn("rechercher_web", prompt)
