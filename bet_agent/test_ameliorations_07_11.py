@@ -193,3 +193,43 @@ def test_l_agent_applique_le_plafond_de_coupons_par_match():
     sans_plafond = [dict(p, max_coupons_par_match=0) for p in profils]
     acceptes, _, _ = st.valider(propositions, catalogue, sans_plafond)
     assert set(acceptes) == {"c1", "c2", "c3"}                                            # 0 = pas de plafond
+
+
+# ---- coupons validés conservés quand le modèle tombe en panne ensuite (run 301 du 08/11 : 0,45 $ dépensés, 3 coupons validés puis perdus) ---------------------------------
+def _donnees_a_venir():
+    futur = (datetime.now(timezone.utc) + timedelta(hours=3)).isoformat()
+    return {"nb_matchs_demandes": 2, "nb_matchs_avec_marches": 2, "nb_marches_total": 4, "date_collecte": "2026-11-08T01:51:00+00:00",
+            "matchs": [_match("Futur1", futur), _match("Futur2", futur)]}
+
+
+def test_coupons_valides_envoyes_par_python_quand_le_modele_tombe_apres_validation(monkeypatch):
+    import agent_pilote as pilote
+    import analyser_et_envoyer as ae
+    from unittest import mock
+    from test_agent_pilote import POOL_SIX_MATCHS, PROFIL_1, _msg_outil
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "cle-test")
+    reponses = [(_msg_outil("collecter_donnees", {}), 65536), (_msg_outil("voir_catalogue", {}), 65536),
+                (_msg_outil("proposer_coupon", {"strategie": "s", "jambes": [{"id": "P1", "raison": "r"}]}), 65536),
+                RuntimeError("OpenRouter/openai/gpt-6.1-sol : HTTP 402 crédits insuffisants")]
+    with mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=POOL_SIX_MATCHS), \
+            mock.patch.object(ae, "agent5_envoyer_coupons", return_value=True) as envoi, \
+            mock.patch.object(pilote, "_appel_api", side_effect=reponses):
+        resultat = pilote.executer(telegram=True, profils=[PROFIL_1], donnees_reprises=_donnees_a_venir())
+    envoi.assert_called_once()                                                              # les coupons validés partent quand même
+    assert resultat["envoye"] is True and resultat["resultats_profils"][0]["selections"]
+    assert "402" in resultat["journal"]["erreur_modele"]                                    # la cause reste visible dans le journal du run
+
+
+def test_modele_en_panne_avant_la_fin_de_la_validation_l_erreur_remonte(monkeypatch):
+    import agent_pilote as pilote
+    import analyser_et_envoyer as ae
+    from unittest import mock
+    from test_agent_pilote import POOL_SIX_MATCHS, PROFIL_1, _msg_outil
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "cle-test")
+    reponses = [(_msg_outil("collecter_donnees", {}), 65536), RuntimeError("HTTP 402 crédits insuffisants")]
+    with mock.patch.object(ae, "agent3_calcul_pool_candidats", return_value=POOL_SIX_MATCHS), \
+            mock.patch.object(ae, "agent5_envoyer_coupons", return_value=True) as envoi, \
+            mock.patch.object(pilote, "_appel_api", side_effect=reponses):
+        with pytest.raises(RuntimeError, match="402"):
+            pilote.executer(telegram=True, profils=[PROFIL_1], donnees_reprises=_donnees_a_venir())
+    envoi.assert_not_called()                                                               # aucun coupon validé : rien n'est envoyé, l'erreur reste une erreur

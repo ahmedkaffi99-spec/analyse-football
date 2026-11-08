@@ -958,9 +958,22 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
     elif compositeur:
         resultat = composer_avec_un_seul_modele(compositeur)
     else:
-        resultat = piloter(cle, outils, lambda: etat["termine"], mission or mission_defaut,
-                           prompt_systeme=construire_prompt_systeme(profils),
-                           outils_schemas=construire_outils_schemas(profils))
+        try:
+            resultat = piloter(cle, outils, lambda: etat["termine"], mission or mission_defaut,
+                               prompt_systeme=construire_prompt_systeme(profils),
+                               outils_schemas=construire_outils_schemas(profils))
+        except Exception as e:
+            # Coupons DÉJÀ validés par Python mais modèle en panne ensuite (08/11/2026, run 301 : GPT-6.1 Sol a composé et fait valider ses 3 coupons, puis HTTP 402 à l'étape
+            # suivante ; run en erreur, 0,45 $ dépensés, trois coupons perdus). Si tous les profils ont leur coupon ou leur abstention, il ne reste que l'envoi : Python le fait.
+            # Sinon l'erreur remonte comme avant (run en « erreur », cause réelle conservée).
+            if etat["profil_index"] < len(etat["profils"]) or not any(r["selections"] for r in etat["resultats_profils"]):
+                raise
+            etat["erreur_modele"] = f"{type(e).__name__}: {str(e)[:300]}"
+            print(f"   ⚠️ Le modèle a échoué après la validation des {len(etat['profils'])} coupons ({etat['erreur_modele'][:160]}) — "
+                  "les coupons validés sont conservés et envoyés par Python.")
+            if not etat["termine"]:
+                envoyer_telegram_outil()
+            resultat = {"termine": True, "arret": "terminé par Python après une erreur du modèle", "tokens": 0}
     resultat["envoye"] = etat["envoye"]
     resultat["envoi_partiel"] = etat.get("envoi_partiel")
     resultat["raison_abandon"] = etat["raison_abandon"]
@@ -981,6 +994,8 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
             print(f"   💰 ⚠️ {couts['alerte']}")
     if etat.get("envoi_partiel") and isinstance(resultat.get("journal"), dict):
         resultat["journal"]["envoi_partiel"] = etat["envoi_partiel"]
+    if etat.get("erreur_modele") and isinstance(resultat.get("journal"), dict):
+        resultat["journal"]["erreur_modele"] = etat["erreur_modele"]
     if etat.get("vote_journal") and isinstance(resultat.get("journal"), dict):
         resultat["journal"]["vote"] = etat["vote_journal"]
     if isinstance(resultat.get("journal"), dict):
