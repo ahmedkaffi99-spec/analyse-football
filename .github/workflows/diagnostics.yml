@@ -1236,11 +1236,28 @@ jobs:
               ok = ae.agent5_envoyer_coupons([message])
               print('ENVOYE' if ok else 'ECHEC')
               sys.exit(0 if ok else 1)
+          # Même présentation que le pipeline (13/11/2026) : texte du coupon, puis « 🤖 Modèle : … » (modèle pilote du run) et le prochain coup d'envoi.
+          # L'heure de relevé des cotes n'est pas conservée en base : elle n'est pas affichée ici.
+          import re
+          from datetime import datetime, timezone
+          from app.models import Match, Run
           coupon_id = int(reference)
           with SessionLocal() as db:
-              texte = db.get(Coupon, coupon_id).texte
-          assert texte, 'coupon sans texte'
-          ok = ae.agent5_envoyer_coupons([texte])
+              coupon = db.get(Coupon, coupon_id)
+              texte = coupon.texte
+              assert texte, 'coupon sans texte'
+              run = db.get(Run, coupon.run_id)
+              trouve = re.search(r'[\x22]modele_pilote[\x22]\s*:\s*[\x22]([^\x22]+)', (run.detail or '') if run else '')
+              maintenant = datetime.now(timezone.utc)
+              debuts = sorted(m.coup_envoi for m in db.query(Match).filter(Match.run_id == coupon.run_id).all() if m.coup_envoi and m.coup_envoi > maintenant)
+          lignes = [texte]
+          if trouve:
+              lignes.append('🤖 Modèle : ' + trouve.group(1))
+          if debuts:
+              lignes.append('🕒 Prochain match à ' + debuts[0].strftime('%H:%M') + ' UTC — vérifie les cotes sur 1xBet avant de parier.')
+          message = '\n\n'.join(lignes)
+          print(message)
+          ok = ae.agent5_envoyer_coupons([message])
           print('ENVOYE' if ok else 'ECHEC')
           sys.exit(0 if ok else 1)
           "
