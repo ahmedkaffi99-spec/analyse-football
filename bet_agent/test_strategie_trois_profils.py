@@ -27,7 +27,7 @@ def test_trois_profils_dans_l_ordre_prudent_equilibre_risque():
     p = profils_smart.profils(contraintes=False)
     assert [x["niveau_risque"] for x in p] == ["prudent", "equilibre", "risque"]
     assert [x["cle"] for x in p] == ["coupon1", "coupon2", "coupon3"]          # clés historiques conservées (colonne coupons.profil)
-    assert [x["nom"].split(" ", 1)[1] for x in p] == ["PRUDENT", "ÉQUILIBRÉ", "RISQUE"]
+    assert [x["nom"].split(" ", 1)[1] for x in p] == ["PRUDENT", "ÉQUILIBRÉ", "GAINER"]
     assert len({x["consigne"] for x in p}) == 3
 
 
@@ -156,7 +156,7 @@ def test_coupon_de_comparaison_valide_sans_bande():
 # ---------- consignes données à l'IA ----------
 def test_prompt_pilote_decrit_les_trois_profils_sans_cote_imposee():
     prompt = pilote.construire_prompt_systeme(profils_smart.profils(contraintes=False))
-    assert "PRUDENT" in prompt and "ÉQUILIBRÉ" in prompt and "RISQUE" in prompt
+    assert "PRUDENT" in prompt and "ÉQUILIBRÉ" in prompt and "GAINER" in prompt
     assert "TROIS PROFILS DE RISQUE" in prompt and "AUCUNE cote" in prompt
     assert "un match ne figure que dans UN seul coupon" in prompt
     assert "peut figurer dans plusieurs coupons" not in prompt                  # plus de contradiction avec la règle Python
@@ -167,7 +167,7 @@ def test_prompt_pilote_decrit_les_trois_profils_sans_cote_imposee():
 def test_prompt_des_modeles_du_vote_decrit_les_trois_profils():
     cat = {"P1": _sel("A - B", 1.5)}
     texte = st.construire_prompt({"A - B": [_sel("A - B", 1.5)]}, profils_smart.profils(contraintes=False), "\n- P1 : ...")
-    assert "Profil PRUDENT" in texte and "Profil ÉQUILIBRÉ" in texte and "Profil RISQUE" in texte
+    assert "Profil PRUDENT" in texte and "Profil ÉQUILIBRÉ" in texte and "Profil GAINER" in texte
     assert "AUCUNE cote totale cible" in texte
     assert "sans match commun" in texte and "UN seul coupon" in texte
     for ancien in ("BANDE DE COTE TOTALE", "plancher ET plafond", "tu peux reprendre un MATCH", "5-10"):

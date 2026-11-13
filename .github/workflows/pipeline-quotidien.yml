@@ -19,14 +19,14 @@ on:
     # que les coupons du jour sont partis (garde --si-aucun-ticket-aujourdhui, y compris coupons envoyés la veille).
     - cron: "7,27,47 6-13 * * *"  # 6h07-13h47 UTC (9h07-16h47 à Djibouti)
   workflow_dispatch:
-    # Formulaire (07/11/2026) : trois coupons PRUDENT / ÉQUILIBRÉ / RISQUE, l'IA choisit librement ; aucune cote totale cible ni cote par jambe imposée.
+    # Formulaire (07/11/2026) : trois coupons PRUDENT / ÉQUILIBRÉ / GAINER, l'IA choisit librement ; aucune cote totale cible ni cote par jambe imposée.
     inputs:
       telegram:
         description: "1. Envoyer les coupons sur Telegram : allumé = envoi, éteint = essai (rien n'est envoyé)"
         type: boolean
         default: false
       moteur:
-        description: "2. Moteur : agent (IA, par défaut) · central (modèles statistiques, recherche exhaustive) · deterministe (règles Python). Les trois produisent les mêmes trois profils Prudent / Équilibré / Risque sur les mêmes données"
+        description: "2. Moteur : agent (IA, par défaut) · central (modèles statistiques, recherche exhaustive) · deterministe (règles Python). Les trois produisent les mêmes trois profils Prudent / Équilibré / Gainer sur les mêmes données"
         type: choice
         options:
           - "agent"
@@ -82,9 +82,9 @@ on:
         type: string
         default: "5-12"
       bandes:
-        description: "14. Bandes de cote totale Prudent / Équilibré / Risque (défaut 5-10 / 12-20 / 25-50). Valeur invalide = défaut"
+        description: "14. Bandes de cote totale Prudent / Équilibré / Gainer (défaut 5-10 / 11-15 / 16-25). Valeur invalide = défaut"
         type: string
-        default: "5-10 / 12-20 / 25-50"
+        default: "5-10 / 11-15 / 16-25"
 
 concurrency:
   # Exécution strictement séquentielle : éviter les deadlocks Supabase et la saturation API-Football.

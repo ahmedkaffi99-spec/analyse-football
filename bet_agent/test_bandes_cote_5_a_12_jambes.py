@@ -11,7 +11,7 @@ def test_profils_par_defaut_cinq_a_douze_jambes_et_bandes_espacees():
     p = profils_smart.profils()
     assert all(x["nb_jambes_min"] == 5 and x["nb_jambes"] == 12 for x in p)
     bandes = [(x["cote_totale_min"], x["cote_totale_max"]) for x in p]
-    assert bandes == [(5.0, 10.0), (12.0, 20.0), (25.0, 50.0)]
+    assert bandes == [(5.0, 10.0), (11.0, 15.0), (16.0, 25.0)]
     assert min(b[0] for b in bandes) >= 5 and all(bandes[i][1] < bandes[i + 1][0] for i in range(2))
 
 
@@ -21,7 +21,7 @@ def test_bandes_modifiables_par_variable_et_invalides_ignorees(monkeypatch):
     monkeypatch.setenv("BANDE_COTE_EQUILIBRE", "abc")        # illisible : ignoré
     assert profils_smart.bande_cote("risque") == (30.0, 80.0)
     assert profils_smart.bande_cote("prudent") == (5.0, 10.0)
-    assert profils_smart.bande_cote("equilibre") == (12.0, 20.0)
+    assert profils_smart.bande_cote("equilibre") == (11.0, 15.0)
 
 
 def _j(i, cote, cat="Total", sel="Over"):
@@ -42,7 +42,8 @@ def test_regles_coupon_nombre_de_jambes_et_bande():
 def _pool(n=19):
     return {f"M{i}": [{"match": f"M{i}", "competition": f"L{i % 4}",
                        "pick": {"categorie": cat, "selection": sel, "cote": cote, "proba_modele_pct": p, "edge_pct": 5.0, "marche": cat}}
-                      for cat, sel, cote, p in (("Total", "Over", 1.55, 66), ("Double Chance", "1X", 1.35, 75), ("BTTS", "Yes", 2.0, 52), ("Corners", "Under", 1.7, 60))]
+                      for cat, sel, cote, p in (("Total", "Over", 1.55, 66), ("Double Chance", "1X", 1.35, 75), ("BTTS", "Yes", 2.0, 52), ("Corners", "Under", 1.7, 60),
+                                              ("Total", "Under", 1.45, 68), ("Handicap", "1", 1.65, 65), ("Total Équipe 2", "Under", 1.6, 66))]   # 7 types de paris : bandes étroites (11-15, 16-25) = besoin de variété (famille, sens)
             for i in range(n)}
 
 
@@ -106,6 +107,16 @@ def test_moteur_deterministe_prefere_la_taille_equilibree_dans_la_bande():
     profil = profils_smart.profils()[0]                      # bande 5-10 : tailles 7 (6.27) à 8 (8.16) et 9 (10.6 hors bande)
     choisi = md._dans_la_bande(legs, profil)
     assert 7 <= len(choisi) <= 8 and 5 <= pr.cote_totale(choisi) <= 10
+
+
+def test_moteur_deterministe_remplace_la_derniere_jambe_quand_la_bande_etroite_est_sautee():
+    """08/11/2026 : bande Équilibré 11-15 ; les produits cumulés 9,61 (4 jambes) puis 16,34 (5 jambes) sautent l'intervalle : la 5e jambe est remplacée."""
+    legs = [_j(i, c) for i, c in enumerate([2.0, 2.0, 1.55, 1.55, 1.7, 2.0, 1.55])]
+    profil = profils_smart.profils()[1]
+    assert (profil["cote_totale_min"], profil["cote_totale_max"]) == (11.0, 15.0)
+    choisi = md._dans_la_bande(legs, profil)
+    assert len(choisi) >= 5 and 11 <= pr.cote_totale(choisi) <= 15
+    assert pr.regles_coupon(choisi, "equilibre", profil) == []
 
 
 def test_un_match_peut_figurer_dans_plusieurs_coupons_avec_des_paris_differents():
