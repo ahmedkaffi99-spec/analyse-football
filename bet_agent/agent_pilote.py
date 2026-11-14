@@ -95,7 +95,8 @@ faible).
 consigne). PRUDENT = sécurité : les probabilités les plus élevées du catalogue et le contexte le plus solide, même pour un gain faible. \
 ÉQUILIBRÉ = bon compromis entre probabilité et rendement : jambes solides et quelques jambes mieux valorisées (edge positif). GAINER (niveau risque) = \
 davantage de risque pour viser un gain potentiel plus élevé : jambes moins probables mais bien valorisées, combinaisons plus \
-ambitieuses. Les trois coupons doivent réellement différer par leur niveau de risque. Si voir_catalogue indique une bande ou un \
+ambitieuses. Pour atteindre la bande de cote de ton profil, PRÉFÈRE AJOUTER DES MATCHS (jambes à cote modérée et probabilité élevée) plutôt que de choisir peu de jambes à cote haute \
+(au-dessus de 1.80) ; chaque profil a un minimum de jambes (voir voir_catalogue). Les trois coupons doivent réellement différer par leur niveau de risque. Si voir_catalogue indique une bande ou un \
 plancher de cote (profil personnalisé seulement), respecte-le : Python le vérifie.
 - BASE TA DÉCISION SUR LA PROBABILITÉ ET L'EDGE DU CATALOGUE (calculés par Python), jamais sur une estimation que tu inventes. \
 Python exclut les cotes individuelles inférieures à 1.20 (garde-fou technique, réglable par COTE_MIN_JAMBE_AGENT) ; ne tente jamais de contourner ce filtre. \

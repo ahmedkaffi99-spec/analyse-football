@@ -92,7 +92,7 @@ def composer(pool, profils, taille_reference=None):
             # une autre jambe du même match ou un autre match est essayé. Un seul pari par match reste garanti par `utilises`.
             candidates = sorted(((pr.utilite_jambe(niveau, j), j) for j in libres), key=lambda x: x[0], reverse=True)
             for u, j in candidates:
-                if pr.diversite_ok(choisies[i] + [j]) or len(choisies[i]) < 2:
+                if pr.combo_admissible(choisies[i] + [j], profils[i]) or len(choisies[i]) < 2:
                     choisies[i].append(j)
                     utilises.add(j["match"])
                     exacts.add(pr.pari_exact(j))

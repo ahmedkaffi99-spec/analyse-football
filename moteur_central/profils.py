@@ -82,7 +82,7 @@ def meilleure_combinaison(jambes, niveau, taille_pool=TAILLE_POOL, profil=None):
             for j in ordre:
                 if len(combo) == taille:
                     break
-                if j["match"] not in {x["match"] for x in combo} and pr.diversite_ok(combo + [j]):
+                if j["match"] not in {x["match"] for x in combo} and pr.combo_admissible(combo + [j], profil):
                     combo.append(j)
             if len(combo) < taille:
                 continue
@@ -95,7 +95,7 @@ def meilleure_combinaison(jambes, niveau, taille_pool=TAILLE_POOL, profil=None):
                         if j in combo:
                             continue
                         essai = combo[:i] + [j] + combo[i + 1:]
-                        if not _sans_doublon(essai) or not pr.diversite_ok(essai):
+                        if not _sans_doublon(essai) or not pr.combo_admissible(essai, profil):
                             continue
                         s2 = _objectif(niveau, essai, profil)
                         if s2 > score + 1e-12:

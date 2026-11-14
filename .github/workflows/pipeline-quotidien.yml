@@ -50,14 +50,12 @@ on:
         type: string
         default: ""
       modele:
-        description: "10. Modèle qui pilote le run : deepseek-openrouter (DeepSeek via l'API OpenRouter, par défaut, un seul modèle sans vote) · deepseek (API officielle DeepSeek) · gpt-6.1-sol · gemini-4-argon · claude-sonnet-5.5. Aucun repli : un modèle qui échoue fait échouer le run"
+        description: "10. Modèle qui pilote le run : deepseek-openrouter (DeepSeek via l'API OpenRouter, par défaut, un seul modèle sans vote) · deepseek (API officielle DeepSeek) · gpt-6.1-sol. Aucun repli : un modèle qui échoue fait échouer le run"
         type: choice
         options:
           - "deepseek-openrouter"
           - "deepseek"
           - "gpt-6.1-sol"
-          - "gemini-4-argon"
-          - "claude-sonnet-5.5"
         default: "deepseek-openrouter"
       modele_2:
         description: "11. Second modèle à comparer (optionnel) : il tourne APRÈS le premier, sur la MÊME collecte (mêmes données, un seul appel aux API sportives), sans vote. aucun = un seul modèle"
@@ -67,8 +65,6 @@ on:
           - "deepseek"
           - "deepseek-openrouter"
           - "gpt-6.1-sol"
-          - "gemini-4-argon"
-          - "claude-sonnet-5.5"
         default: "aucun"
       un_pari_par_match:
         description: "12. Un seul pari par match dans un coupon : actif (1 par match) ou desactive (jusqu'à 3 paris d'events différents par match)"
@@ -78,9 +74,9 @@ on:
           - "desactive"
         default: "actif"
       jambes:
-        description: "13. Nombre de jambes par coupon : min-max (défaut 5-12). Valeur invalide = défaut"
+        description: "13. Nombre de jambes par coupon : min-max, remplace les minimums des trois profils (vide = Prudent 6-12 · Équilibré 7-12 · Gainer 8-12). Valeur invalide = défaut"
         type: string
-        default: "5-12"
+        default: ""
       bandes:
         description: "14. Bandes de cote totale Prudent / Équilibré / Gainer (défaut 5-10 / 11-15 / 16-25). Valeur invalide = défaut"
         type: string

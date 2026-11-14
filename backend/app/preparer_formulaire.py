@@ -9,12 +9,12 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "bet_agent"))
 from profils_smart import COULEURS, NIVEAUX, analyser_intervalle, profils  # noqa: E402,F401
 
-MODELES = {"deepseek": "", "deepseek-openrouter": "deepseek/deepseek-v4.1-flash", "gpt-6.1-sol": "openai/gpt-6.1-sol",
-           "gemini-4-argon": "google/gemini-4-argon", "claude-sonnet-5.5": "anthropic/claude-sonnet-5.5"}
+# 14/11/2026 : Gemini et Claude retirés du formulaire (choix de l'utilisateur après la comparaison du 13/11) ; restent DeepSeek (OpenRouter ou API officielle) et GPT-6.1 Sol.
+MODELES = {"deepseek": "", "deepseek-openrouter": "deepseek/deepseek-v4.1-flash", "gpt-6.1-sol": "openai/gpt-6.1-sol"}
 # Modèle par défaut (formulaire et passages planifiés) : DeepSeek via OpenRouter, un seul modèle sans vote (07/11/2026). L'API officielle DeepSeek reste choisissable (« deepseek »).
 MODELE_DEFAUT = "deepseek-openrouter"
 NIVEAUX_TECH = ("prudent", "equilibre", "risque")
-VOTE_DEFAUT = "openai/gpt-6.1-sol,google/gemini-4-argon"
+VOTE_DEFAUT = "openai/gpt-6.1-sol"
 
 
 def _choix(valeur, defaut="defaut"):

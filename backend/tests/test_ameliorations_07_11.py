@@ -144,6 +144,6 @@ def test_version_et_regles_du_run(monkeypatch):
     import profils_smart
     v = runs.version_et_regles(profils_smart.profils(), "agent")
     assert v["commit"] == "c0201de" and v["modele"] == "deepseek/deepseek-v4.1-flash" and v["moteur"] == "agent"
-    assert v["profils"]["coupon1"]["jambes"] == [5, 12] and v["profils"]["coupon1"]["bande_cote"] == [5.0, 10.0] and v["profils"]["coupon3"]["bande_cote"] == [16.0, 25.0]
+    assert v["profils"]["coupon1"]["jambes"] == [6, 12] and v["profils"]["coupon1"]["bande_cote"] == [5.0, 10.0] and v["profils"]["coupon3"]["bande_cote"] == [16.0, 25.0]
     assert v["profils"]["coupon2"]["plafond_coupons_par_match"] == 2 and v["profils"]["coupon2"]["match_repete"] is True
     assert v["remplissage"]["max_par_coupon"] >= 0 and "plancher_jambe" in v

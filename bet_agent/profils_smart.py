@@ -16,6 +16,9 @@ COULEURS = ["🟢", "🟠", "🔴"]
 NB_JAMBES_MIN_COUPON = 5
 NB_JAMBES_MAX_COUPON = 12
 BANDES_DEFAUT = {"prudent": (5.0, 10.0), "equilibre": (11.0, 15.0), "risque": (16.0, 25.0)}
+# 14/11/2026 (« au lieu de cote haute, choisis plus de matchs ») : pour atteindre sa bande de cote, chaque profil combine PLUS de matchs à cote modérée plutôt que peu de jambes à cote haute.
+# Minimum de jambes par défaut : prudent 6, équilibré 7, gainer 8 (maximum 12). Le champ « jambes » du formulaire (ex. « 5-12 ») remplace ces minimums pour les trois profils.
+JAMBES_MIN_PAR_NIVEAU = {"prudent": 6, "equilibre": 7, "risque": 8}
 
 
 def bande_cote(niveau):
@@ -37,11 +40,12 @@ NIVEAUX = (
      "pour faire monter le gain."),
     ("coupon2", "equilibre", "ÉQUILIBRÉ",
      "Profil ÉQUILIBRÉ : cherche le meilleur COMPROMIS entre probabilité et rendement. Combine des jambes solides et quelques jambes "
-     "mieux valorisées (edge du catalogue positif), sans sacrifier la probabilité de passer le coupon en entier."),
+     "mieux valorisées (edge du catalogue positif), sans sacrifier la probabilité de passer le coupon en entier. Pour atteindre la bande de cote, ajoute des MATCHS "
+     "(jambes à cote modérée) plutôt que de choisir quelques jambes à cote haute."),
     ("coupon3", "risque", "GAINER",
      "Profil GAINER (niveau de risque le plus élevé) : accepte davantage de risque pour viser un gain potentiel plus élevé. Tu peux retenir des jambes moins probables mais "
      "bien valorisées (cote et edge du catalogue intéressants) et des combinaisons plus ambitieuses, en restant dans le catalogue et en "
-     "justifiant chaque pari."),
+     "justifiant chaque pari. Vise le gain en COMBINANT PLUS DE MATCHS (au moins 8) à cote modérée, pas en cherchant des cotes individuelles élevées."),
 )
 
 
@@ -67,9 +71,9 @@ def analyser_intervalle(texte, entier=False):
 
 
 def profils(un_pari_par_match=True, contraintes=True, jambes=None, bandes=None, max_coupons_par_match=None):
-    """jambes : (min, max) de jambes par coupon (défaut 5 à 12). bandes : {niveau: (min, max)} de cote totale (défaut : variables BANDE_COTE_* puis 5-10 / 11-15 / 16-25).
+    """jambes : (min, max) de jambes par coupon pour les trois profils (défaut : minimum par profil JAMBES_MIN_PAR_NIVEAU, maximum 12). bandes : {niveau: (min, max)} de cote totale (défaut : variables BANDE_COTE_* puis 5-10 / 11-15 / 16-25).
     max_coupons_par_match : nombre maximal de coupons du run où un même match peut figurer (défaut 2, variable MAX_COUPONS_PAR_MATCH ; 0 = pas de plafond)."""
-    jambes_min, jambes_max = jambes or (NB_JAMBES_MIN_COUPON, NB_JAMBES_MAX_COUPON)
+    jambes_max = jambes[1] if jambes else NB_JAMBES_MAX_COUPON
     plafond_match = _entier_env("MAX_COUPONS_PAR_MATCH", 2) if max_coupons_par_match is None else max_coupons_par_match
     """Les TROIS profils de risque : 5 à 12 jambes, cote totale dans une bande propre à chaque profil (bandes espacées, minimum 5). Aucune cote imposée par jambe."""
     sortie = []
@@ -78,7 +82,8 @@ def profils(un_pari_par_match=True, contraintes=True, jambes=None, bandes=None, 
         sortie.append({
             "cle": cle, "nom": f"{COULEURS[i]} {libelle}", "niveau_risque": niveau, "consigne": consigne,
             # 5 à 12 jambes (vérifié par Python dans valider) et bande de cote totale espacée des autres profils.
-            "nb_jambes_min": jambes_min if contraintes else 2, "nb_jambes": jambes_max if contraintes else 99,
+            "nb_jambes_min": (jambes[0] if jambes else JAMBES_MIN_PAR_NIVEAU.get(niveau, NB_JAMBES_MIN_COUPON)) if contraintes else 2,
+            "nb_jambes": jambes_max if contraintes else 99,
             **({"cote_totale_min": (bandes or {}).get(niveau, bande_cote(niveau))[0], "cote_totale_max": (bandes or {}).get(niveau, bande_cote(niveau))[1]} if contraintes else {}),
             **({"max_coupons_par_match": plafond_match} if contraintes and plafond_match else {}),
             "jambes_max_par_match": 1 if un_pari_par_match else 3,

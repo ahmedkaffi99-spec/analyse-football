@@ -9,7 +9,9 @@ from moteur import profils_risque as pr
 
 def test_profils_par_defaut_cinq_a_douze_jambes_et_bandes_espacees():
     p = profils_smart.profils()
-    assert all(x["nb_jambes_min"] == 5 and x["nb_jambes"] == 12 for x in p)
+    # 14/11/2026 : « au lieu de cote haute, choisis plus de matchs » : minimum de jambes par profil 6 / 7 / 8 (maximum 12) ; le champ « jambes » du formulaire les remplace.
+    assert [(x["nb_jambes_min"], x["nb_jambes"]) for x in p] == [(6, 12), (7, 12), (8, 12)]
+    assert all(x["nb_jambes_min"] == 5 and x["nb_jambes"] == 12 for x in profils_smart.profils(jambes=(5, 12)))
     bandes = [(x["cote_totale_min"], x["cote_totale_max"]) for x in p]
     assert bandes == [(5.0, 10.0), (11.0, 15.0), (16.0, 25.0)]
     assert min(b[0] for b in bandes) >= 5 and all(bandes[i][1] < bandes[i + 1][0] for i in range(2))
@@ -82,7 +84,7 @@ def test_moteur_central_respecte_nombre_de_jambes_et_bandes():
     from moteur_central.score_central import CandidatCentral
     cands = [CandidatCentral(match=f"M{i}", marche=cat, selection=sel, cote=cote, moteur_responsable="x", proba_pct=p, categorie=cat, competition=f"L{i % 4}")
              for i in range(19) for cat, sel, cote, p in (("Total", "Over", 1.55, 66), ("Double Chance", "1X", 1.35, 75), ("BTTS", "Yes", 2.0, 52), ("Corners", "Under", 1.7, 60))]
-    sortie = selectionner_profils(cands, profils_smart.profils())
+    sortie = selectionner_profils(cands, profils_smart.profils(jambes=(5, 12)))
     assert all(r["jambes"] for r in sortie), [r["raison"] for r in sortie]
     for r in sortie:
         assert 5 <= len(r["jambes"]) <= 12
@@ -112,7 +114,7 @@ def test_moteur_deterministe_prefere_la_taille_equilibree_dans_la_bande():
 def test_moteur_deterministe_remplace_la_derniere_jambe_quand_la_bande_etroite_est_sautee():
     """08/11/2026 : bande Équilibré 11-15 ; les produits cumulés 9,61 (4 jambes) puis 16,34 (5 jambes) sautent l'intervalle : la 5e jambe est remplacée."""
     legs = [_j(i, c) for i, c in enumerate([2.0, 2.0, 1.55, 1.55, 1.7, 2.0, 1.55])]
-    profil = profils_smart.profils()[1]
+    profil = profils_smart.profils(jambes=(5, 12))[1]
     assert (profil["cote_totale_min"], profil["cote_totale_max"]) == (11.0, 15.0)
     choisi = md._dans_la_bande(legs, profil)
     assert len(choisi) >= 5 and 11 <= pr.cote_totale(choisi) <= 15
@@ -125,7 +127,7 @@ def test_un_match_peut_figurer_dans_plusieurs_coupons_avec_des_paris_differents(
     assert pr.regles_entre_coupons([[_j(0, 1.3)], [dict(_j(0, 1.5), selection="Autre")]], True) == []
     assert any("deux coupons" in x for x in pr.regles_entre_coupons([[_j(0, 1.3)], [_j(0, 1.3)]], True))      # même pari exact : interdit
     assert pr.regles_entre_coupons([[_j(0, 1.3)], [dict(_j(0, 1.5), selection="Autre")]]) != []               # règle par défaut : un match, un coupon
-    res = md.composer(_pool(19), profils_smart.profils())
+    res = md.composer(_pool(19), profils_smart.profils(jambes=(5, 12)))
     assert all(r["selections"] for r in res), [r.get("abstention") for r in res]                               # les trois profils obtiennent un coupon
     tous = [s for r in res for s in r["selections"]]
     exacts = [(s["match"], s["pick"]["categorie"], s["pick"]["selection"]) for s in tous]

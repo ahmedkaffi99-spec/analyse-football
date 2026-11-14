@@ -104,6 +104,16 @@ def diversite_ok(jambes, part_max=PART_MAX_MEME_FAMILLE_SENS):
     return max(comptes.values()) <= plafond
 
 
+def plafond_under_equipe(profil=None):
+    return (profil or {}).get("max_under_equipe", MAX_JAMBES_UNDER_EQUIPE)
+
+
+def combo_admissible(jambes, profil=None):
+    """Règles de construction d'un coupon appliquées jambe après jambe par les moteurs : diversité famille/sens ET plafond de « moins de buts d'une équipe » (14/11/2026)."""
+    plafond = plafond_under_equipe(profil)
+    return diversite_ok(jambes) and not (plafond and nb_under_equipe(jambes) > plafond)
+
+
 def nb_paires_correlees(jambes):
     """Paires de jambes (matchs différents) de la même compétition, de la même famille et du même sens : dépendance probable (météo, arbitrage, rythme)."""
     n = 0
@@ -188,7 +198,7 @@ def regles_coupon(jambes, niveau=None, profil=None):
             problemes.append(f"{j.get('match')} : {raison}")
     if not diversite_ok(jambes):
         problemes.append("trop de jambes de la même famille et du même sens")
-    plafond_under = profil.get("max_under_equipe", MAX_JAMBES_UNDER_EQUIPE)
+    plafond_under = plafond_under_equipe(profil)
     if plafond_under and nb_under_equipe(jambes) > plafond_under:
         problemes.append(f"{nb_under_equipe(jambes)} jambes « moins de buts d'une équipe » : maximum {plafond_under} par coupon (complète avec d'autres types de paris)")
     if MAX_JAMBES_REMPLISSAGE:

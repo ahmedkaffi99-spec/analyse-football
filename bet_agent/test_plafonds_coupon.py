@@ -95,3 +95,13 @@ def test_plafond_actif_par_defaut_et_desactivable(monkeypatch):
     assert pc.plafond_actif()
     monkeypatch.setenv("PLAFOND_PARI_JOUR", "0")
     assert not pc.plafond_actif()
+
+
+def test_combo_admissible_pour_les_moteurs_respecte_le_plafond_under_equipe():
+    def leg(i, cat, sel):
+        return {"match": f"M{i}", "competition": f"L{i}", "categorie": cat, "selection": sel, "p": 0.8, "cote": 1.3}
+    autres = [leg(10, "Handicap Asiatique", "1"), leg(11, "Double Chance", "1X"), leg(12, "BTTS", "Yes"), leg(13, "Total", "Over")]
+    quatre = [leg(i, "Total Équipe 1", "Under") for i in range(4)]
+    assert pr.combo_admissible(quatre + autres)                                          # 4 Under d'équipe sur 8 : admis
+    assert not pr.combo_admissible(quatre + [leg(5, "Total Équipe 2", "Under")] + autres)   # le 5e est refusé
+    assert pr.plafond_under_equipe({"max_under_equipe": 6}) == 6 and pr.plafond_under_equipe() == pr.MAX_JAMBES_UNDER_EQUIPE   # un profil peut fixer son plafond
