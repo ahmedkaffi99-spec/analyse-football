@@ -174,6 +174,16 @@ def executer_run(run_id, envoyer_telegram=False, rediger=True, depuis_run=None, 
             if profils_personnalises is None:
                 profils_personnalises = ae.profils_agent_quotidien()
             options_reprise = {"donnees_reprises": donnees_reprises} if donnees_reprises is not None else {}
+            # Plafond « un même pari dans un seul coupon par jour, tous runs confondus » (14/11/2026) : paris déjà pris par un autre run du jour.
+            try:
+                from app.services.paris_du_jour import paris_deja_pris
+                paris_exclus = paris_deja_pris(db, run_id)
+            except Exception as e:   # le plafond ne doit jamais empêcher un run
+                paris_exclus = frozenset()
+                print(f"ℹ️ Plafond des paris du jour indisponible : {str(e)[:120]}")
+            if paris_exclus:
+                print(f"🔒 {len(paris_exclus)} pari(s) déjà présents dans un coupon du jour d'un autre run : retirés du catalogue.")
+                options_reprise["paris_exclus"] = paris_exclus
             resultat_agent = agent_pilote.executer(telegram=envoyer_telegram, profils=profils_personnalises,
                                                    ignorer_diversite_croisee=ignorer_diversite_croisee,
                                                    contexte_supplementaire=bilan, **options_reprise)
@@ -190,7 +200,8 @@ def executer_run(run_id, envoyer_telegram=False, rediger=True, depuis_run=None, 
                 print(f"♻️ Quota API-Football épuisé : réutilisation automatique de la collecte du run {source_id} (aucun appel sportif).")
                 resultat_agent = agent_pilote.executer(telegram=envoyer_telegram, profils=profils_personnalises,
                                                        ignorer_diversite_croisee=ignorer_diversite_croisee,
-                                                       contexte_supplementaire=bilan, donnees_reprises=donnees_reprises)
+                                                       contexte_supplementaire=bilan, donnees_reprises=donnees_reprises,
+                                                       **({"paris_exclus": paris_exclus} if paris_exclus else {}))
             donnees = resultat_agent.get("donnees")
             resultats = resultat_agent.get("resultats_profils") or []
             envoye = bool(resultat_agent.get("envoye"))

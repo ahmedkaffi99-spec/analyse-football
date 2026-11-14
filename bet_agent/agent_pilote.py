@@ -95,7 +95,8 @@ faible).
 consigne). PRUDENT = sécurité : les probabilités les plus élevées du catalogue et le contexte le plus solide, même pour un gain faible. \
 ÉQUILIBRÉ = bon compromis entre probabilité et rendement : jambes solides et quelques jambes mieux valorisées (edge positif). GAINER (niveau risque) = \
 davantage de risque pour viser un gain potentiel plus élevé : jambes moins probables mais bien valorisées, combinaisons plus \
-ambitieuses. Les trois coupons doivent réellement différer par leur niveau de risque. Si voir_catalogue indique une bande ou un \
+ambitieuses. Pour atteindre la bande de cote de ton profil, PRÉFÈRE AJOUTER DES MATCHS (jambes à cote modérée et probabilité élevée) plutôt que de choisir peu de jambes à cote haute \
+(au-dessus de 1.80) ; chaque profil a un minimum de jambes (voir voir_catalogue). Les trois coupons doivent réellement différer par leur niveau de risque. Si voir_catalogue indique une bande ou un \
 plancher de cote (profil personnalisé seulement), respecte-le : Python le vérifie.
 - BASE TA DÉCISION SUR LA PROBABILITÉ ET L'EDGE DU CATALOGUE (calculés par Python), jamais sur une estimation que tu inventes. \
 Python exclut les cotes individuelles inférieures à 1.20 (garde-fou technique, réglable par COTE_MIN_JAMBE_AGENT) ; ne tente jamais de contourner ce filtre. \
@@ -108,7 +109,9 @@ cote totale 1.04 ne vaut rien), ni une loterie. Python te renvoie, pour chaque p
 choisis librement selon le niveau de risque du profil.
 - PYTHON VÉRIFIE (et refuse sinon) : identifiants du catalogue, le nombre de jambes et la bande de cote totale de CHAQUE profil \
 (annoncés dans la mission), un seul pari par match et par event dans un coupon, la règle de répétition des matchs entre coupons annoncée plus haut, \
-jamais le même pari exact ni deux coupons identiques. Chaque profil doit obtenir SON coupon : un match peut resservir dans un autre coupon avec un pari \
+jamais le même pari exact ni deux coupons identiques. Un même pari ne figure que dans UN coupon du jour, tous runs confondus (ceux déjà pris par un autre run \
+ne sont plus dans le catalogue), et un coupon contient AU PLUS 4 paris « moins de buts d'une équipe » (Under sur Total Équipe 1 ou 2) : ces paris sont corrélés, \
+complète avec d'autres types (handicap, double chance, total du match, buts de l'autre équipe). Chaque profil doit obtenir SON coupon : un match peut resservir dans un autre coupon avec un pari \
 différent, donc les matchs ne manquent pas ; ne t'abstiens sur un profil que si AUCUNE combinaison du catalogue ne respecte ses règles, jamais pour éviter de \
 réfléchir ni pour forcer des paris moyens.
 - MÉMOIRE D'APPRENTISSAGE (demande explicite du 06/11/2026 : « une mémoire pour étudier les erreurs d'hier, devenir pro \
@@ -607,7 +610,7 @@ def piloter(cle, outils, est_termine, mission, prompt_systeme=None, outils_schem
 
 
 def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croisee=False,
-            contexte_supplementaire=None, donnees_reprises=None, budget_restant_usd=None):
+            contexte_supplementaire=None, donnees_reprises=None, budget_restant_usd=None, paris_exclus=None):
     """Branche le moteur agentique ci-dessus (piloter) sur la collecte/analyse réelles :
     jusqu'ici (29/09/2026) ce fichier ne définissait que le moteur (prompt, schémas d'outils,
     boucle) sans jamais être appelé par aucun workflow — demande explicite de l'utilisateur
@@ -625,6 +628,9 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
     comme si c'était le premier, "oublie" les profils précédents pour cette règle précise) ; le
     refus d'un pari EXACTEMENT identique à un profil précédent reste actif dans tous les cas
     (jamais désactivable — un même pari ne doit jamais apparaître deux fois dans le même run).
+
+    paris_exclus (14/11/2026) : paris (clés plafonds_coupon.cle_pari_jour) déjà présents dans un coupon du jour d'un AUTRE run ; ils sont retirés du catalogue et refusés
+    par la validation (un même pari n'est joué que dans un coupon par jour). None = aucun plafond entre runs.
 
     budget_restant_usd (Phase 3, 06/11/2026) : budget IA payant restant pour la journée (None = aucun plafond). Sert à répartir ou refuser
     le vote final et le mode « modèle seul » ; tout refus ou dépassement est écrit dans journal["couts"] (jamais silencieux).
@@ -659,6 +665,7 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
         "profils": profils, "profil_index": 0, "textes": [], "resultats_profils": [],
         "nb_recherches": 0, "nb_lectures": 0, "journal_recherches": [], "journal_pages": [], "strategies": {}, "termine": False, "envoye": False, "raison_abandon": None,
         "vote_ignores": [], "vote_gagnants": {}, "vote_resultats": [], "catalogue_dans_mission": False,
+        "paris_exclus": frozenset(paris_exclus or ()),
     }
 
     def _sans_matchs_commences(donnees):
@@ -693,7 +700,7 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
         if etat["catalogue"] is None:
             etat["pool"] = ae.agent3_calcul_pool_candidats(etat["donnees"])
             etat["catalogue"], etat["catalogue_texte"] = st.construire_catalogue(
-                etat["pool"], seuil_proba=st.seuil_catalogue(etat["profils"]))
+                etat["pool"], seuil_proba=st.seuil_catalogue(etat["profils"]), paris_exclus=etat["paris_exclus"])
             # Agents spécialistes par famille de marchés (20/10/2026) : constat réel sur le run 170
             # — ils n'étaient branchés que dans composer_coupons (moteur déterministe), jamais ici,
             # donc ABSENTS du moteur agent. Même revue (veto Python + avis IA par famille) avant
@@ -702,7 +709,8 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
                 ecartes, avis = agents_familles.revoir_catalogue(etat["catalogue"], ae.appel_llm)
                 if ecartes or avis:
                     etat["catalogue"], etat["catalogue_texte"] = st.construire_catalogue(
-                        etat["pool"], seuil_proba=st.seuil_catalogue(etat["profils"]), ecartes=ecartes, avis=avis)
+                        etat["pool"], seuil_proba=st.seuil_catalogue(etat["profils"]), ecartes=ecartes, avis=avis,
+                        paris_exclus=etat["paris_exclus"])
             # contexte_texte (01/10/2026, correctif réel) : voir_catalogue ne renvoyait QUE les
             # lignes de paris, jamais le contexte par match (buts attendus, confrontations
             # directes, blessures, prédictions, forme, presse) alors que le prompt système
@@ -831,7 +839,8 @@ def executer(mission=None, telegram=True, profils=None, ignorer_diversite_croise
         selections_precedentes = [s for r in etat["resultats_profils"] for s in r["selections"]]
         acceptes, problemes, calculs = st.valider(proposition, etat["catalogue"] or {}, [profil],
                                                   selections_precedentes=selections_precedentes,
-                                                  ignorer_diversite_croisee=ignorer_diversite_croisee)
+                                                  ignorer_diversite_croisee=ignorer_diversite_croisee,
+                                                  paris_exclus=etat["paris_exclus"])
         if problemes:
             return {"valide": False, "problemes": problemes}
         resultat_profil = acceptes[profil["cle"]]

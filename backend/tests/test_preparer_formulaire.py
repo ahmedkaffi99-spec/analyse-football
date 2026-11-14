@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from app import preparer_formulaire as pf
 
 
@@ -16,7 +18,8 @@ def test_defauts_donnent_trois_profils_de_risque_sans_cote_imposee():
     assert all(bandes[i][1] < bandes[i + 1][0] for i in range(2))                      # intervalles espacés : aucun chevauchement
     assert all(p["consigne"] for p in liste) and len({p["consigne"] for p in liste}) == 3
     # règles de cohérence conservées : 5 à 12 jambes (Python), un match dans un seul coupon, un pari par match
-    assert all(p["nb_jambes_min"] == 5 and p["nb_jambes"] == 12 and p["jambes_max_par_match"] == 1 and p["match_repete_autorise"] is True for p in liste)
+    assert all(p["nb_jambes"] == 12 and p["jambes_max_par_match"] == 1 and p["match_repete_autorise"] is True for p in liste)
+    assert [p["nb_jambes_min"] for p in liste] == [6, 7, 8]      # 14/11/2026 : plus de matchs plutôt que des cotes hautes (minimum par profil)
     assert s["moteur"] == "agent" and s["cote_min_jambe"] == "0" and s["cote_max_jambe"] == "0" and s["ignorer_diversite"] == "true"
     # 07/11/2026 : modèle par défaut = DeepSeek via OpenRouter, un seul modèle sans vote (l'API officielle DeepSeek reste choisissable)
     assert json.loads(s["matrice"]) == [{"etiquette": "deepseek-openrouter", "pilote": "deepseek/deepseek-v4.1-flash", "reutiliser": ""}]
@@ -47,8 +50,13 @@ def test_anciens_champs_de_cote_et_de_nombre_de_coupons_sont_ignores():
 def test_modeles_et_vote():
     s = pf.construire({"EVENEMENT": "workflow_dispatch", "MODELE": "gpt-6.1-sol", "TELEGRAM_IN": "true"})
     assert json.loads(s["matrice"])[0]["pilote"] == "openai/gpt-6.1-sol" and s["vote"] == "aucun"
-    c = pf.construire({"EVENEMENT": "workflow_dispatch", "MODELE": "claude-sonnet-5.5"})
-    assert json.loads(c["matrice"])[0]["pilote"] == "anthropic/claude-sonnet-5.5"
+    # 14/11/2026 : Gemini et Claude retirés du formulaire (modèle ou second modèle) ; DeepSeek et GPT-6.1 Sol restent.
+    for retire in ("claude-sonnet-5.5", "gemini-4-argon"):
+        for champ in ("MODELE", "MODELE_2"):
+            with pytest.raises(ValueError):
+                pf.construire({"EVENEMENT": "workflow_dispatch", champ: retire})
+    deux = pf.construire({"EVENEMENT": "workflow_dispatch", "MODELE": "gpt-6.1-sol", "MODELE_2": "deepseek"})
+    assert [m["etiquette"] for m in json.loads(deux["matrice"])] == ["gpt-6.1-sol", "deepseek"]
 
 
 def test_les_trois_moteurs_recoivent_les_memes_trois_profils_sans_pilote_ni_vote_pour_les_autres():
@@ -103,6 +111,8 @@ def test_jambes_et_bandes_parametrables_avec_defaut_en_cas_de_valeur_invalide():
     liste = json.loads(pf.construire({"EVENEMENT": "workflow_dispatch", "JAMBES": "3-6", "BANDES": "5-8 / 10-18 / 22-40"})["profils"])
     assert [(p["nb_jambes_min"], p["nb_jambes"], p["cote_totale_min"], p["cote_totale_max"]) for p in liste] == [(3, 6, 5.0, 8.0), (3, 6, 10.0, 18.0), (3, 6, 22.0, 40.0)]
     defaut = json.loads(pf.construire({"EVENEMENT": "workflow_dispatch", "JAMBES": "abc", "BANDES": "5-8 / 10-18"})["profils"])
-    assert [(p["nb_jambes_min"], p["nb_jambes"], p["cote_totale_min"]) for p in defaut] == [(5, 12, 5.0), (5, 12, 11.0), (5, 12, 16.0)]
+    assert [(p["nb_jambes_min"], p["nb_jambes"], p["cote_totale_min"]) for p in defaut] == [(6, 12, 5.0), (7, 12, 11.0), (8, 12, 16.0)]
     vide = json.loads(pf.construire({"EVENEMENT": "schedule"})["profils"])
-    assert [(p["nb_jambes_min"], p["nb_jambes"]) for p in vide] == [(5, 12)] * 3
+    assert [(p["nb_jambes_min"], p["nb_jambes"]) for p in vide] == [(6, 12), (7, 12), (8, 12)]
+    saisi = json.loads(pf.construire({"EVENEMENT": "workflow_dispatch", "JAMBES": "5-12"})["profils"])      # une saisie remplace les minimums des trois profils
+    assert [(p["nb_jambes_min"], p["nb_jambes"]) for p in saisi] == [(5, 12)] * 3

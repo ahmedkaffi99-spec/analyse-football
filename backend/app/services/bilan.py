@@ -113,7 +113,10 @@ def envoyer_bilans(db, notifier, forcer_runs=()):
 
     envoyes = 0
     for coupons in par_run.values():
-        incomplet = any(c.statut == "en_attente" for c in coupons)
+        # Toutes les jambes jugées (14/11/2026) : un coupon déjà perdu garde parfois des jambes en attente ; le bilan (et donc la fin du plan de vérification) attend qu'elles
+        # soient jugées, pour que l'étude des erreurs et la comparaison des modèles portent sur TOUTES les jambes, pas seulement celles jugées avant la perte du coupon.
+        # L'échéance du plan (forcer_runs) envoie quand même le rapport si un match manque.
+        incomplet = any(c.statut == "en_attente" or any(j.resultat == "en_attente" for j in c.jambes) for c in coupons)
         forcer = coupons[0].run_id in forcer_runs
         if not any(c.jambes for c in coupons) or (incomplet and not forcer):
             continue

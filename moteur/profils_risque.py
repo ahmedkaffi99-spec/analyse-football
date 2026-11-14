@@ -37,6 +37,10 @@ COTE_TOTALE_MIN_COUPON = _lire("COTE_TOTALE_MIN_COUPON", 1.60)
 COTE_JAMBE_REMPLISSAGE = _lire("COTE_JAMBE_REMPLISSAGE", 1.22)
 MAX_JAMBES_REMPLISSAGE = int(_lire("MAX_JAMBES_REMPLISSAGE", 2))
 
+# Plafond de jambes « moins de buts d'UNE équipe » par coupon (14/11/2026, étude du 13/11 : 12 coupons perdus, 32 jambes de ce type empilées, un favori qui marque 3 à 5 buts
+# faisait tomber plusieurs coupons d'un coup). Variable MAX_JAMBES_UNDER_EQUIPE ; 0 = pas de plafond ; un profil peut fixer « max_under_equipe ».
+MAX_JAMBES_UNDER_EQUIPE = int(_lire("MAX_JAMBES_UNDER_EQUIPE", 4))
+
 _SENS_MOTS = (("over", ("over", "plus")), ("under", ("under", "moins")), ("yes", ("yes", "oui")), ("no", ("no", "non")))
 
 
@@ -57,6 +61,16 @@ def sens(selection):
         if any(m in s for m in mots):
             return nom
     return "autre"
+
+
+def est_under_equipe(categorie, selection):
+    """Vrai pour un pari « moins de X buts » sur le total d'UNE équipe (« Total Équipe 1/2 » + Under/moins) ; jamais pour les corners ni les totaux du match."""
+    c = (categorie or "").lower()
+    return "total" in c and any(m in c for m in ("équipe", "equipe", "team")) and "corner" not in c and sens(selection) == "under"
+
+
+def nb_under_equipe(jambes):
+    return sum(1 for j in jambes if est_under_equipe(j.get("categorie"), j.get("selection")))
 
 
 def valider_jambe(j):
@@ -88,6 +102,16 @@ def diversite_ok(jambes, part_max=PART_MAX_MEME_FAMILLE_SENS):
         k = cle_famille_sens(j)
         comptes[k] = comptes.get(k, 0) + 1
     return max(comptes.values()) <= plafond
+
+
+def plafond_under_equipe(profil=None):
+    return (profil or {}).get("max_under_equipe", MAX_JAMBES_UNDER_EQUIPE)
+
+
+def combo_admissible(jambes, profil=None):
+    """Règles de construction d'un coupon appliquées jambe après jambe par les moteurs : diversité famille/sens ET plafond de « moins de buts d'une équipe » (14/11/2026)."""
+    plafond = plafond_under_equipe(profil)
+    return diversite_ok(jambes) and not (plafond and nb_under_equipe(jambes) > plafond)
 
 
 def nb_paires_correlees(jambes):
@@ -174,6 +198,9 @@ def regles_coupon(jambes, niveau=None, profil=None):
             problemes.append(f"{j.get('match')} : {raison}")
     if not diversite_ok(jambes):
         problemes.append("trop de jambes de la même famille et du même sens")
+    plafond_under = plafond_under_equipe(profil)
+    if plafond_under and nb_under_equipe(jambes) > plafond_under:
+        problemes.append(f"{nb_under_equipe(jambes)} jambes « moins de buts d'une équipe » : maximum {plafond_under} par coupon (complète avec d'autres types de paris)")
     if MAX_JAMBES_REMPLISSAGE:
         remplissage = sum(1 for j in jambes if j.get("cote") is not None and float(j["cote"]) <= COTE_JAMBE_REMPLISSAGE)
         if remplissage > MAX_JAMBES_REMPLISSAGE:

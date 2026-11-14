@@ -50,14 +50,12 @@ on:
         type: string
         default: ""
       modele:
-        description: "10. Modèle qui pilote le run : deepseek-openrouter (DeepSeek via l'API OpenRouter, par défaut, un seul modèle sans vote) · deepseek (API officielle DeepSeek) · gpt-6.1-sol · gemini-4-argon · claude-sonnet-5.5. Aucun repli : un modèle qui échoue fait échouer le run"
+        description: "10. Modèle qui pilote le run : deepseek-openrouter (DeepSeek via l'API OpenRouter, par défaut, un seul modèle sans vote) · deepseek (API officielle DeepSeek) · gpt-6.1-sol. Aucun repli : un modèle qui échoue fait échouer le run"
         type: choice
         options:
           - "deepseek-openrouter"
           - "deepseek"
           - "gpt-6.1-sol"
-          - "gemini-4-argon"
-          - "claude-sonnet-5.5"
         default: "deepseek-openrouter"
       modele_2:
         description: "11. Second modèle à comparer (optionnel) : il tourne APRÈS le premier, sur la MÊME collecte (mêmes données, un seul appel aux API sportives), sans vote. aucun = un seul modèle"
@@ -67,8 +65,6 @@ on:
           - "deepseek"
           - "deepseek-openrouter"
           - "gpt-6.1-sol"
-          - "gemini-4-argon"
-          - "claude-sonnet-5.5"
         default: "aucun"
       un_pari_par_match:
         description: "12. Un seul pari par match dans un coupon : actif (1 par match) ou desactive (jusqu'à 3 paris d'events différents par match)"
@@ -78,9 +74,9 @@ on:
           - "desactive"
         default: "actif"
       jambes:
-        description: "13. Nombre de jambes par coupon : min-max (défaut 5-12). Valeur invalide = défaut"
+        description: "13. Nombre de jambes par coupon : min-max, remplace les minimums des trois profils (vide = Prudent 6-12 · Équilibré 7-12 · Gainer 8-12). Valeur invalide = défaut"
         type: string
-        default: "5-12"
+        default: ""
       bandes:
         description: "14. Bandes de cote totale Prudent / Équilibré / Gainer (défaut 5-10 / 11-15 / 16-25). Valeur invalide = défaut"
         type: string
@@ -182,6 +178,8 @@ jobs:
       COTE_JAMBE_REMPLISSAGE: ${{ vars.COTE_JAMBE_REMPLISSAGE }}
       MAX_JAMBES_REMPLISSAGE: ${{ vars.MAX_JAMBES_REMPLISSAGE }}
       MAX_COUPONS_PAR_MATCH: ${{ vars.MAX_COUPONS_PAR_MATCH }}
+      MAX_JAMBES_UNDER_EQUIPE: ${{ vars.MAX_JAMBES_UNDER_EQUIPE }}   # plafond de paris « moins de buts d'une équipe » par coupon (défaut 4, 0 = aucun)
+      PLAFOND_PARI_JOUR: ${{ vars.PLAFOND_PARI_JOUR }}   # un même pari dans un seul coupon par jour, tous runs confondus (défaut actif ; 0 = désactivé)
       # Phase 4 (07/11/2026, corrections contrôlées) : durée de l'agent < délai du job (60 min) pour un arrêt PROPRE avec journal et coûts ; coûts écrits
       # au fil de l'eau dans COUTS_FICHIER (relus par l'étape « Finaliser le run » même si le job est tué) ; au plus N runs payants ratés par jour pour
       # les passages planifiés ; second chat Telegram UNIQUEMENT via la variable du dépôt TELEGRAM_CHAT_IDS_SUPPLEMENTAIRES (plus de valeur par défaut codée).
