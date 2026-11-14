@@ -31,6 +31,8 @@ import re
 
 import agents_familles
 import analyser_et_envoyer as ae
+import plafonds_coupon
+from moteur import profils_risque as pr_communes
 
 NB_TOURS_MAX = 3
 # Plancher de jambes PAR DÉFAUT si un profil ne précise pas "nb_jambes_min" (les tests
@@ -132,7 +134,7 @@ def seuil_catalogue(profils):
     return min([p.get("proba_min_pct", SEUIL_PROBA_CATALOGUE) for p in profils] or [SEUIL_PROBA_CATALOGUE])
 
 
-def construire_catalogue(pool, seuil_proba=SEUIL_PROBA_CATALOGUE, ecartes=frozenset(), avis=None):
+def construire_catalogue(pool, seuil_proba=SEUIL_PROBA_CATALOGUE, ecartes=frozenset(), avis=None, paris_exclus=frozenset()):
     """Renvoie ({id: sélection}, texte du catalogue groupé par match) — FILTRÉ et TRIÉ par
     Python (demande explicite du 01/10/2026 : "réduire les tâches de l'IA, augmenter Python") :
     seuls les paris dont la probabilité calculée (Poisson) dépasse seuil_proba sont montrés,
@@ -160,6 +162,9 @@ def construire_catalogue(pool, seuil_proba=SEUIL_PROBA_CATALOGUE, ecartes=frozen
             numero += 1
             cid = f"P{numero}"
             if cid in ecartes:
+                continue
+            # Pari déjà présent dans un coupon du jour d'un autre run (14/11/2026) : l'identifiant reste réservé, le pari n'est plus montré.
+            if paris_exclus and plafonds_coupon.cle_pari_jour_selection(c) in paris_exclus:
                 continue
             if not entete_ajoute:
                 lignes.append(f"\n## {match} ({len(retenus)} pari(s) retenu(s) par Python, proba >= {seuil_proba:g}%)")
@@ -448,7 +453,7 @@ def ajuster_repetition(profil, nb_matchs_catalogue, nb_profils):
 
 
 def valider(proposition, catalogue, profils, signatures_existantes=(), selections_precedentes=(),
-            ignorer_diversite_croisee=False):
+            ignorer_diversite_croisee=False, paris_exclus=frozenset()):
     """Contrôle la proposition de l'IA profil par profil. Renvoie
     (acceptes {cle: {"selections"|"abstention", "strategie"}}, problemes [str], calculs [str]).
 
@@ -530,6 +535,10 @@ def valider(proposition, catalogue, profils, signatures_existantes=(), selection
                 erreurs.append(f"{cid} : {selection['match']} figure déjà dans {coupons_par_match[selection['match']]} coupon(s) de ce run (maximum {max_coupons} par match) — "
                                "choisis un autre match pour ce profil")
                 continue
+            if paris_exclus and plafonds_coupon.cle_pari_jour_selection(selection) in paris_exclus:
+                erreurs.append(f"{cid} : ce pari ({selection['match']}, {selection['pick']['marche']}, {selection['pick']['selection']}) figure déjà dans un coupon du jour "
+                               "d'un autre run — un même pari n'est joué que dans UN coupon par jour : choisis un autre pari")
+                continue
             if _cle_pari(selection) in paris_deja_utilises:
                 erreurs.append(f"{cid} : même pari exact ({selection['match']}, {selection['pick']['marche']}, "
                                f"{selection['pick']['selection']}) déjà pris dans un autre coupon — choisis un autre "
@@ -549,6 +558,12 @@ def valider(proposition, catalogue, profils, signatures_existantes=(), selection
         for match, nombre in par_match.items():
             if nombre > max_par_match:
                 erreurs.append(f"{nombre} paris sur {match} (maximum {max_par_match})")
+        # Plafond de jambes « moins de buts d'une équipe » par coupon (14/11/2026) : ces paris sont corrélés (un favori qui marque beaucoup en casse plusieurs d'un coup).
+        plafond_under = profil.get("max_under_equipe", pr_communes.MAX_JAMBES_UNDER_EQUIPE)
+        nb_under = sum(1 for sel in selections if pr_communes.est_under_equipe(sel["pick"].get("categorie"), sel["pick"].get("selection")))
+        if plafond_under and nb_under > plafond_under:
+            erreurs.append(f"{nb_under} paris « moins de buts d'une équipe » : maximum {plafond_under} par coupon — remplace-en pour garder {plafond_under} au plus, "
+                           "avec d'autres types de paris (handicap, double chance, total du match, buts de l'autre équipe...)")
         if profil.get("un_seul_pari_par_event"):
             for (match, event), nombre in _paris_meme_event(selections).items():
                 erreurs.append(f"{nombre} paris du même event « {event} » sur {match} — 1xBet n'accepte qu'UN pari par "

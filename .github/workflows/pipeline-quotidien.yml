@@ -182,6 +182,8 @@ jobs:
       COTE_JAMBE_REMPLISSAGE: ${{ vars.COTE_JAMBE_REMPLISSAGE }}
       MAX_JAMBES_REMPLISSAGE: ${{ vars.MAX_JAMBES_REMPLISSAGE }}
       MAX_COUPONS_PAR_MATCH: ${{ vars.MAX_COUPONS_PAR_MATCH }}
+      MAX_JAMBES_UNDER_EQUIPE: ${{ vars.MAX_JAMBES_UNDER_EQUIPE }}   # plafond de paris « moins de buts d'une équipe » par coupon (défaut 4, 0 = aucun)
+      PLAFOND_PARI_JOUR: ${{ vars.PLAFOND_PARI_JOUR }}   # un même pari dans un seul coupon par jour, tous runs confondus (défaut actif ; 0 = désactivé)
       # Phase 4 (07/11/2026, corrections contrôlées) : durée de l'agent < délai du job (60 min) pour un arrêt PROPRE avec journal et coûts ; coûts écrits
       # au fil de l'eau dans COUTS_FICHIER (relus par l'étape « Finaliser le run » même si le job est tué) ; au plus N runs payants ratés par jour pour
       # les passages planifiés ; second chat Telegram UNIQUEMENT via la variable du dépôt TELEGRAM_CHAT_IDS_SUPPLEMENTAIRES (plus de valeur par défaut codée).
